@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+echo "==> Installing Python dependencies…"
+
+# experimental uv support makes installations significantly faster
+rye config --set-bool behavior.use-uv=true
+
+rye sync
