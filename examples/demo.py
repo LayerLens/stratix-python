@@ -9,7 +9,7 @@ from atlas import Atlas
 client = Atlas()
 
 # Evaluations
-evaluation = client.evaluations.create(model="random", benchmark="random")
+evaluation = client.evaluations.create(model="random_model_id", benchmark="random_benchmark_id")
 
 # Results
 if evaluation is not None:

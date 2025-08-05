@@ -44,6 +44,7 @@ dev-dependencies = [
     "mypy",
     "pytest",
     "ruff",
+    "pytest-cov>=6.2.1",
 ]
 
 [tool.rye.scripts]

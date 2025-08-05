@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Union, Optional
 from datetime import timedelta
 
-from pydantic import Field, BaseModel
+from pydantic import Field, BaseModel, ConfigDict
 
 
 class Evaluation(BaseModel):
@@ -105,7 +105,6 @@ class CustomBenchmark(BaseModel):
 
 
 class Benchmarks(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     benchmarks: List[Union[Benchmark, CustomBenchmark]] = Field(..., alias="datasets")
-
-    class Config:
-        validate_by_name = True

@@ -1,0 +1,53 @@
+name: Run Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rye
+        uses: eifinger/setup-rye@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: |
+          rye pin ${{ matrix.python-version }}
+          rye sync
+
+      - name: Run lints
+        run: rye run lint
+
+      - name: Run tests
+        run: rye run pytest
+
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rye
+        uses: eifinger/setup-rye@v4
+        with:
+          enable-cache: true
+
+      - name: Build package
+        run: rye build
+
+      - name: Check build artifacts
+        run: |
+          ls -la dist/
+          # Verify wheel and source distribution were created
+          test -f dist/*.whl
+          test -f dist/*.tar.gz
