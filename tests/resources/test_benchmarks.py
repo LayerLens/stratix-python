@@ -65,13 +65,13 @@ class TestBenchmarks:
     def mock_public_benchmarks_response(self, sample_benchmark_data):
         """Mock BenchmarksData response with public benchmarks."""
         benchmark = Benchmark(**sample_benchmark_data)
-        return BenchmarksData(benchmarks=[benchmark])
+        return BenchmarksData(datasets=[benchmark])
 
     @pytest.fixture
     def mock_custom_benchmarks_response(self, sample_custom_benchmark_data):
         """Mock BenchmarksData response with custom benchmarks."""
         custom_benchmark = CustomBenchmark(**sample_custom_benchmark_data)
-        return BenchmarksData(benchmarks=[custom_benchmark])
+        return BenchmarksData(datasets=[custom_benchmark])
 
     def test_benchmarks_initialization(self, mock_client):
         """Benchmarks resource initializes correctly."""
@@ -168,7 +168,7 @@ class TestBenchmarks:
 
     def test_get_benchmarks_empty_response(self, benchmarks_resource):
         """get method returns empty list when no benchmarks in response."""
-        empty_response = BenchmarksData(benchmarks=[])
+        empty_response = BenchmarksData(datasets=[])
         benchmarks_resource._get.return_value = empty_response
         
         result = benchmarks_resource.get(type="public")
@@ -188,7 +188,7 @@ class TestBenchmarks:
         benchmark2_data["name"] = "HellaSwag"
         benchmark2 = Benchmark(**benchmark2_data)
         
-        response = BenchmarksData(benchmarks=[benchmark, benchmark2])
+        response = BenchmarksData(datasets=[benchmark, benchmark2])
         benchmarks_resource._get.return_value = response
         
         result = benchmarks_resource.get(type="public")
@@ -212,7 +212,7 @@ class TestBenchmarks:
     @pytest.mark.parametrize("benchmark_type", ["public", "custom"])
     def test_get_benchmarks_type_parameter(self, benchmarks_resource, benchmark_type):
         """get method accepts both public and custom types."""
-        benchmarks_resource._get.return_value = BenchmarksData(benchmarks=[])
+        benchmarks_resource._get.return_value = BenchmarksData(datasets=[])
         
         benchmarks_resource.get(type=benchmark_type)
         
@@ -340,7 +340,7 @@ class TestBenchmarksTyping:
         assert result is None
         
         # Test that it returns a list when successful
-        benchmarks_resource._get.return_value = BenchmarksData(benchmarks=[])
+        benchmarks_resource._get.return_value = BenchmarksData(datasets=[])
         result = benchmarks_resource.get(type="public")
         assert isinstance(result, list)
 
@@ -380,7 +380,7 @@ class TestBenchmarksTyping:
         public_benchmark = Benchmark(**public_data)
         custom_benchmark = CustomBenchmark(**custom_data)
         
-        response = BenchmarksData(benchmarks=[public_benchmark, custom_benchmark])
+        response = BenchmarksData(datasets=[public_benchmark, custom_benchmark])
         benchmarks_resource._get.return_value = response
         
         result = benchmarks_resource.get(type="public")  # Type doesn't matter for this test

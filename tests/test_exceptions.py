@@ -107,6 +107,7 @@ class TestAPIError:
         error = APIError("validation error", mock_request, body=body)
         
         assert error.body == body
+        assert isinstance(error.body, dict)
         assert error.body["error"] == "validation failed"
 
     def test_api_error_with_string_body(self, mock_request):
@@ -301,5 +302,6 @@ class TestErrorMessages:
         }
         error = APIError("Validation failed", mock_request, body=body)
         
+        assert isinstance(error.body, dict)
         assert error.body["error"]["code"] == "VALIDATION_ERROR"
         assert error.body["request_id"] == "req-456"

@@ -273,7 +273,7 @@ class TestSyncAPIResourceErrorHandling:
         
         # This should fail during initialization since the methods don't exist
         with pytest.raises(AttributeError):
-            SyncAPIResource(incomplete_client)
+            SyncAPIResource(incomplete_client)  # type: ignore[arg-type]
 
     @patch('time.sleep')
     def test_resource_sleep_handles_exceptions(self, mock_time_sleep, resource_instance):
@@ -369,14 +369,14 @@ class TestSyncAPIResourceRealWorldUsage:
             def create_and_wait(self, data: dict, poll_interval: float = 1.0):
                 # Create resource
                 created = self._post("/create", body=data)
-                resource_id = created["id"]
+                resource_id = created["id"]  # type: ignore[index]
                 
                 # Poll until complete
                 while True:
                     status = self._get(f"/status/{resource_id}")
-                    if status["state"] == "completed":
+                    if status["state"] == "completed":  # type: ignore[index]
                         return self._get(f"/result/{resource_id}")
-                    elif status["state"] == "failed":
+                    elif status["state"] == "failed":  # type: ignore[index]
                         raise Exception("Workflow failed")
                     
                     self._sleep(poll_interval)

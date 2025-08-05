@@ -3,13 +3,8 @@ name = "atlas"
 version = "1.0.0"
 description = "The official Python library for the LayerLens Atlas API"
 license = "Apache-2.0"
-authors = [
-{ name = "LayerLens", email = "support@layerlens.ai" },
-]
-dependencies = [
-    "httpx>=0.23.0, <1",
-    "pydantic>=1.9.0, <3",
-]
+authors = [{ name = "LayerLens", email = "support@layerlens.ai" }]
+dependencies = ["httpx>=0.23.0, <1", "pydantic>=1.9.0, <3"]
 requires-python = ">= 3.8"
 classifiers = [
   "Typing :: Typed",
@@ -25,7 +20,7 @@ classifiers = [
   "Operating System :: MacOS",
   "Operating System :: POSIX :: Linux",
   "Operating System :: Microsoft :: Windows",
-  "Topic :: Software Development :: Libraries :: Python Modules"
+  "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 [project.urls]
@@ -40,11 +35,11 @@ atlas = "atlas.cli:main"
 managed = true
 # version pins are in requirements-dev.lock
 dev-dependencies = [
-    "pyright==1.1.399",
-    "mypy",
-    "pytest",
-    "ruff",
-    "pytest-cov>=6.2.1",
+  "pyright==1.1.399",
+  "mypy",
+  "pytest",
+  "ruff",
+  "pytest-cov>=6.2.1",
 ]
 
 [tool.rye.scripts]
@@ -53,26 +48,27 @@ format = { chain = [
   "fix:ruff",
   # run formatting again to fix any inconsistencies when imports are stripped
   "format:ruff",
-]}
+] }
 "format:ruff" = "ruff format"
 
-"lint" = { chain = [
-  "check:ruff",
-  "typecheck",
-  "check:importable",
-]}
+"lint" = { chain = ["check:ruff", "typecheck:src", "check:importable"] }
+"lint:all" = { chain = ["check:ruff", "typecheck", "check:importable"] }
 "check:ruff" = "ruff check ."
 "fix:ruff" = "ruff check --fix ."
 
 "check:importable" = "python -c 'import atlas'"
 
-typecheck = { chain = [
-  "typecheck:pyright",
-  "typecheck:mypy"
-]}
+# Type checking for production code only (excludes tests)
+"typecheck:src" = { chain = ["typecheck:pyright:src", "typecheck:mypy:src"] }
+
+# Type checking for all code including tests
+typecheck = { chain = ["typecheck:pyright", "typecheck:mypy"] }
+
 "typecheck:pyright" = "pyright"
+"typecheck:pyright:src" = "pyright src"
 "typecheck:verify-types" = "pyright --verifytypes atlas --ignoreexternal"
 "typecheck:mypy" = "mypy ."
+"typecheck:mypy:src" = "mypy src"
 
 [tool.ruff]
 line-length = 120
@@ -127,3 +123,13 @@ known-first-party = ["openai", "tests"]
 "scripts/**.py" = ["T201", "T203"]
 "tests/**.py" = ["T201", "T203"]
 "examples/**.py" = ["T201", "T203"]
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = ["**/__pycache__"]
+reportMissingTypeStubs = false
+
+# Less strict settings for tests
+executionEnvironments = [
+  { root = "tests", reportGeneralTypeIssues = false, reportOptionalSubscript = false, reportOptionalMemberAccess = false, reportUntypedFunctionDecorator = false, reportUnknownArgumentType = false, reportUnknownMemberType = false, reportUnknownVariableType = false, reportUnnecessaryIsInstance = false, reportUnnecessaryComparison = false, reportArgumentType = false, reportCallIssue = false },
+]

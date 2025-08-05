@@ -153,7 +153,7 @@ class TestCompleteEvaluationWorkflow:
         
         # Mock responses
         models_response = ModelsData(models=[model])
-        benchmarks_response = BenchmarksData(benchmarks=[benchmark])
+        benchmarks_response = BenchmarksData(datasets=[benchmark])
         evaluations_response = EvaluationsData(data=[evaluation])
         results_response = ResultsData(results=[result])
         
@@ -446,7 +446,9 @@ class TestConcurrentOperations:
             results2 = client2.results.get(evaluation_id="eval-2")
             
             # Verify both calls succeeded
+            assert results1 is not None
             assert len(results1) == 1
+            assert results2 is not None
             assert len(results2) == 1
             
             # Verify calls were made to correct clients

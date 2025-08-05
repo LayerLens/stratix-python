@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Union, Literal
+from typing import List, Literal
 
 import httpx
 
@@ -15,7 +15,7 @@ class Models(SyncAPIResource):
         *,
         type: Literal["public"] | Literal["custom"],
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
-    ) -> List[Union[Model | CustomModel]] | None:
+    ) -> List[Model | CustomModel] | None:
         models = self._get(
             f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/models",
             params={

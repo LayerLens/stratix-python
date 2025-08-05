@@ -80,7 +80,7 @@ class TestEvaluation:
         incomplete_data = {"id": "eval-123", "status": "pending"}
         
         with pytest.raises(ValidationError) as exc_info:
-            Evaluation(**incomplete_data)
+            Evaluation(**incomplete_data)  # type: ignore[arg-type]
         
         errors = exc_info.value.errors()
         assert len(errors) > 5
@@ -139,7 +139,7 @@ class TestEvaluations:
     def test_evaluations_invalid_data_structure(self):
         """Evaluations model validates data structure.""" 
         with pytest.raises(ValidationError):
-            Evaluations(data="not-a-list")
+            Evaluations(data="not-a-list")  # type: ignore[arg-type]
 
 
 class TestResult:
@@ -206,7 +206,7 @@ class TestResults:
             "score": 0.8,
             "metrics": {"score": 0.8},
         }
-        results = Results(results=[result_data, result_data])
+        results = Results(results=[result_data, result_data])  # type: ignore[arg-type]
         
         assert len(results.results) == 2
         assert all(isinstance(result, Result) for result in results.results)
@@ -341,7 +341,7 @@ class TestModels:
             "disabled": False,
         }
         
-        models = Models(models=[model_data, custom_model_data])
+        models = Models(models=[model_data, custom_model_data])  # type: ignore[arg-type]
         
         assert len(models.models) == 2
         assert isinstance(models.models[0], Model)
@@ -464,7 +464,7 @@ class TestBenchmarks:
         }
         
         # Using the alias 'datasets'
-        benchmarks = Benchmarks(datasets=[benchmark_data])
+        benchmarks = Benchmarks(datasets=[benchmark_data])  # type: ignore[arg-type]
         
         assert len(benchmarks.benchmarks) == 1
         assert isinstance(benchmarks.benchmarks[0], Benchmark)
@@ -484,7 +484,7 @@ class TestBenchmarks:
             "deprecated": False,
         }
         
-        benchmarks = Benchmarks(benchmarks=[benchmark_data])
+        benchmarks = Benchmarks(datasets=[benchmark_data])  # type: ignore[arg-type]
         
         assert len(benchmarks.benchmarks) == 1
 
