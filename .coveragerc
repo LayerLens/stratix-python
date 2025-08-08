@@ -1,0 +1,7 @@
+[report]
+omit =
+    */tests/*
+    */__init__.py
+show_missing = false
+skip_covered = true
+include = *
