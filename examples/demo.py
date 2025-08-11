@@ -2,10 +2,8 @@
 
 from atlas import Atlas
 
-# gets API key, organization ID and project ID from environment variables:
+# gets API key from environment variable:
 # - LAYERLENS_ATLAS_API_KEY
-# - LAYERLENS_ATLAS_ORG_ID
-# - LAYERLENS_ATLAS_PROJECT_ID
 client = Atlas()
 
 # Evaluations

@@ -18,8 +18,6 @@ from atlas import Atlas
 client = Atlas(
     # This is the default and can be omitted
     api_key=os.environ.get("LAYERLENS_ATLAS_API_KEY"),
-    organization_id=os.environ.get("LAYERLENS_ATLAS_ORG_ID"),
-    project_id=os.environ.get("LAYERLENS_ATLAS_PROJECT_ID"),
 )
 
 evaluation = client.evaluations.create(

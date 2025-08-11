@@ -3,19 +3,20 @@ from datetime import timedelta
 import pytest
 from pydantic import ValidationError
 
-from atlas._models import (
-    Model,
+from atlas.models import (
     Models,
     Result,
     Results,
-    Benchmark,
     Benchmarks,
     Evaluation,
     Pagination,
     CustomModel,
     Evaluations,
+    PublicModel,
     ResultMetrics,
     CustomBenchmark,
+    PublicBenchmark,
+    EvaluationStatus,
 )
 
 
@@ -27,20 +28,12 @@ class TestEvaluation:
         """Valid evaluation data for testing."""
         return {
             "id": "eval-123",
-            "status": "completed",
-            "status_description": "Evaluation completed successfully",
+            "status": "success",
             "submitted_at": 1640995200,
             "finished_at": 1640995800,
             "model_id": "model-456",
-            "model_name": "GPT-4",
-            "model_key": "gpt-4",
-            "model_company": "OpenAI",
             "dataset_id": "dataset-789",
-            "dataset_name": "MMLU",
             "average_duration": 2500,
-            "readability_score": 0.85,
-            "toxicity_score": 0.02,
-            "ethics_score": 0.92,
             "accuracy": 0.89,
         }
 
@@ -49,10 +42,9 @@ class TestEvaluation:
         evaluation = Evaluation(**valid_evaluation_data)
 
         assert evaluation.id == "eval-123"
-        assert evaluation.status == "completed"
-        assert evaluation.model_name == "GPT-4"
+        assert evaluation.status == EvaluationStatus.SUCCESS
+        assert evaluation.model_id == "model-456"
         assert evaluation.accuracy == 0.89
-        assert evaluation.readability_score == 0.85
 
     def test_evaluation_field_types(self, valid_evaluation_data):
         """Evaluation model enforces correct field types."""
@@ -60,7 +52,6 @@ class TestEvaluation:
 
         assert isinstance(evaluation.id, str)
         assert isinstance(evaluation.submitted_at, int)
-        assert isinstance(evaluation.readability_score, float)
         assert isinstance(evaluation.accuracy, float)
 
     def test_evaluation_validation_errors(self, valid_evaluation_data):
@@ -105,20 +96,12 @@ class TestEvaluations:
         """Sample evaluation data."""
         return {
             "id": "eval-1",
-            "status": "completed",
-            "status_description": "Done",
+            "status": "success",
             "submitted_at": 1640995200,
             "finished_at": 1640995800,
             "model_id": "model-1",
-            "model_name": "Test Model",
-            "model_key": "test-model",
-            "model_company": "TestCorp",
             "dataset_id": "dataset-1",
-            "dataset_name": "Test Dataset",
             "average_duration": 1000,
-            "readability_score": 0.8,
-            "toxicity_score": 0.1,
-            "ethics_score": 0.9,
             "accuracy": 0.85,
         }
 
@@ -447,7 +430,7 @@ class TestModel:
 
     def test_model_creation(self, valid_model_data):
         """Model creates with valid data."""
-        model = Model(**valid_model_data)
+        model = PublicModel(**valid_model_data)
 
         assert model.id == "model-123"
         assert model.name == "GPT-4"
@@ -457,7 +440,7 @@ class TestModel:
 
     def test_model_boolean_fields(self, valid_model_data):
         """Model handles boolean fields correctly."""
-        model = Model(**valid_model_data)
+        model = PublicModel(**valid_model_data)
 
         assert isinstance(model.open_weights, bool)
         assert isinstance(model.deprecated, bool)
@@ -465,7 +448,7 @@ class TestModel:
 
     def test_model_numeric_fields(self, valid_model_data):
         """Model validates numeric fields."""
-        model = Model(**valid_model_data)
+        model = PublicModel(**valid_model_data)
 
         assert isinstance(model.parameters, float)
         assert isinstance(model.context_length, int)
@@ -477,13 +460,13 @@ class TestModel:
         invalid_data = valid_model_data.copy()
         invalid_data["parameters"] = "not-a-number"
         with pytest.raises(ValidationError):
-            Model(**invalid_data)
+            PublicModel(**invalid_data)
 
         # Test int field validation
         invalid_data = valid_model_data.copy()
         invalid_data["context_length"] = "not-an-int"
         with pytest.raises(ValidationError):
-            Model(**invalid_data)
+            PublicModel(**invalid_data)
 
 
 class TestCustomModel:
@@ -551,10 +534,10 @@ class TestModels:
             "disabled": False,
         }
 
-        models = Models(models=[model_data, custom_model_data])  # type: ignore[arg-type]
+        models = Models(models=[PublicModel(**model_data), CustomModel(**custom_model_data)])  # type: ignore[arg-type]
 
         assert len(models.models) == 2
-        assert isinstance(models.models[0], Model)
+        assert isinstance(models.models[0], PublicModel)
         assert isinstance(models.models[1], CustomModel)
 
 
@@ -570,30 +553,17 @@ class TestBenchmark:
             "name": "MMLU",
             "full_description": "Massive Multitask Language Understanding",
             "language": "english",
-            "categories": ["reasoning", "knowledge"],
-            "subsets": ["math", "science", "history"],
             "prompt_count": 15908,
             "deprecated": False,
         }
 
     def test_benchmark_creation(self, valid_benchmark_data):
         """Benchmark creates with valid data."""
-        benchmark = Benchmark(**valid_benchmark_data)
+        benchmark = PublicBenchmark(**valid_benchmark_data)
 
         assert benchmark.id == "bench-123"
         assert benchmark.name == "MMLU"
-        assert len(benchmark.categories) == 2
-        assert len(benchmark.subsets) == 3
         assert benchmark.prompt_count == 15908
-
-    def test_benchmark_list_fields(self, valid_benchmark_data):
-        """Benchmark handles list fields correctly."""
-        benchmark = Benchmark(**valid_benchmark_data)
-
-        assert isinstance(benchmark.categories, list)
-        assert isinstance(benchmark.subsets, list)
-        assert "reasoning" in benchmark.categories
-        assert "math" in benchmark.subsets
 
 
 class TestCustomBenchmark:
@@ -608,7 +578,6 @@ class TestCustomBenchmark:
             "name": "My Benchmark",
             "description": "Custom benchmark",
             "system_prompt": "You are a helpful assistant",
-            "subsets": ["subset1", "subset2"],
             "prompt_count": 100,
             "version_count": 1,
             "regex_pattern": r"Answer: (.+)",
@@ -637,7 +606,6 @@ class TestCustomBenchmark:
             "name": "Test",
             "description": "Test desc",
             "system_prompt": None,
-            "subsets": ["test"],
             "prompt_count": 10,
             "version_count": 1,
             "regex_pattern": None,
@@ -667,17 +635,14 @@ class TestBenchmarks:
             "name": "Test",
             "full_description": "Test benchmark",
             "language": "english",
-            "categories": ["test"],
-            "subsets": ["test"],
             "prompt_count": 10,
             "deprecated": False,
         }
 
         # Using the alias 'datasets'
-        benchmarks = Benchmarks(datasets=[benchmark_data])  # type: ignore[arg-type]
+        benchmarks = Benchmarks(datasets=[PublicBenchmark(**benchmark_data)])  # type: ignore[arg-type]
 
-        assert len(benchmarks.benchmarks) == 1
-        assert isinstance(benchmarks.benchmarks[0], Benchmark)
+        assert isinstance(benchmarks.benchmarks[0], PublicBenchmark)
 
     def test_benchmarks_field_validation(self):
         """Benchmarks validates field structure correctly."""
@@ -688,8 +653,6 @@ class TestBenchmarks:
             "name": "Test",
             "full_description": "Test benchmark",
             "language": "english",
-            "categories": ["test"],
-            "subsets": ["test"],
             "prompt_count": 10,
             "deprecated": False,
         }
@@ -706,20 +669,12 @@ class TestModelSerialization:
         """Models can be serialized and deserialized correctly."""
         original_data = {
             "id": "eval-123",
-            "status": "completed",
-            "status_description": "Done",
+            "status": "success",
             "submitted_at": 1640995200,
             "finished_at": 1640995800,
             "model_id": "model-456",
-            "model_name": "GPT-4",
-            "model_key": "gpt-4",
-            "model_company": "OpenAI",
             "dataset_id": "dataset-789",
-            "dataset_name": "MMLU",
             "average_duration": 2500,
-            "readability_score": 0.85,
-            "toxicity_score": 0.02,
-            "ethics_score": 0.92,
             "accuracy": 0.89,
         }
 
@@ -753,10 +708,10 @@ class TestModelSerialization:
             "deprecated": False,
         }
 
-        model = Model(**model_data)
+        model = PublicModel(**model_data)
         json_str = json.dumps(model.model_dump())
         parsed_data = json.loads(json_str)
-        reconstructed = Model(**parsed_data)
+        reconstructed = PublicModel(**parsed_data)
 
         assert reconstructed.name == model.name
         assert reconstructed.parameters == model.parameters

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, Union, Mapping
+from typing import TYPE_CHECKING, Any, Union, Mapping, Optional
 from functools import cached_property
 from typing_extensions import Self, override
 
@@ -10,12 +10,15 @@ import httpx
 
 from . import _exceptions
 from ._utils import is_mapping
+from .models import Organization
 from ._constants import DEFAULT_TIMEOUT
 from ._exceptions import AtlasError, APIStatusError
 from ._base_client import BaseClient
 
 if TYPE_CHECKING:
+    from .resources.models import Models
     from .resources.results import Results
+    from .resources.benchmarks import Benchmarks
     from .resources.evaluations import Evaluations
 
 
@@ -31,8 +34,6 @@ class Atlas(BaseClient):
         self,
         *,
         api_key: str | None = None,
-        organization_id: str | None = None,
-        project_id: str | None = None,
         base_url: str | httpx.URL | None = None,
         timeout: Union[float, httpx.Timeout, None] = DEFAULT_TIMEOUT,
     ) -> None:
@@ -40,8 +41,6 @@ class Atlas(BaseClient):
 
         This automatically infers the following arguments from their corresponding environment variables if they are not provided:
         - `api_key` from `LAYERLENS_ATLAS_API_KEY`
-        - `organization_id` from `LAYERLENS_ATLAS_ORG_ID`
-        - `project_id` from `LAYERLENS_ATLAS_PROJECT_ID`
         """
         if api_key is None:
             api_key = os.environ.get("LAYERLENS_ATLAS_API_KEY")
@@ -51,29 +50,44 @@ class Atlas(BaseClient):
             )
         self.api_key = api_key
 
-        if organization_id is None:
-            organization_id = os.environ.get("LAYERLENS_ATLAS_ORG_ID")
-        self.organization_id = organization_id
-
-        if project_id is None:
-            project_id = os.environ.get("LAYERLENS_ATLAS_PROJECT_ID")
-        self.project_id = project_id
-
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
-            base_url = "https://8bg48mbhyi.execute-api.us-east-1.amazonaws.com/prod/api/v1/key"
+            base_url = "https://8bg48mbhyi.execute-api.us-east-1.amazonaws.com/prod/api/v1/dgklmnr"
 
         super().__init__(
             base_url=base_url,
             timeout=timeout,
         )
 
+        organization = self._get_organization()
+        if organization is None:
+            raise AtlasError(f"Organization could not be fetched. Please contact LayerLens Atlas support.")
+        self.organization_id = organization.id
+
+        if organization.projects is None or len(organization.projects) == 0:
+            raise AtlasError(
+                f"Organization {self.organization_id} is missing project. Please contact LayerLens Atlas support."
+            )
+        self.project_id = organization.projects[0].id
+
+    @cached_property
+    def benchmarks(self) -> Benchmarks:
+        from .resources.benchmarks import Benchmarks
+
+        return Benchmarks(self)
+
     @cached_property
     def evaluations(self) -> Evaluations:
         from .resources.evaluations import Evaluations
 
         return Evaluations(self)
+
+    @cached_property
+    def models(self) -> Models:
+        from .resources.models import Models
+
+        return Models(self)
 
     @cached_property
     def results(self) -> Results:
@@ -93,8 +107,6 @@ class Atlas(BaseClient):
         self,
         *,
         api_key: str | None = None,
-        organization_id: str | None = None,
-        project_id: str | None = None,
         base_url: str | httpx.URL | None = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         _extra_kwargs: Mapping[str, Any] = {},
@@ -104,8 +116,6 @@ class Atlas(BaseClient):
         """
         return self.__class__(
             api_key=api_key or self.api_key,
-            organization_id=organization_id or self.organization_id,
-            project_id=project_id or self.project_id,
             base_url=base_url or self.base_url,
             timeout=self.timeout or timeout,
             **_extra_kwargs,
@@ -149,6 +159,16 @@ class Atlas(BaseClient):
             return _exceptions.InternalServerError(err_msg, response=response, body=data)
 
         return APIStatusError(err_msg, response=response, body=data)
+
+    def _get_organization(self) -> Optional[Organization]:
+        organization = super().get_cast(
+            f"/organizations",
+            timeout=30,
+            cast_to=Organization,
+        )
+        if isinstance(organization, Organization):
+            return organization
+        return None
 
 
 Client = Atlas

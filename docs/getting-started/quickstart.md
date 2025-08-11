@@ -21,8 +21,6 @@ from atlas import Atlas
 # Initialize the client (uses environment variables)
 client = Atlas(
     api_key=os.environ.get("LAYERLENS_ATLAS_API_KEY"),
-    organization_id=os.environ.get("LAYERLENS_ATLAS_ORG_ID"),
-    project_id=os.environ.get("LAYERLENS_ATLAS_PROJECT_ID")
 )
 
 # Create an evaluation
@@ -71,10 +69,10 @@ Once your evaluation is complete, you can retrieve detailed results:
 # Wait for evaluation to complete, then get results
 if evaluation and evaluation.status == "completed":
     results = client.results.get(evaluation_id=evaluation.id)
-    
+
     if results:
         print(f"📊 Retrieved {len(results)} results")
-        
+
         # Examine the first result
         first_result = results[0]
         print(f"\nFirst Result:")
@@ -99,44 +97,44 @@ from atlas import Atlas
 def main():
     # Initialize client
     client = Atlas()
-    
+
     print("🚀 Creating evaluation...")
-    
+
     try:
         # Create evaluation
         evaluation = client.evaluations.create(
             model="gpt-3.5-turbo",
             benchmark="mmlu"
         )
-        
+
         if not evaluation:
             print("❌ Failed to create evaluation")
             return
-            
+
         print(f"✅ Evaluation created: {evaluation.id}")
         print(f"   Status: {evaluation.status}")
-        
+
         # Poll for completion (in a real app, use webhooks instead)
         print("\n⏳ Waiting for evaluation to complete...")
-        
+
         while evaluation.status not in ["completed", "failed", "cancelled"]:
             time.sleep(30)  # Wait 30 seconds
-            
+
             # In practice, you'd re-fetch the evaluation status
             # This is a simplified example
             print(f"   Status: {evaluation.status}")
-        
+
         if evaluation.status == "completed":
             print(f"🎉 Evaluation completed!")
             print(f"   Accuracy: {evaluation.accuracy:.2%}")
-            
+
             # Get detailed results
             results = client.results.get(evaluation_id=evaluation.id)
             print(f"📊 Retrieved {len(results) if results else 0} detailed results")
-            
+
         else:
             print(f"❌ Evaluation failed with status: {evaluation.status}")
-            
+
     except Exception as e:
         print(f"❌ Error: {e}")
 
