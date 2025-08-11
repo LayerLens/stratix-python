@@ -1,0 +1,19 @@
+name: Sync Docs to GitBook
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**"]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      steps:
+        - uses: actions/checkout@v3
+        - name: GitBook Sync
+          uses: gitbook/gitbook-sync@v1
+          with:
+            gitbook-token: ${{ secrets.GITBOOK_TOKEN }}
+            gitbook-space: ${{ secrets.GITBOOK_SPACE_ID }}
+            source-dir: docs/
