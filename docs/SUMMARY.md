@@ -1,4 +1,4 @@
-# Table of Contents
+# Table of Contents - Atlas Python SDK
 
 * [Introduction](README.md)
 
