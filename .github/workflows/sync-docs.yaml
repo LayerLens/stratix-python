@@ -4,15 +4,48 @@ on:
   push:
     branches: [main]
     paths: ["docs/**"]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to sync from'
+        required: false
+        default: 'main'
+        type: string
+      reason:
+        description: 'Reason for manual sync'
+        required: false
+        default: 'Manual testing'
+        type: string
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: GitBook Sync
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
+      
+      - name: Display trigger information
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "🔧 Manual sync triggered"
+            echo "Branch: ${{ github.event.inputs.branch || 'main' }}"
+            echo "Reason: ${{ github.event.inputs.reason }}"
+          else
+            echo "🚀 Automatic sync triggered by push to main"
+            echo "Branch: main"
+          fi
+          echo "Syncing docs from: docs/"
+      
+      - name: Sync to GitBook
         uses: gitbook/gitbook-sync@v1
         with:
           gitbook-token: ${{ secrets.GITBOOK_TOKEN }}
           gitbook-space: ${{ secrets.GITBOOK_SPACE_ID }}
           source-dir: docs/
+      
+      - name: Sync completed
+        run: |
+          echo "✅ Documentation sync completed successfully"
+          echo "📚 GitBook space: ${{ secrets.GITBOOK_SPACE_ID }}"
