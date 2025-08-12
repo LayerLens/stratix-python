@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PYPI_USERNAME: __token__
-      PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+      TWINE_USERNAME: __token__
+      TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v4

@@ -2,7 +2,7 @@
 # Validate release requirements
 # - Checks if the tag matches naming convention (sdk-v*.*.*)
 # - Checks if the tag matches the version in the package
-# - Ensures we're releasing from the main branch
+# - Ensures we're releasing from the release branch
 
 set -e
 
@@ -38,9 +38,9 @@ if [ "$VERSION" != "$PACKAGE_VERSION" ]; then
 fi
 
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-if [ "$CURRENT_BRANCH" != "main" ]; then
+if [ "$CURRENT_BRANCH" != "release" ]; then
   # If we're in detached HEAD state (which is likely in GitHub Actions with a tag),
-  # we need to check if the tag is on the main branch
+  # we need to check if the tag is on the release branch
   if ! git rev-parse "$TAG" &>/dev/null; then
     echo "ERROR: Tag $TAG does not exist in the repository"
     exit 1
@@ -48,12 +48,12 @@ if [ "$CURRENT_BRANCH" != "main" ]; then
 
   TAG_COMMIT=$(git rev-parse "$TAG")
 
-  # Ensure we have main branch history
-  git fetch origin main --depth=1000
+  # Ensure we have release branch history
+  git fetch origin release --depth=1000
 
-  # Check if tag is on main branch
-  if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
-    echo "ERROR: Tag $TAG is not on the main branch"
+  # Check if tag is on release branch
+  if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/release; then
+    echo "ERROR: Tag $TAG is not on the release branch"
     exit 1
   fi
 fi

@@ -41,6 +41,7 @@ dev-dependencies = [
   "ruff",
   "types-requests",
   "build",
+  "twine==6.1.0",
 ]
 
 [tool.rye.scripts]

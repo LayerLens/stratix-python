@@ -21,4 +21,4 @@ fi
 
 echo "Publishing version $VERSION to $PYPI_REPO"
 
-twine upload --repository "$PYPI_REPO" dist/*"$VERSION"*
+twine upload --repository "$PYPI_REPO" dist/*
