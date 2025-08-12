@@ -1,0 +1,61 @@
+# This workflow creates and pushes a release tag using the push-release-tag.sh script.
+# It can be triggered manually and will prompt for confirmation before creating the tag.
+
+name: Create Release Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run in dry-run mode (show what would be done without actually creating/pushing the tag)"
+        required: false
+        type: boolean
+        default: true
+      confirm_release:
+        description: "Type 'YES' to confirm you want to create and push the release tag"
+        required: true
+        type: string
+
+jobs:
+  create-release-tag:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # Required to create and push tags
+
+    steps:
+      - name: Validate confirmation
+        if: github.event.inputs.confirm_release != 'YES' && github.event.inputs.dry_run != 'true'
+        run: |
+          echo "Error: You must type 'YES' in the confirm_release input to proceed with creating a release tag."
+          echo "Received: '${{ github.event.inputs.confirm_release }}'"
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history and tags
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/push-release-tag.sh
+          chmod +x scripts/get_version.sh
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run push-release-tag script (dry-run)
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "Running in dry-run mode..."
+          make push-release-tag DRY_RUN=--dry-run
+
+      - name: Run push-release-tag script
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Creating and pushing release tag..."
+          # Override the interactive confirmation since we already confirmed via workflow input
+          echo "YES" | make push-release-tag

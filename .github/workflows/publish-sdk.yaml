@@ -1,0 +1,60 @@
+# This workflow is used to publish the Python SDK to the actual PyPI.
+# It is triggered by a tag push, and will only publish if the tag is valid.
+# The tag must match the format sdk-v*.*.*
+
+name: Publish Python SDK
+
+on:
+  push:
+    tags:
+      - "sdk-v*.*.*" # Trigger on version tags like sdk-v0.1.0 etc.
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.set_release_tag.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for checking branch
+      - name: Set release tag
+        id: set_release_tag
+        # ensure the tag is valid (matches code, is on main, etc)
+        run: |
+          RELEASE_TAG=${GITHUB_REF#refs/tags/}
+          echo "Using tag: $RELEASE_TAG"
+          ./scripts/validate-release-tag.sh "$RELEASE_TAG"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+
+  build-and-publish:
+    needs: validate
+    runs-on: ubuntu-latest
+
+    env:
+      PYPI_USERNAME: __token__
+      PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+      RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build, Verify and Publish
+        working-directory: py
+        run: |
+          make install-build-deps
+          make build
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-dist
+          path: dist/
+          retention-days: 5
+      - name: Publish to PyPI
+        working-directory: py
+        run: |
+          make publish-to-pypi
