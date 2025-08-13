@@ -39,8 +39,25 @@ class Result(BaseModel):
     metrics: Dict[str, float]
 
 
+class ResultMetrics(BaseModel):
+    total_count: int
+    min_toxicity_score: Optional[float]
+    max_toxicity_score: Optional[float]
+    min_readability_score: Optional[float]
+    max_readability_score: Optional[float]
+
+
+class Pagination(BaseModel):
+    total_count: int
+    page_size: int
+    total_pages: int
+
+
 class Results(BaseModel):
+    evaluation_id: str
     results: List[Result]
+    metrics: ResultMetrics
+    pagination: Pagination
 
 
 class Model(BaseModel):
@@ -106,5 +123,5 @@ class CustomBenchmark(BaseModel):
 
 class Benchmarks(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    
+
     benchmarks: List[Union[Benchmark, CustomBenchmark]] = Field(..., alias="datasets")

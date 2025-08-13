@@ -24,6 +24,191 @@ Required environment variables:
 - `LAYERLENS_ATLAS_ORG_ID` - Your organization ID  
 - `LAYERLENS_ATLAS_PROJECT_ID` - Your project ID
 
+## Pagination Best Practices
+
+### Understanding Pagination
+
+The Atlas SDK automatically handles pagination for large result sets. When evaluation results exceed the default page size (100), you'll need to iterate through pages to access all data.
+
+```python
+from atlas import Atlas
+
+def understand_pagination(evaluation_id: str):
+    """Understand pagination metadata"""
+    client = Atlas()
+    
+    # Get first page
+    results_data = client.results.get(evaluation_id=evaluation_id)
+    
+    if results_data:
+        pagination = results_data.pagination
+        
+        print(f" Pagination Overview:")
+        print(f"   Total results: {pagination.total_count:,}")
+        print(f"   Page size: {pagination.page_size}")
+        print(f"   Total pages: {pagination.total_pages}")
+        print(f"   Current page has: {len(results_data.results)} results")
+        
+        # Calculate some useful info
+        is_paginated = pagination.total_pages > 1
+        results_per_page = pagination.page_size
+        last_page_size = pagination.total_count % pagination.page_size or pagination.page_size
+        
+        print(f"\n Analysis:")
+        print(f"   Is paginated: {is_paginated}")
+        print(f"   Results per page: {results_per_page}")
+        print(f"   Last page size: {last_page_size}")
+        
+        if is_paginated:
+            print(f"\n To access all {pagination.total_count:,} results:")
+            print(f"   - Iterate through {pagination.total_pages} pages")
+            print(f"   - Or use batch processing patterns")
+        
+        return pagination
+    
+    return None
+
+# Usage
+pagination_info = understand_pagination("eval_12345")
+```
+
+### Efficient Pagination Strategies
+
+```python
+def efficient_pagination_strategies():
+    """Demonstrate different pagination approaches"""
+    client = Atlas()
+    evaluation_id = "eval_12345"
+    
+    # Strategy 1: Small pages for real-time processing
+    print(" Strategy 1: Small pages for real-time feedback")
+    page_size = 25
+    page = 1
+    
+    while True:
+        results_data = client.results.get(
+            evaluation_id=evaluation_id,
+            page=page,
+            page_size=page_size
+        )
+        
+        if not results_data or not results_data.results:
+            break
+            
+        print(f"   Processing page {page}: {len(results_data.results)} results")
+        
+        # Process immediately
+        for result in results_data.results:
+            # Real-time processing logic
+            pass
+        
+        if page >= results_data.pagination.total_pages:
+            break
+        page += 1
+    
+    print("\n Strategy 2: Large pages for batch processing")
+    page_size = 200  # Larger pages
+    page = 1
+    
+    while True:
+        results_data = client.results.get(
+            evaluation_id=evaluation_id,
+            page=page,
+            page_size=page_size
+        )
+        
+        if not results_data or not results_data.results:
+            break
+            
+        print(f"   Batch processing page {page}: {len(results_data.results)} results")
+        
+        # Batch process entire page
+        process_batch(results_data.results)
+        
+        if page >= results_data.pagination.total_pages:
+            break
+        page += 1
+
+def process_batch(results):
+    """Process a batch of results efficiently"""
+    # Batch processing logic here
+    pass
+
+# Usage
+efficient_pagination_strategies()
+```
+
+### Memory Management with Pagination
+
+```python
+import gc
+from atlas import Atlas
+
+def memory_efficient_processing(evaluation_id: str):
+    """Process large evaluations without memory issues"""
+    client = Atlas()
+    
+    # Track memory usage
+    processed_count = 0
+    page = 1
+    page_size = 100
+    
+    print(" Memory-efficient processing with pagination")
+    
+    while True:
+        print(f" Processing page {page}...")
+        
+        # Get current page
+        results_data = client.results.get(
+            evaluation_id=evaluation_id,
+            page=page,
+            page_size=page_size
+        )
+        
+        if not results_data or not results_data.results:
+            break
+        
+        # Process current page results
+        page_stats = process_page_results(results_data.results)
+        processed_count += len(results_data.results)
+        
+        print(f"    Processed {len(results_data.results)} results")
+        print(f"    Page accuracy: {page_stats['accuracy']:.1%}")
+        
+        # Clear references to help garbage collection
+        del results_data
+        del page_stats
+        
+        # Force garbage collection periodically
+        if page % 10 == 0:
+            gc.collect()
+            print(f"   🧹 Garbage collection at page {page}")
+        
+        # Progress update
+        print(f"    Total processed: {processed_count:,}")
+        
+        page += 1
+    
+    print(f" Completed! Processed {processed_count:,} results total")
+
+def process_page_results(results):
+    """Process a single page of results and return summary stats"""
+    if not results:
+        return {"accuracy": 0, "avg_score": 0}
+    
+    correct = sum(1 for r in results if r.score > 0.5)
+    total_score = sum(r.score for r in results)
+    
+    return {
+        "accuracy": correct / len(results),
+        "avg_score": total_score / len(results),
+        "count": len(results)
+    }
+
+# Usage
+memory_efficient_processing("eval_12345")
+```
+
 ## Batch Processing
 
 ### Running Multiple Evaluations
@@ -55,7 +240,7 @@ def run_evaluation_batch(models, benchmarks):
                         'benchmark': benchmark, 
                         'evaluation_id': evaluation.id
                     })
-                    print(f"✅ Created: {evaluation.id}")
+                    print(f" Created: {evaluation.id}")
                 else:
                     results['failed'].append({
                         'model': model,
@@ -68,7 +253,7 @@ def run_evaluation_batch(models, benchmarks):
                 time.sleep(60)
                 
             except atlas.APIError as e:
-                print(f"❌ Failed: {e}")
+                print(f" Failed: {e}")
                 results['failed'].append({
                     'model': model,
                     'benchmark': benchmark, 
@@ -84,8 +269,8 @@ models = ["gpt-4", "claude-3-opus"]
 benchmarks = ["mmlu", "hellaswag"]
 
 batch_results = run_evaluation_batch(models, benchmarks)
-print(f"✅ Successful: {len(batch_results['successful'])}")
-print(f"❌ Failed: {len(batch_results['failed'])}")
+print(f" Successful: {len(batch_results['successful'])}")
+print(f" Failed: {len(batch_results['failed'])}")
 ```
 
 ## Error Handling Patterns
@@ -109,7 +294,7 @@ def create_evaluation_with_retries(model, benchmark, max_retries=3):
             )
             
             if evaluation:
-                print(f"✅ Success on attempt {attempt + 1}")
+                print(f" Success on attempt {attempt + 1}")
                 return evaluation
             
         except atlas.RateLimitError as e:
@@ -124,15 +309,15 @@ def create_evaluation_with_retries(model, benchmark, max_retries=3):
                 raise
                 
         except atlas.NotFoundError:
-            print(f"❌ Model '{model}' or benchmark '{benchmark}' not found")
+            print(f" Model '{model}' or benchmark '{benchmark}' not found")
             return None
             
         except atlas.AuthenticationError:
-            print("❌ Authentication failed - check your API key")
+            print(" Authentication failed - check your API key")
             raise
             
         except atlas.APIError as e:
-            print(f"❌ API error on attempt {attempt + 1}: {e}")
+            print(f" API error on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
                 time.sleep(2 ** attempt)  # Exponential backoff
             else:
@@ -205,7 +390,7 @@ def analyze_evaluation_results(evaluation_id: str) -> Dict:
 # Usage
 analysis = analyze_evaluation_results("eval_123")
 if "error" not in analysis:
-    print(f"📊 Analysis Results:")
+    print(f" Analysis Results:")
     print(f"   Total results: {analysis['total_results']}")
     print(f"   Overall accuracy: {analysis['overall_accuracy']:.2%}")
     print(f"   Average duration: {analysis['avg_duration']:.2f}s")
@@ -357,9 +542,9 @@ def check_atlas_health():
 # Usage
 health = check_atlas_health()
 if health["status"] == "healthy":
-    print("✅ Atlas service is healthy")
+    print(" Atlas service is healthy")
 else:
-    print(f"❌ Atlas service is unhealthy: {health['error']}")
+    print(f" Atlas service is unhealthy: {health['error']}")
 ```
 
 ## Integration Patterns

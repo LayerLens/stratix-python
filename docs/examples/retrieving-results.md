@@ -14,13 +14,16 @@ client = Atlas()
 
 # Get results for a specific evaluation
 evaluation_id = "eval_12345"  # Replace with your evaluation ID
-results = client.results.get(evaluation_id=evaluation_id)
+results_data = client.results.get(evaluation_id=evaluation_id)
 
-if results:
-    print(f"📊 Retrieved {len(results)} results")
+if results_data:
+    print(f"Evaluation: {results_data.evaluation_id}")
+    print(f"Retrieved {len(results_data.results)} results (page 1)")
+    print(f"Total available: {results_data.pagination.total_count}")
+    print(f"Total pages: {results_data.pagination.total_pages}")
     
     # Show first few results
-    for i, result in enumerate(results[:3]):
+    for i, result in enumerate(results_data.results[:3]):
         print(f"\nResult {i+1}:")
         print(f"  Subset: {result.subset}")
         print(f"  Prompt: {result.prompt[:100]}...")
@@ -29,7 +32,42 @@ if results:
         print(f"  Score: {result.score}")
         print(f"  Duration: {result.duration}")
 else:
-    print("❌ No results found")
+    print("No results found")
+```
+
+### Paginated Result Retrieval
+
+```python
+from atlas import Atlas
+
+# Initialize client
+client = Atlas()
+
+def get_paginated_results(evaluation_id: str, page_size: int = 50):
+    """Get results with pagination control"""
+    
+    # Get specific page
+    results_data = client.results.get(
+        evaluation_id=evaluation_id,
+        page=2,  # Get second page
+        page_size=page_size
+    )
+    
+    if results_data:
+        pagination = results_data.pagination
+        print(f"Pagination Info:")
+        print(f"   Total results: {pagination.total_count}")
+        print(f"   Page size: {pagination.page_size}")
+        print(f"   Total pages: {pagination.total_pages}")
+        print(f"   Current page results: {len(results_data.results)}")
+        
+        return results_data
+    else:
+        print("No results found")
+        return None
+
+# Usage
+paginated_results = get_paginated_results("eval_12345", page_size=25)
 ```
 
 ### Complete Evaluation Workflow
@@ -43,19 +81,19 @@ def complete_evaluation_workflow(model: str, benchmark: str):
     client = Atlas()
     
     # Step 1: Create evaluation
-    print(f"🔄 Creating evaluation: {model} + {benchmark}")
+    print(f"Creating evaluation: {model} + {benchmark}")
     evaluation = client.evaluations.create(model=model, benchmark=benchmark)
     
     if not evaluation:
-        print("❌ Failed to create evaluation")
+        print("Failed to create evaluation")
         return None
     
-    print(f"✅ Evaluation created: {evaluation.id}")
+    print(f"Evaluation created: {evaluation.id}")
     print(f"   Status: {evaluation.status}")
     
     # Step 2: Wait for completion (simplified polling)
     # In production, use webhooks instead of polling
-    print("⏳ Waiting for evaluation to complete...")
+    print("Waiting for evaluation to complete...")
     
     # Note: This is a simplified example. In practice, you'd:
     # 1. Use webhooks for real-time updates
@@ -63,28 +101,35 @@ def complete_evaluation_workflow(model: str, benchmark: str):
     # 3. Handle various status states properly
     
     if evaluation.status == "completed":
-        print("🎉 Evaluation completed!")
+        print("Evaluation completed!")
         
         # Step 3: Retrieve results
-        results = client.results.get(evaluation_id=evaluation.id)
+        results_data = client.results.get(evaluation_id=evaluation.id)
         
-        if results:
-            print(f"📊 Retrieved {len(results)} detailed results")
+        if results_data:
+            results = results_data.results
+            print(f"Retrieved {len(results)} results from page 1")
+            print(f"Total results available: {results_data.pagination.total_count}")
             
-            # Basic analysis
+            # Basic analysis for current page
             correct_answers = sum(1 for r in results if r.score > 0.5)
             accuracy = correct_answers / len(results)
             avg_duration = sum(r.duration for r in results) / len(results)
             
-            print(f"📈 Quick Analysis:")
+            print(f"Quick Analysis (Page 1):")
             print(f"   Accuracy: {accuracy:.1%} ({correct_answers}/{len(results)})")
             print(f"   Average Duration: {avg_duration}")
             
-            return results
+            # Note about pagination
+            if results_data.pagination.total_pages > 1:
+                print(f"Note: This evaluation has {results_data.pagination.total_pages} pages total")
+                print(f"    Use pagination to process all {results_data.pagination.total_count} results")
+            
+            return results_data
         else:
-            print("❌ No results available")
+            print("No results available")
     else:
-        print(f"⏰ Evaluation status: {evaluation.status}")
+        print(f"Evaluation status: {evaluation.status}")
         print("   Check back later for results")
     
     return None
@@ -103,16 +148,58 @@ from collections import defaultdict, Counter
 import statistics
 from datetime import timedelta
 
-def analyze_evaluation_performance(evaluation_id: str):
+def analyze_evaluation_performance(evaluation_id: str, use_all_pages: bool = True):
     """Comprehensive performance analysis of evaluation results"""
     client = Atlas()
     
-    results = client.results.get(evaluation_id=evaluation_id)
-    if not results:
-        print(f"❌ No results found for evaluation {evaluation_id}")
-        return None
+    if use_all_pages:
+        # Get all results across all pages for complete analysis
+        all_results = []
+        page = 1
+        page_size = 100
+        
+        while True:
+            results_data = client.results.get(
+                evaluation_id=evaluation_id,
+                page=page,
+                page_size=page_size
+            )
+            
+            if not results_data or not results_data.results:
+                break
+                
+            all_results.extend(results_data.results)
+            
+            # Use pagination info from the first page
+            if page == 1:
+                total_count = results_data.pagination.total_count
+                total_pages = results_data.pagination.total_pages
+                print(f"Loading {total_count} results from {total_pages} pages...")
+            
+            print(f"   Loaded page {page}/{total_pages}")
+            
+            if page >= results_data.pagination.total_pages:
+                break
+                
+            page += 1
+        
+        results = all_results
+        
+        if not results:
+            print(f"No results found for evaluation {evaluation_id}")
+            return None
+            
+    else:
+        # Analyze just the first page
+        results_data = client.results.get(evaluation_id=evaluation_id, page=1, page_size=100)
+        if not results_data:
+            print(f"No results found for evaluation {evaluation_id}")
+            return None
+            
+        results = results_data.results
+        print(f"Analyzing first page only ({len(results)} of {results_data.pagination.total_count} total results)")
     
-    print(f"📊 Performance Analysis for {evaluation_id}")
+    print(f"Performance Analysis for {evaluation_id}")
     print(f"{'='*60}")
     
     # Overall statistics
@@ -164,7 +251,7 @@ def analyze_evaluation_performance(evaluation_id: str):
         else:
             score_ranges["Zero (0.0)"] += 1
     
-    print(f"\n📈 Score Distribution:")
+    print(f"\nScore Distribution:")
     for range_name, count in score_ranges.items():
         percentage = count / total_cases * 100
         print(f"   {range_name}: {count:,} ({percentage:.1f}%)")
@@ -176,7 +263,7 @@ def analyze_evaluation_performance(evaluation_id: str):
         subset_stats[result.subset]["scores"].append(result.score)
         subset_stats[result.subset]["durations"].append(result.duration)
     
-    print(f"\n📋 Performance by Subset:")
+    print(f"\nPerformance by Subset:")
     print(f"{'Subset':<25} {'Cases':<8} {'Accuracy':<10} {'Avg Score':<10} {'Avg Duration':<12}")
     print("-" * 75)
     
@@ -197,8 +284,213 @@ def analyze_evaluation_performance(evaluation_id: str):
         "subset_stats": dict(subset_stats)
     }
 
+# Usage - analyze all results across all pages
+analysis = analyze_evaluation_performance("eval_12345", use_all_pages=True)
+
+# Usage - analyze only first page (faster for quick checks)
+quick_analysis = analyze_evaluation_performance("eval_12345", use_all_pages=False)
+```
+
+## Pagination Patterns
+
+### Pattern 1: Processing All Results Across Pages
+
+```python
+from atlas import Atlas
+
+def process_all_results(evaluation_id: str):
+    """Process all results by iterating through all pages"""
+    client = Atlas()
+    
+    # Aggregate statistics across all pages
+    total_results = 0
+    total_score = 0
+    total_correct = 0
+    all_subsets = set()
+    
+    page = 1
+    page_size = 100
+    
+    print("Processing all pages...")
+    
+    while True:
+        print(f"Fetching page {page}...")
+        
+        results_data = client.results.get(
+            evaluation_id=evaluation_id,
+            page=page,
+            page_size=page_size
+        )
+        
+        if not results_data or not results_data.results:
+            break
+        
+        # Show progress on first page
+        if page == 1:
+            print(f"Total: {results_data.pagination.total_count} results across {results_data.pagination.total_pages} pages")
+        
+        # Process current page
+        current_results = results_data.results
+        page_score = sum(r.score for r in current_results)
+        page_correct = sum(1 for r in current_results if r.score > 0.5)
+        page_subsets = set(r.subset for r in current_results)
+        
+        # Aggregate
+        total_results += len(current_results)
+        total_score += page_score
+        total_correct += page_correct
+        all_subsets.update(page_subsets)
+        
+        print(f"   Page {page}: {len(current_results)} results, {page_correct} correct, {len(page_subsets)} subsets")
+        
+        # Check if we're done
+        if page >= results_data.pagination.total_pages:
+            break
+            
+        page += 1
+    
+    # Final summary
+    if total_results > 0:
+        overall_accuracy = total_correct / total_results
+        overall_avg_score = total_score / total_results
+        
+        print(f"\n Final Statistics:")
+        print(f"   Total results processed: {total_results:,}")
+        print(f"   Overall accuracy: {overall_accuracy:.1%}")
+        print(f"   Overall average score: {overall_avg_score:.3f}")
+        print(f"   Unique subsets: {len(all_subsets)}")
+        print(f"   Subsets: {', '.join(sorted(all_subsets))}")
+    
+    return {
+        "total_results": total_results,
+        "accuracy": overall_accuracy if total_results > 0 else 0,
+        "avg_score": overall_avg_score if total_results > 0 else 0,
+        "subsets": list(all_subsets)
+    }
+
 # Usage
-analysis = analyze_evaluation_performance("eval_12345")
+stats = process_all_results("eval_12345")
+```
+
+### Pattern 2: Selective Page Processing
+
+```python
+def process_specific_pages(evaluation_id: str, start_page: int = 1, end_page: int = None):
+    """Process only specific pages of results"""
+    client = Atlas()
+    
+    # Get first page to understand scope
+    first_page = client.results.get(evaluation_id=evaluation_id, page=1, page_size=100)
+    if not first_page:
+        print(" No results found")
+        return None
+    
+    total_pages = first_page.pagination.total_pages
+    total_count = first_page.pagination.total_count
+    
+    # Set end page if not specified
+    if end_page is None:
+        end_page = total_pages
+    
+    # Validate range
+    end_page = min(end_page, total_pages)
+    start_page = max(start_page, 1)
+    
+    print(f" Processing pages {start_page}-{end_page} of {total_pages} (total: {total_count} results)")
+    
+    processed_results = []
+    
+    for page_num in range(start_page, end_page + 1):
+        # Reuse first page if processing from page 1
+        if page_num == 1 and start_page == 1:
+            results_data = first_page
+        else:
+            results_data = client.results.get(
+                evaluation_id=evaluation_id,
+                page=page_num,
+                page_size=100
+            )
+        
+        if not results_data:
+            print(f" Failed to get page {page_num}")
+            continue
+        
+        processed_results.extend(results_data.results)
+        print(f" Processed page {page_num}: {len(results_data.results)} results")
+    
+    print(f" Processed {len(processed_results)} results from pages {start_page}-{end_page}")
+    return processed_results
+
+# Usage examples
+first_100_results = process_specific_pages("eval_12345", start_page=1, end_page=1)
+middle_pages = process_specific_pages("eval_12345", start_page=5, end_page=10)
+last_few_pages = process_specific_pages("eval_12345", start_page=18, end_page=20)
+```
+
+### Pattern 3: Smart Pagination with Early Stopping
+
+```python
+def analyze_with_early_stopping(evaluation_id: str, min_accuracy_threshold: float = 0.7):
+    """Stop processing if accuracy drops below threshold"""
+    client = Atlas()
+    
+    page = 1
+    page_size = 100
+    total_processed = 0
+    total_correct = 0
+    
+    print(f"🎯 Processing until accuracy drops below {min_accuracy_threshold:.1%}")
+    
+    while True:
+        results_data = client.results.get(
+            evaluation_id=evaluation_id,
+            page=page,
+            page_size=page_size
+        )
+        
+        if not results_data or not results_data.results:
+            break
+        
+        # Process current page
+        current_results = results_data.results
+        page_correct = sum(1 for r in current_results if r.score > 0.5)
+        
+        total_processed += len(current_results)
+        total_correct += page_correct
+        
+        current_accuracy = total_correct / total_processed
+        page_accuracy = page_correct / len(current_results)
+        
+        print(f" Page {page}: {page_accuracy:.1%} accuracy ({page_correct}/{len(current_results)})")
+        print(f" Running total: {current_accuracy:.1%} accuracy ({total_correct}/{total_processed})")
+        
+        # Check early stopping condition
+        if current_accuracy < min_accuracy_threshold and page > 1:
+            print(f" Stopping early: accuracy ({current_accuracy:.1%}) below threshold ({min_accuracy_threshold:.1%})")
+            break
+        
+        # Check if we've processed all pages
+        if page >= results_data.pagination.total_pages:
+            print(f" Processed all {results_data.pagination.total_pages} pages")
+            break
+        
+        page += 1
+    
+    final_accuracy = total_correct / total_processed if total_processed > 0 else 0
+    print(f"\n Final Results:")
+    print(f"   Pages processed: {page}/{results_data.pagination.total_pages if 'results_data' in locals() else '?'}")
+    print(f"   Results processed: {total_processed}")
+    print(f"   Final accuracy: {final_accuracy:.1%}")
+    
+    return {
+        "pages_processed": page,
+        "results_processed": total_processed,
+        "accuracy": final_accuracy,
+        "stopped_early": page < (results_data.pagination.total_pages if 'results_data' in locals() else 1)
+    }
+
+# Usage
+early_stop_results = analyze_with_early_stopping("eval_12345", min_accuracy_threshold=0.8)
 ```
 
 ### Comparative Analysis
@@ -216,7 +508,7 @@ def compare_evaluation_results(evaluation_ids: List[str], labels: List[str] = No
     elif not labels:
         labels = [f"Eval {i+1}" for i in range(len(evaluation_ids))]
     
-    print(f"📊 Comparing {len(evaluation_ids)} evaluations")
+    print(f" Comparing {len(evaluation_ids)} evaluations")
     print(f"{'='*80}")
     
     # Collect results for all evaluations
@@ -225,15 +517,15 @@ def compare_evaluation_results(evaluation_ids: List[str], labels: List[str] = No
         results = client.results.get(evaluation_id=eval_id)
         if results:
             all_results[label] = results
-            print(f"✅ Loaded {len(results)} results for {label}")
+            print(f" Loaded {len(results)} results for {label}")
         else:
-            print(f"❌ No results found for {label} ({eval_id})")
+            print(f" No results found for {label} ({eval_id})")
     
     if not all_results:
-        print("❌ No results to compare")
+        print(" No results to compare")
         return
     
-    print(f"\n📈 Comparative Analysis:")
+    print(f"\n Comparative Analysis:")
     print(f"{'Metric':<20} " + " ".join(f"{label:<15}" for label in labels))
     print("-" * (20 + 15 * len(labels)))
     
@@ -266,7 +558,7 @@ def compare_evaluation_results(evaluation_ids: List[str], labels: List[str] = No
     best_accuracy_label = next(label for label, data in metrics.items() if data == best_accuracy)
     best_speed_label = next(label for label, data in metrics.items() if data == best_speed)
     
-    print(f"\n🏆 Winners:")
+    print(f"\n Winners:")
     print(f"   Best Accuracy: {best_accuracy_label} ({best_accuracy['accuracy']:.1%})")
     print(f"   Fastest: {best_speed_label} ({best_speed['avg_duration']})")
     
@@ -280,7 +572,7 @@ def compare_evaluation_results(evaluation_ids: List[str], labels: List[str] = No
             common_subsets = common_subsets.intersection(result_subsets)
         
         if common_subsets:
-            print(f"\n📋 Subset Comparison ({len(common_subsets)} common subsets):")
+            print(f"\n Subset Comparison ({len(common_subsets)} common subsets):")
             print(f"{'Subset':<25} " + " ".join(f"{label} Acc":<12 for label in labels))
             print("-" * (25 + 12 * len(labels)))
             
@@ -316,21 +608,21 @@ def analyze_failures(evaluation_id: str, error_threshold: float = 0.3):
     
     results = client.results.get(evaluation_id=evaluation_id)
     if not results:
-        print(f"❌ No results found for evaluation {evaluation_id}")
+        print(f" No results found for evaluation {evaluation_id}")
         return None
     
     # Find poor-performing cases
     poor_results = [r for r in results if r.score < error_threshold]
     good_results = [r for r in results if r.score >= error_threshold]
     
-    print(f"🔍 Error Analysis for {evaluation_id}")
+    print(f" Error Analysis for {evaluation_id}")
     print(f"{'='*60}")
     print(f"Total cases: {len(results)}")
     print(f"Poor performance (< {error_threshold}): {len(poor_results)} ({len(poor_results)/len(results):.1%})")
     print(f"Good performance (>= {error_threshold}): {len(good_results)} ({len(good_results)/len(results):.1%})")
     
     if not poor_results:
-        print("🎉 No poor-performing cases found!")
+        print(" No poor-performing cases found!")
         return {"poor_results": [], "analysis": "No errors to analyze"}
     
     # Analyze failure patterns by subset
@@ -340,7 +632,7 @@ def analyze_failures(evaluation_id: str, error_threshold: float = 0.3):
             failure_by_subset[result.subset] = []
         failure_by_subset[result.subset].append(result)
     
-    print(f"\n❌ Failure Distribution by Subset:")
+    print(f"\n Failure Distribution by Subset:")
     for subset, failures in sorted(failure_by_subset.items(), key=lambda x: len(x[1]), reverse=True):
         total_in_subset = len([r for r in results if r.subset == subset])
         failure_rate = len(failures) / total_in_subset
@@ -349,7 +641,7 @@ def analyze_failures(evaluation_id: str, error_threshold: float = 0.3):
     # Show worst-performing examples
     worst_results = sorted(poor_results, key=lambda x: x.score)[:5]
     
-    print(f"\n🔍 Worst Performing Examples:")
+    print(f"\n Worst Performing Examples:")
     for i, result in enumerate(worst_results, 1):
         print(f"\n   Example {i} [Score: {result.score:.3f}]")
         print(f"   Subset: {result.subset}")
@@ -362,7 +654,7 @@ def analyze_failures(evaluation_id: str, error_threshold: float = 0.3):
             print(f"   Additional Metrics: {result.metrics}")
     
     # Common failure patterns
-    print(f"\n🔍 Common Patterns in Failures:")
+    print(f"\n Common Patterns in Failures:")
     
     # Analyze prompt lengths
     poor_prompt_lengths = [len(r.prompt) for r in poor_results]
@@ -424,11 +716,11 @@ def process_results_in_batches(evaluation_id: str, batch_size: int = 100, proces
     
     results = client.results.get(evaluation_id=evaluation_id)
     if not results:
-        print(f"❌ No results found for evaluation {evaluation_id}")
+        print(f" No results found for evaluation {evaluation_id}")
         return None
     
     total_results = len(results)
-    print(f"📊 Processing {total_results:,} results in batches of {batch_size}")
+    print(f" Processing {total_results:,} results in batches of {batch_size}")
     
     if not processor_func:
         # Default processor: just count scores
@@ -446,7 +738,7 @@ def process_results_in_batches(evaluation_id: str, batch_size: int = 100, proces
         batch_num = i // batch_size + 1
         total_batches = (total_results + batch_size - 1) // batch_size
         
-        print(f"🔄 Processing batch {batch_num}/{total_batches} ({len(batch)} items)")
+        print(f" Processing batch {batch_num}/{total_batches} ({len(batch)} items)")
         
         start_time = time.time()
         batch_result = processor_func(batch)
@@ -460,7 +752,7 @@ def process_results_in_batches(evaluation_id: str, batch_size: int = 100, proces
         
         batch_results.append(batch_result)
         
-        print(f"   ✅ Completed in {batch_result['processing_time']:.2f}s")
+        print(f"    Completed in {batch_result['processing_time']:.2f}s")
         
         # Small delay to prevent overwhelming the system
         if batch_num < total_batches:
@@ -471,7 +763,7 @@ def process_results_in_batches(evaluation_id: str, batch_size: int = 100, proces
     total_correct = sum(br.get("correct", 0) for br in batch_results)
     overall_accuracy = total_correct / total_results
     
-    print(f"\n📈 Batch Processing Summary:")
+    print(f"\n Batch Processing Summary:")
     print(f"   Total batches: {len(batch_results)}")
     print(f"   Total processing time: {total_processing_time:.2f}s")
     print(f"   Average time per batch: {total_processing_time/len(batch_results):.2f}s")
@@ -588,7 +880,7 @@ class ResultsCache:
             print(f"💾 Cached {len(results)} results for {evaluation_id}")
             
         except Exception as e:
-            print(f"❌ Error caching results: {e}")
+            print(f" Error caching results: {e}")
     
     def load_results(self, evaluation_id: str, format: str = "pickle"):
         """Load results from cache"""
@@ -606,7 +898,7 @@ class ResultsCache:
             return results
             
         except Exception as e:
-            print(f"❌ Error loading cached results: {e}")
+            print(f" Error loading cached results: {e}")
             return None
     
     def get_metadata(self, evaluation_id: str):
@@ -616,7 +908,7 @@ class ResultsCache:
             with open(metadata_path, 'r') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"❌ Error loading metadata: {e}")
+            print(f" Error loading metadata: {e}")
             return None
 
 def get_results_with_cache(evaluation_id: str, cache: ResultsCache = None, force_refresh: bool = False):
@@ -648,15 +940,15 @@ def get_results_with_cache(evaluation_id: str, cache: ResultsCache = None, force
             cache.save_results(evaluation_id, results)
             return results
         else:
-            print(f"❌ No results found for evaluation {evaluation_id}")
+            print(f" No results found for evaluation {evaluation_id}")
             return None
             
     except atlas.APIError as e:
-        print(f"❌ Error fetching results: {e}")
+        print(f" Error fetching results: {e}")
         
         # Try to return cached results as fallback
         if cache.is_cached(evaluation_id):
-            print(f"🔄 Falling back to cached results...")
+            print(f" Falling back to cached results...")
             return cache.load_results(evaluation_id)
         
         return None
@@ -679,7 +971,7 @@ evaluation_ids = ["eval_001", "eval_002", "eval_003"]
 for eval_id in evaluation_ids:
     results = get_results_with_cache(eval_id, cache)
     if results:
-        print(f"✅ {eval_id}: {len(results)} results cached")
+        print(f" {eval_id}: {len(results)} results cached")
 
 print(f"\n📁 Cache contents:")
 for cache_file in cache.cache_dir.glob("*.json"):
@@ -707,7 +999,7 @@ def export_results_to_csv(evaluation_id: str, output_path: str = None):
     
     results = client.results.get(evaluation_id=evaluation_id)
     if not results:
-        print(f"❌ No results found for evaluation {evaluation_id}")
+        print(f" No results found for evaluation {evaluation_id}")
         return None
     
     if not output_path:
@@ -748,11 +1040,11 @@ def export_results_to_csv(evaluation_id: str, output_path: str = None):
                 
                 writer.writerow(row)
         
-        print(f"📄 Exported {len(results)} results to {output_path}")
+        print(f" Exported {len(results)} results to {output_path}")
         return output_path
         
     except Exception as e:
-        print(f"❌ Error exporting to CSV: {e}")
+        print(f" Error exporting to CSV: {e}")
         return None
 
 def generate_summary_report(evaluation_ids: list, output_path: str = None):
@@ -776,7 +1068,7 @@ def generate_summary_report(evaluation_ids: list, output_path: str = None):
             results = client.results.get(evaluation_id=eval_id)
             
             if not results:
-                f.write("❌ No results found\n\n")
+                f.write(" No results found\n\n")
                 continue
             
             # Calculate statistics
@@ -810,7 +1102,7 @@ def generate_summary_report(evaluation_ids: list, output_path: str = None):
         
         f.write("END OF REPORT\n")
     
-    print(f"📊 Summary report generated: {output_path}")
+    print(f" Summary report generated: {output_path}")
     return output_path
 
 # Usage examples
