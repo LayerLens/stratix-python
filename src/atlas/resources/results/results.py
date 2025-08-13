@@ -26,7 +26,7 @@ class Results(SyncAPIResource):
 
         Args:
             evaluation_id: The ID of the evaluation to get results for
-            page: Page number for pagination (1-based, optional)
+            page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of results per page (default: 100, optional)
             timeout: Request timeout
 
@@ -43,8 +43,10 @@ class Results(SyncAPIResource):
         # Set default page_size if not provided
         effective_page_size = page_size if page_size is not None else DEFAULT_PAGE_SIZE
 
-        if page is not None:
-            params["page"] = str(page)
+        # Set default page to 1 if not provided
+        effective_page = page if page is not None else 1
+
+        params["page"] = str(effective_page)
         if page_size is not None:
             params["pageSize"] = str(page_size)
 

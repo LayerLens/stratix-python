@@ -87,7 +87,7 @@ class TestResults:
 
         results_resource._get.assert_called_once_with(
             "/results",
-            params={"evaluation_id": "eval-456"},
+            params={"evaluation_id": "eval-456", "page": "1"},
             timeout=DEFAULT_TIMEOUT,
             cast_to=dict,
         )
@@ -621,6 +621,28 @@ class TestResultsPagination:
         assert params["pageSize"] == "25"
         assert isinstance(params["page"], str)
         assert isinstance(params["pageSize"], str)
+
+    def test_get_results_default_page_parameter(self, results_resource, sample_result_data):
+        """get method defaults to page 1 when no page is specified."""
+        mock_response = {
+            "evaluation_id": "eval-123",
+            "results": [sample_result_data],
+            "metrics": {
+                "total_count": 100,
+                "min_toxicity_score": 0.0,
+                "max_toxicity_score": 0.1,
+                "min_readability_score": 0.8,
+                "max_readability_score": 0.9,
+            },
+        }
+        results_resource._get.return_value = mock_response
+
+        results_resource.get(evaluation_id="eval-123")
+
+        call_args = results_resource._get.call_args
+        params = call_args.kwargs["params"]
+        assert params["page"] == "1"
+        assert "pageSize" not in params  # pageSize should not be included when not specified
 
     def test_get_results_pagination_metadata_calculation(self, results_resource, sample_result_data):
         """get method correctly calculates pagination metadata."""
