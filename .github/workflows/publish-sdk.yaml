@@ -12,6 +12,7 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    environment: production
     outputs:
       release_tag: ${{ steps.set_release_tag.outputs.release_tag }}
     steps:
@@ -31,6 +32,7 @@ jobs:
   build-and-publish:
     needs: validate
     runs-on: ubuntu-latest
+    environment: production
 
     env:
       TWINE_USERNAME: __token__

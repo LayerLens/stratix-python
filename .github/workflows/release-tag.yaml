@@ -17,8 +17,25 @@ on:
         type: string
 
 jobs:
+  check-branch:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check if running on release branch
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/release" ]; then
+            echo "Error: This workflow can only be run from the 'release' branch."
+            echo "Current branch: ${{ github.ref }}"
+            echo "Please switch to the 'release' branch and try again."
+            exit 1
+          fi
+          echo "Running on release branch - proceeding with workflow."
+
   create-release-tag:
     runs-on: ubuntu-latest
+    needs: check-branch
+    environment: production
+    if: github.ref == 'refs/heads/release'
 
     permissions:
       contents: write # Required to create and push tags
