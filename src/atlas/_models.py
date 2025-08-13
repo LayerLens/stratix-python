@@ -36,15 +36,11 @@ class Result(BaseModel):
     truth: str
     duration: timedelta
     score: float
-    metrics: Dict[str, float]
+    metrics: Dict[str, Optional[float]]
 
 
 class ResultMetrics(BaseModel):
     total_count: int
-    min_toxicity_score: Optional[float]
-    max_toxicity_score: Optional[float]
-    min_readability_score: Optional[float]
-    max_readability_score: Optional[float]
 
 
 class Pagination(BaseModel):

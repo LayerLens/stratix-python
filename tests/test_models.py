@@ -202,10 +202,6 @@ class TestResultMetrics:
         """Valid result metrics data for testing."""
         return {
             "total_count": 150,
-            "min_toxicity_score": 0.0,
-            "max_toxicity_score": 0.8,
-            "min_readability_score": 0.2,
-            "max_readability_score": 0.95,
         }
 
     def test_result_metrics_creation(self, valid_metrics_data):
@@ -213,36 +209,20 @@ class TestResultMetrics:
         metrics = ResultMetrics(**valid_metrics_data)
 
         assert metrics.total_count == 150
-        assert metrics.min_toxicity_score == 0.0
-        assert metrics.max_toxicity_score == 0.8
-        assert metrics.min_readability_score == 0.2
-        assert metrics.max_readability_score == 0.95
 
     def test_result_metrics_optional_fields(self):
         """ResultMetrics model handles optional score fields."""
         metrics = ResultMetrics(
             total_count=100,
-            min_toxicity_score=None,
-            max_toxicity_score=None,
-            min_readability_score=None,
-            max_readability_score=None,
         )
 
         assert metrics.total_count == 100
-        assert metrics.min_toxicity_score is None
-        assert metrics.max_toxicity_score is None
-        assert metrics.min_readability_score is None
-        assert metrics.max_readability_score is None
 
     def test_result_metrics_field_types(self, valid_metrics_data):
         """ResultMetrics model enforces correct field types."""
         metrics = ResultMetrics(**valid_metrics_data)
 
         assert isinstance(metrics.total_count, int)
-        assert isinstance(metrics.min_toxicity_score, (float, type(None)))
-        assert isinstance(metrics.max_toxicity_score, (float, type(None)))
-        assert isinstance(metrics.min_readability_score, (float, type(None)))
-        assert isinstance(metrics.max_readability_score, (float, type(None)))
 
     def test_result_metrics_invalid_total_count(self, valid_metrics_data):
         """ResultMetrics model validates total_count as integer."""
@@ -335,10 +315,6 @@ class TestResults:
         """Valid metrics data for testing."""
         return {
             "total_count": 150,
-            "min_toxicity_score": 0.0,
-            "max_toxicity_score": 0.8,
-            "min_readability_score": 0.2,
-            "max_readability_score": 0.95,
         }
 
     @pytest.fixture
@@ -441,10 +417,6 @@ class TestResults:
                 results=[valid_result_data],
                 metrics={
                     "total_count": 100,
-                    "min_toxicity_score": 0.0,
-                    "max_toxicity_score": 0.5,
-                    "min_readability_score": 0.0,
-                    "max_readability_score": 1.0,
                 },
                 pagination="invalid-pagination",  # Should be Pagination object
             )
