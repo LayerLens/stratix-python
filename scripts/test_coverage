@@ -5,4 +5,4 @@ set -e
 cd "$(dirname "$0")/.."
 
 echo "==> Running tests"
-rye run pytest "$@"
+rye run pytest tests/ --cov=src/atlas --cov-report=term --tb=no

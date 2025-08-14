@@ -36,8 +36,12 @@ evaluation = client.evaluations.create(
 
 # Get results
 if evaluation:
-    results = client.results.get(evaluation_id=evaluation.id)
-    print(f"Evaluation completed with {len(results)} results")
+    results_data = client.results.get(evaluation_id=evaluation.id)
+    if results_data:
+        print(f"Evaluation completed with {len(results_data.results)} results")
+        print(f"Total results available: {results_data.pagination.total_count}")
+        if results_data.pagination.total_pages > 1:
+            print(f"Results span {results_data.pagination.total_pages} pages - use pagination to access all")
 ```
 
 ## Navigation
