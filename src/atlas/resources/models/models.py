@@ -4,7 +4,7 @@ from typing import List, Literal, Optional
 
 import httpx
 
-from ...models import Model, Models as ModelsResponse
+from ...models import Model, CustomModel, PublicModel, ModelsResponse
 from ..._resource import SyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
@@ -43,14 +43,21 @@ class Models(SyncAPIResource):
 
         models: List[Model] = []
 
+        def cast_model(m: Model, model_type: str) -> Model:
+            if model_type == "custom":
+                return CustomModel(**m.model_dump())
+            elif model_type == "public":
+                return PublicModel(**m.model_dump())
+            return m  # fallback, just base class
+
         if type is None:  # fetch both
             for t in ["custom", "public"]:
                 resp = fetch(t)
                 if resp:
-                    models.extend(resp.models)
+                    models.extend([cast_model(m, t) for m in resp.data.models])
         else:  # fetch only one type
             resp = fetch(type)
             if resp:
-                models.extend(resp.models)
+                models.extend([cast_model(m, type) for m in resp.data.models])
 
         return models

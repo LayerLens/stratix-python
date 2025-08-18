@@ -1,14 +1,23 @@
-from .api import Models, Results, Benchmarks, Pagination, Evaluations, ResultMetrics
+from .api import (
+    Pagination,
+    ResultMetrics,
+    ModelsResponse,
+    ResultsResponse,
+    BenchmarksResponse,
+    EvaluationsResponse,
+    OrganizationResponse,
+)
 from .model import Model, CustomModel, PublicModel
 from .benchmark import Benchmark, CustomBenchmark, PublicBenchmark
 from .evaluation import Result, Evaluation, EvaluationStatus
 from .organization import Project, Organization
 
 __all__ = [
-    "Benchmarks",
-    "Evaluations",
-    "Models",
-    "Results",
+    "BenchmarksResponse",
+    "EvaluationsResponse",
+    "ModelsResponse",
+    "OrganizationResponse",
+    "ResultsResponse",
     "Benchmark",
     "CustomBenchmark",
     "PublicBenchmark",

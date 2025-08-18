@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from atlas.models import Evaluation, Evaluations as EvaluationsData, EvaluationStatus
+from atlas.models import Evaluation, EvaluationStatus, EvaluationsResponse
 from atlas._constants import DEFAULT_TIMEOUT
 from atlas.resources.evaluations.evaluations import Evaluations
 
@@ -61,9 +61,9 @@ class TestEvaluations:
 
     @pytest.fixture
     def mock_evaluations_response(self, sample_evaluation_data):
-        """Mock EvaluationsData response."""
+        """Mock EvaluationsResponse response."""
         evaluation = Evaluation(**sample_evaluation_data)
-        return EvaluationsData(data=[evaluation])
+        return EvaluationsResponse(data=[evaluation])
 
     def test_evaluations_initialization(self, mock_client):
         """Evaluations resource initializes correctly."""
@@ -113,7 +113,7 @@ class TestEvaluations:
                 }
             ],
             timeout=DEFAULT_TIMEOUT,
-            cast_to=EvaluationsData,
+            cast_to=EvaluationsResponse,
         )
 
     def test_create_evaluation_with_custom_timeout(
@@ -158,7 +158,7 @@ class TestEvaluations:
 
     def test_create_evaluation_empty_response(self, mock_model, mock_benchmark, evaluations_resource):
         """create method returns None when no evaluations in response."""
-        empty_response = EvaluationsData(data=[])
+        empty_response = EvaluationsResponse(data=[])
         evaluations_resource._post.return_value = empty_response
 
         result = evaluations_resource.create(model=mock_model, benchmark=mock_benchmark)
@@ -174,7 +174,7 @@ class TestEvaluations:
         assert result is None
 
     def test_create_evaluation_invalid_response_type(self, mock_model, mock_benchmark, evaluations_resource):
-        """create method handles non-EvaluationsData response gracefully."""
+        """create method handles non-EvaluationsResponse response gracefully."""
         evaluations_resource._post.return_value = "invalid-response"
 
         result = evaluations_resource.create(model=mock_model, benchmark=mock_benchmark)
@@ -190,7 +190,7 @@ class TestEvaluations:
         eval2_data["id"] = "eval-456"
         eval2 = Evaluation(**eval2_data)
 
-        response = EvaluationsData(data=[eval1, eval2])
+        response = EvaluationsResponse(data=[eval1, eval2])
         evaluations_resource._post.return_value = response
 
         result = evaluations_resource.create(model=mock_model, benchmark=mock_benchmark)
@@ -251,7 +251,7 @@ class TestEvaluations:
         evaluations_resource.create(model=mock_model, benchmark=mock_benchmark)
 
         call_args = evaluations_resource._post.call_args
-        assert call_args.kwargs["cast_to"] is EvaluationsData
+        assert call_args.kwargs["cast_to"] is EvaluationsResponse
 
     def test_create_evaluation_timeout_default(
         self,
@@ -390,7 +390,7 @@ class TestEvaluationsResourceIntegration:
         }
 
         evaluation = Evaluation(**evaluation_data)
-        response = EvaluationsData(data=[evaluation])
+        response = EvaluationsResponse(data=[evaluation])
         mock_client.post_cast.return_value = response
 
         # Test the resource

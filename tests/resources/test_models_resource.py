@@ -3,7 +3,7 @@ from unittest.mock import Mock, call
 import httpx
 import pytest
 
-from atlas.models import Models as ModelsData, CustomModel, PublicModel
+from atlas.models import CustomModel, PublicModel, ModelsResponse
 from atlas._constants import DEFAULT_TIMEOUT
 from atlas.resources.models.models import Models
 
@@ -60,15 +60,15 @@ class TestModels:
 
     @pytest.fixture
     def mock_public_models_response(self, sample_model_data):
-        """Mock ModelsData response with public models."""
+        """Mock ModelsResponse response with public models."""
         model = PublicModel(**sample_model_data)
-        return ModelsData(models=[model])
+        return ModelsResponse(data=ModelsResponse.Data(models=[model]))
 
     @pytest.fixture
     def mock_custom_models_response(self, sample_custom_model_data):
-        """Mock ModelsData response with custom models."""
+        """Mock ModelsResponse response with custom models."""
         custom_model = CustomModel(**sample_custom_model_data)
-        return ModelsData(models=[custom_model])
+        return ModelsResponse(data=ModelsResponse.Data(models=[custom_model]))
 
     def test_models_initialization(self, mock_client):
         """Models resource initializes correctly."""
@@ -80,7 +80,9 @@ class TestModels:
     def test_get_public_models_success(self, models_resource, mock_public_models_response):
         """get method returns public models successfully."""
         models_resource._get.side_effect = lambda *_, **kwargs: (
-            mock_public_models_response if kwargs.get("params", {}).get("type") == "public" else ModelsData(models=[])
+            mock_public_models_response
+            if kwargs.get("params", {}).get("type") == "public"
+            else ModelsResponse(data=ModelsResponse.Data(models=[]))
         )
 
         result = models_resource.get()
@@ -95,7 +97,9 @@ class TestModels:
     def test_get_custom_models_success(self, models_resource, mock_custom_models_response):
         """get method returns custom models successfully."""
         models_resource._get.side_effect = lambda *_, **kwargs: (
-            mock_custom_models_response if kwargs.get("params", {}).get("type") == "custom" else ModelsData(models=[])
+            mock_custom_models_response
+            if kwargs.get("params", {}).get("type") == "custom"
+            else ModelsResponse(data=ModelsResponse.Data(models=[]))
         )
 
         result = models_resource.get()
@@ -118,13 +122,13 @@ class TestModels:
                 "/organizations/org-123/projects/proj-456/models",
                 params={"type": "custom"},
                 timeout=DEFAULT_TIMEOUT,
-                cast_to=ModelsData,
+                cast_to=ModelsResponse,
             ),
             call(
                 "/organizations/org-123/projects/proj-456/models",
                 params={"type": "public"},
                 timeout=DEFAULT_TIMEOUT,
-                cast_to=ModelsData,
+                cast_to=ModelsResponse,
             ),
         ]
 
@@ -141,13 +145,13 @@ class TestModels:
                 "/organizations/org-123/projects/proj-456/models",
                 params={"type": "custom"},
                 timeout=DEFAULT_TIMEOUT,
-                cast_to=ModelsData,
+                cast_to=ModelsResponse,
             ),
             call(
                 "/organizations/org-123/projects/proj-456/models",
                 params={"type": "public"},
                 timeout=DEFAULT_TIMEOUT,
-                cast_to=ModelsData,
+                cast_to=ModelsResponse,
             ),
         ]
 
@@ -178,7 +182,10 @@ class TestModels:
         [
             (None, []),  # None response
             ("invalid-response", []),  # Invalid type
-            (ModelsData(models=[]), []),  # Empty ModelsData
+            (
+                ModelsResponse(data=ModelsResponse.Data(models=[])),
+                [],
+            ),  # Empty ModelsResponse
         ],
     )
     def test_get_models_responses(self, models_resource, mock_response, expected):
@@ -188,7 +195,7 @@ class TestModels:
         result = models_resource.get()
 
         assert result == expected
-        if isinstance(mock_response, ModelsData):
+        if isinstance(mock_response, ModelsResponse):
             assert isinstance(result, list)
 
     def test_get_models_multiple_items(self, models_resource, sample_model_data):
@@ -203,10 +210,12 @@ class TestModels:
         model2_data["parameters"] = 1.75e11
         model2 = PublicModel(**model2_data)
 
-        response = ModelsData(models=[model1, model2])
+        response = ModelsResponse(data=ModelsResponse.Data(models=[model1, model2]))
 
         models_resource._get.side_effect = lambda *_, **kwargs: (
-            response if kwargs.get("params", {}).get("type") == "public" else ModelsData(models=[])
+            response
+            if kwargs.get("params", {}).get("type") == "public"
+            else ModelsResponse(data=ModelsResponse.Data(models=[]))
         )
 
         result = models_resource.get()
@@ -232,13 +241,15 @@ class TestModels:
     def test_get_models_cast_to_parameter(self, models_resource, mock_public_models_response):
         """get method specifies correct cast_to parameter."""
         models_resource._get.side_effect = lambda *_, **kwargs: (
-            mock_public_models_response if kwargs.get("params", {}).get("type") == "public" else ModelsData(models=[])
+            mock_public_models_response
+            if kwargs.get("params", {}).get("type") == "public"
+            else ModelsResponse(data=ModelsResponse.Data(models=[]))
         )
 
         models_resource.get()
 
         call_args = models_resource._get.call_args
-        assert call_args.kwargs["cast_to"] is ModelsData
+        assert call_args.kwargs["cast_to"] is ModelsResponse
 
     def test_get_models_timeout_default(self, models_resource, mock_public_models_response):
         """get method uses DEFAULT_TIMEOUT when no timeout specified."""
@@ -260,7 +271,11 @@ class TestModels:
 
     def test_get_models_model_attributes(self, models_resource, mock_public_models_response):
         """get method preserves all model attributes correctly."""
-        models_resource._get.return_value = mock_public_models_response
+        models_resource._get.side_effect = lambda *_, **kwargs: (
+            mock_public_models_response
+            if kwargs.get("params", {}).get("type") == "public"
+            else ModelsResponse(data=ModelsResponse.Data(models=[]))
+        )
 
         result = models_resource.get()
         model = result[0]
@@ -374,7 +389,10 @@ class TestModelsTyping:
         "mock_response, expected_type",
         [
             (None, list),  # None response
-            (ModelsData(models=[]), list),  # Empty ModelsData
+            (
+                ModelsResponse(data=ModelsResponse.Data(models=[])),
+                list,
+            ),  # Empty ModelsResponse
         ],
     )
     def test_get_models_return_type_consistency(self, models_resource, mock_response, expected_type):
@@ -419,9 +437,9 @@ class TestModelsTyping:
         custom_model = CustomModel(**custom_data)
 
         models_resource._get.side_effect = lambda *_, **kwargs: (
-            ModelsData(models=[public_model])
+            ModelsResponse(data=ModelsResponse.Data(models=[public_model]))
             if kwargs.get("params", {}).get("type") == "public"
-            else ModelsData(models=[custom_model])
+            else ModelsResponse(data=ModelsResponse.Data(models=[custom_model]))
         )
 
         result = models_resource.get()  # Type doesn't matter for this test
@@ -454,9 +472,11 @@ class TestModelsTyping:
         }
 
         large_model = PublicModel(**large_model_data)
-        response = ModelsData(models=[large_model])
+        response = ModelsResponse(data=ModelsResponse.Data(models=[large_model]))
         models_resource._get.side_effect = lambda *_, **kwargs: (
-            response if kwargs.get("params", {}).get("type") == "public" else ModelsData(models=[])
+            response
+            if kwargs.get("params", {}).get("type") == "public"
+            else ModelsResponse(data=ModelsResponse.Data(models=[]))
         )
 
         result = models_resource.get()

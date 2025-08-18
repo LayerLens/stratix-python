@@ -4,19 +4,19 @@ import pytest
 from pydantic import ValidationError
 
 from atlas.models import (
-    Models,
     Result,
-    Results,
-    Benchmarks,
     Evaluation,
     Pagination,
     CustomModel,
-    Evaluations,
     PublicModel,
     ResultMetrics,
+    ModelsResponse,
     CustomBenchmark,
     PublicBenchmark,
+    ResultsResponse,
     EvaluationStatus,
+    BenchmarksResponse,
+    EvaluationsResponse,
 )
 
 
@@ -108,7 +108,7 @@ class TestEvaluations:
     def test_evaluations_with_list_of_evaluations(self, evaluation_data):
         """Evaluations model accepts list of Evaluation objects."""
         evaluations_data = {"data": [evaluation_data, evaluation_data]}
-        evaluations = Evaluations(**evaluations_data)
+        evaluations = EvaluationsResponse(**evaluations_data)
 
         assert len(evaluations.data) == 2
         assert all(isinstance(eval, Evaluation) for eval in evaluations.data)
@@ -116,7 +116,7 @@ class TestEvaluations:
 
     def test_evaluations_empty_list(self):
         """Evaluations model accepts empty list."""
-        evaluations = Evaluations(data=[])
+        evaluations = EvaluationsResponse(data=[])
 
         assert evaluations.data == []
         assert isinstance(evaluations.data, list)
@@ -124,7 +124,7 @@ class TestEvaluations:
     def test_evaluations_invalid_data_structure(self):
         """Evaluations model validates data structure."""
         with pytest.raises(ValidationError):
-            Evaluations(data="not-a-list")  # type: ignore[arg-type]
+            EvaluationsResponse(data="not-a-list")  # type: ignore[arg-type]
 
 
 class TestResult:
@@ -311,7 +311,7 @@ class TestResults:
 
     def test_results_with_pagination(self, valid_result_data, valid_metrics_data, valid_pagination_data):
         """Results model accepts all required fields including pagination."""
-        results = Results(
+        results = ResultsResponse(
             evaluation_id="eval-123",
             results=[valid_result_data, valid_result_data],
             metrics=valid_metrics_data,
@@ -329,7 +329,7 @@ class TestResults:
 
     def test_results_field_types(self, valid_result_data, valid_metrics_data, valid_pagination_data):
         """Results model enforces correct field types."""
-        results = Results(
+        results = ResultsResponse(
             evaluation_id="eval-456",
             results=[valid_result_data],
             metrics=valid_metrics_data,
@@ -343,7 +343,7 @@ class TestResults:
 
     def test_results_empty_results_list(self, valid_metrics_data, valid_pagination_data):
         """Results model handles empty results list."""
-        results = Results(
+        results = ResultsResponse(
             evaluation_id="eval-empty",
             results=[],
             metrics=valid_metrics_data,
@@ -360,7 +360,7 @@ class TestResults:
         """Results model validates required fields."""
         # Test missing evaluation_id
         with pytest.raises(ValidationError):
-            Results(
+            ResultsResponse(
                 results=[valid_result_data],
                 metrics=valid_metrics_data,
                 pagination=valid_pagination_data,
@@ -368,7 +368,7 @@ class TestResults:
 
         # Test missing metrics
         with pytest.raises(ValidationError):
-            Results(
+            ResultsResponse(
                 evaluation_id="eval-123",
                 results=[valid_result_data],
                 pagination=valid_pagination_data,
@@ -376,7 +376,7 @@ class TestResults:
 
         # Test missing pagination
         with pytest.raises(ValidationError):
-            Results(
+            ResultsResponse(
                 evaluation_id="eval-123",
                 results=[valid_result_data],
                 metrics=valid_metrics_data,
@@ -386,7 +386,7 @@ class TestResults:
         """Results model validates nested models."""
         # Test invalid metrics
         with pytest.raises(ValidationError):
-            Results(
+            ResultsResponse(
                 evaluation_id="eval-123",
                 results=[valid_result_data],
                 metrics="invalid-metrics",  # Should be ResultMetrics object
@@ -395,7 +395,7 @@ class TestResults:
 
         # Test invalid pagination
         with pytest.raises(ValidationError):
-            Results(
+            ResultsResponse(
                 evaluation_id="eval-123",
                 results=[valid_result_data],
                 metrics={
@@ -534,11 +534,13 @@ class TestModels:
             "disabled": False,
         }
 
-        models = Models(models=[PublicModel(**model_data), CustomModel(**custom_model_data)])  # type: ignore[arg-type]
+        models = ModelsResponse(
+            data=ModelsResponse.Data(models=[PublicModel(**model_data), CustomModel(**custom_model_data)])
+        )
 
-        assert len(models.models) == 2
-        assert isinstance(models.models[0], PublicModel)
-        assert isinstance(models.models[1], CustomModel)
+        assert len(models.data.models) == 2
+        assert isinstance(models.data.models[0], PublicModel)
+        assert isinstance(models.data.models[1], CustomModel)
 
 
 class TestBenchmark:
@@ -640,9 +642,9 @@ class TestBenchmarks:
         }
 
         # Using the alias 'datasets'
-        benchmarks = Benchmarks(datasets=[PublicBenchmark(**benchmark_data)])  # type: ignore[arg-type]
+        benchmarks = BenchmarksResponse(data=BenchmarksResponse.Data(datasets=[PublicBenchmark(**benchmark_data)]))
 
-        assert isinstance(benchmarks.benchmarks[0], PublicBenchmark)
+        assert isinstance(benchmarks.data.benchmarks[0], PublicBenchmark)
 
     def test_benchmarks_field_validation(self):
         """Benchmarks validates field structure correctly."""
@@ -657,9 +659,9 @@ class TestBenchmarks:
             "deprecated": False,
         }
 
-        benchmarks = Benchmarks(datasets=[benchmark_data])  # type: ignore[arg-type]
+        benchmarks = BenchmarksResponse(data=BenchmarksResponse.Data(datasets=[benchmark_data]))
 
-        assert len(benchmarks.benchmarks) == 1
+        assert len(benchmarks.data.benchmarks) == 1
 
 
 class TestModelSerialization:

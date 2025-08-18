@@ -4,7 +4,7 @@ from typing import List, Literal, Optional
 
 import httpx
 
-from ...models import Benchmark, Benchmarks as BenchmarksResponse
+from ...models import Benchmark, CustomBenchmark, PublicBenchmark, BenchmarksResponse
 from ..._resource import SyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
@@ -34,14 +34,21 @@ class Benchmarks(SyncAPIResource):
 
         benchmarks: List[Benchmark] = []
 
+        def cast_benchmark(b: Benchmark, bench_type: str) -> Benchmark:
+            if bench_type == "custom":
+                return CustomBenchmark(**b.model_dump())
+            elif bench_type == "public":
+                return PublicBenchmark(**b.model_dump())
+            return b  # fallback, just base class
+
         if type is None:
             for t in ["custom", "public"]:
                 resp = fetch(t)
                 if resp:
-                    benchmarks.extend(resp.benchmarks)
+                    benchmarks.extend([cast_benchmark(b, t) for b in resp.data.benchmarks])
         else:  # fetch only one type
             resp = fetch(type)
             if resp:
-                benchmarks.extend(resp.benchmarks)
+                benchmarks.extend([cast_benchmark(b, type) for b in resp.data.benchmarks])
 
         return benchmarks

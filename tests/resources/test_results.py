@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from atlas.models import Result, Results as ResultsData, Pagination, ResultMetrics
+from atlas.models import Result, Pagination, ResultMetrics, ResultsResponse
 from atlas._constants import DEFAULT_TIMEOUT
 from atlas.resources.results.results import Results
 
@@ -60,12 +60,12 @@ class TestResults:
         assert results._get is mock_client.get_cast
 
     def test_get_results_success(self, results_resource, mock_results_response):
-        """get method returns ResultsData successfully."""
+        """get method returns ResultsResponse successfully."""
         results_resource._get.return_value = mock_results_response
 
         result = results_resource.get(evaluation_id="eval-123")
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert result.evaluation_id == "eval-123"
         assert len(result.results) == 1
         assert isinstance(result.results[0], Result)
@@ -121,7 +121,7 @@ class TestResults:
         assert result is None
 
     def test_get_results_invalid_response_type(self, results_resource):
-        """get method handles non-ResultsData response gracefully."""
+        """get method handles non-ResultsResponse response gracefully."""
         results_resource._get.return_value = "invalid-response"
 
         result = results_resource.get(evaluation_id="eval-123")
@@ -129,7 +129,7 @@ class TestResults:
         assert result is None
 
     def test_get_results_empty_response(self, results_resource):
-        """get method returns ResultsData with empty results list when no results in response."""
+        """get method returns ResultsResponse with empty results list when no results in response."""
         empty_response = {
             "evaluation_id": "eval-123",
             "results": [],
@@ -145,7 +145,7 @@ class TestResults:
 
         result = results_resource.get(evaluation_id="eval-123")
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert result.evaluation_id == "eval-123"
         assert result.results == []
         assert isinstance(result.results, list)
@@ -180,7 +180,7 @@ class TestResults:
 
         result = results_resource.get(evaluation_id="eval-123")
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert len(result.results) == 2
         assert result.results[0].subset == "mathematics"
         assert result.results[1].subset == "science"
@@ -262,7 +262,7 @@ class TestResults:
 
         result = results_resource.get(evaluation_id=evaluation_id)
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         call_args = results_resource._get.call_args
         assert call_args.kwargs["params"]["evaluation_id"] == evaluation_id
 
@@ -416,7 +416,7 @@ class TestResultsDataHandling:
 
         result = results_resource.get(evaluation_id="eval-complex")
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert len(result.results) == 1
         result_item = result.results[0]
 
@@ -464,7 +464,7 @@ class TestResultsDataHandling:
 
         result = results_resource.get(evaluation_id="eval-durations")
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert len(result.results) == 5
         assert result.results[0].duration == timedelta(seconds=0.1)
         assert result.results[1].duration == timedelta(seconds=1.5)
@@ -499,19 +499,19 @@ class TestResultsDataHandling:
 
         result = results_resource.get(evaluation_id="eval-minimal")
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert len(result.results) == 1
         assert result.results[0].metrics == {}
         assert isinstance(result.results[0].metrics, dict)
 
     def test_get_results_return_type_consistency(self, results_resource):
         """get method returns consistent types."""
-        # Test that the method returns either a ResultsData object or None
+        # Test that the method returns either a ResultsResponse object or None
         results_resource._get.return_value = None
         result = results_resource.get(evaluation_id="eval-123")
         assert result is None
 
-        # Test that it returns a ResultsData object when successful
+        # Test that it returns a ResultsResponse object when successful
         empty_response = {
             "evaluation_id": "eval-123",
             "results": [],
@@ -525,7 +525,7 @@ class TestResultsDataHandling:
         }
         results_resource._get.return_value = empty_response
         result = results_resource.get(evaluation_id="eval-123")
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
 
 
 class TestResultsPagination:
@@ -590,7 +590,7 @@ class TestResultsPagination:
         )
 
         # Verify the response structure
-        assert isinstance(result_data, ResultsData)
+        assert isinstance(result_data, ResultsResponse)
         assert result_data.evaluation_id == "eval-paginated"
         assert result_data.pagination.total_count == 250
         assert result_data.pagination.page_size == 50
@@ -663,7 +663,7 @@ class TestResultsPagination:
         result = results_resource.get(evaluation_id="eval-math", page=3, page_size=50)
 
         # Should have calculated pagination correctly
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert result.pagination.total_count == 487
         assert result.pagination.page_size == 50
         assert result.pagination.total_pages == 10  # ceil(487 / 50) = 10
@@ -760,7 +760,7 @@ class TestResultsPaginationErrorHandling:
         result = results_resource.get(evaluation_id="eval-123")
 
         # Should handle zero total_count gracefully
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert result.pagination.total_count == 0
         assert result.pagination.total_pages == 0
 
@@ -805,7 +805,7 @@ class TestResultsPaginationErrorHandling:
 
         result = results_resource.get(evaluation_id="eval-extreme", page_size=1)
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert result.pagination.total_count == 999999
         assert result.pagination.page_size == 1
         assert result.pagination.total_pages == 999999  # ceil(999999 / 1)
@@ -828,7 +828,7 @@ class TestResultsPaginationErrorHandling:
         # Pass 0 as page_size
         result = results_resource.get(evaluation_id="eval-123", page_size=0)
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         # Should use 0 as provided (though this might cause division by zero, it's handled)
         assert result.pagination.page_size == 0
 
@@ -856,7 +856,7 @@ class TestResultsPaginationErrorHandling:
         assert params["page"] == "-1"
         assert params["pageSize"] == "-50"
 
-        assert isinstance(result, ResultsData)
+        assert isinstance(result, ResultsResponse)
         assert result.pagination.page_size == -50
         # total_pages calculation with negative page_size
         assert result.pagination.total_pages == 0  # math.ceil handles negative divisors

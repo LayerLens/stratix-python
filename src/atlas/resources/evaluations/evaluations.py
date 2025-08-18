@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import httpx
 
-from ...models import Model, Benchmark, Evaluation, Evaluations as EvaluationsResponse
+from ...models import (
+    Model,
+    Benchmark,
+    Evaluation,
+    CustomModel,
+    CustomBenchmark,
+    EvaluationsResponse,
+)
 from ..._resource import SyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
@@ -21,8 +28,8 @@ class Evaluations(SyncAPIResource):
                 {
                     "model_id": model.id,
                     "dataset_id": benchmark.id,
-                    "is_custom_model": False,
-                    "is_custom_dataset": False,
+                    "is_custom_model": isinstance(model, CustomModel),
+                    "is_custom_dataset": isinstance(benchmark, CustomBenchmark),
                 }
             ],
             timeout=timeout,
