@@ -7,7 +7,7 @@ import httpx
 
 from ..._resource import SyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
-from ...models.api import Results as ResultsData
+from ...models.api import ResultsResponse
 
 DEFAULT_PAGE_SIZE = 100
 
@@ -20,7 +20,7 @@ class Results(SyncAPIResource):
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
-    ) -> ResultsData | None:
+    ) -> ResultsResponse | None:
         """
         Get evaluation results with optional pagination.
 
@@ -31,7 +31,7 @@ class Results(SyncAPIResource):
             timeout: Request timeout
 
         Returns:
-            ResultsData object containing:
+            ResultsResponse object containing:
             - evaluation_id: The evaluation ID
             - results: List of Result objects for the current page
             - metrics: Contains total_count and score ranges
@@ -77,6 +77,6 @@ class Results(SyncAPIResource):
         }
 
         try:
-            return ResultsData.model_validate(response_with_pagination)
+            return ResultsResponse.model_validate(response_with_pagination)
         except Exception:
             return None

@@ -5,9 +5,9 @@ import pytest
 
 from atlas.models import (
     Benchmark,
-    Benchmarks as BenchmarksData,
     CustomBenchmark,
     PublicBenchmark,
+    BenchmarksResponse,
 )
 from atlas._constants import DEFAULT_TIMEOUT
 from atlas.resources.benchmarks.benchmarks import Benchmarks
@@ -68,11 +68,11 @@ class TestBenchmarks:
 
     @pytest.fixture
     def mock_benchmarks_response(self, sample_benchmark_data, sample_custom_benchmark_data):
-        """Mock BenchmarksData response with public benchmarks."""
+        """Mock BenchmarksResponse response with public benchmarks."""
         public_benchmark = Benchmark(**sample_benchmark_data)
         custom_benchmark = CustomBenchmark(**sample_custom_benchmark_data)
 
-        return BenchmarksData(datasets=[public_benchmark, custom_benchmark])
+        return BenchmarksResponse(data=BenchmarksResponse.Data(datasets=[public_benchmark, custom_benchmark]))
 
     def test_benchmarks_initialization(self, mock_client):
         """Benchmarks resource initializes correctly."""
@@ -86,7 +86,7 @@ class TestBenchmarks:
         benchmarks_resource._get.side_effect = lambda *_, **kwargs: (
             mock_benchmarks_response
             if kwargs.get("params", {}).get("type") == "public"
-            else BenchmarksData(benchmarks=[])
+            else BenchmarksResponse(data=BenchmarksResponse.Data(benchmarks=[]))
         )
 
         result = benchmarks_resource.get()
@@ -113,13 +113,13 @@ class TestBenchmarks:
                 "/organizations/org-123/projects/proj-456/benchmarks",
                 params={"type": "custom"},
                 timeout=DEFAULT_TIMEOUT,
-                cast_to=BenchmarksData,
+                cast_to=BenchmarksResponse,
             ),
             call(
                 "/organizations/org-123/projects/proj-456/benchmarks",
                 params={"type": "public"},
                 timeout=DEFAULT_TIMEOUT,
-                cast_to=BenchmarksData,
+                cast_to=BenchmarksResponse,
             ),
         ]
 
@@ -150,7 +150,7 @@ class TestBenchmarks:
         [
             (None, []),
             ("invalid-response", []),
-            (BenchmarksData(datasets=[]), []),
+            (BenchmarksResponse(data=BenchmarksResponse.Data(datasets=[])), []),
         ],
         ids=["none_response", "invalid_type", "empty_response"],
     )
@@ -177,9 +177,11 @@ class TestBenchmarks:
         benchmark2_data["name"] = "HellaSwag"
         benchmark2 = Benchmark(**benchmark2_data)
 
-        response = BenchmarksData(datasets=[benchmark, benchmark2])
+        response = BenchmarksResponse(data=BenchmarksResponse.Data(datasets=[benchmark, benchmark2]))
         benchmarks_resource._get.side_effect = lambda *_, **kwargs: (
-            response if kwargs.get("params", {}).get("type") == "public" else BenchmarksData(benchmarks=[])
+            response
+            if kwargs.get("params", {}).get("type") == "public"
+            else BenchmarksResponse(data=BenchmarksResponse.Data(benchmarks=[]))
         )
 
         result = benchmarks_resource.get()
@@ -207,7 +209,7 @@ class TestBenchmarks:
         benchmarks_resource.get()
 
         call_args = benchmarks_resource._get.call_args
-        assert call_args.kwargs["cast_to"] is BenchmarksData
+        assert call_args.kwargs["cast_to"] is BenchmarksResponse
 
     def test_get_benchmarks_timeout_default(self, benchmarks_resource, mock_benchmarks_response):
         """get method uses DEFAULT_TIMEOUT when no timeout specified."""
@@ -321,7 +323,7 @@ class TestBenchmarksTyping:
         assert result == []
 
         # Test that it returns a list when successful
-        benchmarks_resource._get.return_value = BenchmarksData(datasets=[])
+        benchmarks_resource._get.return_value = BenchmarksResponse(data=BenchmarksResponse.Data(datasets=[]))
         result = benchmarks_resource.get()
         assert result == []
 
@@ -362,9 +364,9 @@ class TestBenchmarksTyping:
         custom_benchmark = CustomBenchmark(**custom_data)
 
         benchmarks_resource._get.side_effect = lambda *_, **kwargs: (
-            BenchmarksData(benchmarks=[public_benchmark])
+            BenchmarksResponse(data=BenchmarksResponse.Data(benchmarks=[public_benchmark]))
             if kwargs.get("params", {}).get("type") == "public"
-            else BenchmarksData(benchmarks=[custom_benchmark])
+            else BenchmarksResponse(data=BenchmarksResponse.Data(benchmarks=[custom_benchmark]))
         )
 
         result = benchmarks_resource.get()  # Type doesn't matter for this test

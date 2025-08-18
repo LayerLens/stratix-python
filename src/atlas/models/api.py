@@ -7,20 +7,31 @@ from pydantic import Field, BaseModel, ConfigDict
 from .model import Model
 from .benchmark import Benchmark
 from .evaluation import Result, Evaluation
+from .organization import Organization
 
 
-class Benchmarks(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+class BenchmarksResponse(BaseModel):
+    class Data(BaseModel):
+        model_config = ConfigDict(populate_by_name=True)
 
-    benchmarks: List[Benchmark] = Field(..., alias="datasets")
+        benchmarks: List[Benchmark] = Field(..., alias="datasets")
+
+    data: Data
 
 
-class Evaluations(BaseModel):
+class EvaluationsResponse(BaseModel):
     data: List[Evaluation]
 
 
-class Models(BaseModel):
-    models: List[Model]
+class ModelsResponse(BaseModel):
+    class Data(BaseModel):
+        models: List[Model]
+
+    data: Data
+
+
+class OrganizationResponse(BaseModel):
+    data: Organization
 
 
 class ResultMetrics(BaseModel):
@@ -33,7 +44,7 @@ class Pagination(BaseModel):
     total_pages: int
 
 
-class Results(BaseModel):
+class ResultsResponse(BaseModel):
     evaluation_id: str
     results: List[Result]
     metrics: ResultMetrics

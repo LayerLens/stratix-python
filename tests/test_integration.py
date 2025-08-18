@@ -8,11 +8,11 @@ from atlas import Atlas
 from atlas.models import (
     Model,
     Result,
-    Results as ResultsData,
     Benchmark,
     Evaluation,
-    Evaluations as EvaluationsData,
+    ResultsResponse,
     EvaluationStatus,
+    EvaluationsResponse,
 )
 
 
@@ -173,8 +173,8 @@ class TestCompleteEvaluationWorkflow:
         result = Result(**result_data)
 
         # Mock responses
-        evaluations_response = EvaluationsData(data=[evaluation])
-        results_response = ResultsData(
+        evaluations_response = EvaluationsResponse(data=[evaluation])
+        results_response = ResultsResponse(
             evaluation_id="eval-789",
             results=[result],
             metrics={
@@ -257,7 +257,7 @@ class TestCompleteEvaluationWorkflow:
             "metrics": {"accuracy": 1.0},
         }
 
-        results_response = ResultsData(
+        results_response = ResultsResponse(
             evaluation_id="test-eval",
             results=[Result(**result_data)],
             metrics={
@@ -363,7 +363,7 @@ class TestResourceInteraction:
         benchmark = Benchmark(**benchmark_data)
         evaluation = Evaluation(**evaluation_data)
 
-        evaluations_response = EvaluationsData(data=[evaluation])
+        evaluations_response = EvaluationsResponse(data=[evaluation])
 
         with patch.object(atlas_client, "post_cast") as mock_post:
             mock_post.return_value = evaluations_response
@@ -416,7 +416,7 @@ class TestResourceInteraction:
         ]
 
         results = [Result(**data) for data in results_data]
-        results_response = ResultsData(
+        results_response = ResultsResponse(
             evaluation_id="test-eval",
             results=results,
             metrics={
@@ -559,7 +559,7 @@ class TestConcurrentOperations:
             "metrics": {"accuracy": 1.0},
         }
 
-        results_response = ResultsData(
+        results_response = ResultsResponse(
             evaluation_id="test-eval",
             results=[Result(**result_data)],
             metrics={

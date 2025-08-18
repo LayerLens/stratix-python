@@ -10,7 +10,7 @@ import httpx
 
 from . import _exceptions
 from ._utils import is_mapping
-from .models import Organization
+from .models import Organization, OrganizationResponse
 from ._constants import DEFAULT_TIMEOUT
 from ._exceptions import AtlasError, APIStatusError
 from ._base_client import BaseClient
@@ -53,7 +53,7 @@ class Atlas(BaseClient):
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
-            base_url = "https://8bg48mbhyi.execute-api.us-east-1.amazonaws.com/prod/api/v1/dgklmnr"
+            base_url = "https://8bg48mbhyi.execute-api.us-east-1.amazonaws.com/prod/api/v1"
 
         super().__init__(
             base_url=base_url,
@@ -164,10 +164,10 @@ class Atlas(BaseClient):
         organization = super().get_cast(
             f"/organizations",
             timeout=30,
-            cast_to=Organization,
+            cast_to=OrganizationResponse,
         )
-        if isinstance(organization, Organization):
-            return organization
+        if isinstance(organization, OrganizationResponse):
+            return organization.data
         return None
 
 

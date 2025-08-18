@@ -12,21 +12,21 @@ class Benchmark(BaseModel):
 
 
 class CustomBenchmark(Benchmark):
-    description: str
-    system_prompt: Optional[str]
-    prompt_count: int
-    version_count: int
-    regex_pattern: Optional[str]
-    llm_judge_model_id: str
-    custom_instructions: str
-    scoring_metric: Optional[str]
-    metrics: List[str]
-    files: List[str]
-    disabled: bool
+    description: Optional[str] = None
+    system_prompt: Optional[str] = None
+    prompt_count: Optional[int] = None
+    version_count: Optional[int] = None
+    regex_pattern: Optional[str] = None
+    llm_judge_model_id: Optional[str] = None
+    custom_instructions: Optional[str] = None
+    scoring_metric: Optional[str] = None
+    metrics: Optional[List[str]] = None
+    files: Optional[List[str]] = None
+    disabled: Optional[bool] = None
 
 
 class PublicBenchmark(Benchmark):
-    description: str = Field(..., alias="full_description")
-    language: str
-    prompt_count: int
-    deprecated: bool
+    description: Optional[str] = Field(None, alias="full_description")
+    language: Optional[str] = None
+    prompt_count: Optional[int] = None
+    deprecated: Optional[bool] = None
