@@ -7,7 +7,7 @@ The Atlas Python SDK uses API key authentication to securely access the LayerLen
 You need three pieces of information to use the Atlas SDK:
 
 1. **API Key** - Your secret API key for authentication
-2. **Organization ID** - Your organization identifier 
+2. **Organization ID** - Your organization identifier
 3. **Project ID** - The project you want to work with
 
 ## Getting Your Credentials
@@ -24,24 +24,21 @@ The most secure way to configure authentication is using environment variables:
 ### Setting Environment Variables
 
 **Linux/macOS:**
+
 ```bash
 export LAYERLENS_ATLAS_API_KEY="your_api_key_here"
-export LAYERLENS_ATLAS_ORG_ID="your_org_id_here"
-export LAYERLENS_ATLAS_PROJECT_ID="your_project_id_here"
 ```
 
 **Windows (Command Prompt):**
+
 ```cmd
 set LAYERLENS_ATLAS_API_KEY=your_api_key_here
-set LAYERLENS_ATLAS_ORG_ID=your_org_id_here
-set LAYERLENS_ATLAS_PROJECT_ID=your_project_id_here
 ```
 
 **Windows (PowerShell):**
+
 ```powershell
 $env:LAYERLENS_ATLAS_API_KEY="your_api_key_here"
-$env:LAYERLENS_ATLAS_ORG_ID="your_org_id_here" 
-$env:LAYERLENS_ATLAS_PROJECT_ID="your_project_id_here"
 ```
 
 ### Using a `.env` File
@@ -50,8 +47,6 @@ Create a `.env` file in your project root:
 
 ```bash
 LAYERLENS_ATLAS_API_KEY=your_api_key_here
-LAYERLENS_ATLAS_ORG_ID=your_org_id_here
-LAYERLENS_ATLAS_PROJECT_ID=your_project_id_here
 ```
 
 Then load it in your Python code:
@@ -90,11 +85,7 @@ You can also pass credentials directly to the client:
 ```python
 from atlas import Atlas
 
-client = Atlas(
-    api_key="your_api_key_here",
-    organization_id="your_org_id_here",
-    project_id="your_project_id_here"
-)
+client = Atlas(api_key="your_api_key_here")
 ```
 
 ### Mixed Configuration
@@ -105,11 +96,7 @@ You can mix environment variables with explicit parameters:
 import os
 from atlas import Atlas
 
-client = Atlas(
-    api_key=os.environ.get("LAYERLENS_ATLAS_API_KEY"),
-    organization_id="override_org_id",  # Override from environment
-    project_id=os.environ.get("LAYERLENS_ATLAS_PROJECT_ID")
-)
+client = Atlas(api_key=os.environ.get("LAYERLENS_ATLAS_API_KEY"))
 ```
 
 ## Advanced Configuration

@@ -5,9 +5,9 @@ from typing import Optional
 
 import httpx
 
-from ..._models import Results as ResultsData
 from ..._resource import SyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
+from ...models.api import Results as ResultsData
 
 DEFAULT_PAGE_SIZE = 100
 
@@ -69,7 +69,11 @@ class Results(SyncAPIResource):
         # Add pagination to the response
         response_with_pagination = {
             **response_data,
-            "pagination": {"total_count": total_count, "page_size": effective_page_size, "total_pages": total_pages},
+            "pagination": {
+                "total_count": total_count,
+                "page_size": effective_page_size,
+                "total_pages": total_pages,
+            },
         }
 
         try:

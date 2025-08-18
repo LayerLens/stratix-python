@@ -28,6 +28,7 @@ AtlasError
 ### Base Exceptions
 
 #### `AtlasError`
+
 Base exception for all Atlas-related errors.
 
 ```python
@@ -41,9 +42,11 @@ except atlas.AtlasError as e:
 ```
 
 #### `APIError`
+
 Base exception for all API-related errors. Contains additional context about the request.
 
 **Properties:**
+
 - `message`: Error message
 - `request`: The HTTP request that caused the error
 - `body`: Response body (if available)
@@ -63,9 +66,11 @@ except atlas.APIError as e:
 ### Connection Errors
 
 #### `APIConnectionError`
+
 Raised when the client cannot connect to the API server.
 
 **Common causes:**
+
 - Network connectivity issues
 - DNS resolution problems
 - Server is down
@@ -83,6 +88,7 @@ except atlas.APIConnectionError as e:
 ```
 
 #### `APITimeoutError`
+
 Raised when a request times out.
 
 ```python
@@ -100,11 +106,13 @@ except atlas.APITimeoutError:
 All HTTP status errors inherit from `APIStatusError` and include additional properties:
 
 **Properties:**
+
 - `status_code`: HTTP status code
 - `response`: Full HTTP response object
 - `request_id`: Request ID for tracking (if provided by server)
 
 #### `BadRequestError` (400)
+
 Request was malformed or contained invalid parameters.
 
 ```python
@@ -120,6 +128,7 @@ except atlas.BadRequestError as e:
 ```
 
 #### `AuthenticationError` (401)
+
 API key is missing, invalid, or expired.
 
 ```python
@@ -134,6 +143,7 @@ except atlas.AuthenticationError:
 ```
 
 #### `PermissionDeniedError` (403)
+
 Valid API key but insufficient permissions for the requested operation.
 
 ```python
@@ -148,6 +158,7 @@ except atlas.PermissionDeniedError:
 ```
 
 #### `NotFoundError` (404)
+
 Requested resource (model, benchmark, evaluation) does not exist.
 
 ```python
@@ -162,6 +173,7 @@ except atlas.NotFoundError:
 ```
 
 #### `ConflictError` (409)
+
 Request conflicts with current resource state.
 
 ```python
@@ -176,6 +188,7 @@ except atlas.ConflictError:
 ```
 
 #### `UnprocessableEntityError` (422)
+
 Request parameters are valid but cannot be processed.
 
 ```python
@@ -190,6 +203,7 @@ except atlas.UnprocessableEntityError as e:
 ```
 
 #### `RateLimitError` (429)
+
 Too many requests sent in a given time period.
 
 ```python
@@ -212,6 +226,7 @@ except atlas.RateLimitError as e:
 ```
 
 #### `InternalServerError` (500+)
+
 Server-side error occurred.
 
 ```python
@@ -237,30 +252,30 @@ from atlas import Atlas
 
 def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
     client = Atlas()
-    
+
     for attempt in range(max_retries):
         try:
             evaluation = client.evaluations.create(model=model, benchmark=benchmark)
             return evaluation
-            
+
         except atlas.AuthenticationError:
             print("❌ Authentication failed - check your API key")
             break  # Don't retry auth errors
-            
+
         except atlas.PermissionDeniedError:
             print("❌ Permission denied - contact your administrator")
             break  # Don't retry permission errors
-            
+
         except atlas.NotFoundError:
             print(f"❌ Model '{model}' or benchmark '{benchmark}' not found")
             break  # Don't retry not found errors
-            
+
         except atlas.RateLimitError as e:
             retry_after = e.response.headers.get('retry-after', 60)
             print(f"⏳ Rate limited - waiting {retry_after} seconds...")
             time.sleep(int(retry_after))
             continue  # Retry after waiting
-            
+
         except atlas.InternalServerError:
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt  # Exponential backoff
@@ -270,7 +285,7 @@ def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
             else:
                 print("❌ Server error - max retries exceeded")
                 break
-                
+
         except atlas.APIConnectionError:
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt
@@ -280,11 +295,11 @@ def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
             else:
                 print("❌ Connection failed - check your network")
                 break
-                
+
         except atlas.APIError as e:
             print(f"❌ Unexpected API error: {e}")
             break
-    
+
     return None
 ```
 
@@ -296,24 +311,24 @@ from atlas import Atlas
 
 def get_evaluation_results_with_fallback(evaluation_id: str):
     client = Atlas()
-    
+
     try:
         results = client.results.get(evaluation_id=evaluation_id)
-        
+
         if results:
             return {"success": True, "data": results, "message": "Results retrieved successfully"}
         else:
             return {"success": False, "data": None, "message": "No results found"}
-            
+
     except atlas.NotFoundError:
         return {"success": False, "data": None, "message": "Evaluation not found"}
-        
+
     except atlas.AuthenticationError:
         return {"success": False, "data": None, "message": "Authentication required"}
-        
+
     except atlas.APIConnectionError:
         return {"success": False, "data": None, "message": "Service temporarily unavailable"}
-        
+
     except atlas.APIError as e:
         return {"success": False, "data": None, "message": f"Service error: {e}"}
 
@@ -338,34 +353,34 @@ logger = logging.getLogger(__name__)
 
 def monitored_api_call():
     client = Atlas()
-    
+
     try:
         logger.info("Creating evaluation...")
         evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-        
+
         if evaluation:
             logger.info(f"Evaluation created successfully: {evaluation.id}")
             return evaluation
         else:
             logger.warning("Evaluation creation returned None")
             return None
-            
+
     except atlas.RateLimitError as e:
         logger.warning(f"Rate limited - request ID: {e.request_id}")
         raise
-        
+
     except atlas.AuthenticationError:
         logger.error("Authentication failed - check API key configuration")
         raise
-        
+
     except atlas.APIConnectionError:
         logger.error("Network connection failed")
         raise
-        
+
     except atlas.InternalServerError as e:
         logger.error(f"Server error: {e.status_code} - request ID: {e.request_id}")
         raise
-        
+
     except atlas.APIError as e:
         logger.error(f"Unexpected API error: {e} - request ID: {getattr(e, 'request_id', 'N/A')}")
         raise
@@ -437,16 +452,16 @@ def extract_error_info(error: atlas.APIError):
         "request_url": error.request.url if hasattr(error, 'request') else None,
         "request_method": error.request.method if hasattr(error, 'request') else None,
     }
-    
+
     if hasattr(error, 'status_code'):
         info["status_code"] = error.status_code
-        
+
     if hasattr(error, 'request_id'):
         info["request_id"] = error.request_id
-        
+
     if hasattr(error, 'response'):
         info["response_headers"] = dict(error.response.headers)
-        
+
     return info
 
 # Usage
@@ -470,11 +485,11 @@ def test_authentication_error_handling():
     """Test that authentication errors are handled properly"""
     with patch('atlas.Atlas') as mock_atlas:
         mock_atlas.side_effect = atlas.AuthenticationError(
-            "Invalid API key", 
-            request=Mock(), 
+            "Invalid API key",
+            request=Mock(),
             response=Mock()
         )
-        
+
         with pytest.raises(atlas.AuthenticationError):
             client = Atlas()
             client.evaluations.create(model="gpt-4", benchmark="mmlu")
@@ -495,13 +510,6 @@ try:
     client = Atlas(api_key=None)
 except atlas.AtlasError as e:
     print(f"Configuration error: {e}")
-
-# Invalid organization/project
-try:
-    client = Atlas(organization_id="invalid", project_id="invalid")
-    evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.PermissionDeniedError:
-    print("Invalid organization or project ID")
 ```
 
 ### Network Issues
@@ -540,7 +548,7 @@ def exponential_backoff_retry(func, max_retries=3, base_delay=1):
         except (atlas.InternalServerError, atlas.APIConnectionError) as e:
             if attempt == max_retries - 1:
                 raise
-                
+
             delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
             print(f"Attempt {attempt + 1} failed, retrying in {delay:.2f}s...")
             time.sleep(delay)
@@ -573,14 +581,14 @@ class CircuitBreaker:
         self.failure_count = 0
         self.last_failure_time = None
         self.state = CircuitState.CLOSED
-    
+
     def call(self, func, *args, **kwargs):
         if self.state == CircuitState.OPEN:
             if time.time() - self.last_failure_time < self.timeout:
                 raise atlas.APIConnectionError(message="Circuit breaker is OPEN")
             else:
                 self.state = CircuitState.HALF_OPEN
-        
+
         try:
             result = func(*args, **kwargs)
             self.on_success()
@@ -588,11 +596,11 @@ class CircuitBreaker:
         except (atlas.InternalServerError, atlas.APIConnectionError) as e:
             self.on_failure()
             raise
-    
+
     def on_success(self):
         self.failure_count = 0
         self.state = CircuitState.CLOSED
-    
+
     def on_failure(self):
         self.failure_count += 1
         self.last_failure_time = time.time()
@@ -605,8 +613,8 @@ client = Atlas()
 
 try:
     evaluation = breaker.call(
-        client.evaluations.create, 
-        model="gpt-4", 
+        client.evaluations.create,
+        model="gpt-4",
         benchmark="mmlu"
     )
 except atlas.APIError as e:

@@ -1,9 +1,14 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import httpx
 import pytest
 
-from atlas._models import Benchmark, Benchmarks as BenchmarksData, CustomBenchmark
+from atlas.models import (
+    Benchmark,
+    Benchmarks as BenchmarksData,
+    CustomBenchmark,
+    PublicBenchmark,
+)
 from atlas._constants import DEFAULT_TIMEOUT
 from atlas.resources.benchmarks.benchmarks import Benchmarks
 
@@ -62,16 +67,12 @@ class TestBenchmarks:
         }
 
     @pytest.fixture
-    def mock_public_benchmarks_response(self, sample_benchmark_data):
+    def mock_benchmarks_response(self, sample_benchmark_data, sample_custom_benchmark_data):
         """Mock BenchmarksData response with public benchmarks."""
-        benchmark = Benchmark(**sample_benchmark_data)
-        return BenchmarksData(datasets=[benchmark])
-
-    @pytest.fixture
-    def mock_custom_benchmarks_response(self, sample_custom_benchmark_data):
-        """Mock BenchmarksData response with custom benchmarks."""
+        public_benchmark = Benchmark(**sample_benchmark_data)
         custom_benchmark = CustomBenchmark(**sample_custom_benchmark_data)
-        return BenchmarksData(datasets=[custom_benchmark])
+
+        return BenchmarksData(datasets=[public_benchmark, custom_benchmark])
 
     def test_benchmarks_initialization(self, mock_client):
         """Benchmarks resource initializes correctly."""
@@ -80,101 +81,87 @@ class TestBenchmarks:
         assert benchmarks._client is mock_client
         assert benchmarks._get is mock_client.get_cast
 
-    def test_get_public_benchmarks_success(self, benchmarks_resource, mock_public_benchmarks_response):
-        """get method returns public benchmarks successfully."""
-        benchmarks_resource._get.return_value = mock_public_benchmarks_response
+    def test_get_benchmarks_success(self, benchmarks_resource, mock_benchmarks_response):
+        """get method returns benchmarks successfully."""
+        benchmarks_resource._get.side_effect = lambda *_, **kwargs: (
+            mock_benchmarks_response
+            if kwargs.get("params", {}).get("type") == "public"
+            else BenchmarksData(benchmarks=[])
+        )
 
-        result = benchmarks_resource.get(type="public")
+        result = benchmarks_resource.get()
 
         assert isinstance(result, list)
-        assert len(result) == 1
+        assert len(result) == 2
+
         assert isinstance(result[0], Benchmark)
         assert result[0].name == "MMLU"
         assert result[0].key == "mmlu"
 
-    def test_get_custom_benchmarks_success(self, benchmarks_resource, mock_custom_benchmarks_response):
-        """get method returns custom benchmarks successfully."""
-        benchmarks_resource._get.return_value = mock_custom_benchmarks_response
+        assert isinstance(result[1], Benchmark)
+        assert result[1].name == "My Custom Benchmark"
+        assert result[1].key == "my-benchmark"
 
-        result = benchmarks_resource.get(type="custom")
+    def test_get_benchmarks_request_parameters(self, benchmarks_resource, mock_benchmarks_response):
+        """get method makes correct API request for benchmarks."""
+        benchmarks_resource._get.return_value = mock_benchmarks_response
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], CustomBenchmark)
-        assert result[0].name == "My Custom Benchmark"
-        assert result[0].key == "my-benchmark"
+        benchmarks_resource.get()
 
-    def test_get_benchmarks_request_parameters_public(self, benchmarks_resource, mock_public_benchmarks_response):
-        """get method makes correct API request for public benchmarks."""
-        benchmarks_resource._get.return_value = mock_public_benchmarks_response
+        expected_calls = [
+            call(
+                "/organizations/org-123/projects/proj-456/benchmarks",
+                params={"type": "custom"},
+                timeout=DEFAULT_TIMEOUT,
+                cast_to=BenchmarksData,
+            ),
+            call(
+                "/organizations/org-123/projects/proj-456/benchmarks",
+                params={"type": "public"},
+                timeout=DEFAULT_TIMEOUT,
+                cast_to=BenchmarksData,
+            ),
+        ]
 
-        benchmarks_resource.get(type="public")
+        benchmarks_resource._get.assert_has_calls(expected_calls)
 
-        benchmarks_resource._get.assert_called_once_with(
-            "/organizations/org-123/projects/proj-456/benchmarks",
-            params={"type": "public"},
-            timeout=DEFAULT_TIMEOUT,
-            cast_to=BenchmarksData,
-        )
-
-    def test_get_benchmarks_request_parameters_custom(self, benchmarks_resource, mock_custom_benchmarks_response):
-        """get method makes correct API request for custom benchmarks."""
-        benchmarks_resource._get.return_value = mock_custom_benchmarks_response
-
-        benchmarks_resource.get(type="custom")
-
-        benchmarks_resource._get.assert_called_once_with(
-            "/organizations/org-123/projects/proj-456/benchmarks",
-            params={"type": "custom"},
-            timeout=DEFAULT_TIMEOUT,
-            cast_to=BenchmarksData,
-        )
-
-    def test_get_benchmarks_with_custom_timeout(self, benchmarks_resource, mock_public_benchmarks_response):
+    def test_get_benchmarks_with_custom_timeout(self, benchmarks_resource, mock_benchmarks_response):
         """get method accepts custom timeout."""
-        benchmarks_resource._get.return_value = mock_public_benchmarks_response
+        benchmarks_resource._get.return_value = mock_benchmarks_response
         custom_timeout = 45.0
 
-        benchmarks_resource.get(type="public", timeout=custom_timeout)
+        benchmarks_resource.get(timeout=custom_timeout)
 
         call_args = benchmarks_resource._get.call_args
         assert call_args.kwargs["timeout"] == custom_timeout
 
-    def test_get_benchmarks_with_httpx_timeout(self, benchmarks_resource, mock_public_benchmarks_response):
+    def test_get_benchmarks_with_httpx_timeout(self, benchmarks_resource, mock_benchmarks_response):
         """get method accepts httpx.Timeout object."""
-        benchmarks_resource._get.return_value = mock_public_benchmarks_response
+        benchmarks_resource._get.return_value = mock_benchmarks_response
         custom_timeout = httpx.Timeout(45.0)
 
-        benchmarks_resource.get(type="public", timeout=custom_timeout)
+        benchmarks_resource.get(timeout=custom_timeout)
 
         call_args = benchmarks_resource._get.call_args
         assert call_args.kwargs["timeout"] is custom_timeout
 
-    def test_get_benchmarks_none_response(self, benchmarks_resource):
-        """get method returns None when response is None."""
-        benchmarks_resource._get.return_value = None
+    @pytest.mark.parametrize(
+        "mock_return, expected",
+        [
+            (None, []),
+            ("invalid-response", []),
+            (BenchmarksData(datasets=[]), []),
+        ],
+        ids=["none_response", "invalid_type", "empty_response"],
+    )
+    def test_get_benchmarks_various_responses(self, benchmarks_resource, mock_return, expected):
+        benchmarks_resource._get.return_value = mock_return
 
-        result = benchmarks_resource.get(type="public")
+        result = benchmarks_resource.get()
 
-        assert result is None
-
-    def test_get_benchmarks_invalid_response_type(self, benchmarks_resource):
-        """get method handles non-BenchmarksData response gracefully."""
-        benchmarks_resource._get.return_value = "invalid-response"
-
-        result = benchmarks_resource.get(type="public")
-
-        assert result is None
-
-    def test_get_benchmarks_empty_response(self, benchmarks_resource):
-        """get method returns empty list when no benchmarks in response."""
-        empty_response = BenchmarksData(datasets=[])
-        benchmarks_resource._get.return_value = empty_response
-
-        result = benchmarks_resource.get(type="public")
-
-        assert result == []
-        assert isinstance(result, list)
+        assert result == expected
+        if expected == []:
+            assert isinstance(result, list)
 
     def test_get_benchmarks_multiple_items(
         self, benchmarks_resource, sample_benchmark_data, sample_custom_benchmark_data
@@ -191,59 +178,51 @@ class TestBenchmarks:
         benchmark2 = Benchmark(**benchmark2_data)
 
         response = BenchmarksData(datasets=[benchmark, benchmark2])
-        benchmarks_resource._get.return_value = response
+        benchmarks_resource._get.side_effect = lambda *_, **kwargs: (
+            response if kwargs.get("params", {}).get("type") == "public" else BenchmarksData(benchmarks=[])
+        )
 
-        result = benchmarks_resource.get(type="public")
+        result = benchmarks_resource.get()
 
         assert len(result) == 2
         assert result[0].key == "mmlu"
         assert result[1].key == "hellaswag"
 
-    def test_get_benchmarks_url_construction(self, benchmarks_resource, mock_public_benchmarks_response):
+    def test_get_benchmarks_url_construction(self, benchmarks_resource, mock_benchmarks_response):
         """get method constructs URL correctly with org and project IDs."""
         benchmarks_resource._client.organization_id = "custom-org"
         benchmarks_resource._client.project_id = "custom-project"
-        benchmarks_resource._get.return_value = mock_public_benchmarks_response
+        benchmarks_resource._get.return_value = mock_benchmarks_response
 
-        benchmarks_resource.get(type="public")
+        benchmarks_resource.get()
 
         expected_url = "/organizations/custom-org/projects/custom-project/benchmarks"
         call_args = benchmarks_resource._get.call_args
         assert call_args[0][0] == expected_url
 
-    @pytest.mark.parametrize("benchmark_type", ["public", "custom"])
-    def test_get_benchmarks_type_parameter(self, benchmarks_resource, benchmark_type):
-        """get method accepts both public and custom types."""
-        benchmarks_resource._get.return_value = BenchmarksData(datasets=[])
-
-        benchmarks_resource.get(type=benchmark_type)
-
-        call_args = benchmarks_resource._get.call_args
-        assert call_args.kwargs["params"]["type"] == benchmark_type
-
-    def test_get_benchmarks_cast_to_parameter(self, benchmarks_resource, mock_public_benchmarks_response):
+    def test_get_benchmarks_cast_to_parameter(self, benchmarks_resource, mock_benchmarks_response):
         """get method specifies correct cast_to parameter."""
-        benchmarks_resource._get.return_value = mock_public_benchmarks_response
+        benchmarks_resource._get.return_value = mock_benchmarks_response
 
-        benchmarks_resource.get(type="public")
+        benchmarks_resource.get()
 
         call_args = benchmarks_resource._get.call_args
         assert call_args.kwargs["cast_to"] is BenchmarksData
 
-    def test_get_benchmarks_timeout_default(self, benchmarks_resource, mock_public_benchmarks_response):
+    def test_get_benchmarks_timeout_default(self, benchmarks_resource, mock_benchmarks_response):
         """get method uses DEFAULT_TIMEOUT when no timeout specified."""
-        benchmarks_resource._get.return_value = mock_public_benchmarks_response
+        benchmarks_resource._get.return_value = mock_benchmarks_response
 
-        benchmarks_resource.get(type="public")
+        benchmarks_resource.get()
 
         call_args = benchmarks_resource._get.call_args
         assert call_args.kwargs["timeout"] is DEFAULT_TIMEOUT
 
-    def test_get_benchmarks_with_none_timeout(self, benchmarks_resource, mock_public_benchmarks_response):
+    def test_get_benchmarks_with_none_timeout(self, benchmarks_resource, mock_benchmarks_response):
         """get method accepts None timeout."""
-        benchmarks_resource._get.return_value = mock_public_benchmarks_response
+        benchmarks_resource._get.return_value = mock_benchmarks_response
 
-        benchmarks_resource.get(type="public", timeout=None)
+        benchmarks_resource.get(timeout=None)
 
         call_args = benchmarks_resource._get.call_args
         assert call_args.kwargs["timeout"] is None
@@ -278,7 +257,7 @@ class TestBenchmarksErrorHandling:
         benchmarks_resource._get.side_effect = api_error
 
         with pytest.raises(APIStatusError):
-            benchmarks_resource.get(type="public")
+            benchmarks_resource.get()
 
     def test_get_benchmarks_handles_auth_error(self, benchmarks_resource):
         """get method propagates authentication errors."""
@@ -292,7 +271,7 @@ class TestBenchmarksErrorHandling:
         benchmarks_resource._get.side_effect = auth_error
 
         with pytest.raises(AuthenticationError):
-            benchmarks_resource.get(type="custom")
+            benchmarks_resource.get()
 
     def test_get_benchmarks_handles_connection_error(self, benchmarks_resource):
         """get method propagates connection errors."""
@@ -303,7 +282,7 @@ class TestBenchmarksErrorHandling:
         benchmarks_resource._get.side_effect = connection_error
 
         with pytest.raises(APIConnectionError):
-            benchmarks_resource.get(type="public")
+            benchmarks_resource.get()
 
     def test_get_benchmarks_handles_timeout_error(self, benchmarks_resource):
         """get method propagates timeout errors."""
@@ -314,7 +293,7 @@ class TestBenchmarksErrorHandling:
         benchmarks_resource._get.side_effect = timeout_error
 
         with pytest.raises(APITimeoutError):
-            benchmarks_resource.get(type="public", timeout=1.0)
+            benchmarks_resource.get(timeout=1.0)
 
 
 class TestBenchmarksTyping:
@@ -338,13 +317,13 @@ class TestBenchmarksTyping:
         """get method returns consistent types."""
         # Test that the method returns either a list or None
         benchmarks_resource._get.return_value = None
-        result = benchmarks_resource.get(type="public")
-        assert result is None
+        result = benchmarks_resource.get()
+        assert result == []
 
         # Test that it returns a list when successful
         benchmarks_resource._get.return_value = BenchmarksData(datasets=[])
-        result = benchmarks_resource.get(type="public")
-        assert isinstance(result, list)
+        result = benchmarks_resource.get()
+        assert result == []
 
     def test_get_benchmarks_mixed_benchmark_types(self, benchmarks_resource):
         """get method can handle mixed benchmark types in response."""
@@ -379,16 +358,19 @@ class TestBenchmarksTyping:
             "disabled": False,
         }
 
-        public_benchmark = Benchmark(**public_data)
+        public_benchmark = PublicBenchmark(**public_data)
         custom_benchmark = CustomBenchmark(**custom_data)
 
-        response = BenchmarksData(datasets=[public_benchmark, custom_benchmark])
-        benchmarks_resource._get.return_value = response
+        benchmarks_resource._get.side_effect = lambda *_, **kwargs: (
+            BenchmarksData(benchmarks=[public_benchmark])
+            if kwargs.get("params", {}).get("type") == "public"
+            else BenchmarksData(benchmarks=[custom_benchmark])
+        )
 
-        result = benchmarks_resource.get(type="public")  # Type doesn't matter for this test
+        result = benchmarks_resource.get()  # Type doesn't matter for this test
 
         assert len(result) == 2
-        assert isinstance(result[0], Benchmark)
-        assert isinstance(result[1], CustomBenchmark)
-        assert result[0].key == "mmlu"
-        assert result[1].key == "my-bench"
+        assert isinstance(result[0], CustomBenchmark)
+        assert isinstance(result[1], PublicBenchmark)
+        assert result[0].key == "my-bench"
+        assert result[1].key == "mmlu"

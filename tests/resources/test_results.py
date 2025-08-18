@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from atlas._models import Result, Results as ResultsData, Pagination, ResultMetrics
+from atlas.models import Result, Results as ResultsData, Pagination, ResultMetrics
 from atlas._constants import DEFAULT_TIMEOUT
 from atlas.resources.results.results import Results
 
@@ -684,7 +684,12 @@ class TestResultsPagination:
         ],
     )
     def test_pagination_total_pages_calculation(
-        self, results_resource, sample_result_data, total_count, page_size, expected_pages
+        self,
+        results_resource,
+        sample_result_data,
+        total_count,
+        page_size,
+        expected_pages,
     ):
         """get method correctly calculates total_pages for various scenarios."""
         api_response = {

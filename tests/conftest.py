@@ -7,7 +7,9 @@ import pytest
 @pytest.fixture
 def env_vars():
     """Clean environment variables for testing."""
-    env_keys = ["LAYERLENS_ATLAS_API_KEY", "LAYERLENS_ATLAS_ORG_ID", "LAYERLENS_ATLAS_PROJECT_ID"]
+    env_keys = [
+        "LAYERLENS_ATLAS_API_KEY",
+    ]
     original_values = {key: os.environ.get(key) for key in env_keys}
 
     # Clear environment variables
@@ -32,8 +34,6 @@ def mock_env_vars():
         os.environ,
         {
             "LAYERLENS_ATLAS_API_KEY": "test-api-key",
-            "LAYERLENS_ATLAS_ORG_ID": "test-org-id",
-            "LAYERLENS_ATLAS_PROJECT_ID": "test-project-id",
         },
     ):
         yield

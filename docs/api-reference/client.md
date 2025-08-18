@@ -11,26 +11,20 @@ from atlas import Atlas
 client = Atlas()
 
 # Explicit configuration
-client = Atlas(
-    api_key="your_api_key",
-    organization_id="your_org_id",
-    project_id="your_project_id"
-)
+client = Atlas(api_key="your_api_key")
 ```
 
 ## Constructor Parameters
 
-### `Atlas(api_key, organization_id, project_id, base_url, timeout)`
+### `Atlas(api_key, base_url, timeout)`
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `api_key` | `str \| None` | Yes* | `None` | Your LayerLens Atlas API key |
-| `organization_id` | `str \| None` | Yes* | `None` | Your organization identifier |
-| `project_id` | `str \| None` | Yes* | `None` | The project you want to work with |
-| `base_url` | `str \| httpx.URL \| None` | No | Atlas API URL | Custom API base URL |
-| `timeout` | `float \| httpx.Timeout \| None` | No | 10 minutes | Request timeout configuration |
+| Parameter  | Type                             | Required | Default       | Description                   |
+| ---------- | -------------------------------- | -------- | ------------- | ----------------------------- |
+| `api_key`  | `str \| None`                    | Yes\*    | `None`        | Your LayerLens Atlas API key  |
+| `base_url` | `str \| httpx.URL \| None`       | No       | Atlas API URL | Custom API base URL           |
+| `timeout`  | `float \| httpx.Timeout \| None` | No       | 10 minutes    | Request timeout configuration |
 
-*Required unless set via environment variables
+\*Required unless set via environment variables
 
 ## Environment Variable Configuration
 
@@ -38,8 +32,6 @@ The client automatically loads configuration from these environment variables:
 
 ```bash
 LAYERLENS_ATLAS_API_KEY="your_api_key_here"
-LAYERLENS_ATLAS_ORG_ID="your_org_id_here"
-LAYERLENS_ATLAS_PROJECT_ID="your_project_id_here"
 LAYERLENS_ATLAS_BASE_URL="https://custom-endpoint.com/api/v1"  # Optional
 ```
 
@@ -63,7 +55,7 @@ from atlas import Atlas
 client = Atlas(
     timeout=httpx.Timeout(
         connect=5.0,    # Connection timeout: 5 seconds
-        read=60.0,      # Read timeout: 60 seconds  
+        read=60.0,      # Read timeout: 60 seconds
         write=30.0,     # Write timeout: 30 seconds
         pool=10.0       # Connection pool timeout: 10 seconds
     )
@@ -90,10 +82,7 @@ Create a new client instance with modified configuration:
 
 ```python
 # Base client
-client = Atlas(api_key="key1", organization_id="org1")
-
-# Create a copy with different project
-project_client = client.copy(project_id="different_project")
+client = Atlas(api_key="key1")
 
 # Create a copy with different timeout
 slow_client = client.copy(timeout=300.0)  # 5 minutes
@@ -108,7 +97,7 @@ client = Atlas()
 
 # Use different timeout for this request only
 evaluation = client.with_options(timeout=60.0).evaluations.create(
-    model="gpt-4", 
+    model="gpt-4",
     benchmark="mmlu"
 )
 
@@ -126,11 +115,12 @@ client = Atlas()
 # Access evaluations resource
 client.evaluations.create(model="gpt-4", benchmark="mmlu")
 
-# Access results resource  
+# Access results resource
 client.results.get(evaluation_id="eval_123")
 ```
 
 Available resources:
+
 - `client.evaluations` - Create and manage evaluations
 - `client.results` - Retrieve evaluation results
 - More resources coming soon...
@@ -151,7 +141,7 @@ except atlas.AuthenticationError:
     # 401 - Invalid API key
     print("Authentication failed")
 except atlas.PermissionDeniedError:
-    # 403 - Valid API key, insufficient permissions  
+    # 403 - Valid API key, insufficient permissions
     print("Permission denied")
 except atlas.NotFoundError:
     # 404 - Resource not found
@@ -184,9 +174,11 @@ You don't need to manually handle authentication headers.
 ## Base URL Configuration
 
 ### Default Base URL
+
 The client uses the default LayerLens Atlas API endpoint unless overridden.
 
 ### Custom Base URL
+
 For enterprise or self-hosted deployments:
 
 ```python
@@ -204,6 +196,7 @@ client = Atlas()  # Will use custom base URL from environment
 ## Best Practices
 
 ### 1. Use Environment Variables
+
 ```python
 # ✅ Good - secure and flexible
 client = Atlas()
@@ -213,6 +206,7 @@ client = Atlas(api_key="hardcoded_key")
 ```
 
 ### 2. Configure Appropriate Timeouts
+
 ```python
 # ✅ Good - reasonable timeout for evaluation creation
 client = Atlas(timeout=120.0)  # 2 minutes
@@ -222,6 +216,7 @@ client = Atlas(timeout=5.0)  # 5 seconds might be too short
 ```
 
 ### 3. Handle Errors Gracefully
+
 ```python
 # ✅ Good - specific error handling
 try:
@@ -235,6 +230,7 @@ except atlas.APIError as e:
 ```
 
 ### 4. Reuse Client Instances
+
 ```python
 # ✅ Good - reuse the same client
 client = Atlas()

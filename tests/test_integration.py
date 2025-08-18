@@ -5,15 +5,14 @@ import httpx
 import pytest
 
 from atlas import Atlas
-from atlas._models import (
+from atlas.models import (
     Model,
-    Models as ModelsData,
     Result,
     Results as ResultsData,
     Benchmark,
-    Benchmarks as BenchmarksData,
     Evaluation,
     Evaluations as EvaluationsData,
+    EvaluationStatus,
 )
 
 
@@ -23,7 +22,7 @@ class TestAtlasIntegration:
     @pytest.fixture
     def atlas_client(self):
         """Create Atlas client with mocked dependencies."""
-        return Atlas(api_key="test-api-key", organization_id="test-org", project_id="test-project")
+        return Atlas(api_key="test-api-key")
 
     @pytest.fixture
     def sample_model_data(self):
@@ -65,7 +64,7 @@ class TestAtlasIntegration:
         """Sample evaluation data for testing."""
         return {
             "id": "eval-12345",
-            "status": "completed",
+            "status": "success",
             "status_description": "Evaluation completed successfully",
             "submitted_at": 1640995200,
             "finished_at": 1640995800,
@@ -102,7 +101,12 @@ class TestCompleteEvaluationWorkflow:
     @pytest.fixture
     def atlas_client(self):
         """Atlas client for workflow testing."""
-        return Atlas(api_key="workflow-test-key", organization_id="workflow-org", project_id="workflow-project")
+        mock_org = Mock()
+        mock_org.id = "org-123"
+        mock_org.projects = [Mock(id="proj-456")]
+
+        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+            return Atlas(api_key="workflow-test-key")
 
     def test_complete_evaluation_workflow(self, atlas_client):
         """Test complete workflow: get models/benchmarks -> create evaluation -> get results."""
@@ -139,16 +143,12 @@ class TestCompleteEvaluationWorkflow:
 
         evaluation_data = {
             "id": "eval-789",
-            "status": "completed",
+            "status": "success",
             "status_description": "Done",
             "submitted_at": 1640995200,
             "finished_at": 1640995800,
             "model_id": "model-123",
-            "model_name": "GPT-4",
-            "model_key": "gpt-4",
-            "model_company": "OpenAI",
             "dataset_id": "bench-456",
-            "dataset_name": "MMLU",
             "average_duration": 2500,
             "readability_score": 0.85,
             "toxicity_score": 0.02,
@@ -173,8 +173,6 @@ class TestCompleteEvaluationWorkflow:
         result = Result(**result_data)
 
         # Mock responses
-        models_response = ModelsData(models=[model])
-        benchmarks_response = BenchmarksData(datasets=[benchmark])
         evaluations_response = EvaluationsData(data=[evaluation])
         results_response = ResultsData(
             evaluation_id="eval-789",
@@ -209,9 +207,9 @@ class TestCompleteEvaluationWorkflow:
             mock_post.return_value = evaluations_response  # Create evaluation
 
             # Step 1: Create evaluation directly (Atlas client doesn't expose models/benchmarks resources)
-            created_evaluation = atlas_client.evaluations.create(model="gpt-4", benchmark="mmlu")
+            created_evaluation = atlas_client.evaluations.create(model=model, benchmark=benchmark)
             assert created_evaluation.id == "eval-789"
-            assert created_evaluation.status == "completed"
+            assert created_evaluation.status == EvaluationStatus.SUCCESS
 
             # Step 2: Get evaluation results
             results = atlas_client.results.get(evaluation_id=created_evaluation.id)
@@ -306,9 +304,12 @@ class TestResourceInteraction:
     @pytest.fixture
     def atlas_client(self):
         """Atlas client for resource interaction testing."""
-        return Atlas(
-            api_key="interaction-test-key", organization_id="interaction-org", project_id="interaction-project"
-        )
+        mock_org = Mock()
+        mock_org.id = "org-123"
+        mock_org.projects = [Mock(id="proj-456")]
+
+        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+            return Atlas(api_key="interaction-test-key")
 
     def test_evaluation_creation_with_model_and_benchmark_objects(self, atlas_client):
         """Test creating evaluation using model and benchmark objects."""
@@ -345,16 +346,12 @@ class TestResourceInteraction:
 
         evaluation_data = {
             "id": "eval-interaction",
-            "status": "submitted",
+            "status": "in-progress",
             "status_description": "Submitted",
             "submitted_at": 1640995200,
             "finished_at": 0,
             "model_id": "model-abc",
-            "model_name": "Claude 3",
-            "model_key": "claude-3",
-            "model_company": "Anthropic",
             "dataset_id": "bench-xyz",
-            "dataset_name": "HellaSwag",
             "average_duration": 0,
             "readability_score": 0.0,
             "toxicity_score": 0.0,
@@ -372,17 +369,17 @@ class TestResourceInteraction:
             mock_post.return_value = evaluations_response
 
             # Create evaluation using model and benchmark keys
-            created_evaluation = atlas_client.evaluations.create(model=model.key, benchmark=benchmark.key)
+            created_evaluation = atlas_client.evaluations.create(model=model, benchmark=benchmark)
 
             assert created_evaluation.id == "eval-interaction"
-            assert created_evaluation.model_key == model.key
-            assert created_evaluation.dataset_id == benchmark.id
+            assert created_evaluation.model_id == model.id
+            assert created_evaluation.benchmark_id == benchmark.id
 
             # Verify API call
             call_args = mock_post.call_args
             body = call_args.kwargs["body"][0]
-            assert body["model_id"] == model.key
-            assert body["dataset_id"] == benchmark.key
+            assert body["model_id"] == model.id
+            assert body["dataset_id"] == benchmark.id
 
     def test_results_analysis_workflow(self, atlas_client):
         """Test analyzing results from multiple evaluations."""
@@ -477,9 +474,17 @@ class TestResourceInteraction:
 class TestAtlasClientProperties:
     """Test Atlas client resource properties and access."""
 
-    def test_client_has_all_resource_properties(self):
+    @pytest.fixture
+    def mock_org(self):
+        org = Mock()
+        org.id = "org-123"
+        org.projects = [Mock(id="proj-456")]
+        return org
+
+    def test_client_has_all_resource_properties(self, mock_org):
         """Atlas client exposes all resource properties."""
-        client = Atlas(api_key="property-test-key", organization_id="property-org", project_id="property-project")
+        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+            client = Atlas(api_key="property-test-key")
 
         # Verify available resource properties exist
         assert hasattr(client, "evaluations")
@@ -492,56 +497,57 @@ class TestAtlasClientProperties:
         assert isinstance(client.evaluations, Evaluations)
         assert isinstance(client.results, Results)
 
-    def test_resource_properties_share_same_client(self):
+    def test_resource_properties_share_same_client(self, mock_org):
         """All resource properties share the same client instance."""
-        client = Atlas(api_key="shared-client-test", organization_id="shared-org", project_id="shared-project")
+        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+            client = Atlas(api_key="shared-client-test")
 
         # Verify all resources use the same client
         assert client.evaluations._client is client
         assert client.results._client is client
 
-    def test_client_configuration_propagates_to_resources(self):
-        """Client configuration (org_id, project_id) propagates to resources."""
-        org_id = "config-test-org"
-        project_id = "config-test-project"
-
-        client = Atlas(api_key="config-test-key", organization_id=org_id, project_id=project_id)
-
-        # Verify configuration is available to resources
-        assert client.organization_id == org_id
-        assert client.project_id == project_id
-
-        # Resources should have access to client configuration
-        assert client.evaluations._client.organization_id == org_id
-        assert client.evaluations._client.project_id == project_id
-        assert client.results._client.organization_id == org_id
-        assert client.results._client.project_id == project_id
-
 
 class TestConcurrentOperations:
     """Test concurrent operations and resource independence."""
 
-    def test_multiple_atlas_clients_independent(self):
+    @pytest.fixture
+    def mock_org1(self):
+        org = Mock()
+        org.id = "org-123"
+        org.projects = [Mock(id="proj-456")]
+        return org
+
+    @pytest.fixture
+    def mock_org2(self):
+        org = Mock()
+        org.id = "org-456"
+        org.projects = [Mock(id="proj-123")]
+        return org
+
+    def test_multiple_atlas_clients_independent(self, mock_org1, mock_org2):
         """Multiple Atlas client instances operate independently."""
 
-        client1 = Atlas(api_key="client-1-key", organization_id="org-1", project_id="project-1")
+        with patch("atlas.Atlas._get_organization", return_value=mock_org1):
+            client1 = Atlas(api_key="client-1-key")
 
-        client2 = Atlas(api_key="client-2-key", organization_id="org-2", project_id="project-2")
+        with patch("atlas.Atlas._get_organization", return_value=mock_org2):
+            client2 = Atlas(api_key="client-2-key")
 
         # Verify clients are independent
         assert client1.api_key != client2.api_key
-        assert client1.organization_id != client2.organization_id
-        assert client1.project_id != client2.project_id
 
         # Verify resources are independent
         assert client1.evaluations._client is not client2.evaluations._client
         assert client1.results._client is not client2.results._client
 
-    def test_resource_operations_isolated(self):
+    def test_resource_operations_isolated(self, mock_org1, mock_org2):
         """Operations on different client resources are isolated."""
 
-        client1 = Atlas(api_key="iso-test-1", organization_id="org-1", project_id="proj-1")
-        client2 = Atlas(api_key="iso-test-2", organization_id="org-2", project_id="proj-2")
+        with patch("atlas.Atlas._get_organization", return_value=mock_org1):
+            client1 = Atlas(api_key="iso-test-1")
+
+        with patch("atlas.Atlas._get_organization", return_value=mock_org2):
+            client2 = Atlas(api_key="iso-test-2")
 
         result_data = {
             "subset": "test",
@@ -618,11 +624,52 @@ class TestConcurrentOperations:
 class TestErrorPropagation:
     """Test error propagation through full workflows."""
 
-    def test_evaluation_workflow_error_propagation(self):
+    @pytest.fixture
+    def mock_org(self):
+        org = Mock()
+        org.id = "org-123"
+        org.projects = [Mock(id="proj-456")]
+        return org
+
+    def test_evaluation_workflow_error_propagation(self, mock_org):
         """Errors in evaluation workflow are properly propagated."""
         from atlas._exceptions import APIStatusError, APIConnectionError
 
-        client = Atlas(api_key="error-test-key", organization_id="error-org", project_id="error-project")
+        # Create model and benchmark objects
+        model_data = {
+            "id": "model-abc",
+            "key": "claude-3",
+            "name": "Claude 3",
+            "company": "Anthropic",
+            "description": "Claude 3",
+            "released_at": 1709251200,
+            "parameters": 5e11,
+            "modality": "text",
+            "context_length": 100000,
+            "architecture_type": "transformer",
+            "license": "proprietary",
+            "open_weights": False,
+            "region": "us-west-2",
+            "deprecated": False,
+        }
+
+        benchmark_data = {
+            "id": "bench-xyz",
+            "key": "hellaswag",
+            "name": "HellaSwag",
+            "full_description": "HellaSwag benchmark",
+            "language": "english",
+            "categories": ["reasoning"],
+            "subsets": ["commonsense"],
+            "prompt_count": 10042,
+            "deprecated": False,
+        }
+
+        model = Model(**model_data)
+        benchmark = Benchmark(**benchmark_data)
+
+        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+            client = Atlas(api_key="error-test-key")
 
         mock_response = Mock()
         mock_response.status_code = 500
@@ -641,7 +688,7 @@ class TestErrorPropagation:
             # Test connection error in evaluations.create
             mock_post.side_effect = connection_error
             with pytest.raises(APIConnectionError):
-                client.evaluations.create(model="gpt-4", benchmark="mmlu")
+                client.evaluations.create(model=model, benchmark=benchmark)
 
             # Verify errors didn't interfere with each other
             assert mock_get.called

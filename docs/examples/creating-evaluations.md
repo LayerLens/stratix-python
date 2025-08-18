@@ -37,11 +37,7 @@ Using explicit client configuration instead of environment variables:
 from atlas import Atlas
 
 # Explicit configuration
-client = Atlas(
-    api_key="your_api_key_here",
-    organization_id="your_org_id", 
-    project_id="your_project_id"
-)
+client = Atlas(api_key="your_api_key_here")
 
 evaluation = client.evaluations.create(
     model="claude-3-opus",
@@ -67,16 +63,16 @@ def compare_models_on_benchmark(models: list, benchmark: str):
     """Create evaluations for multiple models on the same benchmark"""
     client = Atlas()
     evaluations = []
-    
+
     print(f"🔄 Creating evaluations for {len(models)} models on {benchmark}")
-    
+
     for model in models:
         try:
             evaluation = client.evaluations.create(
                 model=model,
                 benchmark=benchmark
             )
-            
+
             if evaluation:
                 evaluations.append({
                     "model": model,
@@ -87,19 +83,19 @@ def compare_models_on_benchmark(models: list, benchmark: str):
                 print(f"✅ {model}: {evaluation.id}")
             else:
                 print(f"❌ Failed to create evaluation for {model}")
-                
+
         except Exception as e:
             print(f"❌ Error creating evaluation for {model}: {e}")
-            
+
         # Brief pause between requests to avoid rate limits
         time.sleep(0.5)
-    
+
     return evaluations
 
 # Usage
 models_to_compare = [
     "gpt-4",
-    "gpt-3.5-turbo", 
+    "gpt-3.5-turbo",
     "claude-3-opus",
     "claude-3-sonnet",
     "llama-2-70b"
@@ -125,16 +121,16 @@ def evaluate_model_on_benchmarks(model: str, benchmarks: list):
     """Evaluate a single model across multiple benchmarks"""
     client = Atlas()
     evaluations = []
-    
+
     print(f"🔄 Evaluating {model} on {len(benchmarks)} benchmarks")
-    
+
     for benchmark in benchmarks:
         try:
             evaluation = client.evaluations.create(
                 model=model,
                 benchmark=benchmark
             )
-            
+
             if evaluation:
                 evaluations.append({
                     "benchmark": benchmark,
@@ -145,18 +141,18 @@ def evaluate_model_on_benchmarks(model: str, benchmarks: list):
                 print(f"✅ {benchmark}: {evaluation.id}")
             else:
                 print(f"❌ Failed to create evaluation for {benchmark}")
-                
+
         except Exception as e:
             print(f"❌ Error evaluating on {benchmark}: {e}")
-            
+
         time.sleep(0.5)
-    
+
     return evaluations
 
 # Usage
 benchmarks_to_test = [
     "mmlu",
-    "hellaswag", 
+    "hellaswag",
     "arc-challenge",
     "truthfulqa",
     "gsm8k"
@@ -183,22 +179,22 @@ def create_evaluation_matrix(models: list, benchmarks: list, delay: float = 1.0)
     client = Atlas()
     results = {}
     total_combinations = len(models) * len(benchmarks)
-    
+
     print(f"🔄 Creating {total_combinations} evaluations...")
-    
+
     for i, (model, benchmark) in enumerate(itertools.product(models, benchmarks), 1):
         print(f"\n[{i}/{total_combinations}] {model} + {benchmark}")
-        
+
         try:
             evaluation = client.evaluations.create(
                 model=model,
                 benchmark=benchmark
             )
-            
+
             if evaluation:
                 if model not in results:
                     results[model] = {}
-                
+
                 results[model][benchmark] = {
                     "evaluation_id": evaluation.id,
                     "model_name": evaluation.model_name,
@@ -209,7 +205,7 @@ def create_evaluation_matrix(models: list, benchmarks: list, delay: float = 1.0)
                 print(f"✅ Success: {evaluation.id}")
             else:
                 print(f"❌ Failed: No evaluation created")
-                
+
         except Exception as e:
             print(f"❌ Error: {e}")
             if model not in results:
@@ -218,11 +214,11 @@ def create_evaluation_matrix(models: list, benchmarks: list, delay: float = 1.0)
                 "error": str(e),
                 "success": False
             }
-        
+
         # Rate limiting
         if i < total_combinations:
             time.sleep(delay)
-    
+
     return results
 
 # Usage
@@ -261,36 +257,36 @@ import time
 import random
 
 def create_evaluation_with_retry(
-    model: str, 
-    benchmark: str, 
+    model: str,
+    benchmark: str,
     max_retries: int = 3,
     base_delay: float = 1.0
 ):
     """Create evaluation with exponential backoff retry logic"""
     client = Atlas()
-    
+
     for attempt in range(max_retries):
         try:
             print(f"🔄 Attempt {attempt + 1}/{max_retries}: Creating evaluation...")
-            
+
             evaluation = client.evaluations.create(
                 model=model,
                 benchmark=benchmark,
                 timeout=120.0  # 2-minute timeout
             )
-            
+
             if evaluation:
                 print(f"✅ Success on attempt {attempt + 1}: {evaluation.id}")
                 return evaluation
             else:
                 print(f"❌ Evaluation creation returned None on attempt {attempt + 1}")
-                
+
         except atlas.RateLimitError as e:
             retry_after = e.response.headers.get('retry-after', base_delay * (2 ** attempt))
             print(f"⏳ Rate limited, waiting {retry_after}s...")
             time.sleep(float(retry_after))
             continue
-            
+
         except atlas.InternalServerError:
             if attempt < max_retries - 1:
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
@@ -300,7 +296,7 @@ def create_evaluation_with_retry(
             else:
                 print("❌ Server error - max retries exceeded")
                 break
-                
+
         except atlas.APIConnectionError:
             if attempt < max_retries - 1:
                 delay = base_delay * (2 ** attempt)
@@ -310,23 +306,23 @@ def create_evaluation_with_retry(
             else:
                 print("❌ Connection failed - max retries exceeded")
                 break
-                
+
         except atlas.AuthenticationError:
             print("❌ Authentication failed - check your API key")
             break
-            
+
         except atlas.NotFoundError:
             print(f"❌ Model '{model}' or benchmark '{benchmark}' not found")
             break
-            
+
         except atlas.PermissionDeniedError:
             print("❌ Permission denied - check your access rights")
             break
-            
+
         except atlas.APIError as e:
             print(f"❌ API error: {e}")
             break
-    
+
     return None
 
 # Usage
@@ -351,25 +347,25 @@ from atlas import Atlas
 def validate_and_create_evaluation(model: str, benchmark: str):
     """Validate model and benchmark before creating evaluation"""
     client = Atlas()
-    
+
     # Pre-validation checks
     if not model or not model.strip():
         print("❌ Model cannot be empty")
         return None
-        
+
     if not benchmark or not benchmark.strip():
         print("❌ Benchmark cannot be empty")
         return None
-    
+
     print(f"🔍 Validating {model} + {benchmark}...")
-    
+
     try:
         # Attempt to create the evaluation
         evaluation = client.evaluations.create(
             model=model.strip(),
             benchmark=benchmark.strip()
         )
-        
+
         if evaluation:
             print(f"✅ Validation successful!")
             print(f"   Evaluation ID: {evaluation.id}")
@@ -380,7 +376,7 @@ def validate_and_create_evaluation(model: str, benchmark: str):
         else:
             print("❌ Validation failed: No evaluation returned")
             return None
-            
+
     except atlas.NotFoundError:
         print(f"❌ Validation failed: Model '{model}' or benchmark '{benchmark}' not found")
         print("💡 Suggestions:")
@@ -388,17 +384,17 @@ def validate_and_create_evaluation(model: str, benchmark: str):
         print("   • Verify available options in Atlas dashboard")
         print("   • Ensure your organization has access to these resources")
         return None
-        
+
     except atlas.AuthenticationError:
         print("❌ Authentication failed")
         print("💡 Check your API key configuration")
         return None
-        
+
     except atlas.PermissionDeniedError:
         print("❌ Permission denied")
         print("💡 Contact your administrator for access")
         return None
-        
+
     except atlas.APIError as e:
         print(f"❌ Validation failed: {e}")
         return None
@@ -414,7 +410,7 @@ test_combinations = [
 for model, benchmark in test_combinations:
     print(f"\n{'='*50}")
     evaluation = validate_and_create_evaluation(model, benchmark)
-    
+
     if evaluation:
         print(f"Ready to monitor evaluation: {evaluation.id}")
 ```
@@ -429,13 +425,13 @@ import httpx
 
 def create_evaluations_with_custom_timeouts():
     """Demonstrate different timeout configurations"""
-    
+
     # Quick timeout for testing connectivity
     quick_client = Atlas(timeout=30.0)  # 30 seconds
-    
-    # Standard timeout for regular evaluations  
+
+    # Standard timeout for regular evaluations
     standard_client = Atlas(timeout=300.0)  # 5 minutes
-    
+
     # Long timeout for complex evaluations
     patient_client = Atlas(
         timeout=httpx.Timeout(
@@ -445,7 +441,7 @@ def create_evaluations_with_custom_timeouts():
             pool=30.0       # 30s for connection pool
         )
     )
-    
+
     # Test connectivity with quick client
     print("🔍 Testing connectivity...")
     try:
@@ -460,7 +456,7 @@ def create_evaluations_with_custom_timeouts():
     except atlas.APIError as e:
         print(f"❌ API error during connectivity test: {e}")
         return
-    
+
     # Create standard evaluation
     print("\n🔄 Creating standard evaluation...")
     try:
@@ -472,7 +468,7 @@ def create_evaluations_with_custom_timeouts():
             print(f"✅ Standard evaluation created: {standard_eval.id}")
     except atlas.APITimeoutError:
         print("❌ Standard evaluation timed out")
-    
+
     # Create complex evaluation with patient timeout
     print("\n🔄 Creating complex evaluation...")
     try:
@@ -497,9 +493,9 @@ from atlas import Atlas
 def create_evaluation_with_override_timeout():
     """Override timeout for specific requests"""
     client = Atlas(timeout=60.0)  # Default 1-minute timeout
-    
+
     evaluations = []
-    
+
     # Quick evaluation with short timeout
     print("🔄 Quick evaluation (30s timeout)...")
     try:
@@ -512,7 +508,7 @@ def create_evaluation_with_override_timeout():
             print(f"✅ Quick: {quick_eval.id}")
     except atlas.APITimeoutError:
         print("❌ Quick evaluation timed out")
-    
+
     # Standard evaluation (uses default timeout)
     print("\n🔄 Standard evaluation (default 60s timeout)...")
     try:
@@ -525,7 +521,7 @@ def create_evaluation_with_override_timeout():
             print(f"✅ Standard: {standard_eval.id}")
     except atlas.APITimeoutError:
         print("❌ Standard evaluation timed out")
-    
+
     # Long evaluation with extended timeout
     print("\n🔄 Long evaluation (5min timeout)...")
     try:
@@ -538,7 +534,7 @@ def create_evaluation_with_override_timeout():
             print(f"✅ Long: {long_eval.id}")
     except atlas.APITimeoutError:
         print("❌ Long evaluation timed out")
-    
+
     return evaluations
 
 evaluations = create_evaluation_with_override_timeout()
@@ -570,21 +566,21 @@ def create_evaluation_with_logging(model: str, benchmark: str, context: dict = N
     """Create evaluation with comprehensive logging"""
     client = Atlas()
     context = context or {}
-    
+
     logger.info(f"Starting evaluation creation: {model} + {benchmark}")
     logger.info(f"Context: {context}")
-    
+
     start_time = datetime.now()
-    
+
     try:
         evaluation = client.evaluations.create(
             model=model,
             benchmark=benchmark
         )
-        
+
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
-        
+
         if evaluation:
             logger.info(f"✅ Evaluation created successfully in {duration:.2f}s")
             logger.info(f"   ID: {evaluation.id}")
@@ -592,7 +588,7 @@ def create_evaluation_with_logging(model: str, benchmark: str, context: dict = N
             logger.info(f"   Benchmark: {evaluation.dataset_name}")
             logger.info(f"   Status: {evaluation.status}")
             logger.info(f"   Submitted at: {evaluation.submitted_at}")
-            
+
             return {
                 "success": True,
                 "evaluation": evaluation,
@@ -607,23 +603,23 @@ def create_evaluation_with_logging(model: str, benchmark: str, context: dict = N
                 "duration": duration,
                 "timestamp": start_time.isoformat()
             }
-            
+
     except atlas.RateLimitError as e:
         logger.warning(f"⏳ Rate limited - request ID: {getattr(e, 'request_id', 'N/A')}")
         return {"success": False, "error": "rate_limited", "retry_after": e.response.headers.get('retry-after')}
-        
+
     except atlas.AuthenticationError:
         logger.error("❌ Authentication failed - check API key")
         return {"success": False, "error": "authentication_failed"}
-        
+
     except atlas.NotFoundError:
         logger.error(f"❌ Model '{model}' or benchmark '{benchmark}' not found")
         return {"success": False, "error": "not_found", "model": model, "benchmark": benchmark}
-        
+
     except atlas.APIError as e:
         logger.error(f"❌ API error: {e}")
         return {"success": False, "error": str(e), "error_type": type(e).__name__}
-    
+
     except Exception as e:
         logger.error(f"❌ Unexpected error: {e}")
         return {"success": False, "error": f"unexpected: {e}"}
@@ -639,7 +635,7 @@ results = []
 for config in evaluation_configs:
     result = create_evaluation_with_logging(**config)
     results.append(result)
-    
+
     if not result["success"]:
         logger.error(f"Failed to create evaluation: {config}")
 
@@ -666,76 +662,76 @@ import atlas
 
 class EvaluationStrategy(ABC):
     """Abstract base class for evaluation strategies"""
-    
+
     @abstractmethod
     def get_model_benchmark_pairs(self) -> List[tuple]:
         pass
-    
+
     @abstractmethod
     def get_description(self) -> str:
         pass
 
 class GeneralIntelligenceStrategy(EvaluationStrategy):
     """Strategy for general intelligence assessment"""
-    
+
     def get_model_benchmark_pairs(self) -> List[tuple]:
         models = ["gpt-4", "claude-3-opus", "llama-2-70b"]
         benchmarks = ["mmlu", "arc-challenge", "hellaswag"]
         return [(m, b) for m in models for b in benchmarks]
-    
+
     def get_description(self) -> str:
         return "General intelligence assessment across major benchmarks"
 
 class CodeGenerationStrategy(EvaluationStrategy):
     """Strategy for code generation assessment"""
-    
+
     def get_model_benchmark_pairs(self) -> List[tuple]:
         models = ["gpt-4", "code-llama-34b", "claude-3-sonnet"]
         benchmarks = ["humaneval", "mbpp"]
         return [(m, b) for m in models for b in benchmarks]
-    
+
     def get_description(self) -> str:
         return "Code generation capability assessment"
 
 class MathReasoningStrategy(EvaluationStrategy):
     """Strategy for mathematical reasoning assessment"""
-    
+
     def get_model_benchmark_pairs(self) -> List[tuple]:
         models = ["gpt-4", "claude-3-opus", "minerva-62b"]
         benchmarks = ["gsm8k", "math"]
         return [(m, b) for m in models for b in benchmarks]
-    
+
     def get_description(self) -> str:
         return "Mathematical reasoning and problem-solving assessment"
 
 class EvaluationFactory:
     """Factory for creating evaluations based on strategies"""
-    
+
     def __init__(self):
         self.client = Atlas()
-    
+
     def execute_strategy(self, strategy: EvaluationStrategy) -> Dict[str, Any]:
         """Execute an evaluation strategy"""
         pairs = strategy.get_model_benchmark_pairs()
         description = strategy.get_description()
-        
+
         print(f"🔄 Executing strategy: {description}")
         print(f"📊 Creating {len(pairs)} evaluations...")
-        
+
         results = {
             "strategy": description,
             "evaluations": [],
             "errors": [],
             "summary": {"total": len(pairs), "successful": 0, "failed": 0}
         }
-        
+
         for model, benchmark in pairs:
             try:
                 evaluation = self.client.evaluations.create(
                     model=model,
                     benchmark=benchmark
                 )
-                
+
                 if evaluation:
                     results["evaluations"].append({
                         "model": model,
@@ -755,7 +751,7 @@ class EvaluationFactory:
                     })
                     results["summary"]["failed"] += 1
                     print(f"❌ {model} + {benchmark}: Failed")
-                    
+
             except atlas.APIError as e:
                 results["errors"].append({
                     "model": model,
@@ -765,7 +761,7 @@ class EvaluationFactory:
                 })
                 results["summary"]["failed"] += 1
                 print(f"❌ {model} + {benchmark}: {e}")
-        
+
         return results
 
 # Usage
@@ -782,7 +778,7 @@ all_results = []
 for strategy in strategies:
     result = factory.execute_strategy(strategy)
     all_results.append(result)
-    
+
     print(f"\n📈 Strategy Results: {result['strategy']}")
     print(f"   Successful: {result['summary']['successful']}")
     print(f"   Failed: {result['summary']['failed']}")

@@ -24,8 +24,6 @@ from atlas import Atlas
 # Initialize the client
 client = Atlas(
     api_key=os.environ.get("LAYERLENS_ATLAS_API_KEY"),
-    organization_id=os.environ.get("LAYERLENS_ATLAS_ORG_ID"), 
-    project_id=os.environ.get("LAYERLENS_ATLAS_PROJECT_ID"),
 )
 
 # Create an evaluation
