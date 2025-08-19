@@ -40,7 +40,9 @@ class Evaluations(SyncAPIResource):
             cast_to=EvaluationsResponse,
         )
         if isinstance(evaluations, EvaluationsResponse) and len(evaluations.data) > 0:
-            return evaluations.data[0]
+            evaluation = evaluations.data[0]
+            evaluation.attach_client(self._client)
+            return evaluation
         return None
 
     def get(
@@ -57,12 +59,15 @@ class Evaluations(SyncAPIResource):
         *,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[Evaluation]:
-        resp = self._get(
+        evaluation = self._get(
             f"/evaluations/{evaluation_id}",
             timeout=timeout,
             cast_to=Evaluation,
         )
-        return resp if isinstance(resp, Evaluation) else None
+        if isinstance(evaluation, Evaluation):
+            evaluation.attach_client(self._client)
+            return evaluation
+        return None
 
     def wait_for_completion(
         self,
@@ -107,7 +112,9 @@ class AsyncEvaluations(AsyncAPIResource):
             cast_to=EvaluationsResponse,
         )
         if isinstance(evaluations, EvaluationsResponse) and len(evaluations.data) > 0:
-            return evaluations.data[0]
+            evaluation = evaluations.data[0]
+            evaluation.attach_client(self._client)
+            return evaluation
         return None
 
     async def get(
@@ -124,12 +131,15 @@ class AsyncEvaluations(AsyncAPIResource):
         *,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[Evaluation]:
-        resp = await self._get(
+        evaluation = await self._get(
             f"/evaluations/{evaluation_id}",
             timeout=timeout,
             cast_to=Evaluation,
         )
-        return resp if isinstance(resp, Evaluation) else None
+        if isinstance(evaluation, Evaluation):
+            evaluation.attach_client(self._client)
+            return evaluation
+        return None
 
     async def wait_for_completion(
         self,
