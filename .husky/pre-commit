@@ -1,0 +1,5 @@
+#!/bin/sh
+
+npx lint-staged
+
+./scripts/test || { echo "❌ Tests failed"; exit 1; }

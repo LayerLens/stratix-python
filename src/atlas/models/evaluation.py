@@ -28,6 +28,20 @@ class Evaluation(BaseModel):
     average_duration: int
     accuracy: float
 
+    @property
+    def is_finished(self) -> bool:
+        """Return True if evaluation is done (success, failure, or timeout)."""
+        return self.status in {
+            EvaluationStatus.SUCCESS,
+            EvaluationStatus.FAILURE,
+            EvaluationStatus.TIMEOUT,
+        }
+
+    @property
+    def is_success(self) -> bool:
+        """Return True if evaluation completed successfully."""
+        return self.status == EvaluationStatus.SUCCESS
+
 
 class Result(BaseModel):
     subset: str
