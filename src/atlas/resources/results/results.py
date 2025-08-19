@@ -5,15 +5,26 @@ from typing import Optional
 
 import httpx
 
-from ..._resource import SyncAPIResource
+from ...models import Evaluation, ResultsResponse
+from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
-from ...models.api import ResultsResponse
 
+DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 100
 
 
 class Results(SyncAPIResource):
     def get(
+        self,
+        *,
+        evaluation: Evaluation,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> ResultsResponse | None:
+        return self.get_by_id(evaluation_id=evaluation.id, page=page, page_size=page_size, timeout=timeout)
+
+    def get_by_id(
         self,
         *,
         evaluation_id: str,
@@ -25,7 +36,7 @@ class Results(SyncAPIResource):
         Get evaluation results with optional pagination.
 
         Args:
-            evaluation_id: The ID of the evaluation to get results for
+            evaluation: Evaluation to get the results for
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of results per page (default: 100, optional)
             timeout: Request timeout
@@ -40,35 +51,32 @@ class Results(SyncAPIResource):
         """
         params = {"evaluation_id": evaluation_id}
 
-        # Set default page_size if not provided
         effective_page_size = page_size if page_size is not None else DEFAULT_PAGE_SIZE
-
-        # Set default page to 1 if not provided
-        effective_page = page if page is not None else 1
+        effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
         if page_size is not None:
             params["pageSize"] = str(page_size)
 
         # Get the response with cast_to to get parsed data
-        response_data = self._get(
+        resp = self._get(
             f"/results",
             params=params,
             timeout=timeout,
             cast_to=dict,
         )
 
-        if not response_data or not isinstance(response_data, dict):
+        if not resp or not isinstance(resp, dict):
             return None
 
         # Calculate pagination info
-        metrics = response_data.get("metrics", {})
+        metrics = resp.get("metrics", {})
         total_count = metrics.get("total_count", 0)
         total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
 
         # Add pagination to the response
-        response_with_pagination = {
-            **response_data,
+        resp_with_pagination = {
+            **resp,
             "pagination": {
                 "total_count": total_count,
                 "page_size": effective_page_size,
@@ -77,6 +85,83 @@ class Results(SyncAPIResource):
         }
 
         try:
-            return ResultsResponse.model_validate(response_with_pagination)
+            return ResultsResponse.model_validate(resp_with_pagination)
+        except Exception:
+            return None
+
+
+class AsyncResults(AsyncAPIResource):
+    async def get(
+        self,
+        *,
+        evaluation: Evaluation,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> ResultsResponse | None:
+        return await self.get_by_id(evaluation_id=evaluation.id, page=page, page_size=page_size, timeout=timeout)
+
+    async def get_by_id(
+        self,
+        *,
+        evaluation_id: str,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> ResultsResponse | None:
+        """
+        Get evaluation results with optional pagination.
+
+        Args:
+            evaluation: Evaluation to get the results for
+            page: Page number for pagination (1-based, defaults to 1 if not provided)
+            page_size: Number of results per page (default: 100, optional)
+            timeout: Request timeout
+
+        Returns:
+            ResultsResponse object containing:
+            - evaluation_id: The evaluation ID
+            - results: List of Result objects for the current page
+            - metrics: Contains total_count and score ranges
+            - pagination: Calculated pagination info (total_count, page_size, total_pages)
+            or None if the request fails
+        """
+        params = {"evaluation_id": evaluation_id}
+
+        effective_page_size = page_size if page_size is not None else DEFAULT_PAGE_SIZE
+        effective_page = page if page is not None else DEFAULT_PAGE
+
+        params["page"] = str(effective_page)
+        if page_size is not None:
+            params["pageSize"] = str(page_size)
+
+        # Get the response with cast_to to get parsed data
+        resp = await self._get(
+            f"/results",
+            params=params,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not resp or not isinstance(resp, dict):
+            return None
+
+        # Calculate pagination info
+        metrics = resp.get("metrics", {})
+        total_count = metrics.get("total_count", 0)
+        total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
+
+        # Add pagination to the response
+        resp_with_pagination = {
+            **resp,
+            "pagination": {
+                "total_count": total_count,
+                "page_size": effective_page_size,
+                "total_pages": total_pages,
+            },
+        }
+
+        try:
+            return ResultsResponse.model_validate(resp_with_pagination)
         except Exception:
             return None

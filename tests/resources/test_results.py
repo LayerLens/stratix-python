@@ -63,7 +63,7 @@ class TestResults:
         """get method returns ResultsResponse successfully."""
         results_resource._get.return_value = mock_results_response
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
 
         assert isinstance(result, ResultsResponse)
         assert result.evaluation_id == "eval-123"
@@ -83,7 +83,7 @@ class TestResults:
         """get method makes correct API request."""
         results_resource._get.return_value = mock_results_response
 
-        results_resource.get(evaluation_id="eval-456")
+        results_resource.get_by_id(evaluation_id="eval-456")
 
         results_resource._get.assert_called_once_with(
             "/results",
@@ -97,7 +97,7 @@ class TestResults:
         results_resource._get.return_value = mock_results_response
         custom_timeout = 120.0
 
-        results_resource.get(evaluation_id="eval-123", timeout=custom_timeout)
+        results_resource.get_by_id(evaluation_id="eval-123", timeout=custom_timeout)
 
         call_args = results_resource._get.call_args
         assert call_args.kwargs["timeout"] == custom_timeout
@@ -107,7 +107,7 @@ class TestResults:
         results_resource._get.return_value = mock_results_response
         custom_timeout = httpx.Timeout(120.0)
 
-        results_resource.get(evaluation_id="eval-123", timeout=custom_timeout)
+        results_resource.get_by_id(evaluation_id="eval-123", timeout=custom_timeout)
 
         call_args = results_resource._get.call_args
         assert call_args.kwargs["timeout"] is custom_timeout
@@ -116,7 +116,7 @@ class TestResults:
         """get method returns None when response is None."""
         results_resource._get.return_value = None
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
 
         assert result is None
 
@@ -124,7 +124,7 @@ class TestResults:
         """get method handles non-ResultsResponse response gracefully."""
         results_resource._get.return_value = "invalid-response"
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
 
         assert result is None
 
@@ -143,7 +143,7 @@ class TestResults:
         }
         results_resource._get.return_value = empty_response
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
 
         assert isinstance(result, ResultsResponse)
         assert result.evaluation_id == "eval-123"
@@ -178,7 +178,7 @@ class TestResults:
         }
         results_resource._get.return_value = response
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
 
         assert isinstance(result, ResultsResponse)
         assert len(result.results) == 2
@@ -192,7 +192,7 @@ class TestResults:
         """get method uses correct URL endpoint."""
         results_resource._get.return_value = mock_results_response
 
-        results_resource.get(evaluation_id="eval-123")
+        results_resource.get_by_id(evaluation_id="eval-123")
 
         call_args = results_resource._get.call_args
         assert call_args[0][0] == "/results"
@@ -201,7 +201,7 @@ class TestResults:
         """get method correctly passes evaluation_id parameter."""
         results_resource._get.return_value = mock_results_response
 
-        results_resource.get(evaluation_id="test-eval-789")
+        results_resource.get_by_id(evaluation_id="test-eval-789")
 
         call_args = results_resource._get.call_args
         assert call_args.kwargs["params"]["evaluation_id"] == "test-eval-789"
@@ -210,7 +210,7 @@ class TestResults:
         """get method specifies correct cast_to parameter."""
         results_resource._get.return_value = mock_results_response
 
-        results_resource.get(evaluation_id="eval-123")
+        results_resource.get_by_id(evaluation_id="eval-123")
 
         call_args = results_resource._get.call_args
         assert call_args.kwargs["cast_to"] is dict
@@ -219,7 +219,7 @@ class TestResults:
         """get method uses DEFAULT_TIMEOUT when no timeout specified."""
         results_resource._get.return_value = mock_results_response
 
-        results_resource.get(evaluation_id="eval-123")
+        results_resource.get_by_id(evaluation_id="eval-123")
 
         call_args = results_resource._get.call_args
         assert call_args.kwargs["timeout"] is DEFAULT_TIMEOUT
@@ -228,7 +228,7 @@ class TestResults:
         """get method accepts None timeout."""
         results_resource._get.return_value = mock_results_response
 
-        results_resource.get(evaluation_id="eval-123", timeout=None)
+        results_resource.get_by_id(evaluation_id="eval-123", timeout=None)
 
         call_args = results_resource._get.call_args
         assert call_args.kwargs["timeout"] is None
@@ -237,7 +237,7 @@ class TestResults:
         """get method preserves all result attributes correctly."""
         results_resource._get.return_value = mock_results_response
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
         result_item = result.results[0]
 
         assert isinstance(result_item.duration, timedelta)
@@ -260,7 +260,7 @@ class TestResults:
         """get method works with various evaluation ID formats."""
         results_resource._get.return_value = mock_results_response
 
-        result = results_resource.get(evaluation_id=evaluation_id)
+        result = results_resource.get_by_id(evaluation_id=evaluation_id)
 
         assert isinstance(result, ResultsResponse)
         call_args = results_resource._get.call_args
@@ -294,7 +294,7 @@ class TestResultsErrorHandling:
         results_resource._get.side_effect = not_found_error
 
         with pytest.raises(NotFoundError):
-            results_resource.get(evaluation_id="nonexistent-eval")
+            results_resource.get_by_id(evaluation_id="nonexistent-eval")
 
     def test_get_results_handles_auth_error(self, results_resource):
         """get method propagates authentication errors."""
@@ -308,7 +308,7 @@ class TestResultsErrorHandling:
         results_resource._get.side_effect = auth_error
 
         with pytest.raises(AuthenticationError):
-            results_resource.get(evaluation_id="eval-123")
+            results_resource.get_by_id(evaluation_id="eval-123")
 
     def test_get_results_handles_permission_error(self, results_resource):
         """get method propagates permission errors."""
@@ -322,7 +322,7 @@ class TestResultsErrorHandling:
         results_resource._get.side_effect = permission_error
 
         with pytest.raises(PermissionDeniedError):
-            results_resource.get(evaluation_id="restricted-eval")
+            results_resource.get_by_id(evaluation_id="restricted-eval")
 
     def test_get_results_handles_server_error(self, results_resource):
         """get method propagates server errors."""
@@ -336,7 +336,7 @@ class TestResultsErrorHandling:
         results_resource._get.side_effect = server_error
 
         with pytest.raises(InternalServerError):
-            results_resource.get(evaluation_id="eval-123")
+            results_resource.get_by_id(evaluation_id="eval-123")
 
     def test_get_results_handles_connection_error(self, results_resource):
         """get method propagates connection errors."""
@@ -347,7 +347,7 @@ class TestResultsErrorHandling:
         results_resource._get.side_effect = connection_error
 
         with pytest.raises(APIConnectionError):
-            results_resource.get(evaluation_id="eval-123")
+            results_resource.get_by_id(evaluation_id="eval-123")
 
     def test_get_results_handles_timeout_error(self, results_resource):
         """get method propagates timeout errors."""
@@ -358,7 +358,7 @@ class TestResultsErrorHandling:
         results_resource._get.side_effect = timeout_error
 
         with pytest.raises(APITimeoutError):
-            results_resource.get(evaluation_id="eval-123", timeout=1.0)
+            results_resource.get_by_id(evaluation_id="eval-123", timeout=1.0)
 
 
 class TestResultsDataHandling:
@@ -414,7 +414,7 @@ class TestResultsDataHandling:
         }
         results_resource._get.return_value = response
 
-        result = results_resource.get(evaluation_id="eval-complex")
+        result = results_resource.get_by_id(evaluation_id="eval-complex")
 
         assert isinstance(result, ResultsResponse)
         assert len(result.results) == 1
@@ -462,7 +462,7 @@ class TestResultsDataHandling:
         }
         results_resource._get.return_value = response
 
-        result = results_resource.get(evaluation_id="eval-durations")
+        result = results_resource.get_by_id(evaluation_id="eval-durations")
 
         assert isinstance(result, ResultsResponse)
         assert len(result.results) == 5
@@ -497,7 +497,7 @@ class TestResultsDataHandling:
         }
         results_resource._get.return_value = response
 
-        result = results_resource.get(evaluation_id="eval-minimal")
+        result = results_resource.get_by_id(evaluation_id="eval-minimal")
 
         assert isinstance(result, ResultsResponse)
         assert len(result.results) == 1
@@ -508,7 +508,7 @@ class TestResultsDataHandling:
         """get method returns consistent types."""
         # Test that the method returns either a ResultsResponse object or None
         results_resource._get.return_value = None
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
         assert result is None
 
         # Test that it returns a ResultsResponse object when successful
@@ -524,7 +524,7 @@ class TestResultsDataHandling:
             },
         }
         results_resource._get.return_value = empty_response
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
         assert isinstance(result, ResultsResponse)
 
 
@@ -571,7 +571,7 @@ class TestResultsPagination:
         }
         results_resource._get.return_value = mock_response
 
-        result_data = results_resource.get(
+        result_data = results_resource.get_by_id(
             evaluation_id="eval-paginated",
             page=2,
             page_size=50,
@@ -611,7 +611,7 @@ class TestResultsPagination:
         }
         results_resource._get.return_value = mock_response
 
-        results_resource.get(evaluation_id="eval-123", page=3, page_size=25)
+        results_resource.get_by_id(evaluation_id="eval-123", page=3, page_size=25)
 
         call_args = results_resource._get.call_args
         params = call_args.kwargs["params"]
@@ -637,7 +637,7 @@ class TestResultsPagination:
         }
         results_resource._get.return_value = mock_response
 
-        results_resource.get(evaluation_id="eval-123")
+        results_resource.get_by_id(evaluation_id="eval-123")
 
         call_args = results_resource._get.call_args
         params = call_args.kwargs["params"]
@@ -660,7 +660,7 @@ class TestResultsPagination:
         }
         results_resource._get.return_value = api_response
 
-        result = results_resource.get(evaluation_id="eval-math", page=3, page_size=50)
+        result = results_resource.get_by_id(evaluation_id="eval-math", page=3, page_size=50)
 
         # Should have calculated pagination correctly
         assert isinstance(result, ResultsResponse)
@@ -705,7 +705,7 @@ class TestResultsPagination:
         }
         results_resource._get.return_value = api_response
 
-        result = results_resource.get(evaluation_id="eval-calc", page_size=page_size)
+        result = results_resource.get_by_id(evaluation_id="eval-calc", page_size=page_size)
 
         assert result.pagination.total_count == total_count
         assert result.pagination.page_size == page_size
@@ -737,7 +737,7 @@ class TestResultsPaginationErrorHandling:
         }
         results_resource._get.return_value = invalid_response
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
 
         # Should return None when response structure is invalid
         assert result is None
@@ -757,7 +757,7 @@ class TestResultsPaginationErrorHandling:
         }
         results_resource._get.return_value = invalid_response
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
 
         # Should handle zero total_count gracefully
         assert isinstance(result, ResultsResponse)
@@ -768,7 +768,7 @@ class TestResultsPaginationErrorHandling:
         """get method handles non-dict API response."""
         results_resource._get.return_value = "invalid-string-response"
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
 
         assert result is None
 
@@ -784,7 +784,7 @@ class TestResultsPaginationErrorHandling:
         }
         results_resource._get.return_value = invalid_response
 
-        result = results_resource.get(evaluation_id="eval-123")
+        result = results_resource.get_by_id(evaluation_id="eval-123")
 
         assert result is None
 
@@ -803,7 +803,7 @@ class TestResultsPaginationErrorHandling:
         }
         results_resource._get.return_value = extreme_response
 
-        result = results_resource.get(evaluation_id="eval-extreme", page_size=1)
+        result = results_resource.get_by_id(evaluation_id="eval-extreme", page_size=1)
 
         assert isinstance(result, ResultsResponse)
         assert result.pagination.total_count == 999999
@@ -826,7 +826,7 @@ class TestResultsPaginationErrorHandling:
         results_resource._get.return_value = response
 
         # Pass 0 as page_size
-        result = results_resource.get(evaluation_id="eval-123", page_size=0)
+        result = results_resource.get_by_id(evaluation_id="eval-123", page_size=0)
 
         assert isinstance(result, ResultsResponse)
         # Should use 0 as provided (though this might cause division by zero, it's handled)
@@ -848,7 +848,7 @@ class TestResultsPaginationErrorHandling:
         results_resource._get.return_value = response
 
         # Test with negative page and page_size
-        result = results_resource.get(evaluation_id="eval-123", page=-1, page_size=-50)
+        result = results_resource.get_by_id(evaluation_id="eval-123", page=-1, page_size=-50)
 
         # Should still make the API call and process response
         call_args = results_resource._get.call_args

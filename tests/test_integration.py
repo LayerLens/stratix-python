@@ -10,7 +10,6 @@ from atlas.models import (
     Result,
     Benchmark,
     Evaluation,
-    ResultsResponse,
     EvaluationStatus,
     EvaluationsResponse,
 )
@@ -174,22 +173,6 @@ class TestCompleteEvaluationWorkflow:
 
         # Mock responses
         evaluations_response = EvaluationsResponse(data=[evaluation])
-        results_response = ResultsResponse(
-            evaluation_id="eval-789",
-            results=[result],
-            metrics={
-                "total_count": 1,
-                "min_toxicity_score": 0.02,
-                "max_toxicity_score": 0.02,
-                "min_readability_score": 0.85,
-                "max_readability_score": 0.85,
-            },
-            pagination={
-                "total_count": 1,
-                "page_size": 100,
-                "total_pages": 1,
-            },
-        )
 
         with patch.object(atlas_client, "get_cast") as mock_get, patch.object(atlas_client, "post_cast") as mock_post:
             # Configure mocks for the workflow
@@ -212,7 +195,7 @@ class TestCompleteEvaluationWorkflow:
             assert created_evaluation.status == EvaluationStatus.SUCCESS
 
             # Step 2: Get evaluation results
-            results = atlas_client.results.get(evaluation_id=created_evaluation.id)
+            results = atlas_client.results.get(evaluation=created_evaluation)
             assert len(results.results) == 1
             assert results.results[0].score == 1.0
             assert results.results[0].subset == "math"
@@ -243,7 +226,7 @@ class TestCompleteEvaluationWorkflow:
 
             # Verify error is propagated
             with pytest.raises(NotFoundError):
-                atlas_client.results.get(evaluation_id="test-eval")
+                atlas_client.results.get_by_id(evaluation_id="test-eval")
 
     def test_workflow_with_custom_timeouts(self, atlas_client):
         """Test workflow respects custom timeout settings."""
@@ -256,23 +239,6 @@ class TestCompleteEvaluationWorkflow:
             "score": 1.0,
             "metrics": {"accuracy": 1.0},
         }
-
-        results_response = ResultsResponse(
-            evaluation_id="test-eval",
-            results=[Result(**result_data)],
-            metrics={
-                "total_count": 1,
-                "min_toxicity_score": 0.0,
-                "max_toxicity_score": 0.1,
-                "min_readability_score": 0.8,
-                "max_readability_score": 0.9,
-            },
-            pagination={
-                "total_count": 1,
-                "page_size": 100,
-                "total_pages": 1,
-            },
-        )
 
         with patch.object(atlas_client, "get_cast") as mock_get:
             mock_get.return_value = {
@@ -289,7 +255,7 @@ class TestCompleteEvaluationWorkflow:
 
             # Test with custom timeout
             custom_timeout = httpx.Timeout(30.0)
-            results = atlas_client.results.get(evaluation_id="test-eval", timeout=custom_timeout)
+            results = atlas_client.results.get_by_id(evaluation_id="test-eval", timeout=custom_timeout)
 
             assert len(results.results) == 1
 
@@ -416,22 +382,6 @@ class TestResourceInteraction:
         ]
 
         results = [Result(**data) for data in results_data]
-        results_response = ResultsResponse(
-            evaluation_id="test-eval",
-            results=results,
-            metrics={
-                "total_count": 3,
-                "min_toxicity_score": 0.0,
-                "max_toxicity_score": 0.1,
-                "min_readability_score": 0.7,
-                "max_readability_score": 0.9,
-            },
-            pagination={
-                "total_count": 3,
-                "page_size": 100,
-                "total_pages": 1,
-            },
-        )
 
         with patch.object(atlas_client, "get_cast") as mock_get:
             mock_get.return_value = {
@@ -447,7 +397,7 @@ class TestResourceInteraction:
             }
 
             # Get results
-            evaluation_results = atlas_client.results.get(evaluation_id="test-eval")
+            evaluation_results = atlas_client.results.get_by_id(evaluation_id="test-eval")
 
             # Analyze results
             math_results = [r for r in evaluation_results.results if r.subset == "math"]
@@ -559,23 +509,6 @@ class TestConcurrentOperations:
             "metrics": {"accuracy": 1.0},
         }
 
-        results_response = ResultsResponse(
-            evaluation_id="test-eval",
-            results=[Result(**result_data)],
-            metrics={
-                "total_count": 1,
-                "min_toxicity_score": 0.0,
-                "max_toxicity_score": 0.1,
-                "min_readability_score": 0.8,
-                "max_readability_score": 0.9,
-            },
-            pagination={
-                "total_count": 1,
-                "page_size": 100,
-                "total_pages": 1,
-            },
-        )
-
         with patch.object(client1, "get_cast") as mock_get1, patch.object(client2, "get_cast") as mock_get2:
             mock_get1.return_value = {
                 "evaluation_id": "test-eval",
@@ -601,8 +534,8 @@ class TestConcurrentOperations:
             }
 
             # Make calls on both clients
-            results1 = client1.results.get(evaluation_id="eval-1")
-            results2 = client2.results.get(evaluation_id="eval-2")
+            results1 = client1.results.get_by_id(evaluation_id="eval-1")
+            results2 = client2.results.get_by_id(evaluation_id="eval-2")
 
             # Verify both calls succeeded
             assert results1 is not None
@@ -683,7 +616,7 @@ class TestErrorPropagation:
             # Test API error in results.get
             mock_get.side_effect = api_error
             with pytest.raises(APIStatusError):
-                client.results.get(evaluation_id="test-eval")
+                client.results.get_by_id(evaluation_id="test-eval")
 
             # Test connection error in evaluations.create
             mock_post.side_effect = connection_error

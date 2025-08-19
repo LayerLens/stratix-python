@@ -1,3 +1,3 @@
-from .benchmarks import Benchmarks
+from .benchmarks import Benchmarks, AsyncBenchmarks
 
-__all__ = ["Benchmarks"]
+__all__ = ["Benchmarks", "AsyncBenchmarks"]
