@@ -44,7 +44,7 @@ class Atlas(BaseClient):
         """
         if api_key is None:
             api_key = os.environ.get("LAYERLENS_ATLAS_API_KEY")
-        if api_key is None:
+        if api_key is None or api_key == "":
             raise AtlasError(
                 "The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_ATLAS_API_KEY environment variable"
             )
@@ -190,7 +190,7 @@ class AsyncAtlas(BaseAsyncClient):
         """
         if api_key is None:
             api_key = os.environ.get("LAYERLENS_ATLAS_API_KEY")
-        if api_key is None:
+        if api_key is None or api_key == "":
             raise AtlasError(
                 "The api_key client option must be set either by passing api_key to the client "
                 "or by setting the LAYERLENS_ATLAS_API_KEY environment variable"

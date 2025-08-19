@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from atlas import Atlas
+from atlas._exceptions import AtlasError
 
 
 class TestAtlasClientInitialization:
@@ -52,20 +53,20 @@ class TestAtlasClientInitialization:
     def test_auth_headers_without_api_key(self, mock_org):
         """auth_headers property returns empty dict when no API key."""
         with patch("atlas.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="")
-
-        headers = client.auth_headers
-
-        assert headers == {}
+            with pytest.raises(
+                AtlasError,
+                match="The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_ATLAS_API_KEY environment variable",
+            ):
+                Atlas(api_key="")
 
     def test_auth_headers_with_empty_api_key(self, mock_org):
         """auth_headers property returns empty dict when API key is empty string."""
         with patch("atlas.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="")
-
-        headers = client.auth_headers
-
-        assert headers == {}
+            with pytest.raises(
+                AtlasError,
+                match="The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_ATLAS_API_KEY environment variable",
+            ):
+                Atlas(api_key="")
 
     def test_copy_method(self, mock_org):
         """copy method creates new client with overridden parameters."""
