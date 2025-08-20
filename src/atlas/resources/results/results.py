@@ -78,9 +78,10 @@ class Results(SyncAPIResource):
         resp_with_pagination = {
             **resp,
             "pagination": {
-                "total_count": total_count,
+                "page": effective_page,
                 "page_size": effective_page_size,
                 "total_pages": total_pages,
+                "total_count": total_count,
             },
         }
 

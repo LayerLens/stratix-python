@@ -223,44 +223,49 @@ class TestPagination:
     def valid_pagination_data(self):
         """Valid pagination data for testing."""
         return {
-            "total_count": 250,
+            "page": 1,
             "page_size": 100,
             "total_pages": 3,
+            "total_count": 250,
         }
 
     def test_pagination_creation(self, valid_pagination_data):
         """Pagination model creates with valid data."""
         pagination = Pagination(**valid_pagination_data)
 
-        assert pagination.total_count == 250
+        assert pagination.page == 1
         assert pagination.page_size == 100
         assert pagination.total_pages == 3
+        assert pagination.total_count == 250
 
     def test_pagination_field_types(self, valid_pagination_data):
         """Pagination model enforces correct field types."""
         pagination = Pagination(**valid_pagination_data)
 
-        assert isinstance(pagination.total_count, int)
+        assert isinstance(pagination.page, int)
         assert isinstance(pagination.page_size, int)
         assert isinstance(pagination.total_pages, int)
+        assert isinstance(pagination.total_count, int)
 
     def test_pagination_zero_values(self):
         """Pagination model handles zero values correctly."""
         pagination = Pagination(
-            total_count=0,
+            page=1,
             page_size=100,
             total_pages=0,
+            total_count=0,
         )
 
-        assert pagination.total_count == 0
+        assert pagination.page == 1
         assert pagination.page_size == 100
         assert pagination.total_pages == 0
+        assert pagination.total_count == 0
 
     def test_pagination_validation_errors(self, valid_pagination_data):
         """Pagination model validates field types."""
-        # Test invalid total_count
+        # Test invalid page
         invalid_data = valid_pagination_data.copy()
-        invalid_data["total_count"] = "not-an-int"
+        invalid_data["page"] = "not-an-int"
         with pytest.raises(ValidationError):
             Pagination(**invalid_data)
 
@@ -273,6 +278,12 @@ class TestPagination:
         # Test invalid total_pages
         invalid_data = valid_pagination_data.copy()
         invalid_data["total_pages"] = "not-an-int"
+        with pytest.raises(ValidationError):
+            Pagination(**invalid_data)
+
+        # Test invalid total_count
+        invalid_data = valid_pagination_data.copy()
+        invalid_data["total_count"] = "not-an-int"
         with pytest.raises(ValidationError):
             Pagination(**invalid_data)
 
@@ -304,9 +315,10 @@ class TestResults:
     def valid_pagination_data(self):
         """Valid pagination data for testing."""
         return {
-            "total_count": 150,
+            "page": 1,
             "page_size": 100,
             "total_pages": 2,
+            "total_count": 150,
         }
 
     def test_results_with_pagination(self, valid_result_data, valid_metrics_data, valid_pagination_data):
@@ -323,9 +335,10 @@ class TestResults:
         assert all(isinstance(result, Result) for result in results.results)
         assert isinstance(results.metrics, ResultMetrics)
         assert isinstance(results.pagination, Pagination)
-        assert results.pagination.total_count == 150
+        assert results.pagination.page == 1
         assert results.pagination.page_size == 100
         assert results.pagination.total_pages == 2
+        assert results.pagination.total_count == 150
 
     def test_results_field_types(self, valid_result_data, valid_metrics_data, valid_pagination_data):
         """Results model enforces correct field types."""
