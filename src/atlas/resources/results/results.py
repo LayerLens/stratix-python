@@ -133,8 +133,7 @@ class AsyncResults(AsyncAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        if page_size is not None:
-            params["pageSize"] = str(page_size)
+        params["pageSize"] = str(effective_page_size)
 
         # Get the response with cast_to to get parsed data
         resp = await self._get(
