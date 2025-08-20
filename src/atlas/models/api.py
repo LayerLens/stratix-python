@@ -39,9 +39,10 @@ class ResultMetrics(BaseModel):
 
 
 class Pagination(BaseModel):
-    total_count: int
+    page: int
     page_size: int
     total_pages: int
+    total_count: int
 
 
 class ResultsResponse(BaseModel):
