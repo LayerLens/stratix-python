@@ -11,6 +11,7 @@ from ..._constants import DEFAULT_TIMEOUT
 
 DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 100
+MAX_PAGE_SIZE = 500
 
 
 class Results(SyncAPIResource):
@@ -68,12 +69,11 @@ class Results(SyncAPIResource):
         """
         params = {"evaluation_id": evaluation_id}
 
-        effective_page_size = page_size if page_size is not None else DEFAULT_PAGE_SIZE
+        effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        if page_size is not None:
-            params["pageSize"] = str(page_size)
+        params["pageSize"] = str(effective_page_size)
 
         # Get the response with cast_to to get parsed data
         resp = self._get(
@@ -221,7 +221,7 @@ class AsyncResults(AsyncAPIResource):
         """
         params = {"evaluation_id": evaluation_id}
 
-        effective_page_size = page_size if page_size is not None else DEFAULT_PAGE_SIZE
+        effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)

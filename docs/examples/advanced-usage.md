@@ -1,423 +1,303 @@
-# Advanced Usage Patterns
+# Advanced Usage
 
-This guide covers practical advanced techniques for using the Atlas Python SDK in production environments.
+Common patterns and best practices for using the Atlas Python SDK in production.
 
-## Environment Variables Setup
-
-The Atlas SDK reads your credentials from environment variables. You can set them up however you prefer:
+## Environment Setup
 
 ```python
-import os
+# Set your API key as an environment variable
+export LAYERLENS_ATLAS_API_KEY="your_api_key_here"
+
+# Then in your code:
 from atlas import Atlas
-
-# Option 1: Load from system environment variables
-client = Atlas()  # Automatically uses LAYERLENS_ATLAS_API_KEY, etc.
-
-# Option 2: Using python-dotenv (if you prefer .env files)
-from dotenv import load_dotenv
-load_dotenv()  # Loads from .env file
-client = Atlas()
+client = Atlas()  # Automatically reads from environment
 ```
 
-Required environment variables:
+## Async Operations
 
-- `LAYERLENS_ATLAS_API_KEY` - Your Atlas API key
-
-## Pagination Best Practices
-
-### Understanding Pagination
-
-The Atlas SDK automatically handles pagination for large result sets. When evaluation results exceed the default page size (100), you'll need to iterate through pages to access all data.
+### Basic Async Usage
 
 ```python
-from atlas import Atlas
+import asyncio
+from atlas import AsyncAtlas
 
-def understand_pagination(evaluation_id: str):
-    """Understand pagination metadata"""
-    client = Atlas()
-
-    # Get first page
-    results_data = client.results.get(evaluation_id=evaluation_id)
-
-    if results_data:
-        pagination = results_data.pagination
-
-        print(f" Pagination Overview:")
-        print(f"   Total results: {pagination.total_count:,}")
-        print(f"   Page size: {pagination.page_size}")
-        print(f"   Total pages: {pagination.total_pages}")
-        print(f"   Current page has: {len(results_data.results)} results")
-
-        # Calculate some useful info
-        is_paginated = pagination.total_pages > 1
-        results_per_page = pagination.page_size
-        last_page_size = pagination.total_count % pagination.page_size or pagination.page_size
-
-        print(f"\n Analysis:")
-        print(f"   Is paginated: {is_paginated}")
-        print(f"   Results per page: {results_per_page}")
-        print(f"   Last page size: {last_page_size}")
-
-        if is_paginated:
-            print(f"\n To access all {pagination.total_count:,} results:")
-            print(f"   - Iterate through {pagination.total_pages} pages")
-            print(f"   - Or use batch processing patterns")
-
-        return pagination
-
+async def run_evaluation():
+    # Create async client
+    client = AsyncAtlas()
+    
+    # Get models and benchmarks concurrently
+    models_task = client.models.get()
+    benchmarks_task = client.benchmarks.get()
+    models, benchmarks = await asyncio.gather(models_task, benchmarks_task)
+    
+    # Create evaluation
+    evaluation = await client.evaluations.create(
+        model=models[0],
+        benchmark=benchmarks[0]
+    )
+    
+    # Wait for completion
+    completed = await client.evaluations.wait_for_completion(evaluation)
+    
+    if completed.is_success:
+        # Get results
+        results = await client.results.get_by_id(evaluation_id=completed.id)
+        return results
+    
     return None
 
-# Usage
-pagination_info = understand_pagination("eval_12345")
+# Run it
+results = asyncio.run(run_evaluation())
 ```
 
-### Efficient Pagination Strategies
+### Multiple Concurrent Evaluations
 
 ```python
-def efficient_pagination_strategies():
-    """Demonstrate different pagination approaches"""
-    client = Atlas()
-    evaluation_id = "eval_12345"
+import asyncio
+from atlas import AsyncAtlas
 
-    # Strategy 1: Small pages for real-time processing
-    print(" Strategy 1: Small pages for real-time feedback")
-    page_size = 25
-    page = 1
+async def create_multiple_evaluations():
+    client = AsyncAtlas()
+    
+    models = await client.models.get()
+    benchmarks = await client.benchmarks.get()
+    
+    # Create multiple evaluations concurrently
+    tasks = []
+    for model in models[:3]:  # First 3 models
+        for benchmark in benchmarks[:2]:  # First 2 benchmarks
+            task = client.evaluations.create(model=model, benchmark=benchmark)
+            tasks.append(task)
+    
+    # Wait for all to complete
+    evaluations = await asyncio.gather(*tasks)
+    
+    # Filter successful ones
+    successful = [e for e in evaluations if e is not None]
+    print(f"Created {len(successful)} evaluations")
+    
+    return successful
 
-    while True:
-        results_data = client.results.get(
-            evaluation_id=evaluation_id,
-            page=page,
-            page_size=page_size
-        )
-
-        if not results_data or not results_data.results:
-            break
-
-        print(f"   Processing page {page}: {len(results_data.results)} results")
-
-        # Process immediately
-        for result in results_data.results:
-            # Real-time processing logic
-            pass
-
-        if page >= results_data.pagination.total_pages:
-            break
-        page += 1
-
-    print("\n Strategy 2: Large pages for batch processing")
-    page_size = 200  # Larger pages
-    page = 1
-
-    while True:
-        results_data = client.results.get(
-            evaluation_id=evaluation_id,
-            page=page,
-            page_size=page_size
-        )
-
-        if not results_data or not results_data.results:
-            break
-
-        print(f"   Batch processing page {page}: {len(results_data.results)} results")
-
-        # Batch process entire page
-        process_batch(results_data.results)
-
-        if page >= results_data.pagination.total_pages:
-            break
-        page += 1
-
-def process_batch(results):
-    """Process a batch of results efficiently"""
-    # Batch processing logic here
-    pass
-
-# Usage
-efficient_pagination_strategies()
+# Run it
+evaluations = asyncio.run(create_multiple_evaluations())
 ```
 
-## Batch Processing
+## Error Handling
 
-### Running Multiple Evaluations
+### Basic Error Handling
+
+```python
+from atlas import Atlas
+import atlas
+
+def safe_create_evaluation():
+    client = Atlas()
+    
+    try:
+        models = client.models.get()
+        benchmarks = client.benchmarks.get()
+        
+        evaluation = client.evaluations.create(
+            model=models[0],
+            benchmark=benchmarks[0]
+        )
+        
+        return evaluation
+        
+    except atlas.AuthenticationError:
+        print("Invalid API key")
+        return None
+    except atlas.NotFoundError:
+        print("Model or benchmark not found")
+        return None
+    except atlas.RateLimitError as e:
+        print(f"Rate limited. Try again in {e.retry_after} seconds")
+        return None
+    except atlas.APIError as e:
+        print(f"API error: {e}")
+        return None
+
+evaluation = safe_create_evaluation()
+```
+
+### Retry Logic
 
 ```python
 import time
 from atlas import Atlas
 import atlas
 
-def run_evaluation_batch(models, benchmarks):
-    """Run evaluations for multiple model-benchmark combinations"""
+def create_evaluation_with_retry(max_retries=3):
     client = Atlas()
+    
+    for attempt in range(max_retries):
+        try:
+            models = client.models.get()
+            benchmarks = client.benchmarks.get()
+            
+            evaluation = client.evaluations.create(
+                model=models[0],
+                benchmark=benchmarks[0]
+            )
+            
+            print(f"Success on attempt {attempt + 1}")
+            return evaluation
+            
+        except atlas.RateLimitError as e:
+            if attempt < max_retries - 1:
+                wait_time = e.retry_after or (2 ** attempt)
+                print(f"Rate limited, waiting {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print("Max retries exceeded")
+                return None
+                
+        except atlas.APIError as e:
+            if attempt < max_retries - 1:
+                print(f"Attempt {attempt + 1} failed: {e}")
+                time.sleep(2 ** attempt)  # Exponential backoff
+            else:
+                print(f"Failed after {max_retries} attempts: {e}")
+                return None
+    
+    return None
 
-    results = {'successful': [], 'failed': []}
+evaluation = create_evaluation_with_retry()
+```
 
-    for model in models:
-        for benchmark in benchmarks:
-            print(f"Creating evaluation: {model} on {benchmark}")
+## Timeouts
 
+### Custom Timeouts
+
+```python
+from atlas import Atlas
+
+# Different timeout strategies
+quick_client = Atlas(timeout=30.0)      # 30 seconds for testing
+normal_client = Atlas(timeout=300.0)    # 5 minutes for normal use
+patient_client = Atlas(timeout=1800.0)  # 30 minutes for long evaluations
+
+# Use appropriate client for your use case
+evaluation = patient_client.evaluations.create(
+    model=models[0],
+    benchmark=benchmarks[0]
+)
+```
+
+### Per-Request Timeouts
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Override timeout for specific operations
+models = client.models.get()
+benchmarks = client.benchmarks.get()
+
+# Long evaluation with extended timeout
+evaluation = client.evaluations.create(
+    model=models[0],
+    benchmark=benchmarks[0],
+    timeout=3600.0  # 1 hour timeout for this specific request
+)
+```
+
+## Batch Processing
+
+### Process Multiple Evaluations
+
+```python
+from atlas import Atlas
+
+def run_evaluation_batch():
+    client = Atlas()
+    
+    models = client.models.get()
+    benchmarks = client.benchmarks.get()
+    
+    results = []
+    
+    # Create evaluations
+    for model in models[:2]:
+        for benchmark in benchmarks[:2]:
             try:
                 evaluation = client.evaluations.create(
                     model=model,
                     benchmark=benchmark
                 )
-
-                if evaluation:
-                    results['successful'].append({
-                        'model': model,
-                        'benchmark': benchmark,
-                        'evaluation_id': evaluation.id
-                    })
-                    print(f" Created: {evaluation.id}")
-                else:
-                    results['failed'].append({
-                        'model': model,
-                        'benchmark': benchmark,
-                        'error': 'No evaluation returned'
-                    })
-
-            except atlas.RateLimitError:
-                print("Rate limited, waiting 60 seconds...")
-                time.sleep(60)
-
-            except atlas.APIError as e:
-                print(f" Failed: {e}")
-                results['failed'].append({
-                    'model': model,
-                    'benchmark': benchmark,
-                    'error': str(e)
+                
+                print(f"Created: {model.id} + {benchmark.id} = {evaluation.id}")
+                results.append({
+                    'model': model.id,
+                    'benchmark': benchmark.id,
+                    'evaluation_id': evaluation.id,
+                    'status': 'created'
                 })
-
-            time.sleep(2)
-
+                
+                # Small delay to avoid rate limits
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"Failed: {model.id} + {benchmark.id} - {e}")
+                results.append({
+                    'model': model.id,
+                    'benchmark': benchmark.id,
+                    'error': str(e),
+                    'status': 'failed'
+                })
+    
     return results
 
-# Usage
-models = ["gpt-4", "claude-3-opus"]
-benchmarks = ["mmlu", "hellaswag"]
-
-batch_results = run_evaluation_batch(models, benchmarks)
-print(f" Successful: {len(batch_results['successful'])}")
-print(f" Failed: {len(batch_results['failed'])}")
+batch_results = run_evaluation_batch()
 ```
 
-## Error Handling Patterns
+## Pagination Best Practices
 
-### Robust Error Handling
+### Memory-Efficient Pagination
 
 ```python
-import time
 from atlas import Atlas
-import atlas
 
-def create_evaluation_with_retries(model, benchmark, max_retries=3):
-    """Create evaluation with automatic retries"""
+def process_large_results(evaluation_id):
+    """Process large result sets without loading everything into memory"""
     client = Atlas()
-
-    for attempt in range(max_retries):
-        try:
-            evaluation = client.evaluations.create(
-                model=model,
-                benchmark=benchmark
-            )
-
-            if evaluation:
-                print(f" Success on attempt {attempt + 1}")
-                return evaluation
-
-        except atlas.RateLimitError as e:
-            print(f"Rate limited on attempt {attempt + 1}")
-            if attempt < max_retries - 1:
-                # Check if server provided retry-after header
-                retry_after = getattr(e.response, 'headers', {}).get('retry-after', 60)
-                wait_time = int(retry_after)
-                print(f"Waiting {wait_time} seconds...")
-                time.sleep(wait_time)
-            else:
-                raise
-
-        except atlas.NotFoundError:
-            print(f" Model '{model}' or benchmark '{benchmark}' not found")
-            return None
-
-        except atlas.AuthenticationError:
-            print(" Authentication failed - check your API key")
-            raise
-
-        except atlas.APIError as e:
-            print(f" API error on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)  # Exponential backoff
-            else:
-                raise
-
-    return None
-
-# Usage
-evaluation = create_evaluation_with_retries("gpt-4", "mmlu")
-```
-
-## Result Processing
-
-### Processing Large Result Sets
-
-```python
-from atlas import Atlas
-import json
-from typing import Dict, List
-
-def analyze_evaluation_results(evaluation_id: str) -> Dict:
-    """Analyze results from an evaluation"""
-    client = Atlas()
-
-    try:
-        results = client.results.get(evaluation_id=evaluation_id)
-
-        if not results:
-            return {"error": "No results found"}
-
-        # Basic analysis
-        analysis = {
-            "total_results": len(results),
-            "subsets": {},
-            "overall_accuracy": 0,
-            "avg_duration": 0
-        }
-
-        total_score = 0
-        total_duration = 0
-
-        for result in results:
-            # Track by subset
-            if result.subset not in analysis["subsets"]:
-                analysis["subsets"][result.subset] = {
-                    "count": 0,
-                    "total_score": 0,
-                    "accuracy": 0
-                }
-
-            analysis["subsets"][result.subset]["count"] += 1
-            analysis["subsets"][result.subset]["total_score"] += result.score
-
-            total_score += result.score
-            total_duration += result.duration.total_seconds()
-
-        # Calculate averages
-        analysis["overall_accuracy"] = total_score / len(results)
-        analysis["avg_duration"] = total_duration / len(results)
-
-        # Calculate subset accuracies
-        for subset_data in analysis["subsets"].values():
-            subset_data["accuracy"] = subset_data["total_score"] / subset_data["count"]
-
-        return analysis
-
-    except atlas.APIError as e:
-        return {"error": str(e)}
-
-# Usage
-analysis = analyze_evaluation_results("eval_123")
-if "error" not in analysis:
-    print(f" Analysis Results:")
-    print(f"   Total results: {analysis['total_results']}")
-    print(f"   Overall accuracy: {analysis['overall_accuracy']:.2%}")
-    print(f"   Average duration: {analysis['avg_duration']:.2f}s")
-
-    print(f"   By subset:")
-    for subset, data in analysis['subsets'].items():
-        print(f"     {subset}: {data['accuracy']:.2%} ({data['count']} results)")
-```
-
-## Production Timeouts
-
-### Different Timeout Strategies
-
-```python
-from atlas import Atlas
-
-# Different timeout configurations for different use cases
-
-# Development: Fail fast
-dev_client = Atlas(timeout=30.0)  # 30 seconds
-
-# Production: More patient
-prod_client = Atlas(timeout=600.0)  # 10 minutes
-
-# Long-running batch jobs: Very patient
-batch_client = Atlas(timeout=1800.0)  # 30 minutes
-
-def adaptive_timeout_client(operation_type="default"):
-    """Get client with timeout appropriate for operation"""
-    timeouts = {
-        "quick": 30.0,      # For testing connectivity
-        "default": 300.0,   # For normal operations
-        "batch": 1800.0,    # For batch processing
-        "patient": 3600.0   # For very long evaluations
-    }
-
-    timeout = timeouts.get(operation_type, timeouts["default"])
-    return Atlas(timeout=timeout)
-
-# Usage
-quick_client = adaptive_timeout_client("quick")
-batch_client = adaptive_timeout_client("batch")
-```
-
-## Logging and Monitoring
-
-### Simple Logging Setup
-
-```python
-import logging
-import time
-from atlas import Atlas
-import atlas
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('atlas-client')
-
-def create_evaluation_with_logging(model, benchmark):
-    """Create evaluation with comprehensive logging"""
-    client = Atlas()
-
-    logger.info(f"Creating evaluation: {model} on {benchmark}")
-    start_time = time.time()
-
-    try:
-        evaluation = client.evaluations.create(
-            model=model,
-            benchmark=benchmark
+    
+    page = 1
+    total_processed = 0
+    total_correct = 0
+    
+    while True:
+        # Get one page at a time
+        results_data = client.results.get_by_id(
+            evaluation_id=evaluation_id,
+            page=page,
+            page_size=100
         )
+        
+        if not results_data or not results_data.results:
+            break
+        
+        # Process this page
+        page_correct = sum(1 for r in results_data.results if r.score > 0.5)
+        total_correct += page_correct
+        total_processed += len(results_data.results)
+        
+        # Show progress
+        accuracy = total_correct / total_processed
+        print(f"Page {page}: {accuracy:.1%} accuracy ({total_processed:,} processed)")
+        
+        if page >= results_data.pagination.total_pages:
+            break
+        
+        page += 1
+    
+    final_accuracy = total_correct / total_processed if total_processed > 0 else 0
+    print(f"Final: {final_accuracy:.1%} accuracy ({total_processed:,} total)")
+    
+    return final_accuracy
 
-        duration = time.time() - start_time
-
-        if evaluation:
-            logger.info(
-                f"Evaluation created successfully: {evaluation.id} "
-                f"(duration: {duration:.2f}s)"
-            )
-            return evaluation
-        else:
-            logger.warning(
-                f"No evaluation returned for {model}+{benchmark} "
-                f"(duration: {duration:.2f}s)"
-            )
-            return None
-
-    except atlas.APIError as e:
-        duration = time.time() - start_time
-        logger.error(
-            f"Failed to create evaluation {model}+{benchmark}: {e} "
-            f"(duration: {duration:.2f}s)"
-        )
-        raise
-
-# Usage
-evaluation = create_evaluation_with_logging("gpt-4", "mmlu")
+accuracy = process_large_results("your_evaluation_id")
 ```
 
 ## Health Checks
@@ -429,146 +309,68 @@ from atlas import Atlas
 import atlas
 
 def check_atlas_health():
-    """Simple health check for Atlas service"""
+    """Check if Atlas API is reachable"""
     try:
-        client = Atlas(timeout=10.0)  # Short timeout for health check
-
-        # Try to create a test evaluation (will fail but tests connectivity)
-        try:
-            client.evaluations.create(
-                model="__health_check__",
-                benchmark="__health_check__"
-            )
-        except atlas.NotFoundError:
-            # Expected - health check resources don't exist
-            return {"status": "healthy", "message": "API is reachable"}
-        except atlas.BadRequestError:
-            # Also expected - invalid parameters
-            return {"status": "healthy", "message": "API is reachable"}
-
+        client = Atlas(timeout=10.0)
+        
+        # Try to get models (quick operation)
+        models = client.models.get()
+        
+        return {
+            'status': 'healthy',
+            'models_count': len(models)
+        }
+        
     except atlas.AuthenticationError:
-        return {
-            "status": "unhealthy",
-            "error": "Authentication failed - check API key"
-        }
+        return {'status': 'unhealthy', 'error': 'authentication_failed'}
     except atlas.APIConnectionError:
-        return {
-            "status": "unhealthy",
-            "error": "Cannot connect to Atlas API"
-        }
+        return {'status': 'unhealthy', 'error': 'connection_failed'}
     except atlas.APITimeoutError:
-        return {
-            "status": "unhealthy",
-            "error": "Health check timed out"
-        }
+        return {'status': 'unhealthy', 'error': 'timeout'}
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": f"Unexpected error: {e}"
-        }
+        return {'status': 'unhealthy', 'error': str(e)}
 
-# Usage
 health = check_atlas_health()
-if health["status"] == "healthy":
-    print(" Atlas service is healthy")
+if health['status'] == 'healthy':
+    print(f"Atlas is healthy ({health['models_count']} models available)")
 else:
-    print(f" Atlas service is unhealthy: {health['error']}")
+    print(f"Atlas is unhealthy: {health['error']}")
 ```
 
-## Integration Patterns
+## Monitoring and Logging
 
-### Using with Flask/FastAPI
+### Basic Logging
 
 ```python
-from flask import Flask, jsonify, request
+import logging
 from atlas import Atlas
-import atlas
 
-app = Flask(__name__)
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Initialize Atlas client once
-atlas_client = Atlas()
-
-@app.route('/health')
-def health_check():
-    """Health check endpoint"""
-    health = check_atlas_health()  # From example above
-    status_code = 200 if health["status"] == "healthy" else 503
-    return jsonify(health), status_code
-
-@app.route('/evaluations', methods=['POST'])
-def create_evaluation():
-    """Create evaluation endpoint"""
+def create_evaluation_with_logging():
+    client = Atlas()
+    
+    logger.info("Starting evaluation creation")
+    
     try:
-        data = request.get_json()
-        model = data.get('model')
-        benchmark = data.get('benchmark')
-
-        if not model or not benchmark:
-            return jsonify({
-                "error": "Missing required fields: model, benchmark"
-            }), 400
-
-        evaluation = atlas_client.evaluations.create(
-            model=model,
-            benchmark=benchmark
+        models = client.models.get()
+        benchmarks = client.benchmarks.get()
+        
+        logger.info(f"Found {len(models)} models, {len(benchmarks)} benchmarks")
+        
+        evaluation = client.evaluations.create(
+            model=models[0],
+            benchmark=benchmarks[0]
         )
+        
+        logger.info(f"Created evaluation: {evaluation.id}")
+        return evaluation
+        
+    except Exception as e:
+        logger.error(f"Failed to create evaluation: {e}")
+        return None
 
-        if evaluation:
-            return jsonify({
-                "success": True,
-                "evaluation_id": evaluation.id,
-                "status": evaluation.status
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "error": "Failed to create evaluation"
-            }), 500
-
-    except atlas.NotFoundError:
-        return jsonify({
-            "success": False,
-            "error": "Model or benchmark not found"
-        }), 404
-
-    except atlas.APIError as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-@app.route('/evaluations/<evaluation_id>/results')
-def get_results(evaluation_id):
-    """Get evaluation results endpoint"""
-    try:
-        results = atlas_client.results.get(evaluation_id=evaluation_id)
-
-        if results:
-            return jsonify({
-                "success": True,
-                "result_count": len(results),
-                "results": [
-                    {
-                        "subset": r.subset,
-                        "score": r.score,
-                        "duration_seconds": r.duration.total_seconds()
-                    }
-                    for r in results
-                ]
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "error": "No results found"
-            }), 404
-
-    except atlas.APIError as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-if __name__ == '__main__':
-    app.run(debug=True)
+evaluation = create_evaluation_with_logging()
 ```
