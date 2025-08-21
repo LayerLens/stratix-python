@@ -87,7 +87,7 @@ class TestResults:
 
         results_resource._get.assert_called_once_with(
             "/results",
-            params={"evaluation_id": "eval-456", "page": "1"},
+            params={"evaluation_id": "eval-456", "page": "1", "pageSize": "100"},
             timeout=DEFAULT_TIMEOUT,
             cast_to=dict,
         )
@@ -642,7 +642,7 @@ class TestResultsPagination:
         call_args = results_resource._get.call_args
         params = call_args.kwargs["params"]
         assert params["page"] == "1"
-        assert "pageSize" not in params  # pageSize should not be included when not specified
+        assert params["pageSize"] == "100"  # pageSize is now always included with default value
 
     def test_get_results_pagination_metadata_calculation(self, results_resource, sample_result_data):
         """get method correctly calculates pagination metadata."""
@@ -829,8 +829,8 @@ class TestResultsPaginationErrorHandling:
         result = results_resource.get_by_id(evaluation_id="eval-123", page_size=0)
 
         assert isinstance(result, ResultsResponse)
-        # Should use 0 as provided (though this might cause division by zero, it's handled)
-        assert result.pagination.page_size == 0
+        # page_size of 0 should be corrected to minimum value of 1
+        assert result.pagination.page_size == 1
 
     def test_get_results_negative_page_values(self, results_resource):
         """get method handles negative page values."""
@@ -854,9 +854,9 @@ class TestResultsPaginationErrorHandling:
         call_args = results_resource._get.call_args
         params = call_args.kwargs["params"]
         assert params["page"] == "-1"
-        assert params["pageSize"] == "-50"
+        assert params["pageSize"] == "1"  # negative page_size should be corrected to 1
 
         assert isinstance(result, ResultsResponse)
-        assert result.pagination.page_size == -50
-        # total_pages calculation with negative page_size
-        assert result.pagination.total_pages == 0  # math.ceil handles negative divisors
+        assert result.pagination.page_size == 1  # negative page_size should be corrected to 1
+        # total_pages calculation with corrected page_size
+        assert result.pagination.total_pages == 100  # math.ceil(100/1) = 100
