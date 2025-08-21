@@ -74,15 +74,17 @@ class Evaluations(SyncAPIResource):
         evaluation: Evaluation,
         *,
         interval_seconds: int = 30,
-        timeout: float | None = None,
+        timeout_seconds: int | None = None,
     ) -> Optional[Evaluation]:
         """Poll until the evaluation finishes or timeout is reached."""
         start = time.time()
 
         updated_evaluation: Optional[Evaluation] = self.get(evaluation)
         while updated_evaluation and not updated_evaluation.is_finished:
-            if timeout and (time.time() - start) > timeout:
-                raise TimeoutError(f"Evaluation {updated_evaluation.id} did not complete within {timeout} seconds")
+            if timeout_seconds and (time.time() - start) > timeout_seconds:
+                raise TimeoutError(
+                    f"Evaluation {updated_evaluation.id} did not complete within {timeout_seconds} seconds"
+                )
 
             time.sleep(interval_seconds)
             updated_evaluation = self.get(updated_evaluation)
@@ -146,15 +148,17 @@ class AsyncEvaluations(AsyncAPIResource):
         evaluation: Evaluation,
         *,
         interval_seconds: int = 30,
-        timeout: Optional[float] = None,
+        timeout_seconds: Optional[int] = None,
     ) -> Optional[Evaluation]:
         """Poll asynchronously until the evaluation finishes or timeout is reached."""
         start = asyncio.get_event_loop().time()
 
         updated_evaluation: Optional[Evaluation] = await self.get(evaluation)
         while updated_evaluation and not updated_evaluation.is_finished:
-            if timeout and (asyncio.get_event_loop().time() - start) > timeout:
-                raise TimeoutError(f"Evaluation {updated_evaluation.id} did not complete within {timeout} seconds")
+            if timeout_seconds and (asyncio.get_event_loop().time() - start) > timeout_seconds:
+                raise TimeoutError(
+                    f"Evaluation {updated_evaluation.id} did not complete within {timeout_seconds} seconds"
+                )
 
             await asyncio.sleep(interval_seconds)
             updated_evaluation = await self.get(updated_evaluation)

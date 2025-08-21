@@ -88,7 +88,7 @@ class Evaluation(BaseModel):
         return await self._client.results.get(evaluation=self, page=page, page_size=page_size, timeout=timeout)
 
     def wait_for_completion(
-        self, *, interval_seconds: int = 30, timeout: Optional[float] = None
+        self, *, interval_seconds: int = 30, timeout_seconds: Optional[int] = None
     ) -> Optional["Evaluation"]:
         """Sync polling using a sync client."""
         from .._client import AsyncAtlas
@@ -99,7 +99,7 @@ class Evaluation(BaseModel):
             raise RuntimeError("Use `wait_for_completion_async()` with an async client")
 
         evaluation = self._client.evaluations.wait_for_completion(
-            self, interval_seconds=interval_seconds, timeout=timeout
+            self, interval_seconds=interval_seconds, timeout_seconds=timeout_seconds
         )
         if evaluation:
             self.status = evaluation.status
@@ -110,7 +110,7 @@ class Evaluation(BaseModel):
         return self
 
     async def wait_for_completion_async(
-        self, *, interval_seconds: int = 30, timeout: Optional[float] = None
+        self, *, interval_seconds: int = 30, timeout_seconds: Optional[int] = None
     ) -> Optional["Evaluation"]:
         """Async polling using an async client."""
         from .._client import AsyncAtlas
@@ -121,7 +121,7 @@ class Evaluation(BaseModel):
             raise RuntimeError("Use `wait_for_completion()` with a sync client")
 
         evaluation = await self._client.evaluations.wait_for_completion(
-            self, interval_seconds=interval_seconds, timeout=timeout
+            self, interval_seconds=interval_seconds, timeout_seconds=timeout_seconds
         )
         if evaluation:
             self.status = evaluation.status

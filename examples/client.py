@@ -24,7 +24,7 @@ print(f"Created evaluation {evaluation.id}, status={evaluation.status}")
 evaluation = client.evaluations.wait_for_completion(
     evaluation,
     interval_seconds=10,
-    timeout=600,  # 10 minutes
+    timeout_seconds=600,  # 10 minutes
 )
 print(f"Evaluation {evaluation.id} finished with status={evaluation.status}")
 
