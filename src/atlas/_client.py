@@ -7,6 +7,7 @@ from functools import cached_property
 from typing_extensions import Self, override
 
 import httpx
+import requests
 
 from . import _exceptions
 from ._utils import is_mapping
@@ -98,10 +99,7 @@ class Atlas(BaseClient):
     @property
     @override
     def auth_headers(self) -> dict[str, str]:
-        api_key = self.api_key
-        if not api_key:
-            return {}
-        return {"x-api-key": api_key}
+        return {"x-api-key": self.api_key} if self.api_key else {}
 
     def copy(
         self,
@@ -166,9 +164,7 @@ class Atlas(BaseClient):
             timeout=30,
             cast_to=OrganizationResponse,
         )
-        if isinstance(organization, OrganizationResponse):
-            return organization.data
-        return None
+        return organization.data if isinstance(organization, OrganizationResponse) else None
 
 
 class AsyncAtlas(BaseAsyncClient):
@@ -204,31 +200,16 @@ class AsyncAtlas(BaseAsyncClient):
 
         super().__init__(base_url=base_url, timeout=timeout)
 
-        # org/project must be fetched asynchronously
-        self.organization_id = None
-        self.project_id = None
-
-    @classmethod
-    async def create(
-        cls,
-        *,
-        api_key: str | None = None,
-        base_url: str | httpx.URL | None = None,
-        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
-    ) -> "AsyncAtlas":
-        """Async factory that combines __init__ and ainit into one call."""
-        self = cls(api_key=api_key, base_url=base_url, timeout=timeout)
-        organization = await self._get_organization()
+        organization = self._get_organization()
         if organization is None:
-            raise AtlasError("Organization could not be fetched. Please contact LayerLens Atlas support.")
+            raise AtlasError(f"Organization could not be fetched. Please contact LayerLens Atlas support.")
         self.organization_id = organization.id
 
-        if not organization.projects:
+        if organization.projects is None or len(organization.projects) == 0:
             raise AtlasError(
                 f"Organization {self.organization_id} is missing project. Please contact LayerLens Atlas support."
             )
         self.project_id = organization.projects[0].id
-        return self
 
     @cached_property
     def benchmarks(self) -> AsyncBenchmarks:
@@ -255,6 +236,7 @@ class AsyncAtlas(BaseAsyncClient):
         return AsyncResults(self)
 
     @property
+    @override
     def auth_headers(self) -> dict[str, str]:
         return {"x-api-key": self.api_key} if self.api_key else {}
 
@@ -304,15 +286,16 @@ class AsyncAtlas(BaseAsyncClient):
 
         return APIStatusError(err_msg, response=response, body=data)
 
-    async def _get_organization(self) -> Optional[Organization]:
-        organization = await super().get_cast(
-            "/organizations",
-            timeout=30,
-            cast_to=OrganizationResponse,
-        )
-        if isinstance(organization, OrganizationResponse):
-            return organization.data
-        return None
+    def _get_organization(self) -> Optional[Organization]:
+        url = f"{self.base_url}organizations"
+
+        response = requests.get(url, headers=self.default_headers, timeout=30)
+        response.raise_for_status()
+
+        data = response.json()
+
+        organization = OrganizationResponse(**data)
+        return organization.data if isinstance(organization, OrganizationResponse) else None
 
 
 Client = Atlas

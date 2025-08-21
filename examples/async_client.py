@@ -7,7 +7,7 @@ from atlas import AsyncAtlas
 
 async def main():
     # Construct async client
-    client = await AsyncAtlas.create()
+    client = AsyncAtlas()
 
     # --- Models
     models = await client.models.get()
