@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import List, Optional
 
 import httpx
 
-from ...models import Evaluation, ResultsResponse
+from ...models import Result, Evaluation, ResultsResponse
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
@@ -22,6 +22,23 @@ class Results(SyncAPIResource):
         page_size: Optional[int] = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> ResultsResponse | None:
+        """
+        Get evaluation results with optional pagination.
+
+        Args:
+            evaluation: evaluation to get the results for
+            page: Page number for pagination (1-based, defaults to 1 if not provided)
+            page_size: Number of results per page (default: 100, optional)
+            timeout: Request timeout
+
+        Returns:
+            ResultsResponse object containing:
+            - evaluation_id: The evaluation ID
+            - results: List of Result objects for the current page
+            - metrics: Contains total_count and score ranges
+            - pagination: Calculated pagination info
+            or None if the request fails
+        """
         return self.get_by_id(evaluation_id=evaluation.id, page=page, page_size=page_size, timeout=timeout)
 
     def get_by_id(
@@ -36,7 +53,7 @@ class Results(SyncAPIResource):
         Get evaluation results with optional pagination.
 
         Args:
-            evaluation: Evaluation to get the results for
+            evaluation_id: ID of evaluation to get the results for
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of results per page (default: 100, optional)
             timeout: Request timeout
@@ -46,7 +63,7 @@ class Results(SyncAPIResource):
             - evaluation_id: The evaluation ID
             - results: List of Result objects for the current page
             - metrics: Contains total_count and score ranges
-            - pagination: Calculated pagination info (total_count, page_size, total_pages)
+            - pagination: Calculated pagination info
             or None if the request fails
         """
         params = {"evaluation_id": evaluation_id}
@@ -90,6 +107,64 @@ class Results(SyncAPIResource):
         except Exception:
             return None
 
+    def get_all(
+        self,
+        *,
+        evaluation: Evaluation,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> List[Result]:
+        """
+        Fetch all results for the given evaluation by iterating over all pages.
+
+        Args:
+            evaluation: Evaluation to get the results for
+            timeout: Request timeout
+
+        Returns:
+            List of all Result objects across all pages.
+        """
+        return self.get_all_by_id(evaluation_id=evaluation.id, timeout=timeout)
+
+    def get_all_by_id(
+        self,
+        *,
+        evaluation_id: str,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> List[Result]:
+        """
+        Fetch all results for the given evaluation by iterating over all pages.
+
+        Args:
+            evaluation_id: ID of evaluation to get the results for
+            timeout: Request timeout
+
+        Returns:
+            List of all Result objects across all pages.
+        """
+        all_results: List[Result] = []
+        current_page = 1
+
+        while True:
+            resp = self.get_by_id(
+                evaluation_id=evaluation_id,
+                page=current_page,
+                page_size=DEFAULT_PAGE_SIZE,
+                timeout=timeout,
+            )
+
+            if resp is None or not resp.results:
+                break
+
+            all_results.extend(resp.results)
+
+            # Stop if we reached the last page
+            if resp.pagination.page >= resp.pagination.total_pages:
+                break
+
+            current_page += 1
+
+        return all_results
+
 
 class AsyncResults(AsyncAPIResource):
     async def get(
@@ -100,6 +175,23 @@ class AsyncResults(AsyncAPIResource):
         page_size: Optional[int] = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> ResultsResponse | None:
+        """
+        Get evaluation results with optional pagination.
+
+        Args:
+            evaluation: Evaluation to get the results for
+            page: Page number for pagination (1-based, defaults to 1 if not provided)
+            page_size: Number of results per page (default: 100, optional)
+            timeout: Request timeout
+
+        Returns:
+            ResultsResponse object containing:
+            - evaluation_id: The evaluation ID
+            - results: List of Result objects for the current page
+            - metrics: Contains total_count and score ranges
+            - pagination: Calculated pagination info (total_count, page_size, total_pages)
+            or None if the request fails
+        """
         return await self.get_by_id(evaluation_id=evaluation.id, page=page, page_size=page_size, timeout=timeout)
 
     async def get_by_id(
@@ -114,7 +206,7 @@ class AsyncResults(AsyncAPIResource):
         Get evaluation results with optional pagination.
 
         Args:
-            evaluation: Evaluation to get the results for
+            evaluation_id: ID of evaluation to get the results for
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of results per page (default: 100, optional)
             timeout: Request timeout
@@ -166,3 +258,61 @@ class AsyncResults(AsyncAPIResource):
             return ResultsResponse.model_validate(resp_with_pagination)
         except Exception:
             return None
+
+    async def get_all(
+        self,
+        *,
+        evaluation: Evaluation,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> List[Result]:
+        """
+        Fetch all results for the given evaluation by iterating over all pages.
+
+        Args:
+            evaluation: Evaluation to get the results for
+            timeout: Request timeout
+
+        Returns:
+            List of all Result objects across all pages.
+        """
+        return await self.get_all_by_id(evaluation_id=evaluation.id, timeout=timeout)
+
+    async def get_all_by_id(
+        self,
+        *,
+        evaluation_id: str,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> List[Result]:
+        """
+        Fetch all results for the given evaluation by iterating over all pages.
+
+        Args:
+            evaluation_id: ID of evaluation to get the results for
+            timeout: Request timeout
+
+        Returns:
+            List of all Result objects across all pages.
+        """
+        all_results: List[Result] = []
+        current_page = 1
+
+        while True:
+            resp = await self.get_by_id(
+                evaluation_id=evaluation_id,
+                page=current_page,
+                page_size=DEFAULT_PAGE_SIZE,
+                timeout=timeout,
+            )
+
+            if resp is None or not resp.results:
+                break
+
+            all_results.extend(resp.results)
+
+            # Stop if we reached the last page
+            if resp.pagination.page >= resp.pagination.total_pages:
+                break
+
+            current_page += 1
+
+        return all_results
