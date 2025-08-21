@@ -74,7 +74,7 @@ class Evaluations(SyncAPIResource):
         evaluation: Evaluation,
         *,
         interval_seconds: int = 30,
-        timeout_seconds: int | None = None,
+        timeout_seconds: Optional[int] = None,
     ) -> Optional[Evaluation]:
         """Poll until the evaluation finishes or timeout is reached."""
         start = time.time()
