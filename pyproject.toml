@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "The official Python library for the LayerLens Atlas API"
 license = "Apache-2.0"
 authors = [{ name = "LayerLens", email = "support@layerlens.ai" }]
-dependencies = ["httpx>=0.23.0, <1", "pydantic>=1.9.0, <3"]
+dependencies = ["httpx>=0.23.0, <1", "pydantic>=1.9.0, <3", "requests"]
 requires-python = ">= 3.8"
 classifiers = [
   "Typing :: Typed",
@@ -35,11 +35,12 @@ atlas = "atlas.cli:main"
 managed = true
 # version pins are in requirements-dev.lock
 dev-dependencies = [
-  "pyright==1.1.399",
   "mypy",
   "pytest",
-  "ruff",
+  "pyright==1.1.399",
   "pytest-cov>=6.2.1",
+  "ruff",
+  "types-requests",
 ]
 
 [tool.rye.scripts]

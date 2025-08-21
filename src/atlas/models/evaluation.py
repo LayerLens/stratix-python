@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 from datetime import timedelta
 
 import httpx
@@ -70,6 +70,21 @@ class Evaluation(BaseModel):
 
         return self._client.results.get(evaluation=self, page=page, page_size=page_size, timeout=timeout)
 
+    def get_all_results(
+        self,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> List[Result]:
+        """Fetch results synchronously if a sync client is attached."""
+        from .._client import AsyncAtlas
+
+        if self._client is None:
+            raise ValueError("No client attached")
+        if isinstance(self._client, AsyncAtlas):
+            raise RuntimeError("Use `await get_results_async()` with an async client")
+
+        return self._client.results.get_all(evaluation=self, timeout=timeout)
+
     async def get_results_async(
         self,
         *,
@@ -87,8 +102,23 @@ class Evaluation(BaseModel):
 
         return await self._client.results.get(evaluation=self, page=page, page_size=page_size, timeout=timeout)
 
+    async def get_all_results_async(
+        self,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> List[Result]:
+        """Fetch results asynchronously if an async client is attached."""
+        from .._client import AsyncAtlas
+
+        if self._client is None:
+            raise ValueError("No client attached")
+        if not isinstance(self._client, AsyncAtlas):
+            raise RuntimeError("Use `get_results()` with a sync client")
+
+        return await self._client.results.get_all(evaluation=self, timeout=timeout)
+
     def wait_for_completion(
-        self, *, interval_seconds: int = 30, timeout: Optional[float] = None
+        self, *, interval_seconds: int = 30, timeout_seconds: Optional[int] = None
     ) -> Optional["Evaluation"]:
         """Sync polling using a sync client."""
         from .._client import AsyncAtlas
@@ -99,7 +129,7 @@ class Evaluation(BaseModel):
             raise RuntimeError("Use `wait_for_completion_async()` with an async client")
 
         evaluation = self._client.evaluations.wait_for_completion(
-            self, interval_seconds=interval_seconds, timeout=timeout
+            self, interval_seconds=interval_seconds, timeout_seconds=timeout_seconds
         )
         if evaluation:
             self.status = evaluation.status
@@ -110,7 +140,7 @@ class Evaluation(BaseModel):
         return self
 
     async def wait_for_completion_async(
-        self, *, interval_seconds: int = 30, timeout: Optional[float] = None
+        self, *, interval_seconds: int = 30, timeout_seconds: Optional[int] = None
     ) -> Optional["Evaluation"]:
         """Async polling using an async client."""
         from .._client import AsyncAtlas
@@ -121,7 +151,7 @@ class Evaluation(BaseModel):
             raise RuntimeError("Use `wait_for_completion()` with a sync client")
 
         evaluation = await self._client.evaluations.wait_for_completion(
-            self, interval_seconds=interval_seconds, timeout=timeout
+            self, interval_seconds=interval_seconds, timeout_seconds=timeout_seconds
         )
         if evaluation:
             self.status = evaluation.status
