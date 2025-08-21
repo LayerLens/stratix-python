@@ -96,7 +96,7 @@ print(f"Created: {evaluation.id}")
 completed_evaluation = client.evaluations.wait_for_completion(
     evaluation,
     interval_seconds=30,  # Check every 30 seconds
-    timeout=1800         # 30 minute timeout
+    timeout_seconds=1800         # 30 minute timeout
 )
 
 if completed_evaluation.is_success:

@@ -18,20 +18,26 @@ async def main():
     print(f"Found {len(benchmarks)} benchmarks")
 
     # --- Create evaluation
-    evaluation = await client.evaluations.create(model=models[0], benchmark=benchmarks[0])
-
+    evaluation = await client.evaluations.create(
+        model=models[0],
+        benchmark=benchmarks[0],
+    )
     print(f"Created evaluation {evaluation.id}, status={evaluation.status}")
 
     # --- Wait for completion
-    await evaluation.wait_for_completion_async(interval_seconds=10, timeout_seconds=600)
+    evaluation = await client.evaluations.wait_for_completion(
+        evaluation,
+        interval_seconds=10,
+        # Keep in mind that the evaluation will take a while to complete, so you may want to increase the timeout
+        # or grab the evaluation id and check the status later
+        timeout_seconds=600,  # 10 minutes
+    )
     print(f"Evaluation {evaluation.id} finished with status={evaluation.status}")
 
-    # --- Results
-    if evaluation.is_success:
-        results = await evaluation.get_results_async()
-        print("Results:", results)
-    else:
-        print("Evaluation did not succeed, no results to show.")
+    # --- All results at once without pagination
+    results = await client.results.get_all(evaluation=evaluation)
+    print(f"Found {len(results)} results")
+    print(results)
 
 
 if __name__ == "__main__":

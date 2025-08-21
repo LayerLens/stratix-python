@@ -30,7 +30,7 @@ async def main():
         interval_seconds=10,
         # Keep in mind that the evaluation will take a while to complete, so you may want to increase the timeout
         # or grab the evaluation id and check the status later
-        timeout=600,  # 10 minutes
+        timeout_seconds=600,  # 10 minutes
     )
     print(f"Evaluation {evaluation.id} finished with status={evaluation.status}")
 

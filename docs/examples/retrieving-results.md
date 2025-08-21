@@ -32,7 +32,61 @@ else:
     print("No results found")
 ```
 
-## Pagination - Get All Results
+## Get All Results Without Manual Pagination
+
+### Using get_all() Method
+
+The easiest way to retrieve all results is using the `get_all()` method, which handles pagination automatically:
+
+```python
+import asyncio
+from atlas import AsyncAtlas
+
+async def main():
+    # Construct async client
+    client = AsyncAtlas()
+
+    # --- Models
+    models = await client.models.get()
+    print(f"Found {len(models)} models")
+
+    # --- Benchmarks
+    benchmarks = await client.benchmarks.get()
+    print(f"Found {len(benchmarks)} benchmarks")
+
+    # --- Create evaluation
+    evaluation = await client.evaluations.create(
+        model=models[0],
+        benchmark=benchmarks[0],
+    )
+    print(f"Created evaluation {evaluation.id}, status={evaluation.status}")
+
+    # --- Wait for completion
+    evaluation = await client.evaluations.wait_for_completion(
+        evaluation,
+        interval_seconds=10,
+        # Keep in mind that the evaluation will take a while to complete, so you may want to increase the timeout
+        # or grab the evaluation id and check the status later
+        timeout_seconds=600,  # 10 minutes
+    )
+    print(f"Evaluation {evaluation.id} finished with status={evaluation.status}")
+
+    # --- All results at once without pagination
+    results = await client.results.get_all(evaluation=evaluation)
+    print(f"Found {len(results)} results")
+    print(results)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+This approach is much simpler than manual pagination as it:
+- Automatically handles all pagination internally
+- Returns all results in a single call
+- No need to manage page numbers or loop through pages
+- Works with both sync and async clients
+
+## Pagination - Get All Results (Manual)
 
 ### Simple Approach
 
@@ -178,7 +232,7 @@ print("Waiting for evaluation to complete...")
 completed_evaluation = client.evaluations.wait_for_completion(
     evaluation,
     interval_seconds=30,
-    timeout=1800  # 30 minutes
+    timeout_seconds=1800  # 30 minutes
 )
 
 # 3. Get all results

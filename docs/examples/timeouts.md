@@ -131,7 +131,7 @@ try:
     completed = client.evaluations.wait_for_completion(
         evaluation,
         interval_seconds=30,  # Check every 30 seconds
-        timeout=3600         # Give up after 1 hour
+        timeout_seconds=3600         # Give up after 1 hour
     )
     
     if completed and completed.is_success:
