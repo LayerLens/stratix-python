@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 env:
-  PACKAGE_NAME: layerlens-atlas-sdk
+  PACKAGE_NAME: atlas
 
 jobs:
   deploy:
