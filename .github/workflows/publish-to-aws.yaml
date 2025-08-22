@@ -1,0 +1,120 @@
+name: Deploy Python Package to AWS
+
+on:
+  workflow_dispatch:
+
+env:
+  PACKAGE_NAME: layerlens-atlas-sdk
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine setuptools wheel
+
+      - name: Build package
+        run: |
+          python -m build
+
+      - name: Get package version
+        id: get_version
+        run: |
+          VERSION=$(./scripts/get_version.sh)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Package version: $VERSION"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Create package directory structure
+        run: |
+          mkdir -p upload/simple/${{ env.PACKAGE_NAME }}
+
+      - name: Copy package files
+        run: |
+          cp dist/* upload/simple/${{ env.PACKAGE_NAME }}/
+
+      - name: Generate package index HTML
+        run: |
+          cat > upload/simple/${{ env.PACKAGE_NAME }}/index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Links for ${{ env.PACKAGE_NAME }}</title>
+          </head>
+          <body>
+              <h1>Links for ${{ env.PACKAGE_NAME }}</h1>
+          EOF
+
+          for file in upload/simple/${{ env.PACKAGE_NAME }}/*.{tar.gz,whl}; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "    <a href=\"$filename\">$filename</a><br/>" >> upload/simple/${{ env.PACKAGE_NAME }}/index.html
+            fi
+          done
+
+          echo "</body></html>" >> upload/simple/${{ env.PACKAGE_NAME }}/index.html
+
+      - name: Generate main simple index
+        run: |
+          cat > upload/simple/index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>LayerLens Atlas SDK</title>
+          </head>
+          <body>
+              <h1>LayerLens Atlas SDK</h1>
+              <a href="${{ env.PACKAGE_NAME }}/">${{ env.PACKAGE_NAME }}</a><br/>
+          </body>
+          </html>
+          EOF
+
+      - name: Generate main index
+        run: |
+          cat > upload/index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>LayerLens Python Package Repository</title>
+          </head>
+          <body>
+              <h1>LayerLens Python Package Repository</h1>
+              <p>Custom Python package repository for ${{ env.PACKAGE_NAME }}</p>
+              <p><a href="simple/">Browse packages</a></p>
+              <h2>Installation</h2>
+              <pre>pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/</pre>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload to S3
+        run: |
+          aws s3 sync upload/ s3://${{ secrets.S3_BUCKET_NAME }}/ --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
+
+      - name: Output installation command
+        run: |
+          echo "Package deployed successfully!"
+          echo "Install with: pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/"
