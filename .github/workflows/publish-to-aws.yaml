@@ -31,6 +31,7 @@ jobs:
       - name: Get package version
         id: get_version
         run: |
+          chmod +x ./scripts/get_version.sh
           VERSION=$(./scripts/get_version.sh)
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Package version: $VERSION"
