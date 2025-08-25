@@ -29,16 +29,11 @@ async def main():
     client = AsyncAtlas()
 
     # List of evaluation IDs to fetch exmple
-    # evaluation_ids = [
-    #     "68ac55524f11266728702c47",
-    #     "68a65a3de7ad047fb5d8e7d4", 
-    #     "689e0a2725c334f632a43d6e",
-    #     "688a3477ee43450d97a49dba",
-    #     "688a254c673f6b2835cc7278",
-    #     "68a65a34e7ad047fb5d8e7d3"
-    # ]
 
-    evaluation_ids = ["example-id"]
+    evaluation_ids = [
+        "68a65a3de7ad047fb5d8e7d4",
+        "688a254c673f6b2835cc7278"
+    ]
 
     print(f"Starting async fetch for {len(evaluation_ids)} evaluations...")
     print("=" * 80)
