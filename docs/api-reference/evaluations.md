@@ -55,6 +55,72 @@ evaluation = client.evaluations.create(
 )
 ```
 
+### `get_by_id(evaluation_id, timeout=None)`
+
+Retrieves an existing evaluation by its unique identifier.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `evaluation_id` | `str` | Yes | The unique evaluation identifier |
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns an `Evaluation` object if found, `None` if the evaluation does not exist or cannot be accessed.
+
+#### Example
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Retrieve an evaluation by ID
+evaluation_id = "eval_abc123xyz"
+evaluation = client.evaluations.get_by_id(evaluation_id)
+
+if evaluation:
+    print(f"Found evaluation: {evaluation.id}")
+    print(f"Status: {evaluation.status}")
+    print(f"Model: {evaluation.model_name}")
+    print(f"Benchmark: {evaluation.dataset_name}")
+else:
+    print(f"Evaluation {evaluation_id} not found")
+```
+
+#### With Custom Timeout
+
+```python
+# Retrieve evaluation with custom timeout
+evaluation = client.evaluations.get_by_id(
+    "eval_abc123xyz",
+    timeout=30.0  # 30 seconds
+)
+```
+
+#### Async Usage
+
+```python
+from atlas import AsyncAtlas
+import asyncio
+
+async def get_evaluation():
+    client = AsyncAtlas()
+    
+    evaluation = await client.evaluations.get_by_id("eval_abc123xyz")
+    if evaluation:
+        print(f"Found evaluation: {evaluation.id}")
+        return evaluation
+    else:
+        print("Evaluation not found")
+        return None
+
+# Run the async function
+asyncio.run(get_evaluation())
+```
+
 ## Response Object
 
 The `create` method returns an `Evaluation` object with the following properties:
@@ -167,31 +233,6 @@ if __name__ == "__main__":
     evaluation = create_and_monitor_evaluation()
 ```
 
-## Available Models
-
-Common model identifiers include:
-
-- `"gpt-4"` - OpenAI GPT-4
-- `"gpt-3.5-turbo"` - OpenAI GPT-3.5 Turbo
-- `"claude-3-opus"` - Anthropic Claude 3 Opus
-- `"claude-3-sonnet"` - Anthropic Claude 3 Sonnet
-- `"llama-2-70b"` - Meta Llama 2 70B
-- `"mistral-7b"` - Mistral 7B
-
-> **Note**: Available models may vary based on your organization's access. Check the LayerLens Atlas dashboard for the complete list of available models.
-
-## Available Benchmarks
-
-Common benchmark identifiers include:
-
-- `"mmlu"` - Massive Multitask Language Understanding
-- `"hellaswag"` - HellaSwag commonsense reasoning
-- `"arc-challenge"` - AI2 Reasoning Challenge
-- `"truthfulqa"` - TruthfulQA
-- `"winogrande"` - WinoGrande
-- `"gsm8k"` - Grade School Math 8K
-
-> **Note**: Available benchmarks may vary based on your organization's access. Check the LayerLens Atlas dashboard for the complete list of available benchmarks.
 
 ## Error Handling
 
@@ -267,15 +308,7 @@ evaluation = client.evaluations.create(
 )
 ```
 
-### 3. Store Evaluation IDs
-```python
-# ✅ Good - store evaluation ID for later retrieval
-evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-if evaluation:
-    # Store this ID in your database/system
-    evaluation_id = evaluation.id
-    print(f"Store this ID: {evaluation_id}")
-```
+
 
 ## Next Steps
 
