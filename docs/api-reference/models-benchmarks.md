@@ -8,9 +8,123 @@ Atlas evaluations require two key components:
 - **Model**: The AI model you want to evaluate
 - **Benchmark**: The dataset/test suite to evaluate the model against
 
-The availability of models and benchmarks depends on your organization's access level and the specific Atlas deployment you're using.
+The availability of models and benchmarks depends on your organizations configuration.
+
+### Finding Available Models and Benchmarks
+
+#### Check the Atlas Dashboard
+The most reliable way to find available models and benchmarks:
+
+1. Log into your Atlas dashboard
+2. Navigate to the evaluation creation page
+3. View dropdown lists of available models and benchmarks
+
 
 ## Models
+
+### `get(type=None, name=None, companies=None, regions=None, licenses=None, timeout=None)`
+
+Retrieves a list of available models with optional filtering parameters.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `type` | `Literal["custom", "public"] \| None` | No | Filter by model type. If `None`, returns both custom and public models |
+| `name` | `str \| None` | No | Filter models by name (partial match search) |
+| `companies` | `List[str] \| None` | No | Filter by model companies/providers |
+| `regions` | `List[str] \| None` | No | Filter by supported regions |
+| `licenses` | `List[str] \| None` | No | Filter by license types |
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a `List[Model]` containing available models that match the filter criteria. Returns `None` if no models are found or if there's an error.
+
+#### Examples
+
+##### Get All Models
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Get all available models (both custom and public)
+models = client.models.get()
+
+if models:
+    print(f"Found {len(models)} models:")
+    for model in models:
+        print(f"  {model.id} - {model.name} ({model.company})")
+else:
+    print("No models available")
+```
+
+##### Filter by Company
+
+```python
+# Get models from specific companies
+openai_models = client.models.get(companies=["OpenAI"])
+anthropic_models = client.models.get(companies=["Anthropic"])
+
+# Get models from multiple companies
+major_models = client.models.get(companies=["OpenAI", "Anthropic", "Google"])
+
+if major_models:
+    for model in major_models:
+        print(f"{model.name} by {model.company}")
+```
+
+##### Search by Name
+
+```python
+# Search for models with "gpt" in the name
+gpt_models = client.models.get(name=["gpt"])
+
+
+if gpt_models:
+    print("GPT models found:")
+    for model in gpt_models:
+        print(f"  {model.id} - {model.name}")
+```
+
+#### Model Object Properties
+
+Each `Model` object in the returned list contains:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `str` | Unique model identifier for use in evaluations |
+| `name` | `str` | Human-readable model name |
+| `company` | `str` | Company/provider that created the model |
+| `type` | `str` | Model type ("custom" or "public") |
+| `region` | `str` | Supported region |
+| `license` | `str` | License type |
+
+#### Error Handling
+
+```python
+import atlas
+from atlas import Atlas
+
+client = Atlas()
+
+try:
+    models = client.models.get()
+    if models:
+        print(f"Retrieved {len(models)} models")
+    else:
+        print("No models available or error occurred")
+except atlas.AuthenticationError:
+    print("Authentication failed - check your API key")
+except atlas.PermissionDeniedError:
+    print("No permission to access models")
+except atlas.APIConnectionError as e:
+    print(f"Connection error: {e}")
+except atlas.APIError as e:
+    print(f"API error: {e}")
+```
 
 ### Model Identification
 
@@ -44,6 +158,101 @@ if evaluation:
 
 ## Benchmarks
 
+### `get(type=None, name=None, timeout=None)`
+
+Retrieves a list of available benchmarks with optional filtering parameters.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `type` | `Literal["custom", "public"] \| None` | No | Filter by benchmark type. If `None`, returns both custom and public benchmarks |
+| `name` | `str \| None` | No | Filter benchmarks by name (partial match search) |
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a `List[Benchmark]` containing available benchmarks that match the filter criteria. Returns `None` if no benchmarks are found or if there's an error.
+
+#### Examples
+
+##### Get All Benchmarks
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Get all available benchmarks (both custom and public)
+benchmarks = client.benchmarks.get()
+
+if benchmarks:
+    print(f"Found {len(benchmarks)} benchmarks:")
+    for benchmark in benchmarks:
+        print(f"  {benchmark.id} - {benchmark.name}")
+else:
+    print("No benchmarks available")
+```
+
+##### Search by Name
+
+```python
+# Search for benchmarks with "mmlu" in the name
+mmlu_benchmark = client.benchmarks.get(name=["mmlu"])[0]
+
+if mmlu_benchmark:
+    print("MMLU benchmark found:")
+    print(f"  {mmlu_benchmark.id} - {mmlu_benchmark.name}")
+```
+
+
+#### Benchmark Object Properties
+
+Each `Benchmark` object in the returned list contains:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `str` | Unique benchmark identifier for use in evaluations |
+| `name` | `str` | Human-readable benchmark name |
+| `type` | `str` | Benchmark type ("custom" or "public") |
+| `description` | `str` | Description of what the benchmark tests |
+
+#### Error Handling
+
+```python
+import atlas
+from atlas import Atlas
+
+client = Atlas()
+
+try:
+    benchmarks = client.benchmarks.get()
+    if benchmarks:
+        print(f"Retrieved {len(benchmarks)} benchmarks")
+    else:
+        print("No benchmarks available or error occurred")
+except atlas.AuthenticationError:
+    print("Authentication failed - check your API key")
+except atlas.PermissionDeniedError:
+    print("No permission to access benchmarks")
+except atlas.APIConnectionError as e:
+    print(f"Connection error: {e}")
+except atlas.APIError as e:
+    print(f"API error: {e}")
+```
+
+## Discovery and Validation
+
+### Finding Available Models and Benchmarks
+
+#### Check the Atlas Dashboard
+The most reliable way to find available models and benchmarks:
+
+1. Log into your Atlas dashboard
+2. Navigate to the evaluation creation page
+3. View dropdown lists of available models and benchmarks
+
+
 ### Benchmark Identification
 
 Benchmarks are identified by string IDs representing different evaluation datasets:
@@ -71,208 +280,6 @@ if evaluation:
     print(f"Dataset Name: {evaluation.dataset_name}")   # "MMLU"
 ```
 
-### Performance Expectations
-
-Different model-benchmark combinations yield different types of insights:
-
-#### General Intelligence Assessment
-```python
-# Broad capability assessment
-models = ["gpt-4", "claude-3-opus", "llama-2-70b"]
-benchmark = "mmlu"
-
-for model in models:
-    evaluation = client.evaluations.create(model=model, benchmark=benchmark)
-    # Compare general intelligence across models
-```
-
-#### Specialized Task Performance
-```python
-# Code generation comparison
-models = ["gpt-4", "code-llama-34b", "claude-3-sonnet"]
-benchmark = "humaneval"
-
-for model in models:
-    evaluation = client.evaluations.create(model=model, benchmark=benchmark)
-    # Compare coding abilities
-```
-
-## Discovery and Validation
-
-### Finding Available Models and Benchmarks
-
-#### Check the Atlas Dashboard
-The most reliable way to find available models and benchmarks:
-
-1. Log into your Atlas dashboard
-2. Navigate to the evaluation creation page
-3. View dropdown lists of available models and benchmarks
-4. Note the exact IDs for use in your code
-
-#### Programmatic Discovery
-
-While the SDK doesn't currently provide discovery endpoints, you can validate model/benchmark existence:
-
-```python
-import atlas
-from atlas import Atlas
-
-def validate_model_benchmark(model_id: str, benchmark_id: str) -> bool:
-    """Test if a model/benchmark combination is available"""
-    client = Atlas()
-    
-    try:
-        evaluation = client.evaluations.create(
-            model=model_id,
-            benchmark=benchmark_id
-        )
-        
-        if evaluation:
-            print(f"✅ Valid: {model_id} + {benchmark_id}")
-            return True
-        else:
-            print(f"❌ Invalid: {model_id} + {benchmark_id}")
-            return False
-            
-    except atlas.NotFoundError:
-        print(f"❌ Not found: {model_id} or {benchmark_id}")
-        return False
-    except atlas.PermissionDeniedError:
-        print(f"❌ No access: {model_id} or {benchmark_id}")
-        return False
-    except atlas.APIError as e:
-        print(f"❌ Error: {e}")
-        return False
-
-# Test combinations
-combinations = [
-    ("gpt-4", "mmlu"),
-    ("claude-3-opus", "hellaswag"),
-    ("llama-2-70b", "arc-challenge"),
-    ("nonexistent-model", "mmlu"),  # Should fail
-]
-
-for model, benchmark in combinations:
-    validate_model_benchmark(model, benchmark)
-```
-
-### Batch Validation
-
-```python
-def batch_validate_combinations(model_benchmark_pairs):
-    """Validate multiple model/benchmark combinations"""
-    client = Atlas()
-    results = {}
-    
-    for model, benchmark in model_benchmark_pairs:
-        try:
-            evaluation = client.evaluations.create(model=model, benchmark=benchmark)
-            results[(model, benchmark)] = {
-                "valid": evaluation is not None,
-                "evaluation_id": evaluation.id if evaluation else None,
-                "model_name": evaluation.model_name if evaluation else None,
-                "dataset_name": evaluation.dataset_name if evaluation else None,
-            }
-        except atlas.APIError as e:
-            results[(model, benchmark)] = {
-                "valid": False,
-                "error": str(e),
-                "error_type": type(e).__name__
-            }
-    
-    return results
-
-# Example usage
-combinations = [
-    ("gpt-4", "mmlu"),
-    ("claude-3-sonnet", "hellaswag"),
-    ("llama-2-70b", "gsm8k"),
-]
-
-results = batch_validate_combinations(combinations)
-for (model, benchmark), result in results.items():
-    status = "✅" if result["valid"] else "❌"
-    print(f"{status} {model} + {benchmark}: {result}")
-```
-
-### Validate Before Production Use
-
-```python
-def safe_create_evaluation(model: str, benchmark: str):
-    """Create evaluation with validation and error handling"""
-    client = Atlas()
-    
-    # Validate combination first
-    if not validate_model_benchmark(model, benchmark):
-        return None
-    
-    try:
-        evaluation = client.evaluations.create(model=model, benchmark=benchmark)
-        
-        if evaluation:
-            print(f"✅ Evaluation created successfully:")
-            print(f"   ID: {evaluation.id}")
-            print(f"   Model: {evaluation.model_name} ({evaluation.model_company})")
-            print(f"   Benchmark: {evaluation.dataset_name}")
-            return evaluation
-        else:
-            print(f"❌ Failed to create evaluation")
-            return None
-            
-    except atlas.APIError as e:
-        print(f"❌ API error: {e}")
-        return None
-
-# Usage
-evaluation = safe_create_evaluation("gpt-4", "mmlu")
-```
-
-### 4. Document Model and Benchmark Choices
-
-```python
-# Document your evaluation strategy
-EVALUATION_CONFIGS = {
-    "general_intelligence": {
-        "models": ["gpt-4", "claude-3-opus", "gemini-pro"],
-        "benchmarks": ["mmlu", "arc-challenge", "hellaswag"],
-        "description": "Broad cognitive ability assessment"
-    },
-    "code_generation": {
-        "models": ["gpt-4", "code-llama-34b", "claude-3-sonnet"],
-        "benchmarks": ["humaneval", "mbpp", "apps"],
-        "description": "Programming and code generation capabilities"
-    },
-    "mathematical_reasoning": {
-        "models": ["gpt-4", "claude-3-opus", "minerva-62b"],
-        "benchmarks": ["gsm8k", "math", "minerva-math"],
-        "description": "Mathematical problem-solving abilities"
-    }
-}
-
-def run_evaluation_suite(suite_name: str):
-    """Run a predefined evaluation suite"""
-    if suite_name not in EVALUATION_CONFIGS:
-        print(f"Unknown suite: {suite_name}")
-        return
-    
-    config = EVALUATION_CONFIGS[suite_name]
-    print(f"Running {suite_name}: {config['description']}")
-    
-    client = Atlas()
-    evaluations = []
-    
-    for model in config["models"]:
-        for benchmark in config["benchmarks"]:
-            evaluation = client.evaluations.create(model=model, benchmark=benchmark)
-            if evaluation:
-                evaluations.append(evaluation)
-                print(f"✅ {model} + {benchmark}: {evaluation.id}")
-    
-    return evaluations
-
-# Run comprehensive evaluation
-evaluations = run_evaluation_suite("general_intelligence")
-```
 
 ## Troubleshooting
 

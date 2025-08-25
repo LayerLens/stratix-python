@@ -8,6 +8,136 @@ Results contain detailed information about each test case in an evaluation, incl
 
 ## Methods
 
+### `get_all(evaluation, timeout=None)`
+
+Retrieves all results for a specific evaluation by automatically iterating through all pages. This is a convenience method that handles pagination internally.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `evaluation` | `Evaluation` | Yes | The evaluation object to get results for |
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a `List[Result]` containing all result objects across all pages. Returns an empty list if no results are found.
+
+#### Example
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Get evaluation first
+evaluation = client.evaluations.get_by_id("eval_12345")
+if not evaluation:
+    print("Evaluation not found")
+else:
+    # Get all results at once
+    all_results = client.results.get_all(evaluation=evaluation)
+    
+    print(f"Retrieved {len(all_results)} total results")
+```
+
+#### Async Usage
+
+```python
+from atlas import AsyncAtlas
+import asyncio
+
+async def get_all_results():
+    client = AsyncAtlas()
+    
+    # Get evaluation first
+    evaluation = await client.evaluations.get_by_id("eval_12345")
+    if not evaluation:
+        print("Evaluation not found")
+        return
+    
+    # Get all results asynchronously
+    all_results = await client.results.get_all(evaluation=evaluation)
+    print(f"Retrieved {len(all_results)} total results asynchronously")
+    
+    return all_results
+
+# Run the async function
+asyncio.run(get_all_results())
+```
+
+### `get_all_by_id(evaluation_id, timeout=None)`
+
+Retrieves all results for a specific evaluation by evaluation ID, automatically iterating through all pages. This is a convenience method that handles pagination internally.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `evaluation_id` | `str` | Yes | The evaluation identifier to get results for |
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a `List[Result]` containing all result objects across all pages. Returns an empty list if no results are found or the evaluation doesn't exist.
+
+#### Example
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Get all results directly by evaluation ID
+all_results = client.results.get_all_by_id(evaluation_id="eval_12345")
+
+if all_results:
+    print(f"Retrieved {len(all_results)} total results")
+    
+    # Calculate overall statistics
+    total_score = sum(result.score for result in all_results)
+    avg_score = total_score / len(all_results)
+    correct_count = sum(1 for result in all_results if result.score > 0.5)
+    accuracy = correct_count / len(all_results)
+    
+    print(f"Overall accuracy: {accuracy:.1%}")
+    print(f"Average score: {avg_score:.3f}")
+else:
+    print("No results found for evaluation")
+```
+
+#### With Custom Timeout
+
+```python
+# Get all results with custom timeout (5 minutes)
+all_results = client.results.get_all_by_id(
+    evaluation_id="eval_12345",
+    timeout=300.0
+)
+```
+
+#### Async Usage
+
+```python
+from atlas import AsyncAtlas
+import asyncio
+
+async def get_all_results():
+    client = AsyncAtlas()
+    
+    # Get all results asynchronously
+    all_results = await client.results.get_all_by_id(evaluation_id="eval_12345")
+    
+    if all_results:
+        print(f"Retrieved {len(all_results)} total results")
+        
+    else:
+        print("No results found")
+
+# Run the async function
+asyncio.run(get_all_results())
+```
+
 ### `get(evaluation_id, page=None, page_size=None, timeout=None)`
 
 Retrieves detailed results for a specific evaluation with optional pagination support.
@@ -182,95 +312,47 @@ Each `Result` object contains the following properties:
 - **`duration`**: Response latency as a Python `timedelta` object
 - **`metrics`**: Additional scoring metrics that may be benchmark-specific
 
-## Complete Example
+## Working with Large Result Sets
+
+### Fetching results async
+Results can contain thousands of individual test cases. Consider using the async client to load results asynchronously:
 
 ```python
-import atlas
-from atlas import Atlas
-from datetime import timedelta
+import asyncio
+from atlas import AsyncAtlas
 
-def analyze_evaluation_results(evaluation_id: str):
-    client = Atlas()
+async def fetch_results_efficiently():
+    client = AsyncAtlas()
     
-    try:
-        # Get results
-        results_data = client.results.get(evaluation_id=evaluation_id)
-        
-        if not results_data:
-            print(f"No results found for evaluation {evaluation_id}")
-            return
-            
-        results = results_data.results
-        print(f"Analysis for evaluation {evaluation_id}")
-        print(f"Total test cases: {results_data.pagination.total_count}")
-        print(f"Results on current page: {len(results)}")
-        
-        # Calculate overall statistics for current page
-        total_score = sum(result.score for result in results)
-        avg_score = total_score / len(results)
-        correct_answers = sum(1 for result in results if result.score > 0.5)
-        accuracy = correct_answers / len(results)
-        
-        # Calculate timing statistics  
-        durations = [result.duration for result in results]
-        avg_duration = sum(durations, timedelta()) / len(durations)
-        min_duration = min(durations)
-        max_duration = max(durations)
-        
-        print(f"\n🎯 Performance Metrics:")
-        print(f"   Average Score: {avg_score:.3f}")
-        print(f"   Accuracy: {accuracy:.1%} ({correct_answers}/{len(results)})")
-        print(f"   Average Duration: {avg_duration}")
-        print(f"   Min Duration: {min_duration}")
-        print(f"   Max Duration: {max_duration}")
-        
-        # Group by subset
-        subset_stats = {}
-        for result in results:
-            if result.subset not in subset_stats:
-                subset_stats[result.subset] = {"scores": [], "count": 0}
-            subset_stats[result.subset]["scores"].append(result.score)
-            subset_stats[result.subset]["count"] += 1
-        
-        print(f"\nPerformance by Subset:")
-        for subset, stats in subset_stats.items():
-            subset_avg = sum(stats["scores"]) / len(stats["scores"])
-            subset_acc = sum(1 for s in stats["scores"] if s > 0.5) / len(stats["scores"])
-            print(f"   {subset}: {subset_acc:.1%} accuracy ({subset_avg:.3f} avg score, {stats['count']} cases)")
-        
-        # Show some example results
-        print(f"\nSample Results:")
-        for i, result in enumerate(results[:3]):
-            status = "Correct" if result.score > 0.5 else "Incorrect"
-            print(f"\n   Example {i+1} [{result.subset}] - {status}")
-            print(f"   Prompt: {result.prompt[:100]}...")
-            print(f"   Model Answer: {result.result[:100]}...")
-            print(f"   Expected: {result.truth[:100]}...")
-            print(f"   Score: {result.score}, Duration: {result.duration}")
-            
-            if result.metrics:
-                print(f"   Additional Metrics: {result.metrics}")
-        
+    # Get evaluation first
+    evaluation = await client.evaluations.get_by_id("eval_12345")
+    if not evaluation:
+        print("Evaluation not found")
+        return None
+    
+    # Good - async fetch with size awareness
+    results = await client.results.get_all(evaluation=evaluation)
+    if results:
+        print(f"Retrieved {len(results)} results asynchronously")
         return results
-        
-    except atlas.NotFoundError:
-        print(f"Evaluation {evaluation_id} not found")
-    except atlas.AuthenticationError:
-        print("Authentication failed - check your API key")
-    except atlas.APIConnectionError as e:
-        print(f"Connection error: {e}")
-    except atlas.APIError as e:
-        print(f"API error: {e}")
-    
-    return None
+    else:
+        print("No results available")
+        return None
 
-if __name__ == "__main__":
-    # Example usage
-    evaluation_id = "eval_12345"  # Replace with actual evaluation ID
-    results = analyze_evaluation_results(evaluation_id)
+# Run the async function
+asyncio.run(fetch_results_efficiently())
 ```
 
-## Working with Large Result Sets
+```python
+# Bad - synchronous blocking call for large datasets
+from atlas import Atlas
+
+client = Atlas()
+results = client.results.get(evaluation_id="eval_12345")
+# This blocks the entire thread while fetching thousands of results
+```
+
+### Manually pagination through results
 
 For evaluations with many test cases, use pagination to efficiently process results:
 
@@ -323,65 +405,46 @@ def process_results_efficiently(evaluation_id: str, page_size: int = 100):
 process_results_efficiently("eval_12345", page_size=50)
 ```
 
-### Memory-Efficient Processing
+## Performance Considerations
 
-The pagination approach is more memory-efficient than loading all results at once:
+### Large Result Sets
+Results can contain thousands of individual test cases. Consider using the async client to load results asynchronously:
 
 ```python
-# Good - Memory efficient with pagination
-def analyze_large_evaluation(evaluation_id: str):
-    client = Atlas()
-    
-    # Aggregate statistics across pages
-    total_processed = 0
-    total_score = 0
-    total_correct = 0
-    
-    page = 1
-    page_size = 100
-    
-    while True:
-        results_data = client.results.get(
-            evaluation_id=evaluation_id,
-            page=page,
-            page_size=page_size
-        )
-        
-        if not results_data or not results_data.results:
-            break
-            
-        # Process current page
-        page_score = sum(r.score for r in results_data.results)
-        page_correct = sum(1 for r in results_data.results if r.score > 0.5)
-        
-        total_score += page_score
-        total_correct += page_correct
-        total_processed += len(results_data.results)
-        
-        print(f"Page {page}: {len(results_data.results)} results, {page_correct} correct")
-        
-        # Check if we're done
-        if page >= results_data.pagination.total_pages:
-            break
-            
-        page += 1
-    
-    # Final statistics
-    overall_accuracy = total_correct / total_processed if total_processed > 0 else 0
-    overall_avg_score = total_score / total_processed if total_processed > 0 else 0
-    
-    print(f"\nFinal Results:")
-    print(f"   Total processed: {total_processed}")
-    print(f"   Overall accuracy: {overall_accuracy:.1%}")
-    print(f"   Overall average score: {overall_avg_score:.3f}")
+import asyncio
+from atlas import AsyncAtlas
 
-# Bad - Loads everything into memory at once (may cause issues with large datasets)
-def analyze_evaluation_inefficient(evaluation_id: str):
-    results_data = client.results.get(evaluation_id=evaluation_id)  # No pagination
-    # This could load thousands of results into memory
-    for result in results_data.results:
-        # Process all results at once
-        pass
+async def fetch_results_efficiently():
+    client = AsyncAtlas()
+    
+    # Get evaluation first
+    evaluation = await client.evaluations.get_by_id("eval_12345")
+    if not evaluation:
+        print("Evaluation not found")
+        return None
+    
+    # Good - async fetch with size awareness
+    results = await client.results.get_all(evaluation=evaluation)
+    if results:
+        print(f"Retrieved {len(results)} results asynchronously")
+        if len(results) > 1000:
+            print("Large result set - consider processing in chunks")
+        return results
+    else:
+        print("No results available")
+        return None
+
+# Run the async function
+asyncio.run(fetch_results_efficiently())
+```
+
+```python
+# Bad - synchronous blocking call for large datasets
+from atlas import Atlas
+
+client = Atlas()
+results = client.results.get(evaluation_id="eval_12345")
+# This blocks the entire thread while fetching thousands of results
 ```
 
 ## Filtering and Analysis
@@ -479,50 +542,6 @@ def safe_get_results(client, evaluation_id):
         return []
 ```
 
-## Performance Considerations
-
-### Large Result Sets
-Results can contain thousands of individual test cases. Consider:
-
-```python
-# Good - check result size first
-results = client.results.get(evaluation_id="eval_12345")
-if results:
-    print(f"Retrieved {len(results)} results")
-    if len(results) > 1000:
-        print("Large result set - consider processing in chunks")
-
-# Bad - not considering memory usage
-results = client.results.get(evaluation_id="eval_12345")
-# Process all results in memory without considering size
-```
-
-### Caching Results
-For repeated analysis, consider caching results:
-
-```python
-import pickle
-from pathlib import Path
-
-def get_cached_results(client, evaluation_id, cache_dir="cache"):
-    cache_path = Path(cache_dir) / f"{evaluation_id}_results.pkl"
-    
-    if cache_path.exists():
-        print("Loading cached results...")
-        with open(cache_path, 'rb') as f:
-            return pickle.load(f)
-    
-    print("Fetching fresh results...")
-    results = client.results.get(evaluation_id=evaluation_id)
-    
-    if results:
-        cache_path.parent.mkdir(exist_ok=True)
-        with open(cache_path, 'wb') as f:
-            pickle.dump(results, f)
-    
-    return results
-```
-
 ## Best Practices
 
 ### 1. Always Check for Results
@@ -550,20 +569,6 @@ if len(results) > 1000:
 # Bad - process everything in memory
 for result in results:  # Could be thousands of results
     expensive_processing(result)
-```
-
-### 3. Use Meaningful Analysis
-```python
-# Good - extract meaningful insights
-subset_performance = {}
-for result in results:
-    if result.subset not in subset_performance:
-        subset_performance[result.subset] = []
-    subset_performance[result.subset].append(result.score)
-
-# Bad - just print raw data
-for result in results:
-    print(result.score)  # Not very useful
 ```
 
 ## Next Steps
