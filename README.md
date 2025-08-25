@@ -6,8 +6,7 @@ The Atlas Python library provides convenient access to the Atlas REST API from a
 
 ```sh
 # install from PyPI
-pip install atlas
-```
+pip install atlas --index-url https://sdk.layerlens.ai
 
 ## Usage
 
