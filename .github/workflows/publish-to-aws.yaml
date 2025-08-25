@@ -65,28 +65,42 @@ jobs:
           # Extract version numbers from S3 listing
           EXISTING_VERSIONS=""
           if [ -s existing_versions.txt ]; then
-            EXISTING_VERSIONS=$(awk '{print $2}' existing_versions.txt | sed 's/\///g' | grep -v '^$' | sort -V)
+            EXISTING_VERSIONS=$(awk '{print $2}' existing_versions.txt | sed 's/\///g' | grep -v '^$' | sort -V || true)
           fi
 
           CURRENT_VERSION="${{ steps.get_version.outputs.VERSION }}"
           echo "Current version: $CURRENT_VERSION"
           echo "Existing versions from S3: $EXISTING_VERSIONS"
 
+          # Validate current version is not empty
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "Error: Current version is empty"
+            exit 1
+          fi
+
           # Combine existing and current versions, remove duplicates, and sort
           if [ -z "$EXISTING_VERSIONS" ]; then
             ALL_VERSIONS="$CURRENT_VERSION"
           else
-            ALL_VERSIONS=$(echo -e "$EXISTING_VERSIONS\n$CURRENT_VERSION" | sort -V | uniq | grep -v '^$')
+            ALL_VERSIONS=$(echo -e "$EXISTING_VERSIONS\n$CURRENT_VERSION" | sort -V | uniq | grep -v '^$' || echo "$CURRENT_VERSION")
           fi
 
           echo "Available versions:"
           echo "$ALL_VERSIONS"
 
           # Save for use in HTML generation (ensure no empty lines)
-          echo "$ALL_VERSIONS" | grep -v '^$' > all_versions.txt
+          if [ -n "$ALL_VERSIONS" ]; then
+            echo "$ALL_VERSIONS" | grep -v '^$' > all_versions.txt || echo "$ALL_VERSIONS" > all_versions.txt
+          else
+            echo "$CURRENT_VERSION" > all_versions.txt
+          fi
 
           # Format for JSON array (for potential future use) - filter out empty strings
-          VERSIONS_JSON=$(echo "$ALL_VERSIONS" | grep -v '^$' | jq -R . | jq -s .)
+          if [ -n "$ALL_VERSIONS" ]; then
+            VERSIONS_JSON=$(echo "$ALL_VERSIONS" | grep -v '^$' | jq -R . | jq -s . || echo "[]")
+          else
+            VERSIONS_JSON='[]'
+          fi
           echo "VERSIONS_JSON=$VERSIONS_JSON" >> $GITHUB_OUTPUT
 
       - name: Copy package files to simple index (all versions)
