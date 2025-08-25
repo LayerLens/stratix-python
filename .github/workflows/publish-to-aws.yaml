@@ -146,16 +146,25 @@ jobs:
           echo "VERSIONS_JSON=$VERSIONS_JSON" >> $GITHUB_OUTPUT
           echo "Generated JSON: $VERSIONS_JSON"
 
-      - name: Copy package files to simple index (all versions)
+      - name: Download existing versions and prepare directories
         run: |
           # Copy current version to simple index
           cp dist/* upload/simple/${{ env.PACKAGE_NAME }}/
 
-          # Download and copy existing versions from S3
+          # Download existing versions from S3 for both simple index and version directories
           while IFS= read -r version; do
             if [ ! -z "$version" ] && [ "$version" != "${{ steps.get_version.outputs.VERSION }}" ]; then
               echo "Downloading version $version"
+              
+              # Create directory for this version
+              mkdir -p upload/versions/$version
+              
+              # Download to both locations:
+              # 1. To simple index (for pip compatibility)
               aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/versions/$version/ upload/simple/${{ env.PACKAGE_NAME }}/ || echo "Version $version not found in S3"
+              
+              # 2. To version-specific directory (for HTML generation)
+              aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/versions/$version/ upload/versions/$version/ || echo "Version $version not found in S3"
             fi
           done < all_versions.txt
 
@@ -231,12 +240,23 @@ jobs:
               echo "        <strong>Available files:</strong><br/>" >> upload/versions.html
               
               # List files for this version
+              echo "Checking for files in upload/versions/$version/"
+              ls -la upload/versions/$version/ || echo "Directory not found or empty"
+              
+              FOUND_FILES=false
               for file in upload/versions/$version/*.{tar.gz,whl}; do
                 if [ -f "$file" ]; then
                   filename=$(basename "$file")
                   echo "        <a href=\"versions/$version/$filename\">$filename</a><br/>" >> upload/versions.html
+                  echo "Found file: $filename"
+                  FOUND_FILES=true
                 fi
               done
+              
+              if [ "$FOUND_FILES" = false ]; then
+                echo "        <p>No package files found for this version</p>" >> upload/versions.html
+                echo "Warning: No files found for version $version"
+              fi
               
               echo "    </div>" >> upload/versions.html
               echo "</div>" >> upload/versions.html
