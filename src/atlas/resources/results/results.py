@@ -49,7 +49,7 @@ class Results(SyncAPIResource):
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         timeout: Optional[float | httpx.Timeout] = DEFAULT_TIMEOUT,
-    ) -> ResultsResponse | None:
+    ) -> Optional[ResultsResponse]:
         """
         Get evaluation results with optional pagination.
 
@@ -201,7 +201,7 @@ class AsyncResults(AsyncAPIResource):
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         timeout: Optional[float | httpx.Timeout] = DEFAULT_TIMEOUT,
-    ) -> ResultsResponse | None:
+    ) -> Optional[ResultsResponse]:
         """
         Get evaluation results with optional pagination.
 

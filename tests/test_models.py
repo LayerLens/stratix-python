@@ -16,7 +16,7 @@ from atlas.models import (
     ResultsResponse,
     EvaluationStatus,
     BenchmarksResponse,
-    EvaluationsResponse,
+    CreateEvaluationsResponse,
 )
 
 
@@ -108,7 +108,7 @@ class TestEvaluations:
     def test_evaluations_with_list_of_evaluations(self, evaluation_data):
         """Evaluations model accepts list of Evaluation objects."""
         evaluations_data = {"data": [evaluation_data, evaluation_data]}
-        evaluations = EvaluationsResponse(**evaluations_data)
+        evaluations = CreateEvaluationsResponse(**evaluations_data)
 
         assert len(evaluations.data) == 2
         assert all(isinstance(eval, Evaluation) for eval in evaluations.data)
@@ -116,7 +116,7 @@ class TestEvaluations:
 
     def test_evaluations_empty_list(self):
         """Evaluations model accepts empty list."""
-        evaluations = EvaluationsResponse(data=[])
+        evaluations = CreateEvaluationsResponse(data=[])
 
         assert evaluations.data == []
         assert isinstance(evaluations.data, list)
@@ -124,7 +124,7 @@ class TestEvaluations:
     def test_evaluations_invalid_data_structure(self):
         """Evaluations model validates data structure."""
         with pytest.raises(ValidationError):
-            EvaluationsResponse(data="not-a-list")  # type: ignore[arg-type]
+            CreateEvaluationsResponse(data="not-a-list")  # type: ignore[arg-type]
 
 
 class TestResult:

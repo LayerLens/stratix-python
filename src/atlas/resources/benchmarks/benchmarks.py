@@ -16,7 +16,7 @@ class Benchmarks(SyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
-    ) -> List[Benchmark] | None:
+    ) -> Optional[List[Benchmark]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks"
 
         def fetch(bench_type: str) -> BenchmarksResponse | None:
@@ -61,7 +61,7 @@ class AsyncBenchmarks(AsyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
-    ) -> List[Benchmark] | None:
+    ) -> Optional[List[Benchmark]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks"
 
         async def fetch(bench_type: str) -> Optional[BenchmarksResponse]:
