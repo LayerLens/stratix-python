@@ -50,10 +50,47 @@ jobs:
       - name: Create package directory structure
         run: |
           mkdir -p upload/simple/${{ env.PACKAGE_NAME }}
+          mkdir -p upload/versions/${{ steps.get_version.outputs.VERSION }}
 
-      - name: Copy package files
+      - name: Copy package files to version-specific folder
         run: |
+          cp dist/* upload/versions/${{ steps.get_version.outputs.VERSION }}/
+
+      - name: List existing versions from S3
+        id: list_versions
+        run: |
+          # Get existing versions from S3 (ignore errors if bucket is empty)
+          aws s3 ls s3://${{ secrets.S3_BUCKET_NAME }}/versions/ || true > existing_versions.txt
+
+          # Extract version numbers and add current version
+          VERSIONS=$(awk '{print $2}' existing_versions.txt | sed 's/\///g' | sort -V)
+          CURRENT_VERSION="${{ steps.get_version.outputs.VERSION }}"
+
+          # Combine existing and current versions, remove duplicates, and sort
+          ALL_VERSIONS=$(echo -e "$VERSIONS\n$CURRENT_VERSION" | sort -V | uniq)
+
+          echo "Available versions:"
+          echo "$ALL_VERSIONS"
+
+          # Save for use in HTML generation
+          echo "$ALL_VERSIONS" > all_versions.txt
+
+          # Format for JSON array (for potential future use)
+          VERSIONS_JSON=$(echo "$ALL_VERSIONS" | jq -R . | jq -s .)
+          echo "VERSIONS_JSON=$VERSIONS_JSON" >> $GITHUB_OUTPUT
+
+      - name: Copy package files to simple index (all versions)
+        run: |
+          # Copy current version to simple index
           cp dist/* upload/simple/${{ env.PACKAGE_NAME }}/
+
+          # Download and copy existing versions from S3
+          while IFS= read -r version; do
+            if [ ! -z "$version" ] && [ "$version" != "${{ steps.get_version.outputs.VERSION }}" ]; then
+              echo "Downloading version $version"
+              aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/versions/$version/ upload/simple/${{ env.PACKAGE_NAME }}/ || echo "Version $version not found in S3"
+            fi
+          done < all_versions.txt
 
       - name: Generate package index HTML
         run: |
@@ -65,6 +102,7 @@ jobs:
           </head>
           <body>
               <h1>Links for ${{ env.PACKAGE_NAME }}</h1>
+              <p><a href="../../versions.html">View all versions</a></p>
           EOF
 
           for file in upload/simple/${{ env.PACKAGE_NAME }}/*.{tar.gz,whl}; do
@@ -75,6 +113,70 @@ jobs:
           done
 
           echo "</body></html>" >> upload/simple/${{ env.PACKAGE_NAME }}/index.html
+
+      - name: Generate versions page HTML
+        run: |
+          cat > upload/versions.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>All Versions of ${{ env.PACKAGE_NAME }}</title>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; }
+                  .version { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+                  .version h3 { margin-top: 0; color: #333; }
+                  .files { margin-left: 20px; }
+                  .current { background-color: #e8f5e8; border-color: #4caf50; }
+                  .install-cmd { background-color: #f5f5f5; padding: 10px; border-radius: 3px; font-family: monospace; }
+              </style>
+          </head>
+          <body>
+              <h1>All Versions of ${{ env.PACKAGE_NAME }}</h1>
+              <p>Available versions of the ${{ env.PACKAGE_NAME }} package.</p>
+              
+              <div class="install-cmd">
+                  <strong>Install latest:</strong> pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/<br/>
+                  <strong>Install specific version:</strong> pip install ${{ env.PACKAGE_NAME }}==VERSION --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/
+              </div>
+          EOF
+
+          # Generate version listings
+          while IFS= read -r version; do
+            if [ ! -z "$version" ]; then
+              echo "Processing version: $version"
+              
+              # Check if this is the current version
+              CURRENT_CLASS=""
+              if [ "$version" = "${{ steps.get_version.outputs.VERSION }}" ]; then
+                CURRENT_CLASS=" current"
+              fi
+              
+              cat >> upload/versions.html << EOF
+              <div class="version$CURRENT_CLASS">
+                  <h3>Version $version</h3>
+          EOF
+              
+              if [ "$version" = "${{ steps.get_version.outputs.VERSION }}" ]; then
+                echo "    <p><strong>(Current/Latest Version)</strong></p>" >> upload/versions.html
+              fi
+              
+              echo "    <div class=\"files\">" >> upload/versions.html
+              echo "        <strong>Available files:</strong><br/>" >> upload/versions.html
+              
+              # List files for this version
+              for file in upload/versions/$version/*.{tar.gz,whl}; do
+                if [ -f "$file" ]; then
+                  filename=$(basename "$file")
+                  echo "        <a href=\"versions/$version/$filename\">$filename</a><br/>" >> upload/versions.html
+                fi
+              done
+              
+              echo "    </div>" >> upload/versions.html
+              echo "</div>" >> upload/versions.html
+            fi
+          done < all_versions.txt
+
+          echo "</body></html>" >> upload/versions.html
 
       - name: Generate main simple index
         run: |
@@ -98,20 +200,50 @@ jobs:
           <html>
           <head>
               <title>LayerLens Python Package Repository</title>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; }
+                  .install-cmd { background-color: #f5f5f5; padding: 15px; border-radius: 5px; font-family: monospace; margin: 20px 0; }
+                  .links { margin: 20px 0; }
+                  .links a { display: inline-block; margin-right: 20px; padding: 10px 15px; background-color: #007cba; color: white; text-decoration: none; border-radius: 3px; }
+                  .links a:hover { background-color: #005a87; }
+              </style>
           </head>
           <body>
               <h1>LayerLens Python Package Repository</h1>
               <p>Custom Python package repository for ${{ env.PACKAGE_NAME }}</p>
-              <p><a href="simple/">Browse packages</a></p>
+              
+              <div class="links">
+                  <a href="simple/">Browse packages</a>
+                  <a href="versions.html">View all versions</a>
+              </div>
+              
               <h2>Installation</h2>
-              <pre>pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/</pre>
+              <div class="install-cmd">
+                  # Install latest version<br/>
+                  pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/<br/><br/>
+                  
+                  # Install specific version<br/>
+                  pip install ${{ env.PACKAGE_NAME }}==1.0.0 --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/
+              </div>
+              
+              <h2>Current Version</h2>
+              <p>Latest version: <strong>${{ steps.get_version.outputs.VERSION }}</strong></p>
           </body>
           </html>
           EOF
 
       - name: Upload to S3
         run: |
-          aws s3 sync upload/ s3://${{ secrets.S3_BUCKET_NAME }}/ --delete
+          # Upload everything except we don't want to delete old versions
+          # Upload the simple index (with --delete to clean up old files)
+          aws s3 sync upload/simple/ s3://${{ secrets.S3_BUCKET_NAME }}/simple/ --delete
+
+          # Upload version-specific files (without --delete to preserve old versions)
+          aws s3 sync upload/versions/ s3://${{ secrets.S3_BUCKET_NAME }}/versions/
+
+          # Upload main pages (index.html, versions.html)
+          aws s3 cp upload/index.html s3://${{ secrets.S3_BUCKET_NAME }}/index.html
+          aws s3 cp upload/versions.html s3://${{ secrets.S3_BUCKET_NAME }}/versions.html
 
       - name: Invalidate CloudFront cache
         run: |
