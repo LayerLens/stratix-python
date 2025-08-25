@@ -1,6 +1,9 @@
 name: Deploy Python Package to AWS
 
 on:
+  push:
+    tags:
+      - "*"
   workflow_dispatch:
 
 env:
