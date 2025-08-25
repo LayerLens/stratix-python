@@ -54,7 +54,7 @@ class Atlas(BaseClient):
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
-            base_url = "https://8bg48mbhyi.execute-api.us-east-1.amazonaws.com/prod/api/v1"
+            base_url = "https://api.layerlens.ai/api/v1"
 
         super().__init__(
             base_url=base_url,
@@ -196,7 +196,7 @@ class AsyncAtlas(BaseAsyncClient):
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
-            base_url = "https://8bg48mbhyi.execute-api.us-east-1.amazonaws.com/prod/api/v1"
+            base_url = "https://api.layerlens.ai/api/v1"
 
         super().__init__(base_url=base_url, timeout=timeout)
 
