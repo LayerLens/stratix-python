@@ -35,8 +35,41 @@ jobs:
       - name: Get package version
         id: get_version
         run: |
-          chmod +x ./scripts/get_version.sh
-          VERSION=$(./scripts/get_version.sh)
+          echo "Current working directory:"
+          pwd
+          echo "Listing files:"
+          ls -la
+
+          echo "Checking if version file exists..."
+          if [ -f "src/atlas/_version.py" ]; then
+            echo "Version file found:"
+            cat src/atlas/_version.py
+            
+            # Extract version directly
+            VERSION=$(grep -E '^__version__\s*=' src/atlas/_version.py | grep -o '".*"' | tr -d '"')
+            echo "Direct extraction result: '$VERSION'"
+          else
+            echo "Version file not found, trying script method..."
+          fi
+
+          # Fallback to script method if direct extraction failed
+          if [ -z "$VERSION" ]; then
+            echo "Trying script method..."
+            chmod +x ./scripts/get_version.sh
+            ls -la ./scripts/get_version.sh
+            VERSION=$(./scripts/get_version.sh 2>&1)
+            echo "Script output: '$VERSION'"
+            
+            # Extract just the version (last line) in case there's debug output
+            VERSION=$(echo "$VERSION" | tail -n 1)
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "Error: Could not extract version"
+            exit 1
+          fi
+
+          echo "Final version: '$VERSION'"
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Package version: $VERSION"
 
