@@ -1,6 +1,12 @@
-## Setting up the environment
+---
+hidden: true
+---
 
-### With Rye
+# CONTRIBUTING
+
+### Setting up the environment
+
+#### With Rye
 
 We use [Rye](https://rye.astral.sh/) to manage dependencies because it will automatically provision a Python environment with the expected Python version. To set it up, run:
 
@@ -24,7 +30,7 @@ $ source .venv/bin/activate
 $ python script.py
 ```
 
-### Without Rye
+#### Without Rye
 
 Alternatively if you don't want to install `Rye`, you can stick with the standard `pip` setup by ensuring you have the Python version specified in `.python-version`, create a virtual environment however you desire and then install dependencies using this command:
 
@@ -32,7 +38,7 @@ Alternatively if you don't want to install `Rye`, you can stick with the standar
 $ pip install -r requirements-dev.lock
 ```
 
-## Adding and running examples
+### Adding and running examples
 
 All files in the `examples/` directory can be freely edited or added to.
 
@@ -49,7 +55,7 @@ $ chmod +x examples/<your-example>.py
 $ ./examples/<your-example>.py
 ```
 
-## Using the repository from source
+### Using the repository from source
 
 If you’d like to use the repository from source, you can either install from git or link to a cloned repository:
 
@@ -77,7 +83,7 @@ Then to install:
 $ pip install ./path-to-wheel-file.whl
 ```
 
-## Running tests
+### Running tests
 
 To run tests:
 
@@ -85,7 +91,7 @@ To run tests:
 $ ./scripts/test
 ```
 
-## Linting and formatting
+### Linting and formatting
 
 This repository uses [ruff](https://github.com/astral-sh/ruff) and [black](https://github.com/psf/black) to format the code in the repository.
 
