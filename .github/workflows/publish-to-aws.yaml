@@ -60,23 +60,33 @@ jobs:
         id: list_versions
         run: |
           # Get existing versions from S3 (ignore errors if bucket is empty)
-          aws s3 ls s3://${{ secrets.S3_BUCKET_NAME }}/versions/ || true > existing_versions.txt
+          aws s3 ls s3://${{ secrets.S3_BUCKET_NAME }}/versions/ 2>/dev/null > existing_versions.txt || echo "" > existing_versions.txt
 
-          # Extract version numbers and add current version
-          VERSIONS=$(awk '{print $2}' existing_versions.txt | sed 's/\///g' | sort -V)
+          # Extract version numbers from S3 listing
+          EXISTING_VERSIONS=""
+          if [ -s existing_versions.txt ]; then
+            EXISTING_VERSIONS=$(awk '{print $2}' existing_versions.txt | sed 's/\///g' | grep -v '^$' | sort -V)
+          fi
+
           CURRENT_VERSION="${{ steps.get_version.outputs.VERSION }}"
+          echo "Current version: $CURRENT_VERSION"
+          echo "Existing versions from S3: $EXISTING_VERSIONS"
 
           # Combine existing and current versions, remove duplicates, and sort
-          ALL_VERSIONS=$(echo -e "$VERSIONS\n$CURRENT_VERSION" | sort -V | uniq)
+          if [ -z "$EXISTING_VERSIONS" ]; then
+            ALL_VERSIONS="$CURRENT_VERSION"
+          else
+            ALL_VERSIONS=$(echo -e "$EXISTING_VERSIONS\n$CURRENT_VERSION" | sort -V | uniq | grep -v '^$')
+          fi
 
           echo "Available versions:"
           echo "$ALL_VERSIONS"
 
-          # Save for use in HTML generation
-          echo "$ALL_VERSIONS" > all_versions.txt
+          # Save for use in HTML generation (ensure no empty lines)
+          echo "$ALL_VERSIONS" | grep -v '^$' > all_versions.txt
 
-          # Format for JSON array (for potential future use)
-          VERSIONS_JSON=$(echo "$ALL_VERSIONS" | jq -R . | jq -s .)
+          # Format for JSON array (for potential future use) - filter out empty strings
+          VERSIONS_JSON=$(echo "$ALL_VERSIONS" | grep -v '^$' | jq -R . | jq -s .)
           echo "VERSIONS_JSON=$VERSIONS_JSON" >> $GITHUB_OUTPUT
 
       - name: Copy package files to simple index (all versions)
