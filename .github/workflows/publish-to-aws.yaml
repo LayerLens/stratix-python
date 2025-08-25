@@ -128,13 +128,23 @@ jobs:
             echo "$CURRENT_VERSION" > all_versions.txt
           fi
 
-          # Format for JSON array (for potential future use) - filter out empty strings
-          if [ -n "$ALL_VERSIONS" ]; then
-            VERSIONS_JSON=$(echo "$ALL_VERSIONS" | grep -v '^$' | jq -R . | jq -s . || echo "[]")
-          else
-            VERSIONS_JSON='[]'
-          fi
+          # Format for JSON array (for potential future use) - simplified approach
+          VERSIONS_JSON="["
+          FIRST=true
+          while IFS= read -r version; do
+            if [ -n "$version" ]; then
+              if [ "$FIRST" = true ]; then
+                VERSIONS_JSON="$VERSIONS_JSON\"$version\""
+                FIRST=false
+              else
+                VERSIONS_JSON="$VERSIONS_JSON,\"$version\""
+              fi
+            fi
+          done < all_versions.txt
+          VERSIONS_JSON="$VERSIONS_JSON]"
+
           echo "VERSIONS_JSON=$VERSIONS_JSON" >> $GITHUB_OUTPUT
+          echo "Generated JSON: $VERSIONS_JSON"
 
       - name: Copy package files to simple index (all versions)
         run: |
