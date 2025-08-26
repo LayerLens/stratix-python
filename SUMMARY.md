@@ -1,5 +1,5 @@
 # Table of contents
-* [Atlas Python SDK Documentation](docs/README.md)
+* [Layerlens Python SDK Documentation](docs/README.md)
   * [Table of Contents - Atlas Python SDK](docs/SUMMARY.md)
   * [api-reference](docs/api-reference/README.md)
     * [Client Configuration](docs/api-reference/client.md)
