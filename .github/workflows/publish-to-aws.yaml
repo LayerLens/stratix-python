@@ -3,14 +3,36 @@ name: Deploy Python Package to AWS
 on:
   push:
     tags:
-      - "*"
+      # e.g. v1.0.0, v1.0.1, v1.0.0-rc1, etc.
+      - "v[0-9]+.[0-9]+.[0-9]+*"
   workflow_dispatch:
 
 env:
   PACKAGE_NAME: atlas
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    environment: development
+    outputs:
+      release_tag: ${{ steps.set_release_tag.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for checking branch
+      - name: Set release tag
+        id: set_release_tag
+        # ensure the tag is valid (matches code, is on release branch, etc)
+        run: |
+          RELEASE_TAG=${GITHUB_REF#refs/tags/}
+          echo "Using tag: $RELEASE_TAG"
+          chmod +x ./scripts/validate_release_tag.sh
+          ./scripts/validate_release_tag.sh "$RELEASE_TAG"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+
   deploy:
+    needs: validate
     runs-on: ubuntu-latest
     environment: development
 
