@@ -1,61 +1,105 @@
-# Atlas Python SDK Documentation
+# Layerlens Python SDK Documentation
 
-Welcome to the official documentation for the Atlas Python SDK. This library provides convenient access to the LayerLens Atlas REST API from any Python 3.8+ application.
+Welcome to the official documentation for the Layerlens Python SDK for the atlas platform. This library provides convenient programmatic to the Atlas platform from any Python 3.8+ application.
 
 ## What is Atlas?
 
-Atlas is LayerLens's evaluation platform that allows you to benchmark AI models against various datasets and metrics. The Python SDK provides a synchronous HTTP client powered by [httpx](https://github.com/encode/httpx) and [Pydantic](https://pydantic.dev/) models for type-safe API interactions.
-
-## Key Features
-
-- **Simple Authentication**: Secure API key-based authentication
-- **Type Safety**: Full Pydantic model support for all API responses
-- **Comprehensive Error Handling**: Detailed exception hierarchy for different error scenarios
-- **Configurable Timeouts**: Fine-grained timeout control for different operations
-- **Environment Variable Support**: Easy configuration through environment variables
-- **Python 3.8+ Compatibility**: Works with modern Python versions
+Atlas is an evaluation platform that allows you to benchmark AI models against various datasets and metrics. The Python SDK provides two HTTP clients (syncronous and asynchronous) powered by [httpx](https://github.com/encode/httpx) and [Pydantic](https://pydantic.dev/) models for type-safe API interactions.
 
 ## Quick Start
 
-```python
-import os
-from atlas import Atlas
-
-# Initialize the client
-client = Atlas(
-    api_key=os.environ.get("LAYERLENS_ATLAS_API_KEY"),
-)
-
-# Create an evaluation
-evaluation = client.evaluations.create(
-    model="gpt-4",
-    benchmark="mmlu"
-)
-
-# Get results
-if evaluation:
-    results_data = client.results.get(evaluation_id=evaluation.id)
-    if results_data:
-        print(f"Evaluation completed with {len(results_data.results)} results")
-        print(f"Total results available: {results_data.pagination.total_count}")
-        if results_data.pagination.total_pages > 1:
-            print(f"Results span {results_data.pagination.total_pages} pages - use pagination to access all")
+### Install LayerLens python sdk
+Install the layerlens python sdk using the following command
+```bash
+pip install layerlens --index-url https://sdk.layerlens.ai
 ```
 
-## Navigation
+### Generate an api key on the atlas platform
 
-- **[Getting Started](getting-started/)** - Installation, setup, and your first API call
+Login to your organization at [app.layerlens.ai](app.layerlens.ai) to generate an api key. Admin users of organizations can generate a keys in the settings page.
+
+Run this command to add your API key to your environment:
+
+```bash
+export LAYERLENS_ATLAS_API_KEY="YOUR_API_KEY"
+```
+
+### Running an evaluation on the atlas platform
+
+Before triggering an evaluation using the sdk ensure that the model and benchmark you are trying to evaluate has been added to your organizations dashboard on the atlas platform.
+
+#### Using synchronous client
+
+```python
+from atlas import Atlas
+
+    # Construct sync client
+    client = Atlas()
+
+    # --- Models replace with the model name you want to run
+    models = client.models.get(type="public", name="gpt-4o")
+
+    if not models:
+        print("gpt-4o not found on organization, exiting")
+
+    model = models[0]
+
+    # --- Benchmarks replace with the benchmark name you want to run
+    benchmarks = client.benchmarks.get(type="public", name="simpleQA")
+
+    if not benchmarks:
+        print("SimpleQA benchmark not found on organization, exiting")
+
+    benchmark = benchmarks[0]
+
+    # --- Create evaluation
+    evaluation = client.evaluations.create(
+        model=model,
+        benchmark=benchmark,
+    )
+```
+
+
+#### Using Async Client
+
+```python
+import asyncio
+from atlas import AsyncAtlas
+
+async def run_evaluation_async():
+    # Construct async client
+    client = AsyncAtlas()
+
+    # --- Models replace with the model name you want to run
+    models = await client.models.get(type="public",name="gpt-4o")
+    print(f"Models found: {models}")
+
+    if not models:
+        print("gpt-4o not found, exiting")
+        return
+
+    model = models[0]
+    # --- Benchmarks replace with the benchmark name you want to run
+    benchmarks = await client.benchmarks.get(type="public", name="simpleQA")
+
+    if not benchmarks:
+        print("SimpleQA benchmark not found, exiting")
+        return
+
+    benchmark = benchmarks[0]
+
+    # --- Create evaluation
+    evaluation = await client.evaluations.create(
+        model=model,
+        benchmark=benchmark,
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Next steps
+
 - **[API Reference](api-reference/)** - Complete documentation of all available methods
 - **[Code Examples](examples/)** - Practical examples for common use cases
 - **[Troubleshooting](troubleshooting/)** - Solutions to common issues
-- **[Security](security/)** - Best practices for secure API usage
-
-## Support
-
-- **LayerLens Support**: Contact support through your LayerLens dashboard
-- **Documentation**: Visit [docs.layerlens.com](https://docs.layerlens.com) for additional resources
-- **API Status**: Check the [LayerLens status page](https://status.layerlens.com) for service updates
-
-## License
-
-This SDK is released under the MIT License.

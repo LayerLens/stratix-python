@@ -1,7 +1,4 @@
 # Table of contents
-
-* [Atlas Python API library](README.md)
-* [CONTRIBUTING](CONTRIBUTING.md)
 * [Atlas Python SDK Documentation](docs/README.md)
   * [Table of Contents - Atlas Python SDK](docs/SUMMARY.md)
   * [api-reference](docs/api-reference/README.md)
