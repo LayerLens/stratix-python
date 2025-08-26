@@ -16,7 +16,7 @@ pip install layerlens --index-url https://sdk.layerlens.ai
 
 ### Generate an api key on the atlas platform
 
-Login to your organization at [app.layerlens.ai](app.layerlens.ai) to generate an api key. Admin users of organizations can generate a keys in the settings page.
+Login to your organization at [app.layerlens.ai](https://app.layerlens.ai) to generate an api key. Admin users of organizations can generate a keys in the settings page.
 
 Run this command to add your API key to your environment:
 
@@ -26,7 +26,7 @@ export LAYERLENS_ATLAS_API_KEY="YOUR_API_KEY"
 
 ### Running an evaluation on the atlas platform
 
-Before triggering an evaluation using the sdk ensure that the model and benchmark you are trying to evaluate has been added to your organizations dashboard on the atlas platform.
+Before triggering an evaluation using the sdk, login to your organization at [app.layerlens.ai](https://app.layerlens.ai) to ensure that the model and benchmark you are trying to evaluate has been added to your organizations dashboard.
 
 #### Using synchronous client
 
