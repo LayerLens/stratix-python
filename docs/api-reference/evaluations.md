@@ -25,7 +25,7 @@ client = Atlas()
 models = client.models.get(type="public", name="gpt-4o")
 
 if not models:
-    print("gpt-4o not found, exiting")
+    print("gpt-4o not found")
 
 model = models[0]
 
@@ -199,6 +199,226 @@ Returns an `EvaluationsResponse` object containing:
 
 Returns `None` if the request fails.
 
+### `get_all_results(timeout=None)`
+
+Fetches all results for this evaluation by automatically handling pagination. This is a synchronous method
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a list of `Result` objects containing all results for the evaluation.
+
+#### Example
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Get an evaluation
+evaluation = client.evaluations.get_by_id("eval_12345")
+
+if evaluation:
+    # Fetch all results (handles pagination automatically)
+    all_results = evaluation.get_all_results()
+```
+
+{{ ... }}
+
+| `"success"` | Evaluation finished successfully |
+| `"failure"` | Evaluation failed due to an error |
+
+## Evaluation Instance Methods
+
+Once you have an `Evaluation` object (from `create()`, `get_by_id()`, etc.), you can call these methods directly on the evaluation instance to fetch its results.
+
+### `evaluation.get_results(page=None, page_size=None, timeout=None)`
+
+Fetches results for this evaluation with pagination support. This is a synchronous method that requires a sync client to be attached.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `page` | `int \| None` | No | Page number for pagination (1-based, defaults to 1) |
+| `page_size` | `int \| None` | No | Number of results per page (default: 100, max: 500) |
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a `ResultsResponse` object containing results and pagination metadata, or `None` if the request fails.
+
+#### Example
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Get an evaluation
+evaluation = client.evaluations.get_by_id("eval_12345")
+
+if evaluation:
+    # Fetch first page of results
+    results_response = evaluation.get_results()
+    
+    if results_response:
+        print(f"Found {len(results_response.results)} results")
+        for result in results_response.results:
+            print(f"Score: {result.score}, Subset: {result.subset}")
+```
+
+### `evaluation.get_all_results(timeout=None)`
+
+Fetches all results for this evaluation by automatically handling pagination. This is a synchronous method that requires a sync client to be attached.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a list of `Result` objects containing all results for the evaluation.
+
+#### Example
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Get an evaluation
+evaluation = client.evaluations.get_by_id("eval_12345")
+
+if evaluation:
+    # Fetch all results (handles pagination automatically)
+    all_results = evaluation.get_all_results()
+    
+    print(f"Retrieved {len(all_results)} total results")
+    
+    # Calculate accuracy
+    correct_count = sum(1 for result in all_results if result.score > 0.5)
+    accuracy = correct_count / len(all_results) if all_results else 0
+    print(f"Overall accuracy: {accuracy:.1%}")
+```
+
+### `get_all_results_async(timeout=None)`
+
+Asynchronously fetches all results for this evaluation by automatically handling pagination.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a list of `Result` objects containing all results for the evaluation.
+
+#### Example
+
+```python
+from atlas import AsyncAtlas
+import asyncio
+
+async def fetch_all_evaluation_results():
+    client = AsyncAtlas()
+    
+    # Get an evaluation
+    evaluation = await client.evaluations.get_by_id("eval_12345")
+    
+    if evaluation:
+        # Fetch all results asynchronously (handles pagination automatically)
+        all_results = await evaluation.get_all_results_async()
+        
+        print(f"Retrieved {len(all_results)} total results")
+        
+        return all_results
+    
+    return None
+
+results = asyncio.run(fetch_all_evaluation_results())
+```
+
+### `get_results(page=None, page_size=None, timeout=None)`
+
+Fetches results for this evaluation with pagination support. This is a synchronous method.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `page` | `int \| None` | No | Page number for pagination (1-based, defaults to 1) |
+| `page_size` | `int \| None` | No | Number of results per page (default: 100, max: 500) |
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a `ResultsResponse` object containing results and pagination metadata, or `None` if the request fails.
+
+#### Example
+
+```python
+from atlas import Atlas
+
+client = Atlas()
+
+# Get evaluation first
+evaluation = client.evaluations.get_by_id("eval_12345")
+if not evaluation:
+    print("Evaluation not found")
+else:
+    #
+    results_first_page = evaluation.get_results()
+```
+### `get_results_async(page=None, page_size=None, timeout=None)`
+
+Asynchronously fetches results for this evaluation with pagination support. This requires an async client to be attached.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `page` | `int \| None` | No | Page number for pagination (1-based, defaults to 1) |
+| `page_size` | `int \| None` | No | Number of results per page (default: 100, max: 500) |
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns a `ResultsResponse` object containing results and pagination metadata, or `None` if the request fails.
+
+#### Example
+
+```python
+from atlas import AsyncAtlas
+import asyncio
+
+async def fetch_evaluation_results():
+    client = AsyncAtlas()
+    
+    # Get an evaluation
+    evaluation = await client.evaluations.get_by_id("eval_12345")
+    
+    if evaluation:
+        # Fetch first page of results asynchronously
+        first_page_results = await evaluation.get_results_async(page=1, page_size=50)
+        
+        if first_page_results:
+            return first_page_results
+    
+    return []
+
+results = asyncio.run(fetch_evaluation_results())
+```
+
 ## Response Objects
 
 The `create`, `get_by_id` and `get_many` method returns an `Evaluation` objects with the following properties:
@@ -228,3 +448,7 @@ The `status` field is an `EvaluationStatus` enum with the following values:
 | `"paused"` | Evaluation has been paused |
 | `"success"` | Evaluation finished successfully |
 | `"failure"` | Evaluation failed due to an error |
+
+
+## Next Steps
+- Explore [code examples](../examples/retrieving-results.md) for common analysis patterns

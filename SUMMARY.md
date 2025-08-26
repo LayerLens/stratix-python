@@ -4,7 +4,6 @@
     * [Client Configuration](docs/api-reference/client.md)
     * [Models & Benchmarks](docs/api-reference/models-benchmarks.md)
     * [Evaluations](docs/api-reference/evaluations.md)
-    * [Results](docs/api-reference/results.md)
     * [Error Handling](docs/api-reference/errors.md)
   * [Examples](docs/examples/README.md)
     * [Running Evaluations](docs/examples/creating-evaluations.md)
