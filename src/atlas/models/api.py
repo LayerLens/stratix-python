@@ -19,8 +19,13 @@ class BenchmarksResponse(BaseModel):
     data: Data
 
 
-class EvaluationsResponse(BaseModel):
+class CreateEvaluationsResponse(BaseModel):
     data: List[Evaluation]
+
+
+class EvaluationsResponse(BaseModel):
+    evaluations: List[Evaluation]
+    pagination: Pagination
 
 
 class ModelsResponse(BaseModel):

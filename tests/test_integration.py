@@ -11,7 +11,7 @@ from atlas.models import (
     Benchmark,
     Evaluation,
     EvaluationStatus,
-    EvaluationsResponse,
+    CreateEvaluationsResponse,
 )
 
 
@@ -172,7 +172,7 @@ class TestCompleteEvaluationWorkflow:
         result = Result(**result_data)
 
         # Mock responses
-        evaluations_response = EvaluationsResponse(data=[evaluation])
+        evaluations_response = CreateEvaluationsResponse(data=[evaluation])
 
         with patch.object(atlas_client, "get_cast") as mock_get, patch.object(atlas_client, "post_cast") as mock_post:
             # Configure mocks for the workflow
@@ -329,7 +329,7 @@ class TestResourceInteraction:
         benchmark = Benchmark(**benchmark_data)
         evaluation = Evaluation(**evaluation_data)
 
-        evaluations_response = EvaluationsResponse(data=[evaluation])
+        evaluations_response = CreateEvaluationsResponse(data=[evaluation])
 
         with patch.object(atlas_client, "post_cast") as mock_post:
             mock_post.return_value = evaluations_response

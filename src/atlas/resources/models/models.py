@@ -19,7 +19,7 @@ class Models(SyncAPIResource):
         companies: Optional[List[str]] = None,
         regions: Optional[List[str]] = None,
         licenses: Optional[List[str]] = None,
-    ) -> List[Model] | None:
+    ) -> Optional[List[Model]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/models"
 
         def fetch(model_type: str) -> ModelsResponse | None:
@@ -73,7 +73,7 @@ class AsyncModels(AsyncAPIResource):
         companies: Optional[List[str]] = None,
         regions: Optional[List[str]] = None,
         licenses: Optional[List[str]] = None,
-    ) -> List[Model] | None:
+    ) -> Optional[List[Model]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/models"
 
         async def fetch(model_type: str) -> ModelsResponse | None:

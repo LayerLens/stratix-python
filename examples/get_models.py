@@ -33,5 +33,6 @@ async def main():
     print(f"Found {len(models)} models with type {model_type}")
     print(models)
 
+
 if __name__ == "__main__":
     asyncio.run(main())

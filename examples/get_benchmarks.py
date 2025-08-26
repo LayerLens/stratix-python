@@ -21,5 +21,6 @@ async def main():
     print(f"Found {len(benchmarks)} benchmarks with type {benchmark_type}")
     print(benchmarks)
 
+
 if __name__ == "__main__":
     asyncio.run(main())

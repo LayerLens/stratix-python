@@ -9,7 +9,7 @@ async def create_and_run_evaluation(client, model, benchmark, eval_number):
     """Create and run a single evaluation, tracking progress."""
     try:
         print(f"Starting evaluation #{eval_number}...")
-        
+
         # Create evaluation
         evaluation = await client.evaluations.create(model=model, benchmark=benchmark)
         print(f"✓ Created evaluation #{eval_number}: {evaluation.id}, status={evaluation.status}")
@@ -18,7 +18,7 @@ async def create_and_run_evaluation(client, model, benchmark, eval_number):
         evaluation = await client.evaluations.wait_for_completion(
             evaluation,
             interval_seconds=10,
-            timeout_seconds=600  # 10 minutes
+            timeout_seconds=600,  # 10 minutes
         )
         print(f"✓ Evaluation #{eval_number} ({evaluation.id}) finished with status={evaluation.status}")
 
@@ -30,7 +30,7 @@ async def create_and_run_evaluation(client, model, benchmark, eval_number):
         else:
             print(f"✗ Evaluation #{eval_number} did not succeed")
             return eval_number, evaluation.id, 0, False
-            
+
     except Exception as e:
         print(f"✗ Error in evaluation #{eval_number}: {e}")
         return eval_number, None, 0, False
@@ -51,7 +51,7 @@ async def main():
     # Use first model and benchmark for all evaluations
     target_model = models[0]
     target_benchmark = benchmarks[0]
-    
+
     print(f"Using model: {target_model}")
     print(f"Using benchmark: {target_benchmark}")
     print("=" * 80)
@@ -59,21 +59,18 @@ async def main():
     # Create 3 evaluation tasks
     num_evaluations = 3
     print(f"Starting {num_evaluations} evaluations in parallel...")
-    
-    tasks = [
-        create_and_run_evaluation(client, target_model, target_benchmark, i + 1)
-        for i in range(num_evaluations)
-    ]
+
+    tasks = [create_and_run_evaluation(client, target_model, target_benchmark, i + 1) for i in range(num_evaluations)]
 
     # Execute all evaluations concurrently
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     # Summary
     print("=" * 80)
     print("SUMMARY:")
     successful = 0
     total_results = 0
-    
+
     for result in results:
         if isinstance(result, Exception):
             print(f"Exception occurred: {result}")
@@ -85,7 +82,7 @@ async def main():
                 print(f"Evaluation #{eval_num} ({eval_id}): SUCCESS - {result_count} results")
             else:
                 print(f"Evaluation #{eval_num} ({eval_id}): FAILED")
-    
+
     print(f"\nOverall: {successful}/{num_evaluations} evaluations succeeded")
     print(f"Total results collected: {total_results}")
 

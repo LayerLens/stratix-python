@@ -6,6 +6,7 @@ from .api import (
     BenchmarksResponse,
     EvaluationsResponse,
     OrganizationResponse,
+    CreateEvaluationsResponse,
 )
 from .model import Model, CustomModel, PublicModel
 from .benchmark import Benchmark, CustomBenchmark, PublicBenchmark
@@ -13,22 +14,23 @@ from .evaluation import Result, Evaluation, EvaluationStatus
 from .organization import Project, Organization
 
 __all__ = [
-    "BenchmarksResponse",
-    "EvaluationsResponse",
-    "ModelsResponse",
-    "OrganizationResponse",
-    "ResultsResponse",
     "Benchmark",
+    "BenchmarksResponse",
+    "CreateEvaluationsResponse",
     "CustomBenchmark",
-    "PublicBenchmark",
+    "CustomModel",
     "Evaluation",
     "EvaluationStatus",
+    "EvaluationsResponse",
+    "Model",
+    "ModelsResponse",
+    "Organization",
+    "OrganizationResponse",
     "Pagination",
+    "Project",
+    "PublicBenchmark",
+    "PublicModel",
     "Result",
     "ResultMetrics",
-    "Model",
-    "CustomModel",
-    "PublicModel",
-    "Organization",
-    "Project",
+    "ResultsResponse",
 ]

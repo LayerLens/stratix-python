@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 import asyncio
 from typing import Optional
@@ -13,9 +14,14 @@ from ...models import (
     CustomModel,
     CustomBenchmark,
     EvaluationsResponse,
+    CreateEvaluationsResponse,
 )
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
+
+DEFAULT_PAGE = 1
+DEFAULT_PAGE_SIZE = 100
+MAX_PAGE_SIZE = 500
 
 
 class Evaluations(SyncAPIResource):
@@ -37,9 +43,9 @@ class Evaluations(SyncAPIResource):
                 }
             ],
             timeout=timeout,
-            cast_to=EvaluationsResponse,
+            cast_to=CreateEvaluationsResponse,
         )
-        if isinstance(evaluations, EvaluationsResponse) and len(evaluations.data) > 0:
+        if isinstance(evaluations, CreateEvaluationsResponse) and len(evaluations.data) > 0:
             evaluation = evaluations.data[0]
             evaluation.attach_client(self._client)
             return evaluation
@@ -68,6 +74,66 @@ class Evaluations(SyncAPIResource):
             evaluation.attach_client(self._client)
             return evaluation
         return None
+
+    def get_many(
+        self,
+        *,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[EvaluationsResponse]:
+        """
+        Get evaluations with optional pagination.
+
+        Args:
+            page: Page number for pagination (1-based, defaults to 1 if not provided)
+            page_size: Number of evaluations per page (default: 100, optional)
+            timeout: Request timeout
+
+        Returns:
+            EvaluationsResponse object or None
+        """
+        params = {
+            "organizationID": self._client.organization_id,
+            "projectID": self._client.project_id,
+        }
+
+        effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
+        effective_page = page if page is not None else DEFAULT_PAGE
+
+        params["page"] = str(effective_page)
+        params["pageSize"] = str(effective_page_size)
+
+        resp = self._get(
+            f"/evaluations",
+            params=params,
+            timeout=timeout,
+            cast_to=dict,
+        )
+        if not resp or not isinstance(resp, dict):
+            return None
+
+        evaluations = [e if isinstance(e, Evaluation) else Evaluation(**e) for e in resp.get("evaluations", [])]
+        for e in evaluations:
+            e.attach_client(self._client)
+
+        total_count = resp.get("total_count", 0)
+        total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
+
+        resp_with_pagination = {
+            "evaluations": evaluations,
+            "pagination": {
+                "page": effective_page,
+                "page_size": effective_page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+            },
+        }
+
+        try:
+            return EvaluationsResponse.model_validate(resp_with_pagination)
+        except Exception:
+            return None
 
     def wait_for_completion(
         self,
@@ -111,9 +177,9 @@ class AsyncEvaluations(AsyncAPIResource):
                 }
             ],
             timeout=timeout,
-            cast_to=EvaluationsResponse,
+            cast_to=CreateEvaluationsResponse,
         )
-        if isinstance(evaluations, EvaluationsResponse) and len(evaluations.data) > 0:
+        if isinstance(evaluations, CreateEvaluationsResponse) and len(evaluations.data) > 0:
             evaluation = evaluations.data[0]
             evaluation.attach_client(self._client)
             return evaluation
@@ -142,6 +208,66 @@ class AsyncEvaluations(AsyncAPIResource):
             evaluation.attach_client(self._client)
             return evaluation
         return None
+
+    async def get_many(
+        self,
+        *,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[EvaluationsResponse]:
+        """
+        Get evaluations with optional pagination.
+
+        Args:
+            page: Page number for pagination (1-based, defaults to 1 if not provided)
+            page_size: Number of evaluations per page (default: 100, optional)
+            timeout: Request timeout
+
+        Returns:
+            EvaluationsResponse object or None
+        """
+        params = {
+            "organizationID": self._client.organization_id,
+            "projectID": self._client.project_id,
+        }
+
+        effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
+        effective_page = page if page is not None else DEFAULT_PAGE
+
+        params["page"] = str(effective_page)
+        params["pageSize"] = str(effective_page_size)
+
+        resp = await self._get(
+            f"/evaluations",
+            params=params,
+            timeout=timeout,
+            cast_to=dict,
+        )
+        if not resp or not isinstance(resp, dict):
+            return None
+
+        evaluations = [e if isinstance(e, Evaluation) else Evaluation(**e) for e in resp.get("evaluations", [])]
+        for e in evaluations:
+            e.attach_client(self._client)
+
+        total_count = resp.get("total_count", 0)
+        total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
+
+        resp_with_pagination = {
+            "evaluations": evaluations,
+            "pagination": {
+                "page": effective_page,
+                "page_size": effective_page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+            },
+        }
+
+        try:
+            return EvaluationsResponse.model_validate(resp_with_pagination)
+        except Exception:
+            return None
 
     async def wait_for_completion(
         self,

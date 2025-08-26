@@ -3,7 +3,12 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from atlas.models import Evaluation, EvaluationStatus, EvaluationsResponse
+from atlas.models import (
+    Evaluation,
+    EvaluationStatus,
+    EvaluationsResponse,
+    CreateEvaluationsResponse,
+)
 from atlas._constants import DEFAULT_TIMEOUT
 from atlas.resources.evaluations.evaluations import Evaluations
 
@@ -61,9 +66,9 @@ class TestEvaluations:
 
     @pytest.fixture
     def mock_evaluations_response(self, sample_evaluation_data):
-        """Mock EvaluationsResponse response."""
+        """Mock CreateEvaluationsResponse response."""
         evaluation = Evaluation(**sample_evaluation_data)
-        return EvaluationsResponse(data=[evaluation])
+        return CreateEvaluationsResponse(data=[evaluation])
 
     def test_evaluations_initialization(self, mock_client):
         """Evaluations resource initializes correctly."""
@@ -113,7 +118,7 @@ class TestEvaluations:
                 }
             ],
             timeout=DEFAULT_TIMEOUT,
-            cast_to=EvaluationsResponse,
+            cast_to=CreateEvaluationsResponse,
         )
 
     def test_create_evaluation_with_custom_timeout(
@@ -158,7 +163,7 @@ class TestEvaluations:
 
     def test_create_evaluation_empty_response(self, mock_model, mock_benchmark, evaluations_resource):
         """create method returns None when no evaluations in response."""
-        empty_response = EvaluationsResponse(data=[])
+        empty_response = CreateEvaluationsResponse(data=[])
         evaluations_resource._post.return_value = empty_response
 
         result = evaluations_resource.create(model=mock_model, benchmark=mock_benchmark)
@@ -174,7 +179,7 @@ class TestEvaluations:
         assert result is None
 
     def test_create_evaluation_invalid_response_type(self, mock_model, mock_benchmark, evaluations_resource):
-        """create method handles non-EvaluationsResponse response gracefully."""
+        """create method handles non-CreateEvaluationsResponse response gracefully."""
         evaluations_resource._post.return_value = "invalid-response"
 
         result = evaluations_resource.create(model=mock_model, benchmark=mock_benchmark)
@@ -190,7 +195,7 @@ class TestEvaluations:
         eval2_data["id"] = "eval-456"
         eval2 = Evaluation(**eval2_data)
 
-        response = EvaluationsResponse(data=[eval1, eval2])
+        response = CreateEvaluationsResponse(data=[eval1, eval2])
         evaluations_resource._post.return_value = response
 
         result = evaluations_resource.create(model=mock_model, benchmark=mock_benchmark)
@@ -251,7 +256,7 @@ class TestEvaluations:
         evaluations_resource.create(model=mock_model, benchmark=mock_benchmark)
 
         call_args = evaluations_resource._post.call_args
-        assert call_args.kwargs["cast_to"] is EvaluationsResponse
+        assert call_args.kwargs["cast_to"] is CreateEvaluationsResponse
 
     def test_create_evaluation_timeout_default(
         self,
@@ -282,6 +287,37 @@ class TestEvaluations:
 
         call_args = evaluations_resource._post.call_args
         assert call_args.kwargs["timeout"] is None
+
+    def test_get_all_returns_evaluations(self, evaluations_resource, mock_client, sample_evaluation_data):
+        """get_all returns list of evaluations when response is valid."""
+        evaluation = Evaluation(**sample_evaluation_data)
+        response = {"evaluations": [evaluation], "total_count": 1}
+        evaluations_resource._get.return_value = response
+
+        result = evaluations_resource.get_many()
+
+        assert isinstance(result, EvaluationsResponse)
+        assert result.evaluations[0].id == "eval-123"
+        evaluations_resource._get.assert_called_once_with(
+            "/evaluations",
+            params={
+                "organizationID": mock_client.organization_id,
+                "projectID": mock_client.project_id,
+                "page": "1",
+                "pageSize": "100",
+            },
+            timeout=DEFAULT_TIMEOUT,
+            cast_to=dict,
+        )
+        assert result.evaluations[0]._client is mock_client
+
+    def test_get_all_returns_none_on_invalid_response(self, evaluations_resource):
+        """get_all returns None when response is invalid type."""
+        evaluations_resource._get.return_value = "not-a-response"
+
+        result = evaluations_resource.get_many()
+
+        assert result is None
 
 
 class TestEvaluationsErrorHandling:
@@ -390,7 +426,7 @@ class TestEvaluationsResourceIntegration:
         }
 
         evaluation = Evaluation(**evaluation_data)
-        response = EvaluationsResponse(data=[evaluation])
+        response = CreateEvaluationsResponse(data=[evaluation])
         mock_client.post_cast.return_value = response
 
         # Test the resource

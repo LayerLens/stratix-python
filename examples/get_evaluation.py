@@ -15,5 +15,6 @@ async def main():
     print(f"Found evaluation {evaluation.id}")
     print(evaluation)
 
+
 if __name__ == "__main__":
     asyncio.run(main())
