@@ -4,9 +4,9 @@ This page provides reference information about accessing the available models an
 
 ## Overview
 
-Running evaluations on the atlas platform require a model and benchmark to be selected.
+Running evaluations on the atlas platform require a model and benchmark to be selected. The availability of models and benchmarks depends on your organizations configuration.
 
-The availability of models and benchmarks depends on your organizations configuration.
+> Before running the below examples ensure the model and benchmark being run are present on your organiztion.
 
 ### Finding Available Models and Benchmarks
 

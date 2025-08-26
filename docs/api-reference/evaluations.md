@@ -1,12 +1,102 @@
 # Evaluations
 
-The `evaluations` resource allows you to create and manage AI model evaluations against various benchmarks. This is the core functionality of the Atlas platform.
+The `evaluations` resource on the atlas client allows you to create and manage evaluations against various benchmarks for your organization on the atlas platform. This is one of the core functionalities of the Atlas platform.
 
 ## Overview
 
-An evaluation runs a specified model against a benchmark dataset and returns comprehensive metrics including accuracy, readability, toxicity, and ethics scores.
+An evaluation runs a specified model against a benchmark dataset and returns comprehensive metrics.
+
+
+The below example trigger evaluations using `gpt-4o` against `simpleQA`.
+
+> Before running the below examples ensure the model and benchmark being run are present on your organiztion.
+
+### Using Synchronous Client
+
+Below is an example showing how to trigger an evaluation, waiting for it to complete and finally fetching the evaluations results.
+
+```python
+from atlas import Atlas
+
+# Construct sync client (API key from env or inline)
+client = Atlas()
+
+# --- Models
+models = client.models.get(type="public", name="gpt-4o")
+
+if not models:
+    print("gpt-4o not found, exiting")
+
+model = models[0]
+
+# --- Benchmarks
+benchmarks = client.benchmarks.get(type="public", name="simpleQA")
+
+if not benchmarks:
+    print("SimpleQA benchmark not found, exiting")
+
+benchmark = benchmarks[0]
+
+# --- Create evaluation
+evaluation = client.evaluations.create(
+    model=model,
+    benchmark=benchmark,
+)
+
+# --- Wait for completion
+evaluation = client.evaluations.wait_for_completion(
+    evaluation,
+    interval_seconds=10,
+    timeout_seconds=600,  # 10 minutes
+)
+
+# --- Results
+if evaluation.is_success:
+    # Loads the first page of results
+    results = client.results.get(evaluation=evaluation)
+    print("Results:", results)
+
+```
+
+### Using Async Client
+
+```python
+import asyncio
+
+from atlas import AsyncAtlas
+
+
+async def main():
+    # Construct async client
+    client = AsyncAtlas()
+
+    # --- Models
+    models = await client.models.get(type="public", name="gpt-4o")
+    model = models[0]
+
+    # --- Benchmarks
+    benchmarks = await client.benchmarks.get(type="public", name="simpleQA")
+    benchmark = benchmarks[0]
+
+
+    # --- Create evaluation
+    evaluation = await client.evaluations.create(model=model, benchmark=benchmark)
+
+
+    await evaluation.wait_for_completion_async(interval_seconds=10)
+
+    # --- Results
+    if evaluation.is_success:
+        results = await evaluation.get_results_async()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
 
 ## Methods
+
+Both the `Atlas` (synchronous) and `AsyncAtlas` (asynchronous) clients support the following methods.
 
 ### `create(model, benchmark, timeout=None)`
 
@@ -16,44 +106,30 @@ Creates a new evaluation for the specified model and benchmark.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `model` | `str` | Yes | The model identifier to evaluate |
-| `benchmark` | `str` | Yes | The benchmark dataset identifier |
+| `model` | `Model` | Yes | The model to evaluate |
+| `benchmark` | `Benchmark` | Yes | The benchmark to evaluate |
 | `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
 
 #### Returns
 
 Returns an `Evaluation` object if successful, `None` if the evaluation could not be created.
 
-#### Example
+### `wait_for_completion(evaluation, interval_seconds=30, timeout_seconds=None)`
 
-```python
-from atlas import Atlas
+Polls an evaluation until it completes (success, failure, or timeout) or the specified timeout is reached.
 
-client = Atlas()
+#### Parameters
 
-# Create a basic evaluation
-evaluation = client.evaluations.create(
-    model="gpt-4",
-    benchmark="mmlu"
-)
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `evaluation` | `Evaluation` | Yes | The evaluation object to monitor |
+| `interval_seconds` | `int` | No | Polling interval in seconds (default: 30) |
+| `timeout_seconds` | `int \| None` | No | Maximum time to wait in seconds (no limit if None) |
 
-if evaluation:
-    print(f"Evaluation created: {evaluation.id}")
-    print(f"Status: {evaluation.status}")
-else:
-    print("Failed to create evaluation")
-```
+#### Returns
 
-#### With Custom Timeout
+Returns the updated `Evaluation` object when completed, or `None` if polling fails.
 
-```python
-# Create evaluation with custom timeout (5 minutes)
-evaluation = client.evaluations.create(
-    model="gpt-4",
-    benchmark="mmlu",
-    timeout=300.0
-)
-```
 
 ### `get_by_id(evaluation_id, timeout=None)`
 
@@ -80,24 +156,6 @@ client = Atlas()
 # Retrieve an evaluation by ID
 evaluation_id = "eval_abc123xyz"
 evaluation = client.evaluations.get_by_id(evaluation_id)
-
-if evaluation:
-    print(f"Found evaluation: {evaluation.id}")
-    print(f"Status: {evaluation.status}")
-    print(f"Model: {evaluation.model_name}")
-    print(f"Benchmark: {evaluation.dataset_name}")
-else:
-    print(f"Evaluation {evaluation_id} not found")
-```
-
-#### With Custom Timeout
-
-```python
-# Retrieve evaluation with custom timeout
-evaluation = client.evaluations.get_by_id(
-    "eval_abc123xyz",
-    timeout=30.0  # 30 seconds
-)
 ```
 
 #### Async Usage
@@ -121,197 +179,52 @@ async def get_evaluation():
 asyncio.run(get_evaluation())
 ```
 
-## Response Object
+### `get_many(page=None, page_size=None, timeout=None)`
 
-The `create` method returns an `Evaluation` object with the following properties:
+Retrieves multiple evaluations with optional pagination support.
 
-### Core Properties
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `page` | `int \| None` | No | Page number for pagination (1-based, defaults to 1) |
+| `page_size` | `int \| None` | No | Number of evaluations per page (default: 100, max: 500) |
+| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+
+#### Returns
+
+Returns an `EvaluationsResponse` object containing:
+- `evaluations`: List of `Evaluation` objects
+- `pagination`: Pagination metadata with `page`, `page_size`, `total_pages`, and `total_count`
+
+Returns `None` if the request fails.
+
+## Response Objects
+
+The `create`, `get_by_id` and `get_many` method returns an `Evaluation` objects with the following properties:
+
+### Evaluation Object Properties
 
 | Property | Type | Description |
 |----------|------|-------------|
 | `id` | `str` | Unique evaluation identifier |
-| `status` | `str` | Current evaluation status |
-| `status_description` | `str` | Detailed status description |
+| `status` | `EvaluationStatus` | Current evaluation status (enum) |
 | `submitted_at` | `int` | Unix timestamp when evaluation was submitted |
 | `finished_at` | `int` | Unix timestamp when evaluation finished |
-
-### Model Information
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `model_id` | `str` | Model identifier used in the request |
-| `model_name` | `str` | Human-readable model name |
-| `model_key` | `str` | Internal model key |
-| `model_company` | `str` | Company that created the model |
-
-### Benchmark Information
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `dataset_id` | `str` | Benchmark identifier used in the request |
-| `dataset_name` | `str` | Human-readable benchmark name |
-
-### Performance Metrics
-
-These properties are available once the evaluation is completed:
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `accuracy` | `float` | Overall accuracy score (0.0 to 1.0) |
-| `readability_score` | `float` | Readability assessment score |
-| `toxicity_score` | `float` | Toxicity assessment score |
-| `ethics_score` | `float` | Ethics assessment score |
+| `model_id` | `str` | ID of the model used in the evaluation |
+| `benchmark_id` | `str` | ID of the benchmark used (aliased as "dataset_id" in API) |
 | `average_duration` | `int` | Average response time in milliseconds |
+| `accuracy` | `float` | Overall accuracy score (0.0 to 1.0) |
+
 
 ## Evaluation Status
 
-The `status` field can have the following values:
+The `status` field is an `EvaluationStatus` enum with the following values:
 
 | Status | Description |
 |--------|-------------|
 | `"pending"` | Evaluation queued but not yet started |
-| `"running"` | Evaluation currently in progress |
-| `"completed"` | Evaluation finished successfully |
-| `"failed"` | Evaluation failed due to an error |
-| `"cancelled"` | Evaluation was cancelled by user |
-
-## Complete Example
-
-```python
-import time
-from atlas import Atlas
-import atlas
-
-def create_and_monitor_evaluation():
-    client = Atlas()
-    
-    try:
-        # Create evaluation
-        evaluation = client.evaluations.create(
-            model="gpt-3.5-turbo",
-            benchmark="mmlu"
-        )
-        
-        if not evaluation:
-            print("❌ Failed to create evaluation")
-            return None
-            
-        print(f"✅ Evaluation created: {evaluation.id}")
-        print(f"📊 Model: {evaluation.model_name} ({evaluation.model_company})")
-        print(f"📋 Benchmark: {evaluation.dataset_name}")
-        print(f"⏰ Submitted at: {evaluation.submitted_at}")
-        print(f"🔄 Status: {evaluation.status}")
-        
-        # Note: In practice, you'd use webhooks or polling to check status
-        # This is just for demonstration
-        if evaluation.status == "completed":
-            print(f"\n📈 Results:")
-            print(f"   Accuracy: {evaluation.accuracy:.2%}")
-            print(f"   Readability: {evaluation.readability_score:.2f}")
-            print(f"   Toxicity: {evaluation.toxicity_score:.2f}")
-            print(f"   Ethics: {evaluation.ethics_score:.2f}")
-            print(f"   Avg Duration: {evaluation.average_duration}ms")
-        
-        return evaluation
-        
-    except atlas.AuthenticationError:
-        print("❌ Authentication failed - check your API key")
-    except atlas.PermissionDeniedError:
-        print("❌ Permission denied - check your organization/project access")
-    except atlas.NotFoundError:
-        print("❌ Model or benchmark not found")
-    except atlas.RateLimitError:
-        print("❌ Rate limit exceeded - please wait and try again")
-    except atlas.APIConnectionError as e:
-        print(f"❌ Connection error: {e}")
-    except atlas.APIError as e:
-        print(f"❌ API error: {e}")
-    
-    return None
-
-if __name__ == "__main__":
-    evaluation = create_and_monitor_evaluation()
-```
-
-
-## Error Handling
-
-### Common Errors
-
-```python
-import atlas
-from atlas import Atlas
-
-client = Atlas()
-
-try:
-    evaluation = client.evaluations.create(
-        model="nonexistent-model",
-        benchmark="mmlu"
-    )
-except atlas.NotFoundError:
-    print("Model 'nonexistent-model' not found")
-except atlas.BadRequestError:
-    print("Invalid request parameters")
-except atlas.UnprocessableEntityError:
-    print("Request parameters are valid but cannot be processed")
-```
-
-### Timeout Handling
-
-```python
-import atlas
-from atlas import Atlas
-
-client = Atlas()
-
-try:
-    evaluation = client.evaluations.create(
-        model="gpt-4",
-        benchmark="mmlu",
-        timeout=30.0  # 30 seconds
-    )
-except atlas.APITimeoutError:
-    print("Request timed out - try increasing timeout or check network")
-```
-
-## Best Practices
-
-### 1. Check Return Values
-```python
-# ✅ Good - always check if evaluation was created
-evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-if evaluation:
-    print(f"Success: {evaluation.id}")
-else:
-    print("Failed to create evaluation")
-
-# ❌ Bad - assuming success
-evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-print(f"Success: {evaluation.id}")  # Could raise AttributeError
-```
-
-### 2. Handle Long-Running Operations
-```python
-# ✅ Good - appropriate timeout for evaluation creation
-evaluation = client.evaluations.create(
-    model="gpt-4",
-    benchmark="mmlu",
-    timeout=120.0  # 2 minutes
-)
-
-# ❌ Bad - timeout too short
-evaluation = client.evaluations.create(
-    model="gpt-4",
-    benchmark="mmlu", 
-    timeout=5.0  # Likely to timeout
-)
-```
-
-
-
-## Next Steps
-
-- Learn how to [retrieve results](results.md) for your evaluations
-- Explore [code examples](../examples/creating-evaluations.md) for common patterns
-- Understand [error handling](errors.md) for robust applications
+| `"in-progress"` | Evaluation currently in progress |
+| `"paused"` | Evaluation has been paused |
+| `"success"` | Evaluation finished successfully |
+| `"failure"` | Evaluation failed due to an error |
