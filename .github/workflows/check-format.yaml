@@ -1,0 +1,37 @@
+name: Check Format
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install Rye
+        uses: eifinger/setup-rye@v4
+        with:
+          version: latest
+
+      - name: Sync Rye environment
+        run: rye sync
+
+      - name: Run format script and check output
+        run: |
+          set -e  # exit on any command failure
+          OUTPUT=$(./scripts/format 2>&1)
+          echo "$OUTPUT"
+
+          # Fail only if "reformatted" exists
+          if echo "$OUTPUT" | grep -q "reformatted"; then
+            echo "Some files were reformatted. Please run './scripts/format' locally and commit changes."
+            exit 1
+          fi
