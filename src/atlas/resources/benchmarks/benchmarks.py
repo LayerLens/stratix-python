@@ -21,13 +21,16 @@ class Benchmarks(SyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
+        key: Optional[str] = None,
     ) -> Optional[List[Benchmark]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks"
 
         def fetch(bench_type: str) -> BenchmarksResponse | None:
             params = {"type": bench_type}
             if name:
-                params["query"] = name
+                params["name"] = name
+            if key:
+                params["key"] = key
 
             resp = self._get(
                 base_url,
@@ -80,6 +83,23 @@ class Benchmarks(SyncAPIResource):
         else:
             return PublicBenchmark(**benchmark)
 
+    def get_by_key(
+        self,
+        key: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[Benchmark]:
+        """Fetch a single benchmark by its unique key."""
+        benchmarks = self.get(timeout=timeout, key=key)
+
+        if not benchmarks:
+            return None
+
+        for benchmark in benchmarks:
+            if benchmark.key == key:
+                return benchmark
+        return None
+
 
 class AsyncBenchmarks(AsyncAPIResource):
     async def get(
@@ -88,13 +108,16 @@ class AsyncBenchmarks(AsyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
+        key: Optional[str] = None,
     ) -> Optional[List[Benchmark]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks"
 
         async def fetch(bench_type: str) -> Optional[BenchmarksResponse]:
             params = {"type": bench_type}
             if name:
-                params["query"] = name
+                params["name"] = name
+            if key:
+                params["key"] = key
 
             resp = await self._get(
                 base_url,
@@ -148,3 +171,20 @@ class AsyncBenchmarks(AsyncAPIResource):
             return CustomBenchmark(**benchmark)
         else:
             return PublicBenchmark(**benchmark)
+
+    async def get_by_key(
+        self,
+        key: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[Benchmark]:
+        """Fetch a single benchmark by its unique key."""
+        benchmarks = await self.get(timeout=timeout, key=key)
+
+        if not benchmarks:
+            return None
+
+        for benchmark in benchmarks:
+            if benchmark.key == key:
+                return benchmark
+        return None

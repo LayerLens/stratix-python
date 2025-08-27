@@ -258,6 +258,46 @@ class TestBenchmarks:
 
         assert result is None
 
+    def test_get_by_key_custom_benchmark(self, benchmarks_resource, sample_custom_benchmark_data):
+        """get_by_key returns CustomBenchmark when key matches and organization_id is present."""
+        sample_custom_benchmark_data["organization_id"] = "org-123"
+        custom_benchmark = CustomBenchmark(**sample_custom_benchmark_data)
+        benchmarks_resource.get = Mock(return_value=[custom_benchmark])
+
+        result = benchmarks_resource.get_by_key(key="my-benchmark")
+
+        assert isinstance(result, CustomBenchmark)
+        assert result.key == "my-benchmark"
+        assert result.name == "My Custom Benchmark"
+
+    def test_get_by_key_public_benchmark(self, benchmarks_resource, sample_benchmark_data):
+        """get_by_key returns PublicBenchmark when key matches and organization_id is missing."""
+        public_benchmark = PublicBenchmark(**sample_benchmark_data)
+        benchmarks_resource.get = Mock(return_value=[public_benchmark])
+
+        result = benchmarks_resource.get_by_key(key="mmlu")
+
+        assert isinstance(result, PublicBenchmark)
+        assert result.key == "mmlu"
+        assert result.name == "MMLU"
+
+    def test_get_by_key_no_match(self, benchmarks_resource, sample_benchmark_data):
+        """get_by_key returns None if no benchmark has the exact key."""
+        public_benchmark = PublicBenchmark(**sample_benchmark_data)
+        benchmarks_resource.get = Mock(return_value=[public_benchmark])
+
+        result = benchmarks_resource.get_by_key(key="nonexistent-key")
+
+        assert result is None
+
+    def test_get_by_key_invalid_response(self, benchmarks_resource):
+        """get_by_key returns None when get() returns None or invalid type."""
+        benchmarks_resource.get = Mock(return_value=None)
+
+        result = benchmarks_resource.get_by_key(key="some-key")
+
+        assert result is None
+
 
 class TestBenchmarksErrorHandling:
     """Test error handling in Benchmarks resource."""

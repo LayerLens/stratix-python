@@ -328,6 +328,46 @@ class TestModels:
 
         assert result is None
 
+    def test_get_by_key_custom_model(self, models_resource, sample_custom_model_data):
+        """get_by_key returns CustomModel when key matches and organization_id is present."""
+        sample_custom_model_data["organization_id"] = "org-123"
+        custom_model = CustomModel(**sample_custom_model_data)
+        models_resource.get = Mock(return_value=[custom_model])
+
+        result = models_resource.get_by_key(key="my-model")
+
+        assert isinstance(result, CustomModel)
+        assert result.key == "my-model"
+        assert result.name == "My Custom Model"
+
+    def test_get_by_key_public_model(self, models_resource, sample_model_data):
+        """get_by_key returns PublicModel when key matches and organization_id is missing."""
+        public_model = PublicModel(**sample_model_data)
+        models_resource.get = Mock(return_value=[public_model])
+
+        result = models_resource.get_by_key(key="gpt-4")
+
+        assert isinstance(result, PublicModel)
+        assert result.key == "gpt-4"
+        assert result.name == "GPT-4"
+
+    def test_get_by_key_no_match(self, models_resource, sample_model_data):
+        """get_by_key returns None if no model has the exact key."""
+        public_model = PublicModel(**sample_model_data)
+        models_resource.get = Mock(return_value=[public_model])
+
+        result = models_resource.get_by_key(key="nonexistent-key")
+
+        assert result is None
+
+    def test_get_by_key_invalid_response(self, models_resource):
+        """get_by_key returns None when get() returns None or invalid type."""
+        models_resource.get = Mock(return_value=None)
+
+        result = models_resource.get_by_key(key="some-key")
+
+        assert result is None
+
 
 class TestModelsErrorHandling:
     """Test error handling in Models resource."""
