@@ -1,5 +1,5 @@
 # Table of contents
-* [Layerlens Python SDK Documentation](docs/README.md)
+* [Layerlens Python SDK](docs/README.md)
   * [Api-reference](docs/api-reference/README.md)
     * [Client Configuration](docs/api-reference/client.md)
     * [Models & Benchmarks](docs/api-reference/models-benchmarks.md)
