@@ -6,31 +6,23 @@ from atlas import Atlas
 client = Atlas()
 
 # --- Models
-models = client.models.get()
-print(f"Found {len(models)} models")
+models = client.models.get(type="public", name="gpt-4o")
+
+if not models:
+    print("gpt-4o not found, exiting")
+
+model = models[0]
 
 # --- Benchmarks
-benchmarks = client.benchmarks.get()
-print(f"Found {len(benchmarks)} benchmarks")
+benchmarks = client.benchmarks.get(type="public", name="simpleQA")
+
+if not benchmarks:
+    print("SimpleQA benchmark not found, exiting")
+
+benchmark = benchmarks[0]
 
 # --- Create evaluation
 evaluation = client.evaluations.create(
-    model=models[0],
-    benchmark=benchmarks[0],
+    model=model,
+    benchmark=benchmark,
 )
-
-print(f"Created evaluation {evaluation.id}, status={evaluation.status}")
-
-# --- Wait for completion
-evaluation.wait_for_completion(
-    interval_seconds=10,
-    timeout_seconds=600,  # 10 minutes
-)
-print(f"Evaluation {evaluation.id} finished with status={evaluation.status}")
-
-# --- Results
-if evaluation.is_success:
-    results = evaluation.get_results()
-    print("Results:", results)
-else:
-    print("Evaluation did not succeed, no results to show.")

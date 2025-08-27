@@ -1,109 +1,94 @@
 # Creating Evaluations
 
-Simple examples for creating AI model evaluations with the Atlas Python SDK.
+Examples for creating evaluations on the Atlas platform using the Layerlens python sdk. 
 
-## Quick Start
+> Before running the below examples ensure the model and benchmark being run are present on your organiztion.
 
-### Basic Evaluation
+## Basic Evaluation
+
+### Using Synchronous Client
+
+Below is an example showing how to trigger an evaluation, waiting for it to complete and finally fetching the evaluations results.
 
 ```python
 from atlas import Atlas
 
-# Initialize client (reads LAYERLENS_ATLAS_API_KEY from environment)
+# Construct sync client (API key from env or inline)
 client = Atlas()
 
-# Get available models and benchmarks
-models = client.models.get()
-benchmarks = client.benchmarks.get()
+# --- Models
+models = client.models.get(type="public", name="gpt-4o")
 
-print(f"Available: {len(models)} models, {len(benchmarks)} benchmarks")
+if not models:
+    print("gpt-4o not found")
 
-# Create evaluation with first available model and benchmark
+model = models[0]
+
+# --- Benchmarks
+benchmarks = client.benchmarks.get(type="public", name="simpleQA")
+
+if not benchmarks:
+    print("SimpleQA benchmark not found, exiting")
+
+benchmark = benchmarks[0]
+
+# --- Create evaluation
 evaluation = client.evaluations.create(
-    model=models[0],
-    benchmark=benchmarks[0]
+    model=model,
+    benchmark=benchmark,
 )
 
-print(f"Created evaluation: {evaluation.id}")
-print(f"Status: {evaluation.status}")
+# --- Wait for completion
+evaluation = client.evaluations.wait_for_completion(
+    evaluation,
+    interval_seconds=10,
+    timeout_seconds=600,  # 10 minutes
+)
+
+# --- Results
+if evaluation.is_success:
+    # Loads the first page of results
+    results = client.results.get(evaluation=evaluation)
+    print("Results:", results)
+
 ```
 
-### Choose Specific Model and Benchmark
-
-```python
-from atlas import Atlas
-
-client = Atlas()
-
-# Get all available options
-models = client.models.get()
-benchmarks = client.benchmarks.get()
-
-# Find specific model and benchmark
-gpt4_model = next((m for m in models if "gpt-4" in m.id), None)
-mmlu_benchmark = next((b for b in benchmarks if "mmlu" in b.id), None)
-
-if gpt4_model and mmlu_benchmark:
-    evaluation = client.evaluations.create(
-        model=gpt4_model,
-        benchmark=mmlu_benchmark
-    )
-    print(f"Created: {evaluation.id}")
-else:
-    print("Model or benchmark not found")
-    print(f"Available models: {[m.id for m in models[:5]]}...")
-    print(f"Available benchmarks: {[b.id for b in benchmarks[:5]]}...")
-```
-
-## Async Version
+### Using Async Client
 
 ```python
 import asyncio
+
 from atlas import AsyncAtlas
 
-async def create_evaluation():
+
+async def main():
+    # Construct async client
     client = AsyncAtlas()
-    
-    models = await client.models.get()
-    benchmarks = await client.benchmarks.get()
-    
-    evaluation = await client.evaluations.create(
-        model=models[0],
-        benchmark=benchmarks[0]
-    )
-    
-    print(f"Created evaluation: {evaluation.id}")
-    return evaluation
 
-# Run it
-asyncio.run(create_evaluation())
+    # --- Models
+    models = await client.models.get(type="public", name="gpt-4o")
+    model = models[0]
+
+    # --- Benchmarks
+    benchmarks = await client.benchmarks.get(type="public", name="simpleQA")
+    benchmark = benchmarks[0]
+
+
+    # --- Create evaluation
+    evaluation = await client.evaluations.create(model=model, benchmark=benchmark)
+
+
+    await evaluation.wait_for_completion_async(interval_seconds=10)
+
+    # --- Results
+    if evaluation.is_success:
+        results = await evaluation.get_results_async()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-## Wait for Completion
-
-```python
-from atlas import Atlas
-
-client = Atlas()
-models = client.models.get()
-benchmarks = client.benchmarks.get()
-
-# Create evaluation
-evaluation = client.evaluations.create(model=models[0], benchmark=benchmarks[0])
-print(f"Created: {evaluation.id}")
-
-# Wait for it to complete (this may take several minutes)
-completed_evaluation = client.evaluations.wait_for_completion(
-    evaluation,
-    interval_seconds=30,  # Check every 30 seconds
-    timeout_seconds=1800         # 30 minute timeout
-)
-
-if completed_evaluation.is_success:
-    print("Evaluation completed successfully!")
-else:
-    print(f"Evaluation failed: {completed_evaluation.status}")
-```
 
 ## Error Handling
 
@@ -121,7 +106,6 @@ try:
         model=models[0],
         benchmark=benchmarks[0]
     )
-    print(f"Success: {evaluation.id}")
     
 except atlas.AuthenticationError:
     print("Check your API key")
@@ -131,22 +115,117 @@ except atlas.APIError as e:
     print(f"API error: {e}")
 ```
 
-## Multiple Evaluations
+## Triggering Multiple Evaluations
 
 ```python
-from atlas import Atlas
+import asyncio
 
-client = Atlas()
-models = client.models.get()
-benchmarks = client.benchmarks.get()
+from atlas import AsyncAtlas
 
-# Create multiple evaluations
-evaluations = []
-for model in models[:3]:  # First 3 models
-    for benchmark in benchmarks[:2]:  # First 2 benchmarks
-        evaluation = client.evaluations.create(model=model, benchmark=benchmark)
-        evaluations.append(evaluation)
-        print(f"Created: {model.id} + {benchmark.id} = {evaluation.id}")
 
-print(f"Created {len(evaluations)} evaluations total")
+async def create_and_run_evaluation(client, model, benchmark, eval_number):
+    """Create and run a single evaluation, tracking progress."""
+    try:
+        print(f"Starting evaluation #{eval_number}...")
+
+        # Create evaluation
+        evaluation = await client.evaluations.create(model=model, benchmark=benchmark)
+
+        # Wait for completion
+        evaluation = await client.evaluations.wait_for_completion(
+            evaluation,
+            interval_seconds=10,
+            timeout_seconds=600,  # 10 minutes
+        )
+
+        # Get results if successful
+        if evaluation.is_success:
+            results = await client.results.get_all(evaluation=evaluation)
+            return results
+        else:
+            return None
+
+    except Exception as e:
+        print(f"✗ Error in evaluation #{eval_number}: {e}")
+        return eval_number, None, 0, False
+
+
+async def main():
+    # Construct async client
+    client = AsyncAtlas()
+
+    # --- Models
+    models = await client.models.get()
+
+    # --- Benchmarks
+    benchmarks = await client.benchmarks.get()
+
+    # Use first model and benchmark for all evaluations
+    target_model = models[0]
+    target_benchmark = benchmarks[0]
+
+    print(f"Using model: {target_model}")
+    print(f"Using benchmark: {target_benchmark}")
+
+    # Create 3 evaluation tasks
+    num_evaluations = 3
+    print(f"Starting {num_evaluations} evaluations in parallel...")
+
+    tasks = [create_and_run_evaluation(client, target_model, target_benchmark, i + 1) for i in range(num_evaluations)]
+
+    # Execute all evaluations concurrently
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Fetching Results of Multiple Evaluations Async
+
+```python
+
+import asyncio
+
+from atlas import AsyncAtlas
+
+
+async def fetch_evaluation_results(client, evaluation_id):
+    """Fetch results for a single evaluation and print when loaded."""
+    try:
+        print(f"Fetching evaluation {evaluation_id}...")
+        evaluation = await client.evaluations.get_by_id(evaluation_id)
+        # Get all results for this evaluation
+        results = await client.results.get_all(evaluation=evaluation)
+        print(f"Loaded {len(results)} results for evaluation {evaluation_id}")
+
+        return evaluation_id, results
+    except Exception as e:
+        print(f"Error fetching evaluation {evaluation_id}: {e}")
+        return evaluation_id, None
+
+
+async def main():
+    # Construct async client
+    client = AsyncAtlas()
+
+    # List of example evaluation IDs to fetch
+
+    evaluation_ids = ["68a65a3de7ad047fbd8e7d4", "688a54c673f6b2835cc7278"]
+
+    print(f"Starting async fetch for {len(evaluation_ids)} evaluations...")
+
+    # Create tasks for concurrent execution
+    tasks = [fetch_evaluation_results(client, eval_id) for eval_id in evaluation_ids]
+
+    # Execute all tasks concurrently and print results as they complete
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    print("=" * 80)
+    print("Summary:")
+    successful = sum(1 for _, result in results if result is not None and not isinstance(result, Exception))
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
 ```
