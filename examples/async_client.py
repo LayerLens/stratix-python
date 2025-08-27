@@ -10,7 +10,7 @@ async def main():
     client = AsyncAtlas()
 
     # --- Models
-    models = await client.models.get(type="public",name="gpt-4o")
+    models = await client.models.get(type="public", name="gpt-4o")
     print(f"Models found: {models}")
 
     if not models:
