@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  PACKAGE_NAME: atlas
+  PACKAGE_NAME: layerlens
 
 jobs:
   validate:
