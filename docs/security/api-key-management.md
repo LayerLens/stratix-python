@@ -32,7 +32,7 @@ API keys are sensitive credentials that provide access to your Atlas organizatio
 
 ```python
 import os
-from atlas import Atlas
+from layerlens import Atlas
 
 # Secure: Load from environment variables
 client = Atlas(
@@ -80,7 +80,7 @@ import os
 # Load environment variables from .env file
 load_dotenv()
 
-from atlas import Atlas
+from layerlens import Atlas
 
 # Now environment variables are available
 client = Atlas()

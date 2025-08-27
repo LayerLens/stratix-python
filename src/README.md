@@ -13,7 +13,7 @@ pip install atlas --index-url https://sdk.layerlens.ai
 
 ```python
 import os
-from atlas import Atlas
+from layerlens import Atlas
 
 client = Atlas(
     # This is the default and can be omitted
@@ -30,15 +30,15 @@ print(response.output_text)
 
 ## Handling errors
 
-When the library is unable to connect to the API (for example, due to network connection problems or a timeout), a subclass of `atlas.APIConnectionError` is raised.
+When the library is unable to connect to the API (for example, due to network connection problems or a timeout), a subclass of `layerlens.APIConnectionError` is raised.
 
-When the API returns a non-success status code (that is, 4xx or 5xx response), a subclass of `atlas.APIStatusError` is raised, containing `status_code` and `response` properties.
+When the API returns a non-success status code (that is, 4xx or 5xx response), a subclass of `layerlens.APIStatusError` is raised, containing `status_code` and `response` properties.
 
-All errors inherit from `atlas.APIError`.
+All errors inherit from `layerlens.APIError`.
 
 ```python
-import atlas
-from atlas import Atlas
+import layerlens
+from layerlens import Atlas
 
 client = Atlas()
 
@@ -47,12 +47,12 @@ try:
         model="random-model",
         benchmark="random-benchmark",
     )
-except atlas.APIConnectionError as e:
+except layerlens.APIConnectionError as e:
     print("The server could not be reached")
     print(e.__cause__)  # an underlying Exception, likely raised within httpx.
-except atlas.RateLimitError as e:
+except layerlens.RateLimitError as e:
     print("A 429 status code was received; we should back off a bit.")
-except atlas.APIStatusError as e:
+except layerlens.APIStatusError as e:
     print("Another non-200-range status code was received")
     print(e.status_code)
     print(e.response)
@@ -76,7 +76,7 @@ Error codes are as follows:
 By default requests time out after 10 minutes. You can configure this with a `timeout` option, which accepts a float or an [`httpx.Timeout`](https://www.python-httpx.org/advanced/timeouts/#fine-tuning-the-configuration) object:
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 # Configure the default for all requests:
 client = Atlas(
@@ -109,8 +109,8 @@ If you've upgraded to the latest version but aren't seeing any new features you 
 You can determine the version that is being used at runtime with:
 
 ```py
-import atlas
-print(atlas.__version__)
+import layerlens
+print(layerlens.__version__)
 ```
 
 ## Requirements

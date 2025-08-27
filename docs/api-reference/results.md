@@ -2,7 +2,6 @@
 
 The `results` resource allows you to retrieve detailed results from completed or partially completed evaluations. This provides granular insight into how your model performed on individual test cases.
 
-
 ## Overview
 
 Results contain detailed information about each test case in an evaluation.
@@ -17,10 +16,10 @@ Retrieves all results for a specific evaluation by automatically iterating throu
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `evaluation` | `Evaluation` | Yes | The evaluation object to get results for |
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter    | Type                             | Required | Description                              |
+| ------------ | -------------------------------- | -------- | ---------------------------------------- |
+| `evaluation` | `Evaluation`                     | Yes      | The evaluation object to get results for |
+| `timeout`    | `float \| httpx.Timeout \| None` | No       | Override request timeout                 |
 
 #### Returns
 
@@ -29,7 +28,7 @@ Returns a `List[Result]` containing all result objects across all pages. Returns
 #### Example
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 client = Atlas()
 
@@ -40,29 +39,29 @@ if not evaluation:
 else:
     # Get all results at once
     all_results = client.results.get_all(evaluation=evaluation)
-    
+
     print(f"Retrieved {len(all_results)} total results")
 ```
 
 #### Async Usage
 
 ```python
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 import asyncio
 
 async def get_all_results():
     client = AsyncAtlas()
-    
+
     # Get evaluation first
     evaluation = await client.evaluations.get_by_id("eval_12345")
     if not evaluation:
         print("Evaluation not found")
         return
-    
+
     # Get all results asynchronously
     all_results = await client.results.get_all(evaluation=evaluation)
     print(f"Retrieved {len(all_results)} total results asynchronously")
-    
+
     return all_results
 
 # Run the async fetching of results
@@ -75,10 +74,10 @@ Retrieves all results for a specific evaluation by evaluation ID, automatically 
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `evaluation_id` | `str` | Yes | The evaluation identifier to get results for |
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter       | Type                             | Required | Description                                  |
+| --------------- | -------------------------------- | -------- | -------------------------------------------- |
+| `evaluation_id` | `str`                            | Yes      | The evaluation identifier to get results for |
+| `timeout`       | `float \| httpx.Timeout \| None` | No       | Override request timeout                     |
 
 #### Returns
 
@@ -87,7 +86,7 @@ Returns a `List[Result]` containing all result objects across all pages. Returns
 #### Example
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 client = Atlas()
 
@@ -98,18 +97,18 @@ all_results = client.results.get_all_by_id(evaluation_id="eval_12345")
 #### Async Usage
 
 ```python
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 import asyncio
 
 async def get_all_results():
     client = AsyncAtlas()
-    
+
     # Get all results asynchronously
     all_results = await client.results.get_all_by_id(evaluation_id="eval_12345")
-    
+
     if all_results:
         print(f"Retrieved {len(all_results)} total results")
-        
+
     else:
         print("No results found")
 
@@ -123,18 +122,19 @@ Retrieves detailed results for a specific evaluation with optional pagination su
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `evaluation_id` | `str` | Yes | The evaluation identifier to get results for |
-| `page` | `int \| None` | No | Page number for pagination. If not provided, returns first page is returned by default |
-| `page_size` | `int \| None` | No | Number of results per page (default: 100). Maximum allowed page_size is 500 |
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter       | Type                             | Required | Description                                                                            |
+| --------------- | -------------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `evaluation_id` | `str`                            | Yes      | The evaluation identifier to get results for                                           |
+| `page`          | `int \| None`                    | No       | Page number for pagination. If not provided, returns first page is returned by default |
+| `page_size`     | `int \| None`                    | No       | Number of results per page (default: 100). Maximum allowed page_size is 500            |
+| `timeout`       | `float \| httpx.Timeout \| None` | No       | Override request timeout                                                               |
 
 #### Returns
 
 Returns a `ResultsResponse` object containing results, evaluation metadata, and pagination information if successful, `None` if no results are found or the evaluation doesn't exist.
 
 The `ResultsResponse` object includes:
+
 - `results`: List of `Result` objects for the current page
 - `evaluation_id`: The evaluation ID
 - `pagination`: Pagination metadata (total_count, page_size, total_pages)
@@ -142,8 +142,9 @@ The `ResultsResponse` object includes:
 #### Examples
 
 ##### Basic Usage (All Results)
+
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 client = Atlas()
 
@@ -156,7 +157,7 @@ if results_data:
     print(f"Total available: {results_data.pagination.total_count}")
     print(f"Page size: {results_data.pagination.page_size}")
     print(f"Total pages: {results_data.pagination.total_pages}")
-    
+
     # Access individual results
     for i, result in enumerate(results_data.results[:3]):  # Show first 3
         print(f"\nResult {i+1}:")
@@ -168,6 +169,7 @@ else:
 ```
 
 ##### Paginated Access
+
 ```python
 # Get specific page with custom page size
 results_data = client.results.get(
@@ -179,7 +181,7 @@ results_data = client.results.get(
 if results_data:
     print(f"Page 2 of {results_data.pagination.total_pages}")
     print(f"Showing {len(results_data.results)} of {results_data.pagination.total_count} total results")
-    
+
     # Process current page
     for result in results_data.results:
         # Process each result
@@ -187,6 +189,7 @@ if results_data:
 ```
 
 ##### Iterating Through All Pages
+
 ```python
 # Process all results by iterating through pages
 evaluation_id = "eval_12345"
@@ -199,17 +202,17 @@ while True:
         page=page,
         page_size=page_size
     )
-    
+
     if not results_data or not results_data.results:
         break
-    
+
     print(f"Processing page {page}/{results_data.pagination.total_pages}")
-    
+
     # Process current page results
     for result in results_data.results:
         # Your processing logic here
         pass
-    
+
     # Move to next page
     if page >= results_data.pagination.total_pages:
         break
@@ -217,7 +220,6 @@ while True:
 
 print("Finished processing all results")
 ```
-
 
 ## Pagination Information
 
@@ -228,18 +230,18 @@ results_data = client.results.get(evaluation_id="eval_12345", page=1, page_size=
 
 if results_data:
     pagination = results_data.pagination
-    
+
     print(f"Current page info:")
     print(f"  Total results available: {pagination.total_count}")
     print(f"  Results per page: {pagination.page_size}")
     print(f"  Total pages: {pagination.total_pages}")
     print(f"  Results on current page: {len(results_data.results)}")
-    
+
     # Calculate current page number (if needed)
     # Page number isn't stored in pagination object, so track it yourself
     current_page = 1  # You would track this in your code
     print(f"  Current page: {current_page}")
-    
+
     # Check if there are more pages
     has_more_pages = current_page < pagination.total_pages
     print(f"  Has more pages: {has_more_pages}")
@@ -247,11 +249,11 @@ if results_data:
 
 ### Pagination Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `total_count` | `int` | Total number of results available across all pages |
-| `page_size` | `int` | Number of results per page (as requested or default) |
-| `total_pages` | `int` | Total number of pages available |
+| Property      | Type  | Description                                          |
+| ------------- | ----- | ---------------------------------------------------- |
+| `total_count` | `int` | Total number of results available across all pages   |
+| `page_size`   | `int` | Number of results per page (as requested or default) |
+| `total_pages` | `int` | Total number of pages available                      |
 
 ## Result Object
 
@@ -259,21 +261,21 @@ Each `Result` object contains the following properties:
 
 ### Core Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `subset` | `str` | The benchmark subset or category this test case belongs to |
-| `prompt` | `str` | The input prompt given to the model |
-| `result` | `str` | The model's response/output |
-| `truth` | `str` | The expected or correct answer |
-| `score` | `float` | Individual score for this test case (typically 0.0 to 1.0) |
-| `duration` | `timedelta` | Time taken for the model to respond |
-| `metrics` | `Dict[str, float]` | Additional metrics specific to this test case |
+| Property   | Type               | Description                                                |
+| ---------- | ------------------ | ---------------------------------------------------------- |
+| `subset`   | `str`              | The benchmark subset or category this test case belongs to |
+| `prompt`   | `str`              | The input prompt given to the model                        |
+| `result`   | `str`              | The model's response/output                                |
+| `truth`    | `str`              | The expected or correct answer                             |
+| `score`    | `float`            | Individual score for this test case (typically 0.0 to 1.0) |
+| `duration` | `timedelta`        | Time taken for the model to respond                        |
+| `metrics`  | `Dict[str, float]` | Additional metrics specific to this test case              |
 
 ### Understanding Properties
 
 - **`subset`**: Groups related test cases (e.g., "elementary_mathematics", "world_history")
 - **`prompt`**: The exact input sent to the model
-- **`result`**: The model's actual response 
+- **`result`**: The model's actual response
 - **`truth`**: The ground truth or expected answer for comparison
 - **`score`**: Individual test case score, usually binary (0.0 or 1.0) for correctness
 - **`duration`**: Response latency as a Python `timedelta` object
@@ -282,21 +284,22 @@ Each `Result` object contains the following properties:
 ## Working with Large Result Sets
 
 ### Fetching results async
+
 Results can contain thousands of individual test cases. Consider using the async client to load results asynchronously:
 
 ```python
 import asyncio
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 async def fetch_results_async():
     async_client = AsyncAtlas()
-    
+
     # Get evaluation first
     evaluation = await async_client.evaluations.get_by_id("eval_12345")
     if not evaluation:
         print("Evaluation not found")
         return None
-    
+
     # async results fetching all pages of results
     results = await async_client.results.get_all(evaluation=evaluation)
     if results:
@@ -309,4 +312,5 @@ asyncio.run(fetch_results_async())
 ```
 
 ## Next Steps
+
 - Explore [code examples](../examples/retrieving-results.md) for common analysis patterns

@@ -32,12 +32,12 @@ AtlasError
 Base exception for all Atlas-related errors.
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.AtlasError as e:
+except layerlens.AtlasError as e:
     print(f"Atlas error occurred: {e}")
 ```
 
@@ -52,12 +52,12 @@ Base exception for all API-related errors. Contains additional context about the
 - `body`: Response body (if available)
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.APIError as e:
+except layerlens.APIError as e:
     print(f"API error: {e.message}")
     print(f"Request URL: {e.request.url}")
     print(f"Response body: {e.body}")
@@ -77,12 +77,12 @@ Raised when the client cannot connect to the API server.
 - Firewall blocking requests
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.APIConnectionError as e:
+except layerlens.APIConnectionError as e:
     print("Connection failed - check your network connection")
     print(f"Error details: {e}")
 ```
@@ -92,12 +92,12 @@ except atlas.APIConnectionError as e:
 Raised when a request times out.
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas(timeout=0.2)  # Very short timeout
+    client = layerlens.Atlas(timeout=0.2)  # Very short timeout
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.APITimeoutError:
+except layerlens.APITimeoutError:
     print("Request timed out - try increasing timeout or check network")
 ```
 
@@ -116,13 +116,13 @@ All HTTP status errors inherit from `APIStatusError` and include additional prop
 Request was malformed or contained invalid parameters.
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     # Invalid parameters
     evaluation = client.evaluations.create(model="", benchmark="")
-except atlas.BadRequestError as e:
+except layerlens.BadRequestError as e:
     print(f"Bad request: {e}")
     print(f"Status code: {e.status_code}")
 ```
@@ -132,12 +132,12 @@ except atlas.BadRequestError as e:
 API key is missing, invalid, or expired.
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas(api_key="invalid_key")
+    client = layerlens.Atlas(api_key="invalid_key")
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.AuthenticationError:
+except layerlens.AuthenticationError:
     print("Authentication failed - check your API key")
     print("Make sure LAYERLENS_ATLAS_API_KEY is set correctly")
 ```
@@ -147,12 +147,12 @@ except atlas.AuthenticationError:
 Valid API key but insufficient permissions for the requested operation.
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     evaluation = client.evaluations.create(model="restricted-model", benchmark="mmlu")
-except atlas.PermissionDeniedError:
+except layerlens.PermissionDeniedError:
     print("Permission denied - check your organization/project access")
     print("Contact your administrator for access to this resource")
 ```
@@ -162,12 +162,12 @@ except atlas.PermissionDeniedError:
 Requested resource (model, benchmark, evaluation) does not exist.
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     evaluation = client.evaluations.create(model="nonexistent-model", benchmark="mmlu")
-except atlas.NotFoundError:
+except layerlens.NotFoundError:
     print("Model or benchmark not found")
     print("Check available models and benchmarks in the Atlas dashboard")
 ```
@@ -177,13 +177,13 @@ except atlas.NotFoundError:
 Request conflicts with current resource state.
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     # Some operation that conflicts with current state
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.ConflictError:
+except layerlens.ConflictError:
     print("Request conflicts with current state")
 ```
 
@@ -192,12 +192,12 @@ except atlas.ConflictError:
 Request parameters are valid but cannot be processed.
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="invalid-benchmark")
-except atlas.UnprocessableEntityError as e:
+except layerlens.UnprocessableEntityError as e:
     print(f"Cannot process request: {e}")
     print("Parameters are valid but operation cannot be completed")
 ```
@@ -207,13 +207,13 @@ except atlas.UnprocessableEntityError as e:
 Too many requests sent in a given time period.
 
 ```python
-import atlas
+import layerlens
 import time
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.RateLimitError as e:
+except layerlens.RateLimitError as e:
     print("Rate limit exceeded")
     # Extract retry-after header if available
     retry_after = e.response.headers.get('retry-after')
@@ -230,12 +230,12 @@ except atlas.RateLimitError as e:
 Server-side error occurred.
 
 ```python
-import atlas
+import layerlens
 
 try:
-    client = atlas.Atlas()
+    client = layerlens.Atlas()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.InternalServerError as e:
+except layerlens.InternalServerError as e:
     print(f"Server error: {e.status_code}")
     print("This is a server-side issue - try again later")
     print(f"Request ID: {e.request_id}")  # For support tickets
@@ -246,9 +246,9 @@ except atlas.InternalServerError as e:
 ### 1. Handle Specific Exceptions
 
 ```python
-import atlas
+import layerlens
 import time
-from atlas import Atlas
+from layerlens import Atlas
 
 def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
     client = Atlas()
@@ -258,25 +258,25 @@ def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
             evaluation = client.evaluations.create(model=model, benchmark=benchmark)
             return evaluation
 
-        except atlas.AuthenticationError:
+        except layerlens.AuthenticationError:
             print("❌ Authentication failed - check your API key")
             break  # Don't retry auth errors
 
-        except atlas.PermissionDeniedError:
+        except layerlens.PermissionDeniedError:
             print("❌ Permission denied - contact your administrator")
             break  # Don't retry permission errors
 
-        except atlas.NotFoundError:
+        except layerlens.NotFoundError:
             print(f"❌ Model '{model}' or benchmark '{benchmark}' not found")
             break  # Don't retry not found errors
 
-        except atlas.RateLimitError as e:
+        except layerlens.RateLimitError as e:
             retry_after = e.response.headers.get('retry-after', 60)
             print(f"⏳ Rate limited - waiting {retry_after} seconds...")
             time.sleep(int(retry_after))
             continue  # Retry after waiting
 
-        except atlas.InternalServerError:
+        except layerlens.InternalServerError:
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt  # Exponential backoff
                 print(f"🔄 Server error - retrying in {wait_time}s (attempt {attempt + 1})")
@@ -286,7 +286,7 @@ def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
                 print("❌ Server error - max retries exceeded")
                 break
 
-        except atlas.APIConnectionError:
+        except layerlens.APIConnectionError:
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt
                 print(f"🔄 Connection error - retrying in {wait_time}s (attempt {attempt + 1})")
@@ -296,7 +296,7 @@ def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
                 print("❌ Connection failed - check your network")
                 break
 
-        except atlas.APIError as e:
+        except layerlens.APIError as e:
             print(f"❌ Unexpected API error: {e}")
             break
 
@@ -306,8 +306,8 @@ def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
 ### 2. Graceful Degradation
 
 ```python
-import atlas
-from atlas import Atlas
+import layerlens
+from layerlens import Atlas
 
 def get_evaluation_results_with_fallback(evaluation_id: str):
     client = Atlas()
@@ -320,16 +320,16 @@ def get_evaluation_results_with_fallback(evaluation_id: str):
         else:
             return {"success": False, "data": None, "message": "No results found"}
 
-    except atlas.NotFoundError:
+    except layerlens.NotFoundError:
         return {"success": False, "data": None, "message": "Evaluation not found"}
 
-    except atlas.AuthenticationError:
+    except layerlens.AuthenticationError:
         return {"success": False, "data": None, "message": "Authentication required"}
 
-    except atlas.APIConnectionError:
+    except layerlens.APIConnectionError:
         return {"success": False, "data": None, "message": "Service temporarily unavailable"}
 
-    except atlas.APIError as e:
+    except layerlens.APIError as e:
         return {"success": False, "data": None, "message": f"Service error: {e}"}
 
 # Usage
@@ -344,8 +344,8 @@ else:
 
 ```python
 import logging
-import atlas
-from atlas import Atlas
+import layerlens
+from layerlens import Atlas
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -365,23 +365,23 @@ def monitored_api_call():
             logger.warning("Evaluation creation returned None")
             return None
 
-    except atlas.RateLimitError as e:
+    except layerlens.RateLimitError as e:
         logger.warning(f"Rate limited - request ID: {e.request_id}")
         raise
 
-    except atlas.AuthenticationError:
+    except layerlens.AuthenticationError:
         logger.error("Authentication failed - check API key configuration")
         raise
 
-    except atlas.APIConnectionError:
+    except layerlens.APIConnectionError:
         logger.error("Network connection failed")
         raise
 
-    except atlas.InternalServerError as e:
+    except layerlens.InternalServerError as e:
         logger.error(f"Server error: {e.status_code} - request ID: {e.request_id}")
         raise
 
-    except atlas.APIError as e:
+    except layerlens.APIError as e:
         logger.error(f"Unexpected API error: {e} - request ID: {getattr(e, 'request_id', 'N/A')}")
         raise
 ```
@@ -389,9 +389,9 @@ def monitored_api_call():
 ### 4. Context Managers for Resource Management
 
 ```python
-import atlas
+import layerlens
 from contextlib import contextmanager
-from atlas import Atlas
+from layerlens import Atlas
 
 @contextmanager
 def atlas_client():
@@ -400,10 +400,10 @@ def atlas_client():
     try:
         client = Atlas()
         yield client
-    except atlas.AuthenticationError:
+    except layerlens.AuthenticationError:
         print("Authentication failed")
         raise
-    except atlas.APIConnectionError:
+    except layerlens.APIConnectionError:
         print("Connection failed")
         raise
     finally:
@@ -415,7 +415,7 @@ try:
     with atlas_client() as client:
         evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
         results = client.results.get(evaluation_id=evaluation.id)
-except atlas.AtlasError:
+except layerlens.AtlasError:
     print("Atlas operation failed")
 ```
 
@@ -424,13 +424,13 @@ except atlas.AtlasError:
 ### Status Error Properties
 
 ```python
-import atlas
-from atlas import Atlas
+import layerlens
+from layerlens import Atlas
 
 try:
     client = Atlas()
     evaluation = client.evaluations.create(model="invalid", benchmark="invalid")
-except atlas.APIStatusError as e:
+except layerlens.APIStatusError as e:
     print(f"Status Code: {e.status_code}")
     print(f"Request ID: {e.request_id}")
     print(f"Response Headers: {dict(e.response.headers)}")
@@ -442,10 +442,10 @@ except atlas.APIStatusError as e:
 ### Extracting Useful Information
 
 ```python
-import atlas
-from atlas import Atlas
+import layerlens
+from layerlens import Atlas
 
-def extract_error_info(error: atlas.APIError):
+def extract_error_info(error: layerlens.APIError):
     info = {
         "type": type(error).__name__,
         "message": str(error),
@@ -468,7 +468,7 @@ def extract_error_info(error: atlas.APIError):
 try:
     client = Atlas()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.APIError as e:
+except layerlens.APIError as e:
     error_info = extract_error_info(e)
     print(f"Error details: {error_info}")
 ```
@@ -477,20 +477,20 @@ except atlas.APIError as e:
 
 ```python
 import pytest
-import atlas
+import layerlens
 from unittest.mock import Mock, patch
-from atlas import Atlas
+from layerlens import Atlas
 
 def test_authentication_error_handling():
     """Test that authentication errors are handled properly"""
-    with patch('atlas.Atlas') as mock_atlas:
-        mock_atlas.side_effect = atlas.AuthenticationError(
+    with patch('layerlens.Atlas') as mock_atlas:
+        mock_atlas.side_effect = layerlens.AuthenticationError(
             "Invalid API key",
             request=Mock(),
             response=Mock()
         )
 
-        with pytest.raises(atlas.AuthenticationError):
+        with pytest.raises(layerlens.AuthenticationError):
             client = Atlas()
             client.evaluations.create(model="gpt-4", benchmark="mmlu")
 
@@ -508,7 +508,7 @@ def test_rate_limit_retry():
 # Missing API key
 try:
     client = Atlas(api_key=None)
-except atlas.AtlasError as e:
+except layerlens.AtlasError as e:
     print(f"Configuration error: {e}")
 ```
 
@@ -519,14 +519,14 @@ except atlas.AtlasError as e:
 try:
     client = Atlas(timeout=0.1)  # Very short timeout
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.APITimeoutError:
+except layerlens.APITimeoutError:
     print("Request timed out")
 
 # Network connectivity
 try:
     # Simulate network issues
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except atlas.APIConnectionError:
+except layerlens.APIConnectionError:
     print("Network connectivity issue")
 ```
 
@@ -537,15 +537,15 @@ except atlas.APIConnectionError:
 ```python
 import time
 import random
-import atlas
-from atlas import Atlas
+import layerlens
+from layerlens import Atlas
 
 def exponential_backoff_retry(func, max_retries=3, base_delay=1):
     """Retry function with exponential backoff"""
     for attempt in range(max_retries):
         try:
             return func()
-        except (atlas.InternalServerError, atlas.APIConnectionError) as e:
+        except (layerlens.InternalServerError, layerlens.APIConnectionError) as e:
             if attempt == max_retries - 1:
                 raise
 
@@ -566,8 +566,8 @@ evaluation = exponential_backoff_retry(create_evaluation)
 ```python
 import time
 from enum import Enum
-from atlas import Atlas
-import atlas
+from layerlens import Atlas
+import layerlens
 
 class CircuitState(Enum):
     CLOSED = "closed"
@@ -585,7 +585,7 @@ class CircuitBreaker:
     def call(self, func, *args, **kwargs):
         if self.state == CircuitState.OPEN:
             if time.time() - self.last_failure_time < self.timeout:
-                raise atlas.APIConnectionError(message="Circuit breaker is OPEN")
+                raise layerlens.APIConnectionError(message="Circuit breaker is OPEN")
             else:
                 self.state = CircuitState.HALF_OPEN
 
@@ -593,7 +593,7 @@ class CircuitBreaker:
             result = func(*args, **kwargs)
             self.on_success()
             return result
-        except (atlas.InternalServerError, atlas.APIConnectionError) as e:
+        except (layerlens.InternalServerError, layerlens.APIConnectionError) as e:
             self.on_failure()
             raise
 
@@ -617,6 +617,6 @@ try:
         model="gpt-4",
         benchmark="mmlu"
     )
-except atlas.APIError as e:
+except layerlens.APIError as e:
     print(f"Circuit breaker prevented call or operation failed: {e}")
 ```

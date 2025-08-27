@@ -121,7 +121,7 @@ load_dotenv('.env.development')
 load_dotenv('/path/to/your/.env')
 
 # Verify variables are loaded
-from atlas import Atlas
+from layerlens import Atlas
 
 try:
     client = Atlas()  # Will use environment variables

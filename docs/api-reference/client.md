@@ -7,7 +7,7 @@ The `Atlas` (syncronous) and `AsyncAtlas` (asyncronous) classes are the main ent
 ### Syncronous Client
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 # Construct syncronous client
 # Loads for api key from the "LAYERLENS_ATLAS_API_KEY" enviornment variable
@@ -21,7 +21,7 @@ client = Atlas(api_key="your_api_key")
 
 ```python
 import asyncio
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 # Construct async client
 # Loads for api key from the "LAYERLENS_ATLAS_API_KEY" enviornment variable
@@ -56,7 +56,7 @@ LAYERLENS_ATLAS_API_KEY="your_api_key_here"
 ### Simple Timeout
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 # 30-second timeout for all requests
 client = Atlas(timeout=30.0)

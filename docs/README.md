@@ -9,7 +9,9 @@ Atlas is an evaluation platform that allows you to benchmark AI models against v
 ## Quick Start
 
 ### Install LayerLens python sdk
+
 Install the layerlens python sdk using the following command
+
 ```bash
 pip install layerlens --index-url https://sdk.layerlens.ai
 ```
@@ -31,7 +33,7 @@ Before triggering an evaluation using the sdk, login to your organization at [ap
 #### Using synchronous client
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
     # Construct sync client
     client = Atlas()
@@ -59,12 +61,11 @@ from atlas import Atlas
     )
 ```
 
-
 #### Using Async Client
 
 ```python
 import asyncio
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 async def run_evaluation_async():
     # Construct async client
