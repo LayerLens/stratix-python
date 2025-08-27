@@ -65,6 +65,36 @@ Each `Model` object in the returned list contains:
 | `key`         | `str` | Unique model key/identifier that is similar to the name |
 | `description` | `str` | Text description of the model                           |
 
+### `get_by_id(id, timeout=None)`
+
+Retrieves a specific model by its unique identifier. Both the `Atlas` and `AsyncAtlas` clients have this method.
+
+#### Parameters
+
+| Parameter | Type                             | Required | Description                  |
+| --------- | -------------------------------- | -------- | ---------------------------- |
+| `id`      | `str`                            | Yes      | Unique model identifier      |
+| `timeout` | `float \| httpx.Timeout \| None` | No       | Override request timeout     |
+
+#### Returns
+
+Returns an `Optional[Model]` - a single `Model` object if found, or `None` if the model doesn't exist or there's an error.
+
+### `get_by_key(key, timeout=None)`
+
+Retrieves a specific model by its unique key. Both the `Atlas` and `AsyncAtlas` clients have this method.
+
+#### Parameters
+
+| Parameter | Type                             | Required | Description                  |
+| --------- | -------------------------------- | -------- | ---------------------------- |
+| `key`     | `str`                            | Yes      | Unique model key identifier  |
+| `timeout` | `float \| httpx.Timeout \| None` | No       | Override request timeout     |
+
+#### Returns
+
+Returns an `Optional[Model]` - a single `Model` object if found, or `None` if the model doesn't exist or there's an error.
+
 ## Benchmarks
 
 ### `get(type=None, name=None, timeout=None)`
@@ -94,3 +124,33 @@ Each `Benchmark` object in the returned list contains:
 | `id`     | `str` | Unique benchmark identifier for use in evaluations          |
 | `key`    | `str` | Unique benchmark key/identifier that is similar to the name |
 | `name`   | `str` | Human-readable benchmark name                               |
+
+### `get_by_id(id, timeout=None)`
+
+Retrieves a specific benchmark by its unique identifier. Both the `Atlas` and `AsyncAtlas` clients have this method.
+
+#### Parameters
+
+| Parameter | Type                             | Required | Description                     |
+| --------- | -------------------------------- | -------- | ------------------------------- |
+| `id`      | `str`                            | Yes      | Unique benchmark identifier     |
+| `timeout` | `float \| httpx.Timeout \| None` | No       | Override request timeout        |
+
+#### Returns
+
+Returns an `Optional[Benchmark]` - a single `Benchmark` object if found, or `None` if the benchmark doesn't exist or there's an error.
+
+### `get_by_key(key, timeout=None)`
+
+Retrieves a specific benchmark by its unique key. Both the `Atlas` and `AsyncAtlas` clients have this method.
+
+#### Parameters
+
+| Parameter | Type                             | Required | Description                        |
+| --------- | -------------------------------- | -------- | ---------------------------------- |
+| `key`     | `str`                            | Yes      | Unique benchmark key identifier    |
+| `timeout` | `float \| httpx.Timeout \| None` | No       | Override request timeout           |
+
+#### Returns
+
+Returns an `Optional[Benchmark]` - a single `Benchmark` object if found, or `None` if the benchmark doesn't exist or there's an error.

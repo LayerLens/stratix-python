@@ -16,21 +16,17 @@ from layerlens import Atlas
 # Construct sync client (API key from env or inline)
 client = Atlas()
 
-# --- Models
-models = client.models.get(type="public", name="gpt-4o")
+# --- Models replace with the model key you want to run
+model = client.models.get_by_key("openai/gpt-4o")
 
-if not models:
-    print("gpt-4o not found")
+if not model:
+    print("Model not found")
 
-model = models[0]
+# --- Benchmarks replace with the benchmark name you want to run
+benchmark = client.benchmarks.get_by_key("aime2024")
 
-# --- Benchmarks
-benchmarks = client.benchmarks.get(type="public", name="simpleQA")
-
-if not benchmarks:
-    print("SimpleQA benchmark not found, exiting")
-
-benchmark = benchmarks[0]
+if not benchmark:
+    print("benchmark not found")
 
 # --- Create evaluation
 evaluation = client.evaluations.create(
@@ -65,13 +61,19 @@ async def main():
     # Construct async client
     client = AsyncAtlas()
 
-    # --- Models
-    models = await client.models.get(type="public", name="gpt-4o")
-    model = models[0]
+    # --- Model to use
+    model = await client.models.get_by_key("openai/gpt-4o")
 
-    # --- Benchmarks
-    benchmarks = await client.benchmarks.get(type="public", name="simpleQA")
-    benchmark = benchmarks[0]
+    if not model:
+        print("Model not found")
+        return
+
+    # --- Benchmark to use
+    benchmark = await client.benchmarks.get_by_key("aime2024")
+
+    if not benchmark:
+        print("benchmark not found")
+        return
 
 
     # --- Create evaluation
