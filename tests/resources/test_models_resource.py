@@ -299,6 +299,75 @@ class TestModels:
         assert custom_model.disabled is False
         assert custom_model.api_url == "https://api.example.com/v1/chat"
 
+    def test_get_by_id_custom_benchmark(self, models_resource, sample_custom_model_data):
+        """get_by_id returns CustomModel when organization_id is present."""
+        sample_custom_model_data["organization_id"] = "org-123"  # Required for type detection
+        models_resource._get.return_value = {"data": sample_custom_model_data}
+
+        result = models_resource.get_by_id("custom-model-456")
+
+        assert isinstance(result, CustomModel)
+        assert result.id == "custom-model-456"
+        assert result.name == "My Custom Model"
+
+    def test_get_by_id_public_benchmark(self, models_resource, sample_model_data):
+        """get_by_id returns PublicModel when organization_id is missing."""
+        models_resource._get.return_value = {"data": sample_model_data}
+
+        result = models_resource.get_by_id("model-123")
+
+        assert isinstance(result, PublicModel)
+        assert result.id == "model-123"
+        assert result.name == "GPT-4"
+
+    def test_get_by_id_invalid_response(self, models_resource):
+        """get_by_id returns None for invalid responses."""
+        models_resource._get.return_value = "not-a-dict"
+
+        result = models_resource.get_by_id("invalid")
+
+        assert result is None
+
+    def test_get_by_key_custom_model(self, models_resource, sample_custom_model_data):
+        """get_by_key returns CustomModel when key matches and organization_id is present."""
+        sample_custom_model_data["organization_id"] = "org-123"
+        custom_model = CustomModel(**sample_custom_model_data)
+        models_resource.get = Mock(return_value=[custom_model])
+
+        result = models_resource.get_by_key(key="my-model")
+
+        assert isinstance(result, CustomModel)
+        assert result.key == "my-model"
+        assert result.name == "My Custom Model"
+
+    def test_get_by_key_public_model(self, models_resource, sample_model_data):
+        """get_by_key returns PublicModel when key matches and organization_id is missing."""
+        public_model = PublicModel(**sample_model_data)
+        models_resource.get = Mock(return_value=[public_model])
+
+        result = models_resource.get_by_key(key="gpt-4")
+
+        assert isinstance(result, PublicModel)
+        assert result.key == "gpt-4"
+        assert result.name == "GPT-4"
+
+    def test_get_by_key_no_match(self, models_resource, sample_model_data):
+        """get_by_key returns None if no model has the exact key."""
+        public_model = PublicModel(**sample_model_data)
+        models_resource.get = Mock(return_value=[public_model])
+
+        result = models_resource.get_by_key(key="nonexistent-key")
+
+        assert result is None
+
+    def test_get_by_key_invalid_response(self, models_resource):
+        """get_by_key returns None when get() returns None or invalid type."""
+        models_resource.get = Mock(return_value=None)
+
+        result = models_resource.get_by_key(key="some-key")
+
+        assert result is None
+
 
 class TestModelsErrorHandling:
     """Test error handling in Models resource."""

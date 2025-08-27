@@ -16,6 +16,7 @@ class Models(SyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
+        key: Optional[str] = None,
         companies: Optional[List[str]] = None,
         regions: Optional[List[str]] = None,
         licenses: Optional[List[str]] = None,
@@ -25,7 +26,9 @@ class Models(SyncAPIResource):
         def fetch(model_type: str) -> ModelsResponse | None:
             params = {"type": model_type}
             if name:
-                params["query"] = name
+                params["name"] = name
+            if key:
+                params["key"] = key
             if companies:
                 params["companies"] = ",".join(companies)
             if regions:
@@ -62,6 +65,45 @@ class Models(SyncAPIResource):
 
         return models
 
+    def get_by_id(self, id: str, *, timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT) -> Optional[Model]:
+        base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/models/{id}"
+
+        resp = self._get(
+            base_url,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        model = resp.get("data")
+        if not isinstance(model, dict):
+            return None
+
+        # Detect type dynamically: presence of "organization_id" means custom
+        if "organization_id" in model:
+            return CustomModel(**model)
+        else:
+            return PublicModel(**model)
+
+    def get_by_key(
+        self,
+        key: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[Model]:
+        """Fetch a single model by its unique key."""
+        models = self.get(timeout=timeout, key=key)
+
+        if not models:
+            return None
+
+        for model in models:
+            if model.key == key:
+                return model
+        return None
+
 
 class AsyncModels(AsyncAPIResource):
     async def get(
@@ -70,6 +112,7 @@ class AsyncModels(AsyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
+        key: Optional[str] = None,
         companies: Optional[List[str]] = None,
         regions: Optional[List[str]] = None,
         licenses: Optional[List[str]] = None,
@@ -79,7 +122,9 @@ class AsyncModels(AsyncAPIResource):
         async def fetch(model_type: str) -> ModelsResponse | None:
             params = {"type": model_type}
             if name:
-                params["query"] = name
+                params["name"] = name
+            if key:
+                params["key"] = key
             if companies:
                 params["companies"] = ",".join(companies)
             if regions:
@@ -115,3 +160,42 @@ class AsyncModels(AsyncAPIResource):
                 models.extend([cast_model(m, type) for m in resp.data.models])
 
         return models
+
+    async def get_by_id(self, id: str, *, timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT) -> Optional[Model]:
+        base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/models/{id}"
+
+        resp = await self._get(
+            base_url,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        model = resp.get("data")
+        if not isinstance(model, dict):
+            return None
+
+        # Detect type dynamically: presence of "organization_id" means custom
+        if "organization_id" in model:
+            return CustomModel(**model)
+        else:
+            return PublicModel(**model)
+
+    async def get_by_key(
+        self,
+        key: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[Model]:
+        """Fetch a single model by its unique key."""
+        models = await self.get(timeout=timeout, key=key)
+
+        if not models:
+            return None
+
+        for model in models:
+            if model.key == key:
+                return model
+        return None

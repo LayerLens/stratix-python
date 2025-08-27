@@ -61,12 +61,12 @@ class Evaluations(SyncAPIResource):
 
     def get_by_id(
         self,
-        evaluation_id: str,
+        id: str,
         *,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[Evaluation]:
         evaluation = self._get(
-            f"/evaluations/{evaluation_id}",
+            f"/evaluations/{id}",
             timeout=timeout,
             cast_to=Evaluation,
         )
@@ -195,12 +195,12 @@ class AsyncEvaluations(AsyncAPIResource):
 
     async def get_by_id(
         self,
-        evaluation_id: str,
+        id: str,
         *,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[Evaluation]:
         evaluation = await self._get(
-            f"/evaluations/{evaluation_id}",
+            f"/evaluations/{id}",
             timeout=timeout,
             cast_to=Evaluation,
         )

@@ -4,7 +4,12 @@ from typing import List, Literal, Optional
 
 import httpx
 
-from ...models import Benchmark, CustomBenchmark, PublicBenchmark, BenchmarksResponse
+from ...models import (
+    Benchmark,
+    CustomBenchmark,
+    PublicBenchmark,
+    BenchmarksResponse,
+)
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
@@ -16,13 +21,16 @@ class Benchmarks(SyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
+        key: Optional[str] = None,
     ) -> Optional[List[Benchmark]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks"
 
         def fetch(bench_type: str) -> BenchmarksResponse | None:
             params = {"type": bench_type}
             if name:
-                params["query"] = name
+                params["name"] = name
+            if key:
+                params["key"] = key
 
             resp = self._get(
                 base_url,
@@ -53,6 +61,45 @@ class Benchmarks(SyncAPIResource):
 
         return benchmarks
 
+    def get_by_id(self, id: str, *, timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT) -> Optional[Benchmark]:
+        base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks/{id}"
+
+        resp = self._get(
+            base_url,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        benchmark = resp.get("data")
+        if not isinstance(benchmark, dict):
+            return None
+
+        # Detect type dynamically: presence of "organization_id" means custom
+        if "organization_id" in benchmark:
+            return CustomBenchmark(**benchmark)
+        else:
+            return PublicBenchmark(**benchmark)
+
+    def get_by_key(
+        self,
+        key: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[Benchmark]:
+        """Fetch a single benchmark by its unique key."""
+        benchmarks = self.get(timeout=timeout, key=key)
+
+        if not benchmarks:
+            return None
+
+        for benchmark in benchmarks:
+            if benchmark.key == key:
+                return benchmark
+        return None
+
 
 class AsyncBenchmarks(AsyncAPIResource):
     async def get(
@@ -61,13 +108,16 @@ class AsyncBenchmarks(AsyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
+        key: Optional[str] = None,
     ) -> Optional[List[Benchmark]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks"
 
         async def fetch(bench_type: str) -> Optional[BenchmarksResponse]:
             params = {"type": bench_type}
             if name:
-                params["query"] = name
+                params["name"] = name
+            if key:
+                params["key"] = key
 
             resp = await self._get(
                 base_url,
@@ -97,3 +147,44 @@ class AsyncBenchmarks(AsyncAPIResource):
                 benchmarks.extend([cast_benchmark(b, type) for b in resp.data.benchmarks])
 
         return benchmarks
+
+    async def get_by_id(
+        self, id: str, *, timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT
+    ) -> Optional[Benchmark]:
+        base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks/{id}"
+
+        resp = await self._get(
+            base_url,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        benchmark = resp.get("data")
+        if not isinstance(benchmark, dict):
+            return None
+
+        # Detect type dynamically: presence of "organization_id" means custom
+        if "organization_id" in benchmark:
+            return CustomBenchmark(**benchmark)
+        else:
+            return PublicBenchmark(**benchmark)
+
+    async def get_by_key(
+        self,
+        key: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[Benchmark]:
+        """Fetch a single benchmark by its unique key."""
+        benchmarks = await self.get(timeout=timeout, key=key)
+
+        if not benchmarks:
+            return None
+
+        for benchmark in benchmarks:
+            if benchmark.key == key:
+                return benchmark
+        return None
