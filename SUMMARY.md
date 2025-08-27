@@ -7,7 +7,6 @@
     * [Error Handling](docs/api-reference/errors.md)
   * [Examples](docs/examples/README.md)
     * [Running Evaluations](docs/examples/creating-evaluations.md)
-    * [Retrieving Results](docs/examples/retrieving-results.md)
   * [Troubleshooting](docs/troubleshooting/README.md)
     * [Authentication Problems](docs/troubleshooting/authentication.md)
     * [Error Codes Reference](docs/troubleshooting/error-codes.md)

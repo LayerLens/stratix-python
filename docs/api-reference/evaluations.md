@@ -395,7 +395,7 @@ The `create`, `get_by_id` and `get_many` method returns an `Evaluation` objects 
 | `accuracy` | `float` | Overall accuracy score (0.0 to 1.0) |
 
 
-## Evaluation Status
+#### Evaluation Status
 
 The `status` field is an `EvaluationStatus` enum with the following values:
 
