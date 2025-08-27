@@ -4,7 +4,12 @@ from typing import List, Literal, Optional
 
 import httpx
 
-from ...models import Benchmark, CustomBenchmark, PublicBenchmark, BenchmarksResponse
+from ...models import (
+    Benchmark,
+    CustomBenchmark,
+    PublicBenchmark,
+    BenchmarksResponse,
+)
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
@@ -53,6 +58,28 @@ class Benchmarks(SyncAPIResource):
 
         return benchmarks
 
+    def get_by_id(self, id: str, *, timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT) -> Optional[Benchmark]:
+        base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks/{id}"
+
+        resp = self._get(
+            base_url,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        benchmark = resp.get("data")
+        if not isinstance(benchmark, dict):
+            return None
+
+        # Detect type dynamically: presence of "organization_id" means custom
+        if "organization_id" in benchmark:
+            return CustomBenchmark(**benchmark)
+        else:
+            return PublicBenchmark(**benchmark)
+
 
 class AsyncBenchmarks(AsyncAPIResource):
     async def get(
@@ -97,3 +124,27 @@ class AsyncBenchmarks(AsyncAPIResource):
                 benchmarks.extend([cast_benchmark(b, type) for b in resp.data.benchmarks])
 
         return benchmarks
+
+    async def get_by_id(
+        self, id: str, *, timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT
+    ) -> Optional[Benchmark]:
+        base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks/{id}"
+
+        resp = await self._get(
+            base_url,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        benchmark = resp.get("data")
+        if not isinstance(benchmark, dict):
+            return None
+
+        # Detect type dynamically: presence of "organization_id" means custom
+        if "organization_id" in benchmark:
+            return CustomBenchmark(**benchmark)
+        else:
+            return PublicBenchmark(**benchmark)

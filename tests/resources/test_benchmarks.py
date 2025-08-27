@@ -229,6 +229,35 @@ class TestBenchmarks:
         call_args = benchmarks_resource._get.call_args
         assert call_args.kwargs["timeout"] is None
 
+    def test_get_by_id_custom_benchmark(self, benchmarks_resource, sample_custom_benchmark_data):
+        """get_by_id returns CustomBenchmark when organization_id is present."""
+        sample_custom_benchmark_data["organization_id"] = "org-123"  # Required for type detection
+        benchmarks_resource._get.return_value = {"data": sample_custom_benchmark_data}
+
+        result = benchmarks_resource.get_by_id("custom-benchmark-456")
+
+        assert isinstance(result, CustomBenchmark)
+        assert result.id == "custom-benchmark-456"
+        assert result.name == "My Custom Benchmark"
+
+    def test_get_by_id_public_benchmark(self, benchmarks_resource, sample_benchmark_data):
+        """get_by_id returns PublicBenchmark when organization_id is missing."""
+        benchmarks_resource._get.return_value = {"data": sample_benchmark_data}
+
+        result = benchmarks_resource.get_by_id("benchmark-123")
+
+        assert isinstance(result, PublicBenchmark)
+        assert result.id == "benchmark-123"
+        assert result.name == "MMLU"
+
+    def test_get_by_id_invalid_response(self, benchmarks_resource):
+        """get_by_id returns None for invalid responses."""
+        benchmarks_resource._get.return_value = "not-a-dict"
+
+        result = benchmarks_resource.get_by_id("invalid")
+
+        assert result is None
+
 
 class TestBenchmarksErrorHandling:
     """Test error handling in Benchmarks resource."""

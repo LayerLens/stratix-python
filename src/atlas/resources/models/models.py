@@ -62,6 +62,28 @@ class Models(SyncAPIResource):
 
         return models
 
+    def get_by_id(self, id: str, *, timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT) -> Optional[Model]:
+        base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/models/{id}"
+
+        resp = self._get(
+            base_url,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        model = resp.get("data")
+        if not isinstance(model, dict):
+            return None
+
+        # Detect type dynamically: presence of "organization_id" means custom
+        if "organization_id" in model:
+            return CustomModel(**model)
+        else:
+            return PublicModel(**model)
+
 
 class AsyncModels(AsyncAPIResource):
     async def get(
@@ -115,3 +137,25 @@ class AsyncModels(AsyncAPIResource):
                 models.extend([cast_model(m, type) for m in resp.data.models])
 
         return models
+
+    async def get_by_id(self, id: str, *, timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT) -> Optional[Model]:
+        base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/models/{id}"
+
+        resp = await self._get(
+            base_url,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        model = resp.get("data")
+        if not isinstance(model, dict):
+            return None
+
+        # Detect type dynamically: presence of "organization_id" means custom
+        if "organization_id" in model:
+            return CustomModel(**model)
+        else:
+            return PublicModel(**model)
