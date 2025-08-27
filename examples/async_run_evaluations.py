@@ -2,7 +2,7 @@
 
 import asyncio
 
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 
 async def create_and_run_evaluation(client, model, benchmark, eval_number):

@@ -2,7 +2,7 @@
 
 import asyncio
 
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 
 async def fetch_evaluation_results(client, evaluation_id):

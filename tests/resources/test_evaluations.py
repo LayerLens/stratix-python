@@ -3,14 +3,14 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from atlas.models import (
+from layerlens.models import (
     Evaluation,
     EvaluationStatus,
     EvaluationsResponse,
     CreateEvaluationsResponse,
 )
-from atlas._constants import DEFAULT_TIMEOUT
-from atlas.resources.evaluations.evaluations import Evaluations
+from layerlens._constants import DEFAULT_TIMEOUT
+from layerlens.resources.evaluations.evaluations import Evaluations
 
 
 class TestEvaluations:
@@ -339,7 +339,7 @@ class TestEvaluationsErrorHandling:
 
     def test_create_evaluation_handles_api_error(self, evaluations_resource):
         """create method propagates API errors."""
-        from atlas._exceptions import APIStatusError
+        from layerlens._exceptions import APIStatusError
 
         mock_model = Mock()
         mock_model.id = "invalid-model"
@@ -359,7 +359,7 @@ class TestEvaluationsErrorHandling:
 
     def test_create_evaluation_handles_connection_error(self, evaluations_resource):
         """create method propagates connection errors."""
-        from atlas._exceptions import APIConnectionError
+        from layerlens._exceptions import APIConnectionError
 
         mock_model = Mock()
         mock_model.id = "invalid-model"
@@ -376,7 +376,7 @@ class TestEvaluationsErrorHandling:
 
     def test_create_evaluation_handles_timeout_error(self, evaluations_resource):
         """create method propagates timeout errors."""
-        from atlas._exceptions import APITimeoutError
+        from layerlens._exceptions import APITimeoutError
 
         mock_model = Mock()
         mock_model.id = "invalid-model"

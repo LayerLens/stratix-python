@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from pydantic import ValidationError
 
-from atlas.models import (
+from layerlens.models import (
     Result,
     Evaluation,
     Pagination,

@@ -4,8 +4,8 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
-from atlas import _exceptions
-from atlas._base_client import BaseClient
+from layerlens import _exceptions
+from layerlens._base_client import BaseClient
 
 
 @dataclass
@@ -61,7 +61,9 @@ class TestBaseClient:
     def test_default_headers_includes_auth(self, client):
         """default_headers merges auth_headers."""
         with patch.object(
-            type(client), "auth_headers", new_callable=lambda: property(lambda _: {"Authorization": "Bearer token"})
+            type(client),
+            "auth_headers",
+            new_callable=lambda: property(lambda _: {"Authorization": "Bearer token"}),
         ):
             headers = client.default_headers
 
@@ -77,7 +79,11 @@ class TestBaseClient:
 
         assert result is mock_response
         mock_request.assert_called_once_with(
-            method="GET", url="/test", json=None, params=None, headers=client.default_headers
+            method="GET",
+            url="/test",
+            json=None,
+            params=None,
+            headers=client.default_headers,
         )
 
     @patch("httpx.Client.request")
@@ -115,7 +121,11 @@ class TestBaseClient:
         client._request_cast("POST", "/test", body=body, params=params)
 
         mock_request.assert_called_once_with(
-            method="POST", url="/test", json=body, params=params, headers=client.default_headers
+            method="POST",
+            url="/test",
+            json=body,
+            params=params,
+            headers=client.default_headers,
         )
 
     @patch("httpx.Client.request")
@@ -149,7 +159,11 @@ class TestBaseClient:
 
         assert isinstance(result, ResponseModel)
         mock_request.assert_called_once_with(
-            method="GET", url="/test", json=None, params=params, headers={**client.default_headers, **headers}
+            method="GET",
+            url="/test",
+            json=None,
+            params=params,
+            headers={**client.default_headers, **headers},
         )
 
     @patch("httpx.Client.request")
@@ -163,7 +177,11 @@ class TestBaseClient:
 
         assert isinstance(result, ResponseModel)
         mock_request.assert_called_once_with(
-            method="POST", url="/test", json=body, params=None, headers={**client.default_headers, **headers}
+            method="POST",
+            url="/test",
+            json=body,
+            params=None,
+            headers={**client.default_headers, **headers},
         )
 
     def test_make_status_error_from_response_with_json(self, client):

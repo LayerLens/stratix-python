@@ -4,9 +4,9 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from atlas.models import Result, Pagination, ResultMetrics, ResultsResponse
-from atlas._constants import DEFAULT_TIMEOUT
-from atlas.resources.results.results import Results
+from layerlens.models import Result, Pagination, ResultMetrics, ResultsResponse
+from layerlens._constants import DEFAULT_TIMEOUT
+from layerlens.resources.results.results import Results
 
 
 class TestResults:
@@ -284,7 +284,7 @@ class TestResultsErrorHandling:
 
     def test_get_results_handles_not_found_error(self, results_resource):
         """get method propagates not found errors."""
-        from atlas._exceptions import NotFoundError
+        from layerlens._exceptions import NotFoundError
 
         mock_response = Mock()
         mock_response.status_code = 404
@@ -298,7 +298,7 @@ class TestResultsErrorHandling:
 
     def test_get_results_handles_auth_error(self, results_resource):
         """get method propagates authentication errors."""
-        from atlas._exceptions import AuthenticationError
+        from layerlens._exceptions import AuthenticationError
 
         mock_response = Mock()
         mock_response.status_code = 401
@@ -312,7 +312,7 @@ class TestResultsErrorHandling:
 
     def test_get_results_handles_permission_error(self, results_resource):
         """get method propagates permission errors."""
-        from atlas._exceptions import PermissionDeniedError
+        from layerlens._exceptions import PermissionDeniedError
 
         mock_response = Mock()
         mock_response.status_code = 403
@@ -326,7 +326,7 @@ class TestResultsErrorHandling:
 
     def test_get_results_handles_server_error(self, results_resource):
         """get method propagates server errors."""
-        from atlas._exceptions import InternalServerError
+        from layerlens._exceptions import InternalServerError
 
         mock_response = Mock()
         mock_response.status_code = 500
@@ -340,7 +340,7 @@ class TestResultsErrorHandling:
 
     def test_get_results_handles_connection_error(self, results_resource):
         """get method propagates connection errors."""
-        from atlas._exceptions import APIConnectionError
+        from layerlens._exceptions import APIConnectionError
 
         mock_request = Mock()
         connection_error = APIConnectionError(request=mock_request)
@@ -351,7 +351,7 @@ class TestResultsErrorHandling:
 
     def test_get_results_handles_timeout_error(self, results_resource):
         """get method propagates timeout errors."""
-        from atlas._exceptions import APITimeoutError
+        from layerlens._exceptions import APITimeoutError
 
         mock_request = Mock()
         timeout_error = APITimeoutError(mock_request)

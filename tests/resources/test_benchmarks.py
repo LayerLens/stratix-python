@@ -3,14 +3,14 @@ from unittest.mock import Mock, call
 import httpx
 import pytest
 
-from atlas.models import (
+from layerlens.models import (
     Benchmark,
     CustomBenchmark,
     PublicBenchmark,
     BenchmarksResponse,
 )
-from atlas._constants import DEFAULT_TIMEOUT
-from atlas.resources.benchmarks.benchmarks import Benchmarks
+from layerlens._constants import DEFAULT_TIMEOUT
+from layerlens.resources.benchmarks.benchmarks import Benchmarks
 
 
 class TestBenchmarks:
@@ -318,7 +318,7 @@ class TestBenchmarksErrorHandling:
 
     def test_get_benchmarks_handles_api_error(self, benchmarks_resource):
         """get method propagates API errors."""
-        from atlas._exceptions import APIStatusError
+        from layerlens._exceptions import APIStatusError
 
         mock_response = Mock()
         mock_response.status_code = 404
@@ -332,7 +332,7 @@ class TestBenchmarksErrorHandling:
 
     def test_get_benchmarks_handles_auth_error(self, benchmarks_resource):
         """get method propagates authentication errors."""
-        from atlas._exceptions import AuthenticationError
+        from layerlens._exceptions import AuthenticationError
 
         mock_response = Mock()
         mock_response.status_code = 401
@@ -346,7 +346,7 @@ class TestBenchmarksErrorHandling:
 
     def test_get_benchmarks_handles_connection_error(self, benchmarks_resource):
         """get method propagates connection errors."""
-        from atlas._exceptions import APIConnectionError
+        from layerlens._exceptions import APIConnectionError
 
         mock_request = Mock()
         connection_error = APIConnectionError(request=mock_request)
@@ -357,7 +357,7 @@ class TestBenchmarksErrorHandling:
 
     def test_get_benchmarks_handles_timeout_error(self, benchmarks_resource):
         """get method propagates timeout errors."""
-        from atlas._exceptions import APITimeoutError
+        from layerlens._exceptions import APITimeoutError
 
         mock_request = Mock()
         timeout_error = APITimeoutError(mock_request)

@@ -3,9 +3,9 @@ from unittest.mock import Mock, call
 import httpx
 import pytest
 
-from atlas.models import CustomModel, PublicModel, ModelsResponse
-from atlas._constants import DEFAULT_TIMEOUT
-from atlas.resources.models.models import Models
+from layerlens.models import CustomModel, PublicModel, ModelsResponse
+from layerlens._constants import DEFAULT_TIMEOUT
+from layerlens.resources.models.models import Models
 
 
 class TestModels:
@@ -388,7 +388,7 @@ class TestModelsErrorHandling:
 
     def test_get_models_handles_api_error(self, models_resource):
         """get method propagates API errors."""
-        from atlas._exceptions import APIStatusError
+        from layerlens._exceptions import APIStatusError
 
         mock_response = Mock()
         mock_response.status_code = 500
@@ -402,7 +402,7 @@ class TestModelsErrorHandling:
 
     def test_get_models_handles_forbidden_error(self, models_resource):
         """get method propagates permission errors."""
-        from atlas._exceptions import PermissionDeniedError
+        from layerlens._exceptions import PermissionDeniedError
 
         mock_response = Mock()
         mock_response.status_code = 403
@@ -416,7 +416,7 @@ class TestModelsErrorHandling:
 
     def test_get_models_handles_connection_error(self, models_resource):
         """get method propagates connection errors."""
-        from atlas._exceptions import APIConnectionError
+        from layerlens._exceptions import APIConnectionError
 
         mock_request = Mock()
         connection_error = APIConnectionError(request=mock_request)
@@ -427,7 +427,7 @@ class TestModelsErrorHandling:
 
     def test_get_models_handles_timeout_error(self, models_resource):
         """get method propagates timeout errors."""
-        from atlas._exceptions import APITimeoutError
+        from layerlens._exceptions import APITimeoutError
 
         mock_request = Mock()
         timeout_error = APITimeoutError(mock_request)

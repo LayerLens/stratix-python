@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from atlas._utils import (
+from layerlens._utils import (
     SENSITIVE_HEADERS,
     SensitiveHeadersFilter,
     is_dict,

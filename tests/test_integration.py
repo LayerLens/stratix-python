@@ -4,8 +4,8 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
-from atlas import Atlas
-from atlas.models import (
+from layerlens import Atlas
+from layerlens.models import (
     Model,
     Result,
     Benchmark,
@@ -104,7 +104,7 @@ class TestCompleteEvaluationWorkflow:
         mock_org.id = "org-123"
         mock_org.projects = [Mock(id="proj-456")]
 
-        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
             return Atlas(api_key="workflow-test-key")
 
     def test_complete_evaluation_workflow(self, atlas_client):
@@ -213,7 +213,7 @@ class TestCompleteEvaluationWorkflow:
 
     def test_workflow_with_error_handling(self, atlas_client):
         """Test workflow handles errors gracefully."""
-        from atlas._exceptions import NotFoundError
+        from layerlens._exceptions import NotFoundError
 
         mock_response = Mock()
         mock_response.status_code = 404
@@ -274,7 +274,7 @@ class TestResourceInteraction:
         mock_org.id = "org-123"
         mock_org.projects = [Mock(id="proj-456")]
 
-        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
             return Atlas(api_key="interaction-test-key")
 
     def test_evaluation_creation_with_model_and_benchmark_objects(self, atlas_client):
@@ -433,7 +433,7 @@ class TestAtlasClientProperties:
 
     def test_client_has_all_resource_properties(self, mock_org):
         """Atlas client exposes all resource properties."""
-        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
             client = Atlas(api_key="property-test-key")
 
         # Verify available resource properties exist
@@ -441,15 +441,15 @@ class TestAtlasClientProperties:
         assert hasattr(client, "results")
 
         # Verify they are the correct types
-        from atlas.resources.results import Results
-        from atlas.resources.evaluations import Evaluations
+        from layerlens.resources.results import Results
+        from layerlens.resources.evaluations import Evaluations
 
         assert isinstance(client.evaluations, Evaluations)
         assert isinstance(client.results, Results)
 
     def test_resource_properties_share_same_client(self, mock_org):
         """All resource properties share the same client instance."""
-        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
             client = Atlas(api_key="shared-client-test")
 
         # Verify all resources use the same client
@@ -477,10 +477,10 @@ class TestConcurrentOperations:
     def test_multiple_atlas_clients_independent(self, mock_org1, mock_org2):
         """Multiple Atlas client instances operate independently."""
 
-        with patch("atlas.Atlas._get_organization", return_value=mock_org1):
+        with patch("layerlens.Atlas._get_organization", return_value=mock_org1):
             client1 = Atlas(api_key="client-1-key")
 
-        with patch("atlas.Atlas._get_organization", return_value=mock_org2):
+        with patch("layerlens.Atlas._get_organization", return_value=mock_org2):
             client2 = Atlas(api_key="client-2-key")
 
         # Verify clients are independent
@@ -493,10 +493,10 @@ class TestConcurrentOperations:
     def test_resource_operations_isolated(self, mock_org1, mock_org2):
         """Operations on different client resources are isolated."""
 
-        with patch("atlas.Atlas._get_organization", return_value=mock_org1):
+        with patch("layerlens.Atlas._get_organization", return_value=mock_org1):
             client1 = Atlas(api_key="iso-test-1")
 
-        with patch("atlas.Atlas._get_organization", return_value=mock_org2):
+        with patch("layerlens.Atlas._get_organization", return_value=mock_org2):
             client2 = Atlas(api_key="iso-test-2")
 
         result_data = {
@@ -566,7 +566,7 @@ class TestErrorPropagation:
 
     def test_evaluation_workflow_error_propagation(self, mock_org):
         """Errors in evaluation workflow are properly propagated."""
-        from atlas._exceptions import APIStatusError, APIConnectionError
+        from layerlens._exceptions import APIStatusError, APIConnectionError
 
         # Create model and benchmark objects
         model_data = {
@@ -601,7 +601,7 @@ class TestErrorPropagation:
         model = Model(**model_data)
         benchmark = Benchmark(**benchmark_data)
 
-        with patch("atlas.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
             client = Atlas(api_key="error-test-key")
 
         mock_response = Mock()

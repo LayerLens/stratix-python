@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from atlas._exceptions import (
+from layerlens._exceptions import (
     APIError,
     AtlasError,
     ConflictError,
@@ -304,7 +304,13 @@ class TestErrorMessages:
     def test_exception_with_complex_body(self):
         """Exception handles complex body structures."""
         mock_request = Mock(spec=httpx.Request)
-        body = {"error": {"code": "VALIDATION_ERROR", "details": ["Field 'name' is required"]}, "request_id": "req-456"}
+        body = {
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "details": ["Field 'name' is required"],
+            },
+            "request_id": "req-456",
+        }
         error = APIError("Validation failed", mock_request, body=body)
 
         assert isinstance(error.body, dict)

@@ -2,7 +2,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from atlas._resource import SyncAPIResource
+from layerlens._resource import SyncAPIResource
 
 
 class TestSyncAPIResource:
@@ -243,7 +243,7 @@ class TestSyncAPIResourceErrorHandling:
 
     def test_resource_propagates_get_errors(self, resource_instance, mock_client):
         """Resource propagates errors from _get calls."""
-        from atlas._exceptions import APIStatusError
+        from layerlens._exceptions import APIStatusError
 
         mock_response = Mock()
         mock_response.status_code = 404
@@ -257,7 +257,7 @@ class TestSyncAPIResourceErrorHandling:
 
     def test_resource_propagates_post_errors(self, resource_instance, mock_client):
         """Resource propagates errors from _post calls."""
-        from atlas._exceptions import APIConnectionError
+        from layerlens._exceptions import APIConnectionError
 
         mock_request = Mock()
         connection_error = APIConnectionError(request=mock_request)
@@ -345,7 +345,11 @@ class TestSyncAPIResourceRealWorldUsage:
 
         mock_client = Mock()
         # First two calls fail, third succeeds
-        mock_client.get_cast.side_effect = [Exception("First failure"), Exception("Second failure"), {"success": True}]
+        mock_client.get_cast.side_effect = [
+            Exception("First failure"),
+            Exception("Second failure"),
+            {"success": True},
+        ]
 
         resource = RetryableResource(mock_client)
 

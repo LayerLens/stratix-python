@@ -1,6 +1,6 @@
 #!/usr/bin/env -S poetry run python
 
-from atlas import Atlas
+from layerlens import Atlas
 
 # Construct sync client (API key from env or inline)
 client = Atlas()
