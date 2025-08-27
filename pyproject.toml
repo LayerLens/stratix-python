@@ -1,6 +1,6 @@
 [project]
 name = "layerlens"
-version = "1.0.2"
+version = "1.0.0"
 description = "The official Python library for the LayerLens Atlas API"
 license = "Apache-2.0"
 authors = [{ name = "LayerLens", email = "support@layerlens.ai" }]
