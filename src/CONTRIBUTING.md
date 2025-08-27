@@ -106,3 +106,141 @@ To format and fix all ruff issues automatically:
 ```sh
 $ ./scripts/format
 ```
+
+## Release Process
+
+This section outlines the complete process for releasing a new version of the Atlas Python SDK.
+
+
+### Step-by-Step Release Process
+
+#### 1. Prepare the Release Branch
+
+```sh
+# Switch to the main branch and pull latest changes
+$ git checkout main
+$ git pull origin main
+
+# Create or switch to the release branch
+$ git checkout release
+$ git pull origin release
+
+# rebase | cherry-pick latest changes from main into release
+$ git rebase main
+```
+
+#### 2. Bump the Version
+
+Update the version number in the following files:
+
+- **`src/atlas/_version.py`**: Update the `__version__` string
+- **`pyproject.toml`**: Update the `version` field
+
+**Version Format**: Use semantic versioning (MAJOR.MINOR.PATCH)
+- **MAJOR**: Breaking changes
+- **MINOR**: New features (backward compatible)
+- **PATCH**: Bug fixes (backward compatible)
+
+**Examples**:
+- `1.0.2` → `1.0.3` (patch release for bug fixes)
+- `1.0.2` → `1.1.0` (minor release for new features)
+- `1.0.2` → `2.0.0` (major release for breaking changes)
+
+```sh
+# Example: Update to version 1.0.3
+# Edit src/atlas/_version.py
+__version__ = "1.0.3"
+
+# Edit pyproject.toml
+version = "1.0.3"
+```
+
+#### 3. Test and Validate
+
+```sh
+# Run all tests to ensure everything works
+$ ./scripts/test
+
+# Run linting to ensure code quality
+$ ./scripts/lint
+
+# Build the package to verify it builds correctly
+$ rye build
+```
+
+#### 4. Commit and Push Changes
+
+```sh
+# Add and commit the version bump
+$ git add src/atlas/_version.py pyproject.toml
+$ git commit -m "chore: bump version to 1.0.3"
+
+# Push the release branch
+$ git push origin release
+```
+
+#### 5. Create the Release Tag
+
+Use the GitHub Actions workflow to create and push the release tag:
+
+1. **Go to GitHub Actions**: Navigate to the "Actions" tab in the GitHub repository
+2. **Find "Create Release Tag"**: Look for the workflow in the left sidebar
+3. **Run workflow**: Click "Run workflow" with these settings:
+   - **Use workflow from**: `release` (branch)
+   - **Run in dry-run mode**: Check this box first to preview
+   - **Confirm release**: Leave empty for dry-run
+
+4. **Review dry-run output**: Check the workflow output to ensure everything looks correct
+
+5. **Create actual release**: Run the workflow again with:
+   - **Run in dry-run mode**: Uncheck this box
+   - **Confirm release**: Type `YES` exactly
+
+Alternatively, if any issue occurs, you can create the tag manually:
+
+```sh
+# Create and push the tag manually (if preferred)
+$ git tag v1.0.3
+$ git push origin v1.0.3
+```
+
+#### 6. Automatic Deployment
+
+Once the tag is pushed, the "Deploy Python Package to AWS" workflow will automatically:
+
+1. **Validate the release**: Run the validation script to ensure the tag follows semantic versioning
+2. **Run tests**: Execute the full test suite
+3. **Build the package**: Create distribution files
+4. **Deploy to AWS**: Publish the package to the configured AWS repository
+
+#### 7. Verify the Release
+
+1. **Check GitHub Actions**: Ensure the deployment workflow completed successfully
+2. **Verify package availability**: Check that the new version is available in your package repository
+3. **Test installation**: Try installing the new version in a clean environment
+
+### Release Checklist
+
+Use this checklist to ensure you we don't miss any steps:
+
+- [ ] Switched to and updated the `release` branch
+- [ ] Merged latest changes from `main`
+- [ ] Updated version in `src/atlas/_version.py`
+- [ ] Updated version in `pyproject.toml`
+- [ ] Ran tests (`./scripts/test`)
+- [ ] Ran linting (`./scripts/lint`)
+- [ ] Built package successfully (`rye build`)
+- [ ] Committed and pushed version bump
+- [ ] Created release tag (via GitHub Actions or manually)
+- [ ] Verified deployment workflow completed successfully
+- [ ] Tested new version installation
+
+### Troubleshooting
+
+**Tag already exists**: If you need to recreate a tag, delete it first:
+```sh
+$ git tag -d v1.0.3           # Delete locally
+$ git push origin :v1.0.3     # Delete on remote
+```
+
+**Rollback**: If you need to rollback a release, create a new patch version rather than trying to delete the problematic release.
