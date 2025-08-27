@@ -19,7 +19,7 @@ on:
 jobs:
   check-branch:
     runs-on: ubuntu-latest
-    environment: development
+    environment: production
     steps:
       - name: Check if running on release branch
         run: |
@@ -34,7 +34,7 @@ jobs:
   create-release-tag:
     runs-on: ubuntu-latest
     needs: check-branch
-    environment: development
+    environment: production
     if: github.ref == 'refs/heads/release'
 
     permissions:
