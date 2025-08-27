@@ -2,7 +2,7 @@
 
 import asyncio
 
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 
 async def main():

@@ -1,6 +1,6 @@
 # Creating Evaluations
 
-Examples for creating evaluations on the Atlas platform using the Layerlens python sdk. 
+Examples for creating evaluations on the Atlas platform using the Layerlens python sdk.
 
 > Before running the below examples ensure the model and benchmark being run are present on your organiztion.
 
@@ -11,26 +11,22 @@ Examples for creating evaluations on the Atlas platform using the Layerlens pyth
 Below is an example showing how to trigger an evaluation, waiting for it to complete and finally fetching the evaluations results.
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 # Construct sync client (API key from env or inline)
 client = Atlas()
 
-# --- Models
-models = client.models.get(type="public", name="gpt-4o")
+# --- Models replace with the model key you want to run
+model = client.models.get_by_key("openai/gpt-4o")
 
-if not models:
-    print("gpt-4o not found")
+if not model:
+    print("Model not found")
 
-model = models[0]
+# --- Benchmarks replace with the benchmark name you want to run
+benchmark = client.benchmarks.get_by_key("aime2024")
 
-# --- Benchmarks
-benchmarks = client.benchmarks.get(type="public", name="simpleQA")
-
-if not benchmarks:
-    print("SimpleQA benchmark not found, exiting")
-
-benchmark = benchmarks[0]
+if not benchmark:
+    print("benchmark not found")
 
 # --- Create evaluation
 evaluation = client.evaluations.create(
@@ -58,20 +54,26 @@ if evaluation.is_success:
 ```python
 import asyncio
 
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 
 async def main():
     # Construct async client
     client = AsyncAtlas()
 
-    # --- Models
-    models = await client.models.get(type="public", name="gpt-4o")
-    model = models[0]
+    # --- Model to use
+    model = await client.models.get_by_key("openai/gpt-4o")
 
-    # --- Benchmarks
-    benchmarks = await client.benchmarks.get(type="public", name="simpleQA")
-    benchmark = benchmarks[0]
+    if not model:
+        print("Model not found")
+        return
+
+    # --- Benchmark to use
+    benchmark = await client.benchmarks.get_by_key("aime2024")
+
+    if not benchmark:
+        print("benchmark not found")
+        return
 
 
     # --- Create evaluation
@@ -89,29 +91,28 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-
 ## Error Handling
 
 ```python
-from atlas import Atlas
-import atlas
+from layerlens import Atlas
+import layerlens
 
 client = Atlas()
 
 try:
     models = client.models.get()
     benchmarks = client.benchmarks.get()
-    
+
     evaluation = client.evaluations.create(
         model=models[0],
         benchmark=benchmarks[0]
     )
-    
-except atlas.AuthenticationError:
+
+except layerlens.AuthenticationError:
     print("Check your API key")
-except atlas.NotFoundError:
+except layerlens.NotFoundError:
     print("Model or benchmark not found")
-except atlas.APIError as e:
+except layerlens.APIError as e:
     print(f"API error: {e}")
 ```
 
@@ -120,7 +121,7 @@ except atlas.APIError as e:
 ```python
 import asyncio
 
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 
 async def create_and_run_evaluation(client, model, benchmark, eval_number):
@@ -187,7 +188,7 @@ if __name__ == "__main__":
 
 import asyncio
 
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 
 async def fetch_evaluation_results(client, evaluation_id):

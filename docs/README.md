@@ -9,7 +9,9 @@ Atlas is an evaluation platform that allows you to benchmark AI models against v
 ## Quick Start
 
 ### Install LayerLens python sdk
+
 Install the layerlens python sdk using the following command
+
 ```bash
 pip install layerlens --index-url https://sdk.layerlens.ai
 ```
@@ -31,26 +33,22 @@ Before triggering an evaluation using the sdk, login to your organization at [ap
 #### Using synchronous client
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
     # Construct sync client
     client = Atlas()
 
-    # --- Models replace with the model name you want to run
-    models = client.models.get(type="public", name="gpt-4o")
+    # --- Models replace with the model key you want to run
+    model = client.models.get_by_key("openai/gpt-4o")
 
-    if not models:
-        print("gpt-4o not found on organization, exiting")
-
-    model = models[0]
+    if not model:
+      print("Model not found")
 
     # --- Benchmarks replace with the benchmark name you want to run
-    benchmarks = client.benchmarks.get(type="public", name="simpleQA")
+    benchmark = client.benchmarks.get_by_key("aime2024")
 
-    if not benchmarks:
-        print("SimpleQA benchmark not found on organization, exiting")
-
-    benchmark = benchmarks[0]
+    if not benchmark:
+      print("benchmark not found")
 
     # --- Create evaluation
     evaluation = client.evaluations.create(
@@ -59,34 +57,29 @@ from atlas import Atlas
     )
 ```
 
-
 #### Using Async Client
 
 ```python
 import asyncio
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 async def run_evaluation_async():
     # Construct async client
     client = AsyncAtlas()
 
-    # --- Models replace with the model name you want to run
-    models = await client.models.get(type="public",name="gpt-4o")
-    print(f"Models found: {models}")
+    # --- Model to use
+    model = await client.models.get_by_key("openai/gpt-4o")
 
-    if not models:
-        print("gpt-4o not found, exiting")
+    if not model:
+        print("Model not found")
         return
 
-    model = models[0]
-    # --- Benchmarks replace with the benchmark name you want to run
-    benchmarks = await client.benchmarks.get(type="public", name="simpleQA")
+    # --- Benchmark to use
+    benchmark = await client.benchmarks.get_by_key("aime2024")
 
-    if not benchmarks:
-        print("SimpleQA benchmark not found, exiting")
+    if not benchmark:
+        print("benchmark not found")
         return
-
-    benchmark = benchmarks[0]
 
     # --- Create evaluation
     evaluation = await client.evaluations.create(

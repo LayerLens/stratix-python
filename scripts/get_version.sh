@@ -4,7 +4,7 @@
 set -e
 
 ROOT_DIR=$(git rev-parse --show-toplevel)
-VERSION_FILE="$ROOT_DIR/src/atlas/_version.py"
+VERSION_FILE="$ROOT_DIR/src/layerlens/_version.py"
 
 echo "Debug: ROOT_DIR=$ROOT_DIR" >&2
 echo "Debug: VERSION_FILE=$VERSION_FILE" >&2

@@ -6,7 +6,6 @@ The `evaluations` resource on the atlas client allows you to create and manage e
 
 An evaluation runs a specified model against a benchmark dataset and returns comprehensive metrics.
 
-
 The below example trigger evaluations using `gpt-4o` against `simpleQA`.
 
 > Before running the below examples ensure the model and benchmark being run are present on your organiztion.
@@ -16,7 +15,7 @@ The below example trigger evaluations using `gpt-4o` against `simpleQA`.
 Below is an example showing how to trigger an evaluation, waiting for it to complete and finally fetching the evaluations results.
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 # Construct sync client (API key from env or inline)
 client = Atlas()
@@ -63,7 +62,7 @@ if evaluation.is_success:
 ```python
 import asyncio
 
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 
 
 async def main():
@@ -104,11 +103,11 @@ Creates a new evaluation for the specified model and benchmark.
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `model` | `Model` | Yes | The model to evaluate |
-| `benchmark` | `Benchmark` | Yes | The benchmark to evaluate |
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter   | Type                             | Required | Description               |
+| ----------- | -------------------------------- | -------- | ------------------------- |
+| `model`     | `Model`                          | Yes      | The model to evaluate     |
+| `benchmark` | `Benchmark`                      | Yes      | The benchmark to evaluate |
+| `timeout`   | `float \| httpx.Timeout \| None` | No       | Override request timeout  |
 
 #### Returns
 
@@ -120,16 +119,15 @@ Polls an evaluation until it completes (success, failure, or timeout) or the spe
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `evaluation` | `Evaluation` | Yes | The evaluation object to monitor |
-| `interval_seconds` | `int` | No | Polling interval in seconds (default: 30) |
-| `timeout_seconds` | `int \| None` | No | Maximum time to wait in seconds (no limit if None) |
+| Parameter          | Type          | Required | Description                                        |
+| ------------------ | ------------- | -------- | -------------------------------------------------- |
+| `evaluation`       | `Evaluation`  | Yes      | The evaluation object to monitor                   |
+| `interval_seconds` | `int`         | No       | Polling interval in seconds (default: 30)          |
+| `timeout_seconds`  | `int \| None` | No       | Maximum time to wait in seconds (no limit if None) |
 
 #### Returns
 
 Returns the updated `Evaluation` object when completed, or `None` if polling fails.
-
 
 ### `get_by_id(evaluation_id, timeout=None)`
 
@@ -137,10 +135,10 @@ Retrieves an existing evaluation by its unique identifier.
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `evaluation_id` | `str` | Yes | The unique evaluation identifier |
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter       | Type                             | Required | Description                      |
+| --------------- | -------------------------------- | -------- | -------------------------------- |
+| `evaluation_id` | `str`                            | Yes      | The unique evaluation identifier |
+| `timeout`       | `float \| httpx.Timeout \| None` | No       | Override request timeout         |
 
 #### Returns
 
@@ -149,7 +147,7 @@ Returns an `Evaluation` object if found, `None` if the evaluation does not exist
 #### Example
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 client = Atlas()
 
@@ -161,12 +159,12 @@ evaluation = client.evaluations.get_by_id(evaluation_id)
 #### Async Usage
 
 ```python
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 import asyncio
 
 async def get_evaluation():
     client = AsyncAtlas()
-    
+
     evaluation = await client.evaluations.get_by_id("eval_abc123xyz")
     if evaluation:
         print(f"Found evaluation: {evaluation.id}")
@@ -185,20 +183,20 @@ Retrieves multiple evaluations with optional pagination support.
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `page` | `int \| None` | No | Page number for pagination (1-based, defaults to 1) |
-| `page_size` | `int \| None` | No | Number of evaluations per page (default: 100, max: 500) |
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter   | Type                             | Required | Description                                             |
+| ----------- | -------------------------------- | -------- | ------------------------------------------------------- |
+| `page`      | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)     |
+| `page_size` | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500) |
+| `timeout`   | `float \| httpx.Timeout \| None` | No       | Override request timeout                                |
 
 #### Returns
 
 Returns an `EvaluationsResponse` object containing:
+
 - `evaluations`: List of `Evaluation` objects
 - `pagination`: Pagination metadata with `page`, `page_size`, `total_pages`, and `total_count`
 
 Returns `None` if the request fails.
-
 
 ### `get_results(page=None, page_size=None, timeout=None)`
 
@@ -206,11 +204,11 @@ Fetches results for this evaluation with pagination support. This is a synchrono
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `page` | `int \| None` | No | Page number for pagination (1-based, defaults to 1) |
-| `page_size` | `int \| None` | No | Number of results per page (default: 100, max: 500) |
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter   | Type                             | Required | Description                                         |
+| ----------- | -------------------------------- | -------- | --------------------------------------------------- |
+| `page`      | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1) |
+| `page_size` | `int \| None`                    | No       | Number of results per page (default: 100, max: 500) |
+| `timeout`   | `float \| httpx.Timeout \| None` | No       | Override request timeout                            |
 
 #### Returns
 
@@ -219,7 +217,7 @@ Returns a `ResultsResponse` object containing results and pagination metadata, o
 #### Example
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 client = Atlas()
 
@@ -236,9 +234,9 @@ Fetches all results for this evaluation by automatically handling pagination. Th
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter | Type                             | Required | Description              |
+| --------- | -------------------------------- | -------- | ------------------------ |
+| `timeout` | `float \| httpx.Timeout \| None` | No       | Override request timeout |
 
 #### Returns
 
@@ -247,7 +245,7 @@ Returns a list of `Result` objects containing all results for the evaluation.
 #### Example
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 client = Atlas()
 
@@ -264,19 +262,17 @@ if evaluation:
 | `"success"` | Evaluation finished successfully |
 | `"failure"` | Evaluation failed due to an error |
 
-
-
 ### `get_results_async(page=None, page_size=None, timeout=None)`
 
 Asynchronously fetches results for this evaluation with pagination support. This requires an async client to be attached.
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `page` | `int \| None` | No | Page number for pagination (1-based, defaults to 1) |
-| `page_size` | `int \| None` | No | Number of results per page (default: 100, max: 500) |
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter   | Type                             | Required | Description                                         |
+| ----------- | -------------------------------- | -------- | --------------------------------------------------- |
+| `page`      | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1) |
+| `page_size` | `int \| None`                    | No       | Number of results per page (default: 100, max: 500) |
+| `timeout`   | `float \| httpx.Timeout \| None` | No       | Override request timeout                            |
 
 #### Returns
 
@@ -285,35 +281,36 @@ Returns a `ResultsResponse` object containing results and pagination metadata, o
 #### Example
 
 ```python
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 import asyncio
 
 async def fetch_evaluation_results():
     client = AsyncAtlas()
-    
+
     # Get an evaluation
     evaluation = await client.evaluations.get_by_id("eval_12345")
-    
+
     if evaluation:
         # Fetch first page of results asynchronously
         first_page_results = await evaluation.get_results_async(page=1, page_size=50)
-        
+
         if first_page_results:
             return first_page_results
-    
+
     return []
 
 results = asyncio.run(fetch_evaluation_results())
 ```
 
 ### `get_all_results(timeout=None)`
+
 Fetches all results for this evaluation by automatically handling pagination. This is a synchronous method.
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter | Type                             | Required | Description              |
+| --------- | -------------------------------- | -------- | ------------------------ |
+| `timeout` | `float \| httpx.Timeout \| None` | No       | Override request timeout |
 
 #### Returns
 
@@ -322,7 +319,7 @@ Returns a list of `Result` objects containing all results for the evaluation.
 #### Example
 
 ```python
-from atlas import Atlas
+from layerlens import Atlas
 
 client = Atlas()
 
@@ -332,10 +329,9 @@ evaluation = client.evaluations.get_by_id("eval_12345")
 if evaluation:
     # Fetch all results (handles pagination automatically)
     all_results = evaluation.get_all_results()
-    
+
     print(f"Retrieved {len(all_results)} total results")
 ```
-
 
 ### `get_all_results_async(timeout=None)`
 
@@ -343,9 +339,9 @@ Asynchronously fetches all results for this evaluation by automatically handling
 
 #### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `timeout` | `float \| httpx.Timeout \| None` | No | Override request timeout |
+| Parameter | Type                             | Required | Description              |
+| --------- | -------------------------------- | -------- | ------------------------ |
+| `timeout` | `float \| httpx.Timeout \| None` | No       | Override request timeout |
 
 #### Returns
 
@@ -354,28 +350,27 @@ Returns a list of `Result` objects containing all results for the evaluation.
 #### Example
 
 ```python
-from atlas import AsyncAtlas
+from layerlens import AsyncAtlas
 import asyncio
 
 async def fetch_all_evaluation_results():
     client = AsyncAtlas()
-    
+
     # Get an evaluation
     evaluation = await client.evaluations.get_by_id("eval_12345")
-    
+
     if evaluation:
         # Fetch all results asynchronously (handles pagination automatically)
         all_results = await evaluation.get_all_results_async()
-        
+
         print(f"Retrieved {len(all_results)} total results")
-        
+
         return all_results
-    
+
     return None
 
 results = asyncio.run(fetch_all_evaluation_results())
 ```
-
 
 ## Response Objects
 
@@ -383,30 +378,29 @@ The `create`, `get_by_id` and `get_many` method returns an `Evaluation` objects 
 
 ### Evaluation Object Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | `str` | Unique evaluation identifier |
-| `status` | `EvaluationStatus` | Current evaluation status (enum) |
-| `submitted_at` | `int` | Unix timestamp when evaluation was submitted |
-| `finished_at` | `int` | Unix timestamp when evaluation finished |
-| `model_id` | `str` | ID of the model used in the evaluation |
-| `benchmark_id` | `str` | ID of the benchmark used (aliased as "dataset_id" in API) |
-| `average_duration` | `int` | Average response time in milliseconds |
-| `accuracy` | `float` | Overall accuracy score (0.0 to 1.0) |
-
+| Property           | Type               | Description                                               |
+| ------------------ | ------------------ | --------------------------------------------------------- |
+| `id`               | `str`              | Unique evaluation identifier                              |
+| `status`           | `EvaluationStatus` | Current evaluation status (enum)                          |
+| `submitted_at`     | `int`              | Unix timestamp when evaluation was submitted              |
+| `finished_at`      | `int`              | Unix timestamp when evaluation finished                   |
+| `model_id`         | `str`              | ID of the model used in the evaluation                    |
+| `benchmark_id`     | `str`              | ID of the benchmark used (aliased as "dataset_id" in API) |
+| `average_duration` | `int`              | Average response time in milliseconds                     |
+| `accuracy`         | `float`            | Overall accuracy score (0.0 to 1.0)                       |
 
 #### Evaluation Status
 
 The `status` field is an `EvaluationStatus` enum with the following values:
 
-| Status | Description |
-|--------|-------------|
-| `"pending"` | Evaluation queued but not yet started |
-| `"in-progress"` | Evaluation currently in progress |
-| `"paused"` | Evaluation has been paused |
-| `"success"` | Evaluation finished successfully |
-| `"failure"` | Evaluation failed due to an error |
-
+| Status          | Description                           |
+| --------------- | ------------------------------------- |
+| `"pending"`     | Evaluation queued but not yet started |
+| `"in-progress"` | Evaluation currently in progress      |
+| `"paused"`      | Evaluation has been paused            |
+| `"success"`     | Evaluation finished successfully      |
+| `"failure"`     | Evaluation failed due to an error     |
 
 ## Next Steps
+
 - Explore [code examples](../examples/retrieving-results.md) for common analysis patterns
