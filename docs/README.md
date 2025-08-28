@@ -13,7 +13,7 @@ Atlas is an evaluation platform that allows you to benchmark AI models against v
 Install the layerlens python sdk using the following command
 
 ```bash
-pip install layerlens --index-url https://sdk.layerlens.ai
+pip install layerlens --index-url https://sdk.layerlens.ai/package
 ```
 
 ### Generate an api key on the atlas platform
