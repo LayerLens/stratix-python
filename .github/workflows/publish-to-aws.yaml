@@ -66,7 +66,7 @@ jobs:
           if [ -f "src/atlas/_version.py" ]; then
             echo "Version file found:"
             cat src/atlas/_version.py
-            
+
             # Extract version directly
             VERSION=$(grep -E '^__version__\s*=' src/atlas/_version.py | grep -o '".*"' | tr -d '"')
             echo "Direct extraction result: '$VERSION'"
@@ -81,7 +81,7 @@ jobs:
             ls -la ./scripts/get_version.sh
             VERSION=$(./scripts/get_version.sh 2>&1)
             echo "Script output: '$VERSION'"
-            
+
             # Extract just the version (last line) in case there's debug output
             VERSION=$(echo "$VERSION" | tail -n 1)
           fi
@@ -104,7 +104,7 @@ jobs:
 
       - name: Create package directory structure
         run: |
-          mkdir -p upload/simple/${{ env.PACKAGE_NAME }}
+          mkdir -p upload/package/${{ env.PACKAGE_NAME }}
           mkdir -p upload/versions/${{ steps.get_version.outputs.VERSION }}
 
       - name: Copy package files to version-specific folder
@@ -170,21 +170,21 @@ jobs:
 
       - name: Download existing versions and prepare directories
         run: |
-          # Copy current version to simple index
-          cp dist/* upload/simple/${{ env.PACKAGE_NAME }}/
+          # Copy current version to package index
+          cp dist/* upload/package/${{ env.PACKAGE_NAME }}/
 
-          # Download existing versions from S3 for both simple index and version directories
+          # Download existing versions from S3 for both package index and version directories
           while IFS= read -r version; do
             if [ ! -z "$version" ] && [ "$version" != "${{ steps.get_version.outputs.VERSION }}" ]; then
               echo "Downloading version $version"
-              
+
               # Create directory for this version
               mkdir -p upload/versions/$version
-              
+
               # Download to both locations:
-              # 1. To simple index (for pip compatibility)
-              aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/versions/$version/ upload/simple/${{ env.PACKAGE_NAME }}/ || echo "Version $version not found in S3"
-              
+              # 1. To package index (for pip compatibility)
+              aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/versions/$version/ upload/package/${{ env.PACKAGE_NAME }}/ || echo "Version $version not found in S3"
+
               # 2. To version-specific directory (for HTML generation)
               aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/versions/$version/ upload/versions/$version/ || echo "Version $version not found in S3"
             fi
@@ -192,7 +192,7 @@ jobs:
 
       - name: Generate package index HTML
         run: |
-          cat > upload/simple/${{ env.PACKAGE_NAME }}/index.html << EOF
+          cat > upload/package/${{ env.PACKAGE_NAME }}/index.html << EOF
           <!DOCTYPE html>
           <html>
           <head>
@@ -203,14 +203,14 @@ jobs:
               <p><a href="../../versions.html">View all versions</a></p>
           EOF
 
-          for file in upload/simple/${{ env.PACKAGE_NAME }}/*.{tar.gz,whl}; do
+          for file in upload/package/${{ env.PACKAGE_NAME }}/*.{tar.gz,whl}; do
             if [ -f "$file" ]; then
               filename=$(basename "$file")
-              echo "    <a href=\"$filename\">$filename</a><br/>" >> upload/simple/${{ env.PACKAGE_NAME }}/index.html
+              echo "    <a href=\"$filename\">$filename</a><br/>" >> upload/package/${{ env.PACKAGE_NAME }}/index.html
             fi
           done
 
-          echo "</body></html>" >> upload/simple/${{ env.PACKAGE_NAME }}/index.html
+          echo "</body></html>" >> upload/package/${{ env.PACKAGE_NAME }}/index.html
 
       - name: Generate versions page HTML
         run: |
@@ -231,10 +231,10 @@ jobs:
           <body>
               <h1>All Versions of ${{ env.PACKAGE_NAME }}</h1>
               <p>Available versions of the ${{ env.PACKAGE_NAME }} package.</p>
-              
+
               <div class="install-cmd">
-                  <strong>Install latest:</strong> pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/<br/>
-                  <strong>Install specific version:</strong> pip install ${{ env.PACKAGE_NAME }}==VERSION --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/
+                  <strong>Install latest:</strong> pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/package/<br/>
+                  <strong>Install specific version:</strong> pip install ${{ env.PACKAGE_NAME }}==VERSION --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/package/
               </div>
           EOF
 
@@ -242,29 +242,29 @@ jobs:
           while IFS= read -r version; do
             if [ ! -z "$version" ]; then
               echo "Processing version: $version"
-              
+
               # Check if this is the current version
               CURRENT_CLASS=""
               if [ "$version" = "${{ steps.get_version.outputs.VERSION }}" ]; then
                 CURRENT_CLASS=" current"
               fi
-              
+
               cat >> upload/versions.html << EOF
               <div class="version$CURRENT_CLASS">
                   <h3>Version $version</h3>
           EOF
-              
+
               if [ "$version" = "${{ steps.get_version.outputs.VERSION }}" ]; then
                 echo "    <p><strong>(Current/Latest Version)</strong></p>" >> upload/versions.html
               fi
-              
+
               echo "    <div class=\"files\">" >> upload/versions.html
               echo "        <strong>Available files:</strong><br/>" >> upload/versions.html
-              
+
               # List files for this version
               echo "Checking for files in upload/versions/$version/"
               ls -la upload/versions/$version/ || echo "Directory not found or empty"
-              
+
               FOUND_FILES=false
               for file in upload/versions/$version/*.{tar.gz,whl}; do
                 if [ -f "$file" ]; then
@@ -274,12 +274,12 @@ jobs:
                   FOUND_FILES=true
                 fi
               done
-              
+
               if [ "$FOUND_FILES" = false ]; then
                 echo "        <p>No package files found for this version</p>" >> upload/versions.html
                 echo "Warning: No files found for version $version"
               fi
-              
+
               echo "    </div>" >> upload/versions.html
               echo "</div>" >> upload/versions.html
             fi
@@ -287,9 +287,9 @@ jobs:
 
           echo "</body></html>" >> upload/versions.html
 
-      - name: Generate main simple index
+      - name: Generate main package index
         run: |
-          cat > upload/simple/index.html << EOF
+          cat > upload/package/index.html << EOF
           <!DOCTYPE html>
           <html>
           <head>
@@ -320,21 +320,21 @@ jobs:
           <body>
               <h1>LayerLens Python Package Repository</h1>
               <p>Custom Python package repository for ${{ env.PACKAGE_NAME }}</p>
-              
+
               <div class="links">
-                  <a href="simple/">Browse packages</a>
+                  <a href="package/">Browse packages</a>
                   <a href="versions.html">View all versions</a>
               </div>
-              
+
               <h2>Installation</h2>
               <div class="install-cmd">
                   # Install latest version<br/>
-                  pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/<br/><br/>
-                  
+                  pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/package/<br/><br/>
+
                   # Install specific version<br/>
-                  pip install ${{ env.PACKAGE_NAME }}==1.0.0 --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/
+                  pip install ${{ env.PACKAGE_NAME }}==1.0.0 --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/package/
               </div>
-              
+
               <h2>Current Version</h2>
               <p>Latest version: <strong>${{ steps.get_version.outputs.VERSION }}</strong></p>
           </body>
@@ -344,8 +344,8 @@ jobs:
       - name: Upload to S3
         run: |
           # Upload everything except we don't want to delete old versions
-          # Upload the simple index (with --delete to clean up old files)
-          aws s3 sync upload/simple/ s3://${{ secrets.S3_BUCKET_NAME }}/simple/ --delete
+          # Upload the package index (with --delete to clean up old files)
+          aws s3 sync upload/package/ s3://${{ secrets.S3_BUCKET_NAME }}/package/ --delete
 
           # Upload version-specific files (without --delete to preserve old versions)
           aws s3 sync upload/versions/ s3://${{ secrets.S3_BUCKET_NAME }}/versions/
@@ -363,4 +363,4 @@ jobs:
       - name: Output installation command
         run: |
           echo "Package deployed successfully!"
-          echo "Install with: pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/simple/"
+          echo "Install with: pip install ${{ env.PACKAGE_NAME }} --index-url https://${{ secrets.CLOUDFRONT_DOMAIN }}/package/"
