@@ -13,7 +13,7 @@ class TestModels:
 
     @pytest.fixture
     def mock_client(self):
-        """Mock Atlas client."""
+        """Mock Stratix client."""
         client = Mock()
         client.organization_id = "org-123"
         client.project_id = "proj-456"
@@ -374,7 +374,7 @@ class TestModelsErrorHandling:
 
     @pytest.fixture
     def mock_client(self):
-        """Mock Atlas client."""
+        """Mock Stratix client."""
         client = Mock()
         client.organization_id = "org-123"
         client.project_id = "proj-456"
@@ -442,7 +442,7 @@ class TestModelsTyping:
 
     @pytest.fixture
     def mock_client(self):
-        """Mock Atlas client."""
+        """Mock Stratix client."""
         client = Mock()
         client.organization_id = "org-123"
         client.project_id = "proj-456"

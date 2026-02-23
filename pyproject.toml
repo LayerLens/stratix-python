@@ -1,7 +1,7 @@
 [project]
 name = "layerlens"
 version = "1.0.2"
-description = "The official Python library for the LayerLens Atlas API"
+description = "The official Python library for the LayerLens Stratix API"
 license = "Apache-2.0"
 authors = [{ name = "LayerLens", email = "support@layerlens.ai" }]
 dependencies = ["httpx>=0.23.0, <1", "pydantic>=1.9.0, <3", "requests"]
@@ -24,8 +24,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/LayerLens/atlas-python"
-Repository = "https://github.com/LayerLens/atlas-python"
+Homepage = "https://github.com/LayerLens/stratix-python"
+Repository = "https://github.com/LayerLens/stratix-python"
 
 [project.scripts]
 layerlens = "layerlens.cli:main"

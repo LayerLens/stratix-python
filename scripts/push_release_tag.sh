@@ -22,7 +22,7 @@ done
 
 git fetch --tags --prune
 
-REPO_URL="https://github.com/LayerLens/atlas-python"
+REPO_URL="https://github.com/LayerLens/stratix-python"
 # e.g. v1.0.0, v1.0.1, etc.
 TAG_PREFIX="v"
 COMMIT=$(git rev-parse --short HEAD)
@@ -38,7 +38,7 @@ fi
 LAST_RELEASE=$(git tag -l "${TAG_PREFIX}*" --sort=-v:refname | head -n 1)
 
 echo "================================================"
-echo "  Atlas Python SDK Release"
+echo "  Stratix Python SDK Release"
 echo "================================================"
 echo "version:      ${TAG}"
 echo "commit:       ${COMMIT}"

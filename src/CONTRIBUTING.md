@@ -62,7 +62,7 @@ If you’d like to use the repository from source, you can either install from g
 To install via git:
 
 ```sh
-$ pip install git+ssh://git@github.com/LayerLens/atlas-python.git
+$ pip install git+ssh://git@github.com/LayerLens/stratix-python.git
 ```
 
 Alternatively, you can build from source and install the wheel file:
@@ -109,8 +109,7 @@ $ ./scripts/format
 
 ## Release Process
 
-This section outlines the complete process for releasing a new version of the Atlas Python SDK.
-
+This section outlines the complete process for releasing a new version of the Stratix Python SDK.
 
 ### Step-by-Step Release Process
 
@@ -133,22 +132,24 @@ $ git rebase main
 
 Update the version number in the following files:
 
-- **`src/atlas/_version.py`**: Update the `__version__` string
+- **`src/layerlens/_version.py`**: Update the `__version__` string
 - **`pyproject.toml`**: Update the `version` field
 
 **Version Format**: Use semantic versioning (MAJOR.MINOR.PATCH)
+
 - **MAJOR**: Breaking changes
 - **MINOR**: New features (backward compatible)
 - **PATCH**: Bug fixes (backward compatible)
 
 **Examples**:
+
 - `1.0.2` → `1.0.3` (patch release for bug fixes)
 - `1.0.2` → `1.1.0` (minor release for new features)
 - `1.0.2` → `2.0.0` (major release for breaking changes)
 
 ```sh
 # Example: Update to version 1.0.3
-# Edit src/atlas/_version.py
+# Edit src/layerlens/_version.py
 __version__ = "1.0.3"
 
 # Edit pyproject.toml
@@ -172,7 +173,7 @@ $ rye build
 
 ```sh
 # Add and commit the version bump
-$ git add src/atlas/_version.py pyproject.toml
+$ git add src/layerlens/_version.py pyproject.toml
 $ git commit -m "chore: bump version to 1.0.3"
 
 # Push the release branch
@@ -225,7 +226,7 @@ Use this checklist to ensure you we don't miss any steps:
 
 - [ ] Switched to and updated the `release` branch
 - [ ] Merged latest changes from `main`
-- [ ] Updated version in `src/atlas/_version.py`
+- [ ] Updated version in `src/layerlens/_version.py`
 - [ ] Updated version in `pyproject.toml`
 - [ ] Ran tests (`./scripts/test`)
 - [ ] Ran linting (`./scripts/lint`)
@@ -238,6 +239,7 @@ Use this checklist to ensure you we don't miss any steps:
 ### Troubleshooting
 
 **Tag already exists**: If you need to recreate a tag, delete it first:
+
 ```sh
 $ git tag -d v1.0.3           # Delete locally
 $ git push origin :v1.0.3     # Delete on remote

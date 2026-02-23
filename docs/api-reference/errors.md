@@ -1,13 +1,13 @@
 # Error Handling
 
-The Atlas Python SDK provides a comprehensive exception hierarchy to help you handle different error conditions gracefully. This guide covers all available exception types and best practices for error handling.
+The Stratix Python SDK provides a comprehensive exception hierarchy to help you handle different error conditions gracefully. This guide covers all available exception types and best practices for error handling.
 
 ## Exception Hierarchy
 
-All Atlas exceptions inherit from the base `AtlasError` class:
+All Stratix exceptions inherit from the base `StratixError` class:
 
 ```
-AtlasError
+StratixError
 ├── APIError
 │   ├── APIConnectionError
 │   │   └── APITimeoutError
@@ -27,18 +27,18 @@ AtlasError
 
 ### Base Exceptions
 
-#### `AtlasError`
+#### `StratixError`
 
-Base exception for all Atlas-related errors.
+Base exception for all Stratix-related errors.
 
 ```python
 import layerlens
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
-except layerlens.AtlasError as e:
-    print(f"Atlas error occurred: {e}")
+except layerlens.StratixError as e:
+    print(f"Stratix error occurred: {e}")
 ```
 
 #### `APIError`
@@ -55,7 +55,7 @@ Base exception for all API-related errors. Contains additional context about the
 import layerlens
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
 except layerlens.APIError as e:
     print(f"API error: {e.message}")
@@ -80,7 +80,7 @@ Raised when the client cannot connect to the API server.
 import layerlens
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
 except layerlens.APIConnectionError as e:
     print("Connection failed - check your network connection")
@@ -95,7 +95,7 @@ Raised when a request times out.
 import layerlens
 
 try:
-    client = layerlens.Atlas(timeout=0.2)  # Very short timeout
+    client = layerlens.Stratix(timeout=0.2)  # Very short timeout
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
 except layerlens.APITimeoutError:
     print("Request timed out - try increasing timeout or check network")
@@ -119,7 +119,7 @@ Request was malformed or contained invalid parameters.
 import layerlens
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     # Invalid parameters
     evaluation = client.evaluations.create(model="", benchmark="")
 except layerlens.BadRequestError as e:
@@ -135,11 +135,11 @@ API key is missing, invalid, or expired.
 import layerlens
 
 try:
-    client = layerlens.Atlas(api_key="invalid_key")
+    client = layerlens.Stratix(api_key="invalid_key")
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
 except layerlens.AuthenticationError:
     print("Authentication failed - check your API key")
-    print("Make sure LAYERLENS_ATLAS_API_KEY is set correctly")
+    print("Make sure LAYERLENS_STRATIX_API_KEY is set correctly")
 ```
 
 #### `PermissionDeniedError` (403)
@@ -150,7 +150,7 @@ Valid API key but insufficient permissions for the requested operation.
 import layerlens
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     evaluation = client.evaluations.create(model="restricted-model", benchmark="mmlu")
 except layerlens.PermissionDeniedError:
     print("Permission denied - check your organization/project access")
@@ -165,11 +165,11 @@ Requested resource (model, benchmark, evaluation) does not exist.
 import layerlens
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     evaluation = client.evaluations.create(model="nonexistent-model", benchmark="mmlu")
 except layerlens.NotFoundError:
     print("Model or benchmark not found")
-    print("Check available models and benchmarks in the Atlas dashboard")
+    print("Check available models and benchmarks in the Stratix Dashboard")
 ```
 
 #### `ConflictError` (409)
@@ -180,7 +180,7 @@ Request conflicts with current resource state.
 import layerlens
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     # Some operation that conflicts with current state
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
 except layerlens.ConflictError:
@@ -195,7 +195,7 @@ Request parameters are valid but cannot be processed.
 import layerlens
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="invalid-benchmark")
 except layerlens.UnprocessableEntityError as e:
     print(f"Cannot process request: {e}")
@@ -211,7 +211,7 @@ import layerlens
 import time
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
 except layerlens.RateLimitError as e:
     print("Rate limit exceeded")
@@ -233,7 +233,7 @@ Server-side error occurred.
 import layerlens
 
 try:
-    client = layerlens.Atlas()
+    client = layerlens.Stratix()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
 except layerlens.InternalServerError as e:
     print(f"Server error: {e.status_code}")
@@ -248,10 +248,10 @@ except layerlens.InternalServerError as e:
 ```python
 import layerlens
 import time
-from layerlens import Atlas
+from layerlens import Stratix
 
 def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
-    client = Atlas()
+    client = Stratix()
 
     for attempt in range(max_retries):
         try:
@@ -307,10 +307,10 @@ def robust_create_evaluation(model: str, benchmark: str, max_retries: int = 3):
 
 ```python
 import layerlens
-from layerlens import Atlas
+from layerlens import Stratix
 
 def get_evaluation_results_with_fallback(evaluation_id: str):
-    client = Atlas()
+    client = Stratix()
 
     try:
         results = client.results.get(evaluation_id=evaluation_id)
@@ -345,14 +345,14 @@ else:
 ```python
 import logging
 import layerlens
-from layerlens import Atlas
+from layerlens import Stratix
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def monitored_api_call():
-    client = Atlas()
+    client = Stratix()
 
     try:
         logger.info("Creating evaluation...")
@@ -391,14 +391,14 @@ def monitored_api_call():
 ```python
 import layerlens
 from contextlib import contextmanager
-from layerlens import Atlas
+from layerlens import Stratix
 
 @contextmanager
-def atlas_client():
-    """Context manager for Atlas client with error handling"""
+def stratix_client():
+    """Context manager for Stratix client with error handling"""
     client = None
     try:
-        client = Atlas()
+        client = Stratix()
         yield client
     except layerlens.AuthenticationError:
         print("Authentication failed")
@@ -412,11 +412,11 @@ def atlas_client():
 
 # Usage
 try:
-    with atlas_client() as client:
+    with stratix_client() as client:
         evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
         results = client.results.get(evaluation_id=evaluation.id)
-except layerlens.AtlasError:
-    print("Atlas operation failed")
+except layerlens.StratixError:
+    print("Stratix operation failed")
 ```
 
 ## Error Response Details
@@ -425,10 +425,10 @@ except layerlens.AtlasError:
 
 ```python
 import layerlens
-from layerlens import Atlas
+from layerlens import Stratix
 
 try:
-    client = Atlas()
+    client = Stratix()
     evaluation = client.evaluations.create(model="invalid", benchmark="invalid")
 except layerlens.APIStatusError as e:
     print(f"Status Code: {e.status_code}")
@@ -443,7 +443,7 @@ except layerlens.APIStatusError as e:
 
 ```python
 import layerlens
-from layerlens import Atlas
+from layerlens import Stratix
 
 def extract_error_info(error: layerlens.APIError):
     info = {
@@ -466,7 +466,7 @@ def extract_error_info(error: layerlens.APIError):
 
 # Usage
 try:
-    client = Atlas()
+    client = Stratix()
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
 except layerlens.APIError as e:
     error_info = extract_error_info(e)
@@ -479,19 +479,19 @@ except layerlens.APIError as e:
 import pytest
 import layerlens
 from unittest.mock import Mock, patch
-from layerlens import Atlas
+from layerlens import Stratix
 
 def test_authentication_error_handling():
     """Test that authentication errors are handled properly"""
-    with patch('layerlens.Atlas') as mock_atlas:
-        mock_atlas.side_effect = layerlens.AuthenticationError(
+    with patch('layerlens.Stratix') as mock_stratix:
+        mock_stratix.side_effect = layerlens.AuthenticationError(
             "Invalid API key",
             request=Mock(),
             response=Mock()
         )
 
         with pytest.raises(layerlens.AuthenticationError):
-            client = Atlas()
+            client = Stratix()
             client.evaluations.create(model="gpt-4", benchmark="mmlu")
 
 def test_rate_limit_retry():
@@ -507,8 +507,8 @@ def test_rate_limit_retry():
 ```python
 # Missing API key
 try:
-    client = Atlas(api_key=None)
-except layerlens.AtlasError as e:
+    client = Stratix(api_key=None)
+except layerlens.StratixError as e:
     print(f"Configuration error: {e}")
 ```
 
@@ -517,7 +517,7 @@ except layerlens.AtlasError as e:
 ```python
 # Connection timeout
 try:
-    client = Atlas(timeout=0.1)  # Very short timeout
+    client = Stratix(timeout=0.1)  # Very short timeout
     evaluation = client.evaluations.create(model="gpt-4", benchmark="mmlu")
 except layerlens.APITimeoutError:
     print("Request timed out")
@@ -538,7 +538,7 @@ except layerlens.APIConnectionError:
 import time
 import random
 import layerlens
-from layerlens import Atlas
+from layerlens import Stratix
 
 def exponential_backoff_retry(func, max_retries=3, base_delay=1):
     """Retry function with exponential backoff"""
@@ -555,7 +555,7 @@ def exponential_backoff_retry(func, max_retries=3, base_delay=1):
 
 # Usage
 def create_evaluation():
-    client = Atlas()
+    client = Stratix()
     return client.evaluations.create(model="gpt-4", benchmark="mmlu")
 
 evaluation = exponential_backoff_retry(create_evaluation)
@@ -566,7 +566,7 @@ evaluation = exponential_backoff_retry(create_evaluation)
 ```python
 import time
 from enum import Enum
-from layerlens import Atlas
+from layerlens import Stratix
 import layerlens
 
 class CircuitState(Enum):
@@ -609,7 +609,7 @@ class CircuitBreaker:
 
 # Usage
 breaker = CircuitBreaker()
-client = Atlas()
+client = Stratix()
 
 try:
     evaluation = breaker.call(

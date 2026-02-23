@@ -2,7 +2,7 @@
 
 import asyncio
 
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 
 
 async def create_and_run_evaluation(client, model, benchmark, eval_number):
@@ -38,7 +38,7 @@ async def create_and_run_evaluation(client, model, benchmark, eval_number):
 
 async def main():
     # Construct async client
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # --- Models
     models = await client.models.get()

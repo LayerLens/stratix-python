@@ -1,10 +1,10 @@
 # Layerlens Python SDK Documentation
 
-Welcome to the official documentation for the Layerlens Python SDK for the atlas platform. This library provides convenient programmatic to the Atlas platform from any Python 3.8+ application.
+Welcome to the official documentation for the Layerlens Python SDK for the Stratix platform. This library provides convenient programmatic to the Stratix platform from any Python 3.8+ application.
 
-## What is Atlas?
+## What is Stratix?
 
-Atlas is an evaluation platform that allows you to benchmark AI models against various datasets and metrics. The Python SDK provides two HTTP clients (syncronous and asynchronous) powered by [httpx](https://github.com/encode/httpx) and [Pydantic](https://pydantic.dev/) models for type-safe API interactions.
+Stratix is an evaluation platform that allows you to benchmark AI models against various datasets and metrics. The Python SDK provides two HTTP clients (syncronous and asynchronous) powered by [httpx](https://github.com/encode/httpx) and [Pydantic](https://pydantic.dev/) models for type-safe API interactions.
 
 ## Quick Start
 
@@ -16,27 +16,27 @@ Install the layerlens python sdk using the following command
 pip install layerlens --index-url https://sdk.layerlens.ai/package
 ```
 
-### Generate an api key on the atlas platform
+### Generate an api key on the Stratix platform
 
 Login to your organization at [app.layerlens.ai](https://app.layerlens.ai) to generate an api key. Admin users of organizations can generate a keys in the settings page.
 
 Run this command to add your API key to your environment:
 
 ```bash
-export LAYERLENS_ATLAS_API_KEY="YOUR_API_KEY"
+export LAYERLENS_STRATIX_API_KEY="YOUR_API_KEY"
 ```
 
-### Running an evaluation on the atlas platform
+### Running an evaluation on the Stratix platform
 
 Before triggering an evaluation using the sdk, login to your organization at [app.layerlens.ai](https://app.layerlens.ai) to ensure that the model and benchmark you are trying to evaluate has been added to your organizations dashboard.
 
 #### Using synchronous client
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 
     # Construct sync client
-    client = Atlas()
+    client = Stratix()
 
     # --- Models replace with the model key you want to run
     model = client.models.get_by_key("openai/gpt-4o")
@@ -61,11 +61,11 @@ from layerlens import Atlas
 
 ```python
 import asyncio
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 
 async def run_evaluation_async():
     # Construct async client
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # --- Model to use
     model = await client.models.get_by_key("openai/gpt-4o")

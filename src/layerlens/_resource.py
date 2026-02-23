@@ -5,13 +5,13 @@ import asyncio
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ._client import Atlas, AsyncAtlas
+    from ._client import Stratix, AsyncStratix
 
 
 class SyncAPIResource:
-    _client: Atlas
+    _client: Stratix
 
-    def __init__(self, client: Atlas) -> None:
+    def __init__(self, client: Stratix) -> None:
         self._client = client
         self._get = client.get_cast
         self._post = client.post_cast
@@ -21,9 +21,9 @@ class SyncAPIResource:
 
 
 class AsyncAPIResource:
-    _client: AsyncAtlas
+    _client: AsyncStratix
 
-    def __init__(self, client: AsyncAtlas) -> None:
+    def __init__(self, client: AsyncStratix) -> None:
         self._client = client
         self._get = client.get_cast
         self._post = client.post_cast

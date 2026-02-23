@@ -1,44 +1,44 @@
 # Client Configuration
 
-The `Atlas` (syncronous) and `AsyncAtlas` (asyncronous) classes are the main entry points for interacting with the LayerLens Atlas sdk. This page covers client initialization, configuration options, and usage patterns.
+The `Stratix` (syncronous) and `AsyncStratix` (asyncronous) classes are the main entry points for interacting with the LayerLens Stratix sdk. This page covers client initialization, configuration options, and usage patterns.
 
 ## Basic Usage
 
 ### Syncronous Client
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 
 # Construct syncronous client
-# Loads for api key from the "LAYERLENS_ATLAS_API_KEY" enviornment variable
-client = Atlas()
+# Loads for api key from the "LAYERLENS_STRATIX_API_KEY" enviornment variable
+client = Stratix()
 
 # Explicit configuration
-client = Atlas(api_key="your_api_key")
+client = Stratix(api_key="your_api_key")
 ```
 
 ### Asyncronous Client
 
 ```python
 import asyncio
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 
 # Construct async client
-# Loads for api key from the "LAYERLENS_ATLAS_API_KEY" enviornment variable
-client = AsyncAtlas()
+# Loads for api key from the "LAYERLENS_STRATIX_API_KEY" enviornment variable
+client = AsyncStratix()
 
 # Explicit configuration
-client = AsyncAtlas(api_key="your_api_key")
+client = AsyncStratix(api_key="your_api_key")
 ```
 
 ## Constructor Parameters
 
-### `Atlas(api_key, base_url, timeout)` and `AsyncAtlas(api_key, base_url, timeout)`
+### `Stratix(api_key, base_url, timeout)` and `AsyncStratix(api_key, base_url, timeout)`
 
 | Parameter  | Type                             | Required | Default       | Description                   |
 | ---------- | -------------------------------- | -------- | ------------- | ----------------------------- |
-| `api_key`  | `str \| None`                    | Yes\*    | `None`        | Your LayerLens Atlas API key  |
-| `base_url` | `str \| httpx.URL \| None`       | No       | Atlas API URL | Custom API base URL           |
+| `api_key`  | `str \| None`                    | Yes\*    | `None`        | Your LayerLens Stratix API key  |
+| `base_url` | `str \| httpx.URL \| None`       | No       | Stratix API URL | Custom API base URL           |
 | `timeout`  | `float \| httpx.Timeout \| None` | No       | 10 minutes    | Request timeout configuration |
 
 \*Required unless set via environment variables
@@ -48,7 +48,7 @@ client = AsyncAtlas(api_key="your_api_key")
 The client automatically loads configuration from these environment variables:
 
 ```bash
-LAYERLENS_ATLAS_API_KEY="your_api_key_here"
+LAYERLENS_STRATIX_API_KEY="your_api_key_here"
 ```
 
 ## Timeout Configuration
@@ -56,16 +56,16 @@ LAYERLENS_ATLAS_API_KEY="your_api_key_here"
 ### Simple Timeout
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 
 # 30-second timeout for all requests
-client = Atlas(timeout=30.0)
+client = Stratix(timeout=30.0)
 ```
 
 ### Per-Request Timeout Override
 
 ```python
-client = Atlas()
+client = Stratix()
 
 # --- Models replace with the model name you want to run
 models = client.models.get(type="public", name="gpt-4o")

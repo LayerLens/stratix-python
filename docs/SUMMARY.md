@@ -1,4 +1,4 @@
-# Table of Contents - Atlas Python SDK
+# Table of Contents - Stratix Python SDK
 
 * [Introduction](README.md)
 
