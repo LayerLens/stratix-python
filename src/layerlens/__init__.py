@@ -14,19 +14,30 @@ from .models import (
     TraceEvaluationSummary,
 )
 from ._client import Atlas, Client, Stratix, AsyncAtlas, AsyncClient, AsyncStratix
-from ._exceptions import AtlasError, StratixError
+from ._exceptions import (
+    APIError,
+    AtlasError,
+    StratixError,
+    NotFoundError,
+    BadRequestError,
+    AuthenticationError,
+)
 
 __all__ = [
+    "APIError",
     "AsyncAtlas",
     "AsyncClient",
     "AsyncStratix",
     "Atlas",
     "AtlasError",
+    "AuthenticationError",
+    "BadRequestError",
     "Client",
     "Judge",
     "JudgeOptimizationRun",
     "JudgeSnapshot",
     "JudgeVersion",
+    "NotFoundError",
     "OptimizationBudget",
     "OptimizationRunStatus",
     "Stratix",

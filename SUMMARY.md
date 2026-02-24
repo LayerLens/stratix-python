@@ -7,6 +7,7 @@
     * [Judges](docs/api-reference/judges.md)
     * [Traces](docs/api-reference/traces.md)
     * [Trace Evaluations](docs/api-reference/trace-evaluations.md)
+    * [Judge Optimizations](docs/api-reference/judge-optimizations.md)
     * [Error Handling](docs/api-reference/errors.md)
   * [Examples](docs/examples/README.md)
     * [Running Evaluations](docs/examples/creating-evaluations.md)

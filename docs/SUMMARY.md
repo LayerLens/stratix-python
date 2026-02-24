@@ -15,6 +15,7 @@
 * [Judges](api-reference/judges.md)
 * [Traces](api-reference/traces.md)
 * [Trace Evaluations](api-reference/trace-evaluations.md)
+* [Judge Optimizations](api-reference/judge-optimizations.md)
 * [Error Handling](api-reference/errors.md)
 
 ## Code Examples
