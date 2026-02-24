@@ -5,7 +5,7 @@ This reference guide provides detailed information about all error codes and exc
 ## Exception Hierarchy
 
 ```
-AtlasError (Base exception)
+StratixError (Base exception)
 ├── APIError (Base for API-related errors)
 │   ├── APIConnectionError (Network/connection issues)
 │   │   └── APITimeoutError (Request timeouts)

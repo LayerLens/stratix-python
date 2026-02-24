@@ -172,7 +172,7 @@ class TestSensitiveHeadersFilter:
                 "content-type": "application/json",
                 "x-api-key": "secret-key-123",
                 "authorization": "Bearer token-456",
-                "user-agent": "atlas-python-sdk",
+                "user-agent": "stratix-python-sdk",
             }
         }
 
@@ -183,7 +183,7 @@ class TestSensitiveHeadersFilter:
         assert headers["content-type"] == "application/json"
         assert headers["x-api-key"] == "<redacted>"
         assert headers["authorization"] == "<redacted>"
-        assert headers["user-agent"] == "atlas-python-sdk"
+        assert headers["user-agent"] == "stratix-python-sdk"
 
     def test_filter_handles_case_insensitive_headers(self, filter_instance, mock_log_record):
         """filter redacts headers regardless of case."""

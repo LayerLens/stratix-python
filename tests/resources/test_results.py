@@ -14,7 +14,7 @@ class TestResults:
 
     @pytest.fixture
     def mock_client(self):
-        """Mock Atlas client."""
+        """Mock Stratix client."""
         client = Mock()
         client.get_cast = Mock()
         return client
@@ -272,7 +272,7 @@ class TestResultsErrorHandling:
 
     @pytest.fixture
     def mock_client(self):
-        """Mock Atlas client."""
+        """Mock Stratix client."""
         client = Mock()
         client.get_cast = Mock()
         return client
@@ -366,7 +366,7 @@ class TestResultsDataHandling:
 
     @pytest.fixture
     def mock_client(self):
-        """Mock Atlas client."""
+        """Mock Stratix client."""
         client = Mock()
         client.get_cast = Mock()
         return client
@@ -533,7 +533,7 @@ class TestResultsPagination:
 
     @pytest.fixture
     def mock_client(self):
-        """Mock Atlas client."""
+        """Mock Stratix client."""
         client = Mock()
         client.get_cast = Mock()
         return client
@@ -717,7 +717,7 @@ class TestResultsPaginationErrorHandling:
 
     @pytest.fixture
     def mock_client(self):
-        """Mock Atlas client."""
+        """Mock Stratix client."""
         client = Mock()
         client.get_cast = Mock()
         return client

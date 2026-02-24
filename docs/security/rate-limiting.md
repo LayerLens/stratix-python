@@ -1,6 +1,6 @@
 # Rate Limiting
 
-This guide covers how to handle rate limiting when using the Atlas Python SDK, including best practices for avoiding rate limits and properly handling rate limit errors.
+This guide covers how to handle rate limiting when using the Stratix Python SDK, including best practices for avoiding rate limits and properly handling rate limit errors.
 
 ## Identifying Rate Limit Errors
 
@@ -10,10 +10,10 @@ When you exceed rate limits, the API returns a `429 Too Many Requests` status:
 
 ```python
 import layerlens
-from layerlens import Atlas
+from layerlens import Stratix
 
 try:
-    client = Atlas()
+    client = Stratix()
 
     # Making too many requests quickly
     for i in range(100):

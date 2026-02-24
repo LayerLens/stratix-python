@@ -6,11 +6,11 @@ from typing import Literal
 import httpx
 
 
-class AtlasError(Exception):
+class StratixError(Exception):
     pass
 
 
-class APIError(AtlasError):
+class APIError(StratixError):
     message: str
     request: httpx.Request
 
@@ -106,3 +106,7 @@ class RateLimitError(APIStatusError):
 
 class InternalServerError(APIStatusError):
     pass
+
+
+# Backward-compatibility alias
+AtlasError = StratixError

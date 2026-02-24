@@ -1,18 +1,18 @@
 # Environment Variables
 
-This guide covers secure practices for managing environment variables when using the Atlas Python SDK.
+This guide covers secure practices for managing environment variables when using the Stratix Python SDK.
 
 ## Overview
 
-Environment variables provide a secure way to configure your Atlas SDK without hardcoding sensitive credentials in your source code. This approach separates configuration from code and enables different configurations for different environments.
+Environment variables provide a secure way to configure your Stratix SDK without hardcoding sensitive credentials in your source code. This approach separates configuration from code and enables different configurations for different environments.
 
 ## Required Environment Variables
 
-The Atlas SDK uses these primary environment variables:
+The Stratix SDK uses these primary environment variables:
 
 | Variable                  | Description        | Required | Example        |
 | ------------------------- | ------------------ | -------- | -------------- |
-| `LAYERLENS_ATLAS_API_KEY` | Your Atlas API key | Yes      | `sk-abc123...` |
+| `LAYERLENS_STRATIX_API_KEY` | Your Stratix API key | Yes      | `sk-abc123...` |
 
 ## Setting Environment Variables
 
@@ -22,10 +22,10 @@ The Atlas SDK uses these primary environment variables:
 
 ```bash
 # Set for current session
-export LAYERLENS_ATLAS_API_KEY="sk-your-key-here"
+export LAYERLENS_STRATIX_API_KEY="sk-your-key-here"
 
 # Add to shell profile for persistence (.bashrc, .zshrc, etc.)
-echo 'export LAYERLENS_ATLAS_API_KEY="sk-your-key-here"' >> ~/.bashrc
+echo 'export LAYERLENS_STRATIX_API_KEY="sk-your-key-here"' >> ~/.bashrc
 
 # Reload shell configuration
 source ~/.bashrc
@@ -35,20 +35,20 @@ source ~/.bashrc
 
 ```cmd
 # Set for current session
-set LAYERLENS_ATLAS_API_KEY=sk-your-key-here
+set LAYERLENS_STRATIX_API_KEY=sk-your-key-here
 
 # Set permanently (requires admin rights)
-setx LAYERLENS_ATLAS_API_KEY "sk-your-key-here"
+setx LAYERLENS_STRATIX_API_KEY "sk-your-key-here"
 ```
 
 **Windows PowerShell**:
 
 ```powershell
 # Set for current session
-$env:LAYERLENS_ATLAS_API_KEY="sk-your-key-here"
+$env:LAYERLENS_STRATIX_API_KEY="sk-your-key-here"
 
 # Set permanently for current user
-[Environment]::SetEnvironmentVariable("LAYERLENS_ATLAS_API_KEY", "sk-your-key-here", "User")
+[Environment]::SetEnvironmentVariable("LAYERLENS_STRATIX_API_KEY", "sk-your-key-here", "User")
 ```
 
 ### Verification
@@ -58,13 +58,13 @@ $env:LAYERLENS_ATLAS_API_KEY="sk-your-key-here"
 ```python
 import os
 
-def verify_atlas_environment():
-    """Verify Atlas environment variables are configured"""
+def verify_stratix_environment():
+    """Verify Stratix environment variables are configured"""
     required_vars = {
-        'LAYERLENS_ATLAS_API_KEY': 'API Key',
+        'LAYERLENS_STRATIX_API_KEY': 'API Key',
     }
 
-    print("🔍 Atlas Environment Variable Check")
+    print("🔍 Stratix Environment Variable Check")
     print("=" * 40)
 
     all_set = True
@@ -88,7 +88,7 @@ def verify_atlas_environment():
     return all_set
 
 # Run verification
-verify_atlas_environment()
+verify_stratix_environment()
 ```
 
 ## Using .env Files
@@ -99,10 +99,10 @@ verify_atlas_environment()
 
 ```bash
 # .env
-LAYERLENS_ATLAS_API_KEY=sk-development-key-here
+LAYERLENS_STRATIX_API_KEY=sk-development-key-here
 
 # Optional: Set environment name
-ATLAS_ENV=development
+STRATIX_ENV=development
 ```
 
 **Loading .env files in Python**:
@@ -121,11 +121,11 @@ load_dotenv('.env.development')
 load_dotenv('/path/to/your/.env')
 
 # Verify variables are loaded
-from layerlens import Atlas
+from layerlens import Stratix
 
 try:
-    client = Atlas()  # Will use environment variables
-    print("✅ Atlas client initialized successfully")
+    client = Stratix()  # Will use environment variables
+    print("✅ Stratix client initialized successfully")
 except Exception as e:
     print(f"❌ Failed to initialize client: {e}")
 ```

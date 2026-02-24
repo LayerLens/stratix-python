@@ -1,6 +1,6 @@
 # Evaluations
 
-The `evaluations` resource on the atlas client allows you to create and manage evaluations against various benchmarks for your organization on the atlas platform. This is one of the core functionalities of the Atlas platform.
+The `evaluations` resource on the Stratix client allows you to create and manage evaluations against various benchmarks for your organization on the Stratix platform. This is one of the core functionalities of the Stratix platform.
 
 ## Overview
 
@@ -15,10 +15,10 @@ The below example trigger evaluations using `gpt-4o` against `simpleQA`.
 Below is an example showing how to trigger an evaluation, waiting for it to complete and finally fetching the evaluations results.
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 
 # Construct sync client (API key from env or inline)
-client = Atlas()
+client = Stratix()
 
 # --- Models
 models = client.models.get(type="public", name="gpt-4o")
@@ -62,12 +62,12 @@ if evaluation.is_success:
 ```python
 import asyncio
 
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 
 
 async def main():
     # Construct async client
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # --- Models
     models = await client.models.get(type="public", name="gpt-4o")
@@ -95,7 +95,7 @@ if __name__ == "__main__":
 
 ## Methods
 
-Both the `Atlas` (synchronous) and `AsyncAtlas` (asynchronous) clients support the following methods.
+Both the `Stratix` (synchronous) and `AsyncStratix` (asynchronous) clients support the following methods.
 
 ### `create(model, benchmark, timeout=None)`
 
@@ -147,9 +147,9 @@ Returns an `Evaluation` object if found, `None` if the evaluation does not exist
 #### Example
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 
-client = Atlas()
+client = Stratix()
 
 # Retrieve an evaluation by ID
 evaluation_id = "eval_abc123xyz"
@@ -159,11 +159,11 @@ evaluation = client.evaluations.get_by_id(evaluation_id)
 #### Async Usage
 
 ```python
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 import asyncio
 
 async def get_evaluation():
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     evaluation = await client.evaluations.get_by_id("eval_abc123xyz")
     if evaluation:
@@ -217,9 +217,9 @@ Returns a `ResultsResponse` object containing results and pagination metadata, o
 #### Example
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 
-client = Atlas()
+client = Stratix()
 
 # Get evaluation first
 evaluation = client.evaluations.get_by_id("eval_12345")
@@ -245,9 +245,9 @@ Returns a list of `Result` objects containing all results for the evaluation.
 #### Example
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 
-client = Atlas()
+client = Stratix()
 
 # Get an evaluation
 evaluation = client.evaluations.get_by_id("eval_12345")
@@ -281,11 +281,11 @@ Returns a `ResultsResponse` object containing results and pagination metadata, o
 #### Example
 
 ```python
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 import asyncio
 
 async def fetch_evaluation_results():
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # Get an evaluation
     evaluation = await client.evaluations.get_by_id("eval_12345")
@@ -319,9 +319,9 @@ Returns a list of `Result` objects containing all results for the evaluation.
 #### Example
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 
-client = Atlas()
+client = Stratix()
 
 # Get an evaluation
 evaluation = client.evaluations.get_by_id("eval_12345")
@@ -350,11 +350,11 @@ Returns a list of `Result` objects containing all results for the evaluation.
 #### Example
 
 ```python
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 import asyncio
 
 async def fetch_all_evaluation_results():
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # Get an evaluation
     evaluation = await client.evaluations.get_by_id("eval_12345")

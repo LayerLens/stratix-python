@@ -6,7 +6,7 @@ import pytest
 
 from layerlens._exceptions import (
     APIError,
-    AtlasError,
+    StratixError,
     ConflictError,
     NotFoundError,
     APIStatusError,
@@ -25,19 +25,19 @@ from layerlens._exceptions import (
 class TestExceptionHierarchy:
     """Test exception inheritance and basic functionality."""
 
-    def test_atlas_error_is_base_exception(self):
-        """AtlasError inherits from Exception."""
-        error = AtlasError("test message")
+    def test_stratix_error_is_base_exception(self):
+        """StratixError inherits from Exception."""
+        error = StratixError("test message")
 
         assert isinstance(error, Exception)
         assert str(error) == "test message"
 
-    def test_api_error_inherits_from_atlas_error(self):
-        """APIError inherits from AtlasError."""
+    def test_api_error_inherits_from_stratix_error(self):
+        """APIError inherits from StratixError."""
         mock_request = Mock(spec=httpx.Request)
         error = APIError("api error", mock_request, body=None)
 
-        assert isinstance(error, AtlasError)
+        assert isinstance(error, StratixError)
         assert isinstance(error, Exception)
 
     def test_api_status_error_inherits_from_api_error(self):
@@ -50,7 +50,7 @@ class TestExceptionHierarchy:
         error = APIStatusError("status error", response=mock_response, body=None)
 
         assert isinstance(error, APIError)
-        assert isinstance(error, AtlasError)
+        assert isinstance(error, StratixError)
 
     @pytest.mark.parametrize(
         "exception_class",
@@ -76,7 +76,7 @@ class TestExceptionHierarchy:
 
         assert isinstance(error, APIStatusError)
         assert isinstance(error, APIError)
-        assert isinstance(error, AtlasError)
+        assert isinstance(error, StratixError)
 
 
 class TestAPIError:

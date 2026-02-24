@@ -2,12 +2,12 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from layerlens import Atlas
-from layerlens._exceptions import AtlasError
+from layerlens import Stratix
+from layerlens._exceptions import StratixError
 
 
-class TestAtlasClientInitialization:
-    """Test Atlas client initialization and configuration."""
+class TestStratixClientInitialization:
+    """Test Stratix client initialization and configuration."""
 
     @pytest.fixture
     def mock_org(self):
@@ -19,16 +19,16 @@ class TestAtlasClientInitialization:
     def test_none_values_fallback_to_env(self, mock_env_vars, mock_org):
         """None values explicitly passed fallback to environment."""
         _ = mock_env_vars  # Fixture used for side effects
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key=None)
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key=None)
 
         assert client.api_key == "test-api-key"
 
     @pytest.mark.parametrize("base_url", ["https://custom.api.com", "https://staging.layerlens.ai/api/v1"])
     def test_custom_base_url(self, base_url, mock_org):
         """Client accepts custom base URL."""
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key", base_url=base_url)
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key", base_url=base_url)
 
         assert str(client.base_url).rstrip("/") == base_url.rstrip("/")
 
@@ -36,15 +36,15 @@ class TestAtlasClientInitialization:
         """Client accepts custom timeout."""
         import httpx
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key", timeout=30.0)
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key", timeout=30.0)
 
         assert isinstance(client.timeout, httpx.Timeout)
 
     def test_auth_headers_with_api_key(self, mock_org):
         """auth_headers property returns correct headers when API key is set."""
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-api-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-api-key")
 
         headers = client.auth_headers
 
@@ -52,32 +52,32 @@ class TestAtlasClientInitialization:
 
     def test_auth_headers_without_api_key(self, mock_org):
         """auth_headers property returns empty dict when no API key."""
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
             with pytest.raises(
-                AtlasError,
-                match="The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_ATLAS_API_KEY environment variable",
+                StratixError,
+                match="The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_STRATIX_API_KEY environment variable",
             ):
-                Atlas(api_key="")
+                Stratix(api_key="")
 
     def test_auth_headers_with_empty_api_key(self, mock_org):
         """auth_headers property returns empty dict when API key is empty string."""
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
             with pytest.raises(
-                AtlasError,
-                match="The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_ATLAS_API_KEY environment variable",
+                StratixError,
+                match="The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_STRATIX_API_KEY environment variable",
             ):
-                Atlas(api_key="")
+                Stratix(api_key="")
 
     def test_copy_method(self, mock_org):
         """copy method creates new client with overridden parameters."""
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            original_client = Atlas(
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            original_client = Stratix(
                 api_key="original-key",
                 base_url="https://original.api.com",
                 timeout=10.0,
             )
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
             new_client = original_client.copy(api_key="new-key", timeout=20.0)
 
         # Check overridden values
@@ -91,20 +91,20 @@ class TestAtlasClientInitialization:
 
     def test_copy_method_partial_override(self, mock_org):
         """copy method allows partial parameter override."""
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            original_client = Atlas(api_key="original-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            original_client = Stratix(api_key="original-key")
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
             new_client = original_client.copy(api_key="new-key")
 
         assert new_client.api_key == "new-key"
 
     def test_with_options_alias(self, mock_org):
         """with_options is an alias for copy method."""
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            original_client = Atlas(api_key="original-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            original_client = Stratix(api_key="original-key")
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
             new_client = original_client.with_options(api_key="new-key")
 
         assert new_client.api_key == "new-key"
@@ -113,10 +113,10 @@ class TestAtlasClientInitialization:
     def test_copy_method_timeout_override(self, mock_org):
         """copy method properly overrides timeout when original is None."""
         # Create a client with no explicit timeout (uses default)
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            original_client = Atlas(api_key="original-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            original_client = Stratix(api_key="original-key")
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
             new_client = original_client.copy(timeout=30.0)
 
         import httpx
@@ -126,8 +126,8 @@ class TestAtlasClientInitialization:
         assert new_client.timeout == original_client.timeout
 
 
-class TestAtlasClientErrorHandling:
-    """Test error handling in Atlas client."""
+class TestStratixClientErrorHandling:
+    """Test error handling in Stratix client."""
 
     @pytest.fixture
     def mock_org(self):
@@ -149,8 +149,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates BadRequestError for 400 status."""
         from layerlens._exceptions import BadRequestError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(400)
         mock_body = {"error": "Bad request"}
 
@@ -163,8 +163,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates AuthenticationError for 401 status."""
         from layerlens._exceptions import AuthenticationError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(401)
         mock_body = {"error": "Unauthorized"}
 
@@ -177,8 +177,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates PermissionDeniedError for 403 status."""
         from layerlens._exceptions import PermissionDeniedError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(403)
         mock_body = {"error": "Forbidden"}
 
@@ -191,8 +191,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates NotFoundError for 404 status."""
         from layerlens._exceptions import NotFoundError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(404)
         mock_body = {"error": "Not found"}
 
@@ -205,8 +205,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates ConflictError for 409 status."""
         from layerlens._exceptions import ConflictError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(409)
         mock_body = {"error": "Conflict"}
 
@@ -219,8 +219,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates UnprocessableEntityError for 422 status."""
         from layerlens._exceptions import UnprocessableEntityError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(422)
         mock_body = {"error": "Unprocessable entity"}
 
@@ -233,8 +233,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates RateLimitError for 429 status."""
         from layerlens._exceptions import RateLimitError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(429)
         mock_body = {"error": "Rate limited"}
 
@@ -247,8 +247,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates InternalServerError for 500+ status."""
         from layerlens._exceptions import InternalServerError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(500)
         mock_body = {"error": "Internal server error"}
 
@@ -261,8 +261,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates InternalServerError for 502 status."""
         from layerlens._exceptions import InternalServerError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(502)
         mock_body = {"error": "Gateway timeout"}
 
@@ -275,8 +275,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error creates generic APIStatusError for unknown status codes."""
         from layerlens._exceptions import APIStatusError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(418)  # I'm a teapot
         mock_body = {"error": "Unknown error"}
 
@@ -289,8 +289,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error handles non-mapping body correctly."""
         from layerlens._exceptions import NotFoundError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(404)
         mock_body = "Simple string error"
 
@@ -303,8 +303,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error handles None body correctly."""
         from layerlens._exceptions import BadRequestError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(400)
 
         error = client._make_status_error("Bad request", body=None, response=mock_response)
@@ -316,8 +316,8 @@ class TestAtlasClientErrorHandling:
         """_make_status_error extracts error from complex body structure."""
         from layerlens._exceptions import AuthenticationError
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="test-key")
         mock_response = self._create_mock_response(401)
         mock_body = {
             "error": {"message": "Invalid API key", "code": "AUTH_ERROR"},

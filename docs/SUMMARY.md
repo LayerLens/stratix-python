@@ -1,4 +1,4 @@
-# Table of Contents - Atlas Python SDK
+# Table of Contents - Stratix Python SDK
 
 * [Introduction](README.md)
 
@@ -12,10 +12,15 @@
 * [Evaluations](api-reference/evaluations.md)
 * [Results](api-reference/results.md)
 * [Models & Benchmarks](api-reference/models-benchmarks.md)
+* [Judges](api-reference/judges.md)
+* [Traces](api-reference/traces.md)
+* [Trace Evaluations](api-reference/trace-evaluations.md)
+* [Judge Optimizations](api-reference/judge-optimizations.md)
 * [Error Handling](api-reference/errors.md)
 
 ## Code Examples
 * [Creating Evaluations](examples/creating-evaluations.md)
+* [Judges and Traces](examples/judges-and-traces.md)
 * [Retrieving Results](examples/retrieving-results.md)
 * [Working with Timeouts](examples/timeouts.md)
 * [Advanced Usage Patterns](examples/advanced-usage.md)

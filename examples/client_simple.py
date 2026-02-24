@@ -1,9 +1,9 @@
 #!/usr/bin/env -S poetry run python
 
-from layerlens import Atlas
+from layerlens import Stratix
 
 # Construct sync client (API key from env or inline)
-client = Atlas()
+client = Stratix()
 
 # --- Models
 models = client.models.get(type="public", name="gpt-4o")

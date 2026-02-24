@@ -63,12 +63,12 @@ jobs:
           ls -la
 
           echo "Checking if version file exists..."
-          if [ -f "src/atlas/_version.py" ]; then
+          if [ -f "src/layerlens/_version.py" ]; then
             echo "Version file found:"
-            cat src/atlas/_version.py
+            cat src/layerlens/_version.py
 
             # Extract version directly
-            VERSION=$(grep -E '^__version__\s*=' src/atlas/_version.py | grep -o '".*"' | tr -d '"')
+            VERSION=$(grep -E '^__version__\s*=' src/layerlens/_version.py | grep -o '".*"' | tr -d '"')
             echo "Direct extraction result: '$VERSION'"
           else
             echo "Version file not found, trying script method..."
@@ -293,10 +293,10 @@ jobs:
           <!DOCTYPE html>
           <html>
           <head>
-              <title>LayerLens Atlas SDK</title>
+              <title>LayerLens Stratix SDK</title>
           </head>
           <body>
-              <h1>LayerLens Atlas SDK</h1>
+              <h1>LayerLens Stratix SDK</h1>
               <a href="${{ env.PACKAGE_NAME }}/">${{ env.PACKAGE_NAME }}</a><br/>
           </body>
           </html>

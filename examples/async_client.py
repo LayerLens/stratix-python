@@ -2,12 +2,12 @@
 
 import asyncio
 
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 
 
 async def main():
     # Construct async client
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # --- Models
     models = await client.models.get(type="public", name="gpt-4o")

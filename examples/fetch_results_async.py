@@ -2,7 +2,7 @@
 
 import asyncio
 
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 
 
 async def fetch_evaluation_results(client, evaluation_id):
@@ -26,7 +26,7 @@ async def fetch_evaluation_results(client, evaluation_id):
 
 async def main():
     # Construct async client
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # List of evaluation IDs to fetch exmple
 
