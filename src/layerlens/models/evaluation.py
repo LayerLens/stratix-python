@@ -19,6 +19,7 @@ class EvaluationStatus(str, Enum):
     PAUSED = "paused"
     SUCCESS = "success"
     TIMEOUT = "timeout"
+    CANCELLED = "cancelled"
 
 
 class Evaluation(BaseModel):

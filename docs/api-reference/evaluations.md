@@ -400,6 +400,8 @@ The `status` field is an `EvaluationStatus` enum with the following values:
 | `"paused"`      | Evaluation has been paused            |
 | `"success"`     | Evaluation finished successfully      |
 | `"failure"`     | Evaluation failed due to an error     |
+| `"timeout"`     | Evaluation timed out                  |
+| `"cancelled"`   | Evaluation was cancelled              |
 
 ## Next Steps
 
