@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
-from layerlens import Atlas
+from layerlens import Stratix
 from layerlens.models import (
     Model,
     Result,
@@ -15,13 +15,13 @@ from layerlens.models import (
 )
 
 
-class TestAtlasIntegration:
-    """Integration tests for full Atlas API workflows."""
+class TestStratixIntegration:
+    """Integration tests for full Stratix API workflows."""
 
     @pytest.fixture
-    def atlas_client(self):
-        """Create Atlas client with mocked dependencies."""
-        return Atlas(api_key="test-api-key")
+    def stratix_client(self):
+        """Create Stratix client with mocked dependencies."""
+        return Stratix(api_key="test-api-key")
 
     @pytest.fixture
     def sample_model_data(self):
@@ -98,16 +98,16 @@ class TestCompleteEvaluationWorkflow:
     """Test complete evaluation workflow from start to finish."""
 
     @pytest.fixture
-    def atlas_client(self):
-        """Atlas client for workflow testing."""
+    def stratix_client(self):
+        """Stratix client for workflow testing."""
         mock_org = Mock()
         mock_org.id = "org-123"
         mock_org.projects = [Mock(id="proj-456")]
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            return Atlas(api_key="workflow-test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            return Stratix(api_key="workflow-test-key")
 
-    def test_complete_evaluation_workflow(self, atlas_client):
+    def test_complete_evaluation_workflow(self, stratix_client):
         """Test complete workflow: get models/benchmarks -> create evaluation -> get results."""
 
         # Mock data
@@ -174,7 +174,9 @@ class TestCompleteEvaluationWorkflow:
         # Mock responses
         evaluations_response = CreateEvaluationsResponse(data=[evaluation])
 
-        with patch.object(atlas_client, "get_cast") as mock_get, patch.object(atlas_client, "post_cast") as mock_post:
+        with patch.object(stratix_client, "get_cast") as mock_get, patch.object(
+            stratix_client, "post_cast"
+        ) as mock_post:
             # Configure mocks for the workflow
             mock_get.return_value = {
                 "evaluation_id": "eval-789",
@@ -189,13 +191,13 @@ class TestCompleteEvaluationWorkflow:
             }  # Get results - raw API response
             mock_post.return_value = evaluations_response  # Create evaluation
 
-            # Step 1: Create evaluation directly (Atlas client doesn't expose models/benchmarks resources)
-            created_evaluation = atlas_client.evaluations.create(model=model, benchmark=benchmark)
+            # Step 1: Create evaluation directly (Stratix client doesn't expose models/benchmarks resources)
+            created_evaluation = stratix_client.evaluations.create(model=model, benchmark=benchmark)
             assert created_evaluation.id == "eval-789"
             assert created_evaluation.status == EvaluationStatus.SUCCESS
 
             # Step 2: Get evaluation results
-            results = atlas_client.results.get(evaluation=created_evaluation)
+            results = stratix_client.results.get(evaluation=created_evaluation)
             assert len(results.results) == 1
             assert results.results[0].score == 1.0
             assert results.results[0].subset == "math"
@@ -211,7 +213,7 @@ class TestCompleteEvaluationWorkflow:
             post_call = mock_post.call_args_list[0]
             assert "/evaluations" in post_call[0][0]
 
-    def test_workflow_with_error_handling(self, atlas_client):
+    def test_workflow_with_error_handling(self, stratix_client):
         """Test workflow handles errors gracefully."""
         from layerlens._exceptions import NotFoundError
 
@@ -219,16 +221,16 @@ class TestCompleteEvaluationWorkflow:
         mock_response.status_code = 404
         mock_response.headers = {}
 
-        with patch.object(atlas_client, "get_cast") as mock_get:
+        with patch.object(stratix_client, "get_cast") as mock_get:
             # Mock API error when getting results
             api_error = NotFoundError("Results not found", response=mock_response, body=None)
             mock_get.side_effect = api_error
 
             # Verify error is propagated
             with pytest.raises(NotFoundError):
-                atlas_client.results.get_by_id(evaluation_id="test-eval")
+                stratix_client.results.get_by_id(evaluation_id="test-eval")
 
-    def test_workflow_with_custom_timeouts(self, atlas_client):
+    def test_workflow_with_custom_timeouts(self, stratix_client):
         """Test workflow respects custom timeout settings."""
         result_data = {
             "subset": "test",
@@ -240,7 +242,7 @@ class TestCompleteEvaluationWorkflow:
             "metrics": {"accuracy": 1.0},
         }
 
-        with patch.object(atlas_client, "get_cast") as mock_get:
+        with patch.object(stratix_client, "get_cast") as mock_get:
             mock_get.return_value = {
                 "evaluation_id": "test-eval",
                 "results": [result_data],
@@ -255,7 +257,7 @@ class TestCompleteEvaluationWorkflow:
 
             # Test with custom timeout
             custom_timeout = httpx.Timeout(30.0)
-            results = atlas_client.results.get_by_id(evaluation_id="test-eval", timeout=custom_timeout)
+            results = stratix_client.results.get_by_id(evaluation_id="test-eval", timeout=custom_timeout)
 
             assert len(results.results) == 1
 
@@ -268,16 +270,16 @@ class TestResourceInteraction:
     """Test interactions between different resources."""
 
     @pytest.fixture
-    def atlas_client(self):
-        """Atlas client for resource interaction testing."""
+    def stratix_client(self):
+        """Stratix client for resource interaction testing."""
         mock_org = Mock()
         mock_org.id = "org-123"
         mock_org.projects = [Mock(id="proj-456")]
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            return Atlas(api_key="interaction-test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            return Stratix(api_key="interaction-test-key")
 
-    def test_evaluation_creation_with_model_and_benchmark_objects(self, atlas_client):
+    def test_evaluation_creation_with_model_and_benchmark_objects(self, stratix_client):
         """Test creating evaluation using model and benchmark objects."""
 
         # Create model and benchmark objects
@@ -331,11 +333,11 @@ class TestResourceInteraction:
 
         evaluations_response = CreateEvaluationsResponse(data=[evaluation])
 
-        with patch.object(atlas_client, "post_cast") as mock_post:
+        with patch.object(stratix_client, "post_cast") as mock_post:
             mock_post.return_value = evaluations_response
 
             # Create evaluation using model and benchmark keys
-            created_evaluation = atlas_client.evaluations.create(model=model, benchmark=benchmark)
+            created_evaluation = stratix_client.evaluations.create(model=model, benchmark=benchmark)
 
             assert created_evaluation.id == "eval-interaction"
             assert created_evaluation.model_id == model.id
@@ -347,7 +349,7 @@ class TestResourceInteraction:
             assert body["model_id"] == model.id
             assert body["dataset_id"] == benchmark.id
 
-    def test_results_analysis_workflow(self, atlas_client):
+    def test_results_analysis_workflow(self, stratix_client):
         """Test analyzing results from multiple evaluations."""
 
         # Create multiple result objects
@@ -383,7 +385,7 @@ class TestResourceInteraction:
 
         results = [Result(**data) for data in results_data]
 
-        with patch.object(atlas_client, "get_cast") as mock_get:
+        with patch.object(stratix_client, "get_cast") as mock_get:
             mock_get.return_value = {
                 "evaluation_id": "test-eval",
                 "results": results_data,
@@ -397,7 +399,7 @@ class TestResourceInteraction:
             }
 
             # Get results
-            evaluation_results = atlas_client.results.get_by_id(evaluation_id="test-eval")
+            evaluation_results = stratix_client.results.get_by_id(evaluation_id="test-eval")
 
             # Analyze results
             math_results = [r for r in evaluation_results.results if r.subset == "math"]
@@ -421,8 +423,8 @@ class TestResourceInteraction:
             assert abs(avg_duration - expected_avg) < 0.01
 
 
-class TestAtlasClientProperties:
-    """Test Atlas client resource properties and access."""
+class TestStratixClientProperties:
+    """Test Stratix client resource properties and access."""
 
     @pytest.fixture
     def mock_org(self):
@@ -432,9 +434,9 @@ class TestAtlasClientProperties:
         return org
 
     def test_client_has_all_resource_properties(self, mock_org):
-        """Atlas client exposes all resource properties."""
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="property-test-key")
+        """Stratix client exposes all resource properties."""
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="property-test-key")
 
         # Verify available resource properties exist
         assert hasattr(client, "evaluations")
@@ -449,8 +451,8 @@ class TestAtlasClientProperties:
 
     def test_resource_properties_share_same_client(self, mock_org):
         """All resource properties share the same client instance."""
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="shared-client-test")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="shared-client-test")
 
         # Verify all resources use the same client
         assert client.evaluations._client is client
@@ -474,14 +476,14 @@ class TestConcurrentOperations:
         org.projects = [Mock(id="proj-123")]
         return org
 
-    def test_multiple_atlas_clients_independent(self, mock_org1, mock_org2):
-        """Multiple Atlas client instances operate independently."""
+    def test_multiple_stratix_clients_independent(self, mock_org1, mock_org2):
+        """Multiple Stratix client instances operate independently."""
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org1):
-            client1 = Atlas(api_key="client-1-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org1):
+            client1 = Stratix(api_key="client-1-key")
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org2):
-            client2 = Atlas(api_key="client-2-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org2):
+            client2 = Stratix(api_key="client-2-key")
 
         # Verify clients are independent
         assert client1.api_key != client2.api_key
@@ -493,11 +495,11 @@ class TestConcurrentOperations:
     def test_resource_operations_isolated(self, mock_org1, mock_org2):
         """Operations on different client resources are isolated."""
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org1):
-            client1 = Atlas(api_key="iso-test-1")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org1):
+            client1 = Stratix(api_key="iso-test-1")
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org2):
-            client2 = Atlas(api_key="iso-test-2")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org2):
+            client2 = Stratix(api_key="iso-test-2")
 
         result_data = {
             "subset": "test",
@@ -601,8 +603,8 @@ class TestErrorPropagation:
         model = Model(**model_data)
         benchmark = Benchmark(**benchmark_data)
 
-        with patch("layerlens.Atlas._get_organization", return_value=mock_org):
-            client = Atlas(api_key="error-test-key")
+        with patch("layerlens.Stratix._get_organization", return_value=mock_org):
+            client = Stratix(api_key="error-test-key")
 
         mock_response = Mock()
         mock_response.status_code = 500

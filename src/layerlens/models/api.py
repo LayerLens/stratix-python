@@ -4,10 +4,14 @@ from typing import List
 
 from pydantic import Field, BaseModel, ConfigDict
 
+from .judge import Judge
 from .model import Model
+from .trace import TraceWithEvaluations
 from .benchmark import Benchmark
 from .evaluation import Result, Evaluation
 from .organization import Organization
+from .trace_evaluation import TraceEvaluation, TraceEvaluationResult
+from .judge_optimization import JudgeOptimizationRun
 
 
 class BenchmarksResponse(BaseModel):
@@ -55,3 +59,84 @@ class ResultsResponse(BaseModel):
     results: List[Result]
     metrics: ResultMetrics
     pagination: Pagination
+
+
+class JudgesResponse(BaseModel):
+    judges: List[Judge]
+    count: int
+    total_count: int
+
+
+class CreateJudgeResponse(BaseModel):
+    id: str
+
+
+class UpdateJudgeResponse(BaseModel):
+    organization_id: str
+    project_id: str
+    id: str
+
+
+class DeleteJudgeResponse(BaseModel):
+    organization_id: str
+    project_id: str
+    id: str
+
+
+class TracesResponse(BaseModel):
+    traces: List[TraceWithEvaluations]
+    count: int
+    total_count: int
+
+
+class UploadURLResponse(BaseModel):
+    organization_id: str
+    project_id: str
+    url: str
+
+
+class CreateTracesResponse(BaseModel):
+    trace_ids: List[str]
+
+
+class TraceEvaluationsResponse(BaseModel):
+    trace_evaluations: List[TraceEvaluation]
+    count: int
+    total: int
+
+
+class TraceEvaluationResultsResponse(BaseModel):
+    results: List[TraceEvaluationResult]
+
+
+class CostEstimateResponse(BaseModel):
+    estimated_cost: float
+    input_tokens: int
+    output_tokens: int
+    model: str
+    trace_count: int
+
+
+class JudgeOptimizationRunsResponse(BaseModel):
+    optimization_runs: List[JudgeOptimizationRun]
+    count: int
+    total: int
+
+
+class CreateJudgeOptimizationRunResponse(BaseModel):
+    id: str
+    judge_id: str
+    budget: str
+    status: str
+
+
+class EstimateJudgeOptimizationCostResponse(BaseModel):
+    estimated_cost: float
+    annotation_count: int
+    budget: str
+
+
+class ApplyJudgeOptimizationResultResponse(BaseModel):
+    judge_id: str
+    new_version: int
+    message: str

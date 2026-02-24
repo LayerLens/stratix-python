@@ -13,20 +13,24 @@ from . import _exceptions
 from ._utils import is_mapping
 from .models import Organization, OrganizationResponse
 from ._constants import DEFAULT_TIMEOUT
-from ._exceptions import AtlasError, APIStatusError
+from ._exceptions import StratixError, APIStatusError
 from ._base_client import BaseClient, BaseAsyncClient
 
 if TYPE_CHECKING:
+    from .resources.judges import Judges, AsyncJudges
     from .resources.models import Models, AsyncModels
+    from .resources.traces import Traces, AsyncTraces
     from .resources.results import Results, AsyncResults
     from .resources.benchmarks import Benchmarks, AsyncBenchmarks
     from .resources.evaluations import Evaluations, AsyncEvaluations
+    from .resources.trace_evaluations import TraceEvaluations, AsyncTraceEvaluations
+    from .resources.judge_optimizations import JudgeOptimizations, AsyncJudgeOptimizations
 
 
-__all__ = ["Atlas", "Client"]
+__all__ = ["Stratix", "Client"]
 
 
-class Atlas(BaseClient):
+class Stratix(BaseClient):
     api_key: str
     organization_id: str | None
     project_id: str | None
@@ -38,21 +42,21 @@ class Atlas(BaseClient):
         base_url: str | httpx.URL | None = None,
         timeout: Union[float, httpx.Timeout, None] = DEFAULT_TIMEOUT,
     ) -> None:
-        """Construct a new synchronous Atlas client instance.
+        """Construct a new synchronous Stratix client instance.
 
         This automatically infers the following arguments from their corresponding environment variables if they are not provided:
-        - `api_key` from `LAYERLENS_ATLAS_API_KEY`
+        - `api_key` from `LAYERLENS_STRATIX_API_KEY`
         """
         if api_key is None:
-            api_key = os.environ.get("LAYERLENS_ATLAS_API_KEY")
+            api_key = os.environ.get("LAYERLENS_STRATIX_API_KEY") or os.environ.get("LAYERLENS_ATLAS_API_KEY")
         if api_key is None or api_key == "":
-            raise AtlasError(
-                "The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_ATLAS_API_KEY environment variable"
+            raise StratixError(
+                "The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_STRATIX_API_KEY environment variable"
             )
         self.api_key = api_key
 
         if base_url is None:
-            base_url = os.environ.get("LAYERLENS_ATLAS_BASE_URL")
+            base_url = os.environ.get("LAYERLENS_STRATIX_BASE_URL") or os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
             base_url = "https://api.layerlens.ai/api/v1"
 
@@ -63,12 +67,12 @@ class Atlas(BaseClient):
 
         organization = self._get_organization()
         if organization is None:
-            raise AtlasError(f"Organization could not be fetched. Please contact LayerLens Atlas support.")
+            raise StratixError(f"Organization could not be fetched. Please contact LayerLens Stratix support.")
         self.organization_id = organization.id
 
         if organization.projects is None or len(organization.projects) == 0:
-            raise AtlasError(
-                f"Organization {self.organization_id} is missing project. Please contact LayerLens Atlas support."
+            raise StratixError(
+                f"Organization {self.organization_id} is missing project. Please contact LayerLens Stratix support."
             )
         self.project_id = organization.projects[0].id
 
@@ -85,6 +89,18 @@ class Atlas(BaseClient):
         return Evaluations(self)
 
     @cached_property
+    def judges(self) -> Judges:
+        from .resources.judges import Judges
+
+        return Judges(self)
+
+    @cached_property
+    def judge_optimizations(self) -> JudgeOptimizations:
+        from .resources.judge_optimizations import JudgeOptimizations
+
+        return JudgeOptimizations(self)
+
+    @cached_property
     def models(self) -> Models:
         from .resources.models import Models
 
@@ -95,6 +111,18 @@ class Atlas(BaseClient):
         from .resources.results import Results
 
         return Results(self)
+
+    @cached_property
+    def traces(self) -> Traces:
+        from .resources.traces import Traces
+
+        return Traces(self)
+
+    @cached_property
+    def trace_evaluations(self) -> TraceEvaluations:
+        from .resources.trace_evaluations import TraceEvaluations
+
+        return TraceEvaluations(self)
 
     @property
     @override
@@ -167,7 +195,7 @@ class Atlas(BaseClient):
         return organization.data if isinstance(organization, OrganizationResponse) else None
 
 
-class AsyncAtlas(BaseAsyncClient):
+class AsyncStratix(BaseAsyncClient):
     api_key: str
     organization_id: str | None
     project_id: str | None
@@ -179,22 +207,22 @@ class AsyncAtlas(BaseAsyncClient):
         base_url: str | httpx.URL | None = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> None:
-        """Construct a new asynchronous Atlas client instance.
+        """Construct a new asynchronous Stratix client instance.
 
         This automatically infers the following arguments from their corresponding environment variables if they are not provided:
-        - `api_key` from `LAYERLENS_ATLAS_API_KEY`
+        - `api_key` from `LAYERLENS_STRATIX_API_KEY`
         """
         if api_key is None:
-            api_key = os.environ.get("LAYERLENS_ATLAS_API_KEY")
+            api_key = os.environ.get("LAYERLENS_STRATIX_API_KEY") or os.environ.get("LAYERLENS_ATLAS_API_KEY")
         if api_key is None or api_key == "":
-            raise AtlasError(
+            raise StratixError(
                 "The api_key client option must be set either by passing api_key to the client "
-                "or by setting the LAYERLENS_ATLAS_API_KEY environment variable"
+                "or by setting the LAYERLENS_STRATIX_API_KEY environment variable"
             )
         self.api_key = api_key
 
         if base_url is None:
-            base_url = os.environ.get("LAYERLENS_ATLAS_BASE_URL")
+            base_url = os.environ.get("LAYERLENS_STRATIX_BASE_URL") or os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
             base_url = "https://api.layerlens.ai/api/v1"
 
@@ -202,12 +230,12 @@ class AsyncAtlas(BaseAsyncClient):
 
         organization = self._get_organization()
         if organization is None:
-            raise AtlasError(f"Organization could not be fetched. Please contact LayerLens Atlas support.")
+            raise StratixError(f"Organization could not be fetched. Please contact LayerLens Stratix support.")
         self.organization_id = organization.id
 
         if organization.projects is None or len(organization.projects) == 0:
-            raise AtlasError(
-                f"Organization {self.organization_id} is missing project. Please contact LayerLens Atlas support."
+            raise StratixError(
+                f"Organization {self.organization_id} is missing project. Please contact LayerLens Stratix support."
             )
         self.project_id = organization.projects[0].id
 
@@ -224,6 +252,18 @@ class AsyncAtlas(BaseAsyncClient):
         return AsyncEvaluations(self)
 
     @cached_property
+    def judges(self) -> AsyncJudges:
+        from .resources.judges import AsyncJudges
+
+        return AsyncJudges(self)
+
+    @cached_property
+    def judge_optimizations(self) -> AsyncJudgeOptimizations:
+        from .resources.judge_optimizations import AsyncJudgeOptimizations
+
+        return AsyncJudgeOptimizations(self)
+
+    @cached_property
     def models(self) -> AsyncModels:
         from .resources.models import AsyncModels
 
@@ -234,6 +274,18 @@ class AsyncAtlas(BaseAsyncClient):
         from .resources.results import AsyncResults
 
         return AsyncResults(self)
+
+    @cached_property
+    def traces(self) -> AsyncTraces:
+        from .resources.traces import AsyncTraces
+
+        return AsyncTraces(self)
+
+    @cached_property
+    def trace_evaluations(self) -> AsyncTraceEvaluations:
+        from .resources.trace_evaluations import AsyncTraceEvaluations
+
+        return AsyncTraceEvaluations(self)
 
     @property
     @override
@@ -298,5 +350,9 @@ class AsyncAtlas(BaseAsyncClient):
         return organization.data if isinstance(organization, OrganizationResponse) else None
 
 
-Client = Atlas
-AsyncClient = AsyncAtlas
+Client = Stratix
+AsyncClient = AsyncStratix
+
+# Backward-compatibility aliases
+Atlas = Stratix
+AsyncAtlas = AsyncStratix

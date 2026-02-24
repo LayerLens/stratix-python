@@ -1,6 +1,6 @@
 # Creating Evaluations
 
-Examples for creating evaluations on the Atlas platform using the Layerlens python sdk.
+Examples for creating evaluations on the Stratix platform using the Layerlens python sdk.
 
 > Before running the below examples ensure the model and benchmark being run are present on your organiztion.
 
@@ -11,10 +11,10 @@ Examples for creating evaluations on the Atlas platform using the Layerlens pyth
 Below is an example showing how to trigger an evaluation, waiting for it to complete and finally fetching the evaluations results.
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 
 # Construct sync client (API key from env or inline)
-client = Atlas()
+client = Stratix()
 
 # --- Models replace with the model key you want to run
 model = client.models.get_by_key("openai/gpt-4o")
@@ -54,12 +54,12 @@ if evaluation.is_success:
 ```python
 import asyncio
 
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 
 
 async def main():
     # Construct async client
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # --- Model to use
     model = await client.models.get_by_key("openai/gpt-4o")
@@ -94,10 +94,10 @@ if __name__ == "__main__":
 ## Error Handling
 
 ```python
-from layerlens import Atlas
+from layerlens import Stratix
 import layerlens
 
-client = Atlas()
+client = Stratix()
 
 try:
     models = client.models.get()
@@ -121,7 +121,7 @@ except layerlens.APIError as e:
 ```python
 import asyncio
 
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 
 
 async def create_and_run_evaluation(client, model, benchmark, eval_number):
@@ -153,7 +153,7 @@ async def create_and_run_evaluation(client, model, benchmark, eval_number):
 
 async def main():
     # Construct async client
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # --- Models
     models = await client.models.get()
@@ -188,7 +188,7 @@ if __name__ == "__main__":
 
 import asyncio
 
-from layerlens import AsyncAtlas
+from layerlens import AsyncStratix
 
 
 async def fetch_evaluation_results(client, evaluation_id):
@@ -208,7 +208,7 @@ async def fetch_evaluation_results(client, evaluation_id):
 
 async def main():
     # Construct async client
-    client = AsyncAtlas()
+    client = AsyncStratix()
 
     # List of example evaluation IDs to fetch
 

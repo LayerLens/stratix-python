@@ -1,3 +1,52 @@
-from ._client import Atlas, Client, AsyncAtlas, AsyncClient
+from .models import (
+    Judge,
+    Trace,
+    JudgeVersion,
+    JudgeSnapshot,
+    TraceEvaluation,
+    OptimizationBudget,
+    TraceEvaluationStep,
+    JudgeOptimizationRun,
+    TraceWithEvaluations,
+    OptimizationRunStatus,
+    TraceEvaluationResult,
+    TraceEvaluationStatus,
+    TraceEvaluationSummary,
+)
+from ._client import Atlas, Client, Stratix, AsyncAtlas, AsyncClient, AsyncStratix
+from ._exceptions import (
+    APIError,
+    AtlasError,
+    StratixError,
+    NotFoundError,
+    BadRequestError,
+    AuthenticationError,
+)
 
-__all__ = ["Atlas", "AsyncAtlas", "Client", "AsyncClient"]
+__all__ = [
+    "APIError",
+    "AsyncAtlas",
+    "AsyncClient",
+    "AsyncStratix",
+    "Atlas",
+    "AtlasError",
+    "AuthenticationError",
+    "BadRequestError",
+    "Client",
+    "Judge",
+    "JudgeOptimizationRun",
+    "JudgeSnapshot",
+    "JudgeVersion",
+    "NotFoundError",
+    "OptimizationBudget",
+    "OptimizationRunStatus",
+    "Stratix",
+    "StratixError",
+    "Trace",
+    "TraceEvaluation",
+    "TraceEvaluationResult",
+    "TraceEvaluationStatus",
+    "TraceEvaluationStep",
+    "TraceEvaluationSummary",
+    "TraceWithEvaluations",
+]

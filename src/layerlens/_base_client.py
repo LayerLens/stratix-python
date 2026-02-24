@@ -96,6 +96,28 @@ class BaseClient(httpx.Client):
     ) -> Union[ResponseT, httpx.Response]:
         return self._request_cast("POST", url, cast_to=cast_to, body=body, headers=headers, **kwargs)
 
+    def patch_cast(
+        self,
+        url: str,
+        *,
+        cast_to: Optional[Type[ResponseT]] = None,
+        body: Optional[Any] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> Union[ResponseT, httpx.Response]:
+        return self._request_cast("PATCH", url, cast_to=cast_to, body=body, headers=headers, **kwargs)
+
+    def delete_cast(
+        self,
+        url: str,
+        *,
+        cast_to: Optional[Type[ResponseT]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> Union[ResponseT, httpx.Response]:
+        return self._request_cast("DELETE", url, cast_to=cast_to, params=params, headers=headers, **kwargs)
+
     def _make_status_error_from_response(
         self,
         response: httpx.Response,
@@ -199,6 +221,28 @@ class BaseAsyncClient(httpx.AsyncClient):
         **kwargs: Any,
     ) -> Union[ResponseT, httpx.Response]:
         return await self._request_cast("POST", url, cast_to=cast_to, body=body, headers=headers, **kwargs)
+
+    async def patch_cast(
+        self,
+        url: str,
+        *,
+        cast_to: Optional[Type[ResponseT]] = None,
+        body: Optional[Any] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> Union[ResponseT, httpx.Response]:
+        return await self._request_cast("PATCH", url, cast_to=cast_to, body=body, headers=headers, **kwargs)
+
+    async def delete_cast(
+        self,
+        url: str,
+        *,
+        cast_to: Optional[Type[ResponseT]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> Union[ResponseT, httpx.Response]:
+        return await self._request_cast("DELETE", url, cast_to=cast_to, params=params, headers=headers, **kwargs)
 
     def _make_status_error_from_response(
         self,
