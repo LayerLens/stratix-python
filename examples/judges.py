@@ -1,14 +1,25 @@
 #!/usr/bin/env -S poetry run python
 
+import time
+
 from layerlens import Stratix
 
 # Construct sync client (API key from env or inline)
 client = Stratix()
 
+# --- Fetch a model to use as the judge's LLM
+models = client.models.get(type="public", name="gpt-4o")
+if not models:
+    print("No models found, exiting")
+    exit(1)
+model = models[0]
+print(f"Using model: {model.name} ({model.id})")
+
 # --- Create a judge
 judge = client.judges.create(
-    name="Code Quality Judge",
+    name=f"Code Quality Judge {int(time.time())}",
     evaluation_goal="Evaluate the quality of code output including correctness, readability, and style",
+    model_id=model.id,
 )
 print(f"Created judge {judge.id}: {judge.name}")
 

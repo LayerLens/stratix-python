@@ -30,7 +30,7 @@ class TraceEvaluation(BaseModel):
     judge_id: str
     status: TraceEvaluationStatus
     judge_snapshot: Optional[JudgeSnapshot] = None
-    created_at: str
+    created_at: Optional[str] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
 

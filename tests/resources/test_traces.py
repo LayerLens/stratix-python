@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from layerlens.models import Trace, TracesResponse, UploadURLResponse, CreateTracesResponse
+from layerlens.models import Trace, TracesResponse, CreateTracesResponse
 from layerlens._constants import DEFAULT_TIMEOUT
 from layerlens.resources.traces.traces import Traces
 
@@ -70,7 +70,7 @@ class TestTraces:
 
     def test_get_trace_success(self, traces_resource, sample_trace_data):
         """get method returns Trace on success."""
-        traces_resource._get.return_value = Trace(**sample_trace_data)
+        traces_resource._get.return_value = sample_trace_data
 
         result = traces_resource.get("trace-123")
 
@@ -80,14 +80,14 @@ class TestTraces:
 
     def test_get_trace_request_parameters(self, traces_resource, sample_trace_data):
         """get method makes correct API request."""
-        traces_resource._get.return_value = Trace(**sample_trace_data)
+        traces_resource._get.return_value = sample_trace_data
 
         traces_resource.get("trace-123")
 
         traces_resource._get.assert_called_once_with(
             "/organizations/org-123/projects/proj-456/traces/trace-123",
             timeout=DEFAULT_TIMEOUT,
-            cast_to=Trace,
+            cast_to=dict,
         )
 
     def test_get_trace_none_response(self, traces_resource):
@@ -250,14 +250,10 @@ class TestTracesUpload:
             tmp_path = f.name
 
         try:
-            # Mock step 1: presigned URL
+            # Mock step 1: presigned URL (now returns dict)
             traces_resource._post.side_effect = [
-                UploadURLResponse(
-                    organization_id="org-123",
-                    project_id="proj-456",
-                    url="https://s3.example.com/upload?signed=true",
-                ),
-                CreateTracesResponse(trace_ids=["trace-new-1"]),
+                {"url": "https://s3.example.com/upload?signed=true"},
+                {"trace_ids": ["trace-new-1"]},
             ]
 
             # Mock step 2: S3 upload
@@ -296,12 +292,8 @@ class TestTracesUpload:
 
         try:
             traces_resource._post.side_effect = [
-                UploadURLResponse(
-                    organization_id="org-123",
-                    project_id="proj-456",
-                    url="https://s3.example.com/upload",
-                ),
-                CreateTracesResponse(trace_ids=["trace-1", "trace-2"]),
+                {"url": "https://s3.example.com/upload"},
+                {"trace_ids": ["trace-1", "trace-2"]},
             ]
 
             with patch("layerlens.resources.traces.traces.httpx.put") as mock_put:

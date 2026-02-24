@@ -7,7 +7,6 @@ import httpx
 from ...models import (
     Judge,
     JudgesResponse,
-    CreateJudgeResponse,
     DeleteJudgeResponse,
     UpdateJudgeResponse,
 )
@@ -42,10 +41,13 @@ class Judges(SyncAPIResource):
             self._base_url(),
             body=body,
             timeout=timeout,
-            cast_to=CreateJudgeResponse,
+            cast_to=dict,
         )
-        if isinstance(resp, CreateJudgeResponse):
-            return self.get(resp.id, timeout=timeout)
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            judge_id = data.get("id") if isinstance(data, dict) else None
+            if judge_id:
+                return self.get(judge_id, timeout=timeout)
         return None
 
     def get(
@@ -57,9 +59,15 @@ class Judges(SyncAPIResource):
         resp = self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=Judge,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, Judge) else None
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            try:
+                return Judge(**data) if isinstance(data, dict) else None
+            except Exception:
+                return None
+        return None
 
     def get_many(
         self,
@@ -85,9 +93,13 @@ class Judges(SyncAPIResource):
         if not resp or not isinstance(resp, dict):
             return None
 
-        judges = [j if isinstance(j, Judge) else Judge(**j) for j in resp.get("judges", [])]
-        count: int = resp.get("count", len(judges))
-        total_count: int = resp.get("total_count", count)
+        data = resp.get("data", resp) if "status" in resp and "data" in resp else resp
+        if not isinstance(data, dict):
+            return None
+
+        judges = [j if isinstance(j, Judge) else Judge(**j) for j in data.get("judges", [])]
+        count: int = data.get("count", len(judges))
+        total_count: int = data.get("total_count", count)
 
         try:
             return JudgesResponse(judges=judges, count=count, total_count=total_count)
@@ -115,9 +127,15 @@ class Judges(SyncAPIResource):
             f"{self._base_url()}/{id}",
             body=body,
             timeout=timeout,
-            cast_to=UpdateJudgeResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, UpdateJudgeResponse) else None
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            try:
+                return UpdateJudgeResponse(**data) if isinstance(data, dict) else None
+            except Exception:
+                return None
+        return None
 
     def delete(
         self,
@@ -128,9 +146,15 @@ class Judges(SyncAPIResource):
         resp = self._delete(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=DeleteJudgeResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, DeleteJudgeResponse) else None
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            try:
+                return DeleteJudgeResponse(**data) if isinstance(data, dict) else None
+            except Exception:
+                return None
+        return None
 
 
 class AsyncJudges(AsyncAPIResource):
@@ -156,10 +180,13 @@ class AsyncJudges(AsyncAPIResource):
             self._base_url(),
             body=body,
             timeout=timeout,
-            cast_to=CreateJudgeResponse,
+            cast_to=dict,
         )
-        if isinstance(resp, CreateJudgeResponse):
-            return await self.get(resp.id, timeout=timeout)
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            judge_id = data.get("id") if isinstance(data, dict) else None
+            if judge_id:
+                return await self.get(judge_id, timeout=timeout)
         return None
 
     async def get(
@@ -171,9 +198,15 @@ class AsyncJudges(AsyncAPIResource):
         resp = await self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=Judge,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, Judge) else None
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            try:
+                return Judge(**data) if isinstance(data, dict) else None
+            except Exception:
+                return None
+        return None
 
     async def get_many(
         self,
@@ -199,9 +232,13 @@ class AsyncJudges(AsyncAPIResource):
         if not resp or not isinstance(resp, dict):
             return None
 
-        judges = [j if isinstance(j, Judge) else Judge(**j) for j in resp.get("judges", [])]
-        count: int = resp.get("count", len(judges))
-        total_count: int = resp.get("total_count", count)
+        data = resp.get("data", resp) if "status" in resp and "data" in resp else resp
+        if not isinstance(data, dict):
+            return None
+
+        judges = [j if isinstance(j, Judge) else Judge(**j) for j in data.get("judges", [])]
+        count: int = data.get("count", len(judges))
+        total_count: int = data.get("total_count", count)
 
         try:
             return JudgesResponse(judges=judges, count=count, total_count=total_count)
@@ -229,9 +266,15 @@ class AsyncJudges(AsyncAPIResource):
             f"{self._base_url()}/{id}",
             body=body,
             timeout=timeout,
-            cast_to=UpdateJudgeResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, UpdateJudgeResponse) else None
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            try:
+                return UpdateJudgeResponse(**data) if isinstance(data, dict) else None
+            except Exception:
+                return None
+        return None
 
     async def delete(
         self,
@@ -242,6 +285,12 @@ class AsyncJudges(AsyncAPIResource):
         resp = await self._delete(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=DeleteJudgeResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, DeleteJudgeResponse) else None
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            try:
+                return DeleteJudgeResponse(**data) if isinstance(data, dict) else None
+            except Exception:
+                return None
+        return None

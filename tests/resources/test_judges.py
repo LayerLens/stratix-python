@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from layerlens.models import Judge, JudgesResponse, CreateJudgeResponse, DeleteJudgeResponse, UpdateJudgeResponse
+from layerlens.models import Judge, JudgesResponse, DeleteJudgeResponse, UpdateJudgeResponse
 from layerlens._constants import DEFAULT_TIMEOUT
 from layerlens.resources.judges.judges import Judges
 
@@ -58,8 +58,8 @@ class TestJudges:
 
     def test_create_judge_success(self, judges_resource, sample_judge_data):
         """create method returns Judge on success."""
-        judges_resource._post.return_value = CreateJudgeResponse(id="judge-123")
-        judges_resource._get.return_value = Judge(**sample_judge_data)
+        judges_resource._post.return_value = {"id": "judge-123"}
+        judges_resource._get.return_value = sample_judge_data
 
         result = judges_resource.create(
             name="Code Quality Judge",
@@ -73,8 +73,8 @@ class TestJudges:
 
     def test_create_judge_request_parameters(self, judges_resource, sample_judge_data):
         """create method makes correct API request."""
-        judges_resource._post.return_value = CreateJudgeResponse(id="judge-123")
-        judges_resource._get.return_value = Judge(**sample_judge_data)
+        judges_resource._post.return_value = {"id": "judge-123"}
+        judges_resource._get.return_value = sample_judge_data
 
         judges_resource.create(
             name="Test Judge",
@@ -90,13 +90,13 @@ class TestJudges:
                 "model_id": "model-789",
             },
             timeout=DEFAULT_TIMEOUT,
-            cast_to=CreateJudgeResponse,
+            cast_to=dict,
         )
 
     def test_create_judge_without_model_id(self, judges_resource, sample_judge_data):
         """create method works without model_id."""
-        judges_resource._post.return_value = CreateJudgeResponse(id="judge-123")
-        judges_resource._get.return_value = Judge(**sample_judge_data)
+        judges_resource._post.return_value = {"id": "judge-123"}
+        judges_resource._get.return_value = sample_judge_data
 
         judges_resource.create(
             name="Test Judge",
@@ -107,7 +107,7 @@ class TestJudges:
         assert "model_id" not in call_args.kwargs["body"]
 
     def test_create_judge_none_response(self, judges_resource):
-        """create method returns None when response is not CreateJudgeResponse."""
+        """create method returns None when response is not a dict."""
         judges_resource._post.return_value = None
 
         result = judges_resource.create(
@@ -119,7 +119,7 @@ class TestJudges:
 
     def test_get_judge_success(self, judges_resource, sample_judge_data):
         """get method returns Judge on success."""
-        judges_resource._get.return_value = Judge(**sample_judge_data)
+        judges_resource._get.return_value = sample_judge_data
 
         result = judges_resource.get("judge-123")
 
@@ -129,14 +129,14 @@ class TestJudges:
 
     def test_get_judge_request_parameters(self, judges_resource, sample_judge_data):
         """get method makes correct API request."""
-        judges_resource._get.return_value = Judge(**sample_judge_data)
+        judges_resource._get.return_value = sample_judge_data
 
         judges_resource.get("judge-123")
 
         judges_resource._get.assert_called_once_with(
             "/organizations/org-123/projects/proj-456/judges/judge-123",
             timeout=DEFAULT_TIMEOUT,
-            cast_to=Judge,
+            cast_to=dict,
         )
 
     def test_get_judge_none_response(self, judges_resource):
@@ -222,9 +222,11 @@ class TestJudges:
 
     def test_update_judge_success(self, judges_resource):
         """update method returns UpdateJudgeResponse on success."""
-        judges_resource._patch.return_value = UpdateJudgeResponse(
-            organization_id="org-123", project_id="proj-456", id="judge-123"
-        )
+        judges_resource._patch.return_value = {
+            "organization_id": "org-123",
+            "project_id": "proj-456",
+            "id": "judge-123",
+        }
 
         result = judges_resource.update(
             "judge-123",
@@ -237,9 +239,11 @@ class TestJudges:
 
     def test_update_judge_request_parameters(self, judges_resource):
         """update method makes correct API request."""
-        judges_resource._patch.return_value = UpdateJudgeResponse(
-            organization_id="org-123", project_id="proj-456", id="judge-123"
-        )
+        judges_resource._patch.return_value = {
+            "organization_id": "org-123",
+            "project_id": "proj-456",
+            "id": "judge-123",
+        }
 
         judges_resource.update(
             "judge-123",
@@ -256,14 +260,16 @@ class TestJudges:
                 "model_id": "new-model",
             },
             timeout=DEFAULT_TIMEOUT,
-            cast_to=UpdateJudgeResponse,
+            cast_to=dict,
         )
 
     def test_update_judge_partial(self, judges_resource):
         """update method only sends provided fields."""
-        judges_resource._patch.return_value = UpdateJudgeResponse(
-            organization_id="org-123", project_id="proj-456", id="judge-123"
-        )
+        judges_resource._patch.return_value = {
+            "organization_id": "org-123",
+            "project_id": "proj-456",
+            "id": "judge-123",
+        }
 
         judges_resource.update("judge-123", name="New Name Only")
 
@@ -281,9 +287,11 @@ class TestJudges:
 
     def test_delete_judge_success(self, judges_resource):
         """delete method returns DeleteJudgeResponse on success."""
-        judges_resource._delete.return_value = DeleteJudgeResponse(
-            organization_id="org-123", project_id="proj-456", id="judge-123"
-        )
+        judges_resource._delete.return_value = {
+            "organization_id": "org-123",
+            "project_id": "proj-456",
+            "id": "judge-123",
+        }
 
         result = judges_resource.delete("judge-123")
 
@@ -292,16 +300,18 @@ class TestJudges:
 
     def test_delete_judge_request_parameters(self, judges_resource):
         """delete method makes correct API request."""
-        judges_resource._delete.return_value = DeleteJudgeResponse(
-            organization_id="org-123", project_id="proj-456", id="judge-123"
-        )
+        judges_resource._delete.return_value = {
+            "organization_id": "org-123",
+            "project_id": "proj-456",
+            "id": "judge-123",
+        }
 
         judges_resource.delete("judge-123")
 
         judges_resource._delete.assert_called_once_with(
             "/organizations/org-123/projects/proj-456/judges/judge-123",
             timeout=DEFAULT_TIMEOUT,
-            cast_to=DeleteJudgeResponse,
+            cast_to=dict,
         )
 
     def test_delete_judge_none_response(self, judges_resource):

@@ -1,14 +1,25 @@
 #!/usr/bin/env -S poetry run python
 
+import time
+
 from layerlens import Stratix
 
 # Construct sync client (API key from env or inline)
 client = Stratix()
 
+# --- Fetch a model to use for judge creation
+models = client.models.get(type="public", name="gpt-4o")
+if not models:
+    print("No models found, exiting")
+    exit(1)
+model = models[0]
+print(f"Using model: {model.name} ({model.id})")
+
 # --- Create a judge to use for evaluations
 judge = client.judges.create(
-    name="Trace Evaluation Demo Judge",
+    name=f"Trace Eval Demo Judge {int(time.time())}",
     evaluation_goal="Evaluate whether the response is accurate, complete, and well-structured",
+    model_id=model.id,
 )
 print(f"Created judge {judge.id}: {judge.name}")
 
@@ -37,20 +48,27 @@ evaluation = client.trace_evaluations.create(
 )
 print(f"Created evaluation {evaluation.id}, status: {evaluation.status}")
 
-# --- Get evaluation status
-evaluation = client.trace_evaluations.get(evaluation.id)
-print(f"Evaluation status: {evaluation.status}")
+# --- Wait for evaluation to complete (poll every 2 seconds, up to 60s)
+for _ in range(30):
+    evaluation = client.trace_evaluations.get(evaluation.id)
+    print(f"Evaluation status: {evaluation.status}")
+    if evaluation.status.value in ("success", "failure"):
+        break
+    time.sleep(2)
 
-# --- Get evaluation results
-results_response = client.trace_evaluations.get_results(evaluation.id)
-if results_response and results_response.results:
-    for result in results_response.results:
-        print(f"  Score: {result.score}, Passed: {result.passed}")
-        print(f"  Reasoning: {result.reasoning}")
-        if result.steps:
-            for step in result.steps:
-                print(f"    Step {step.step}: {step.reasoning}")
-else:
+# --- Get evaluation results (may 404 if still in progress)
+try:
+    results_response = client.trace_evaluations.get_results(evaluation.id)
+    if results_response and results_response.results:
+        for result in results_response.results:
+            print(f"  Score: {result.score}, Passed: {result.passed}")
+            print(f"  Reasoning: {result.reasoning}")
+            if result.steps:
+                for step in result.steps:
+                    print(f"    Step {step.step}: {step.reasoning}")
+    else:
+        print("  No results returned")
+except Exception:
     print("  No results yet (evaluation may still be in progress)")
 
 # --- List all trace evaluations

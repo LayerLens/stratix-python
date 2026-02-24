@@ -19,6 +19,13 @@ DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 
 
+def _unwrap(resp: Any) -> Any:
+    """Unwrap {"status": ..., "data": ...} envelope if present."""
+    if isinstance(resp, dict) and "data" in resp and "status" in resp:
+        return resp["data"]
+    return resp
+
+
 class TraceEvaluations(SyncAPIResource):
     def _base_url(self) -> str:
         return f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/trace-evaluations"
@@ -36,9 +43,10 @@ class TraceEvaluations(SyncAPIResource):
             timeout=timeout,
             cast_to=dict,
         )
-        if isinstance(resp, dict):
+        data = _unwrap(resp)
+        if isinstance(data, dict):
             try:
-                return TraceEvaluation(**resp)
+                return TraceEvaluation(**data)
             except Exception:
                 return None
         return None
@@ -52,9 +60,15 @@ class TraceEvaluations(SyncAPIResource):
         resp = self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=TraceEvaluation,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, TraceEvaluation) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return TraceEvaluation(**data)
+            except Exception:
+                return None
+        return None
 
     def get_many(
         self,
@@ -102,11 +116,15 @@ class TraceEvaluations(SyncAPIResource):
         if not resp or not isinstance(resp, dict):
             return None
 
+        data = _unwrap(resp)
+        if not isinstance(data, dict):
+            return None
+
         evaluations = [
-            te if isinstance(te, TraceEvaluation) else TraceEvaluation(**te) for te in resp.get("trace_evaluations", [])
+            te if isinstance(te, TraceEvaluation) else TraceEvaluation(**te) for te in data.get("trace_evaluations", [])
         ]
-        count: int = resp.get("count", len(evaluations))
-        total: int = resp.get("total", count)
+        count: int = data.get("count", len(evaluations))
+        total: int = data.get("total", count)
 
         try:
             return TraceEvaluationsResponse(trace_evaluations=evaluations, count=count, total=total)
@@ -124,11 +142,12 @@ class TraceEvaluations(SyncAPIResource):
             timeout=timeout,
             cast_to=dict,
         )
-        if not resp or not isinstance(resp, dict):
+        data = _unwrap(resp)
+        if not data or not isinstance(data, dict):
             return None
 
         results = [
-            r if isinstance(r, TraceEvaluationResult) else TraceEvaluationResult(**r) for r in resp.get("results", [])
+            r if isinstance(r, TraceEvaluationResult) else TraceEvaluationResult(**r) for r in data.get("results", [])
         ]
 
         try:
@@ -147,9 +166,15 @@ class TraceEvaluations(SyncAPIResource):
             f"{self._base_url()}/estimate",
             body={"trace_ids": trace_ids, "judge_id": judge_id},
             timeout=timeout,
-            cast_to=CostEstimateResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, CostEstimateResponse) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return CostEstimateResponse(**data)
+            except Exception:
+                return None
+        return None
 
 
 class AsyncTraceEvaluations(AsyncAPIResource):
@@ -169,9 +194,10 @@ class AsyncTraceEvaluations(AsyncAPIResource):
             timeout=timeout,
             cast_to=dict,
         )
-        if isinstance(resp, dict):
+        data = _unwrap(resp)
+        if isinstance(data, dict):
             try:
-                return TraceEvaluation(**resp)
+                return TraceEvaluation(**data)
             except Exception:
                 return None
         return None
@@ -185,9 +211,15 @@ class AsyncTraceEvaluations(AsyncAPIResource):
         resp = await self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=TraceEvaluation,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, TraceEvaluation) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return TraceEvaluation(**data)
+            except Exception:
+                return None
+        return None
 
     async def get_many(
         self,
@@ -235,11 +267,15 @@ class AsyncTraceEvaluations(AsyncAPIResource):
         if not resp or not isinstance(resp, dict):
             return None
 
+        data = _unwrap(resp)
+        if not isinstance(data, dict):
+            return None
+
         evaluations = [
-            te if isinstance(te, TraceEvaluation) else TraceEvaluation(**te) for te in resp.get("trace_evaluations", [])
+            te if isinstance(te, TraceEvaluation) else TraceEvaluation(**te) for te in data.get("trace_evaluations", [])
         ]
-        count: int = resp.get("count", len(evaluations))
-        total: int = resp.get("total", count)
+        count: int = data.get("count", len(evaluations))
+        total: int = data.get("total", count)
 
         try:
             return TraceEvaluationsResponse(trace_evaluations=evaluations, count=count, total=total)
@@ -257,11 +293,12 @@ class AsyncTraceEvaluations(AsyncAPIResource):
             timeout=timeout,
             cast_to=dict,
         )
-        if not resp or not isinstance(resp, dict):
+        data = _unwrap(resp)
+        if not data or not isinstance(data, dict):
             return None
 
         results = [
-            r if isinstance(r, TraceEvaluationResult) else TraceEvaluationResult(**r) for r in resp.get("results", [])
+            r if isinstance(r, TraceEvaluationResult) else TraceEvaluationResult(**r) for r in data.get("results", [])
         ]
 
         try:
@@ -280,6 +317,12 @@ class AsyncTraceEvaluations(AsyncAPIResource):
             f"{self._base_url()}/estimate",
             body={"trace_ids": trace_ids, "judge_id": judge_id},
             timeout=timeout,
-            cast_to=CostEstimateResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, CostEstimateResponse) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return CostEstimateResponse(**data)
+            except Exception:
+                return None
+        return None

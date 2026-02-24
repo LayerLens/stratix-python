@@ -132,7 +132,7 @@ class TestTraceEvaluations:
 
     def test_get_trace_evaluation_success(self, trace_evals_resource, sample_trace_eval_data):
         """get method returns TraceEvaluation on success."""
-        trace_evals_resource._get.return_value = TraceEvaluation(**sample_trace_eval_data)
+        trace_evals_resource._get.return_value = sample_trace_eval_data
 
         result = trace_evals_resource.get("te-123")
 
@@ -141,14 +141,14 @@ class TestTraceEvaluations:
 
     def test_get_trace_evaluation_request_parameters(self, trace_evals_resource, sample_trace_eval_data):
         """get method makes correct API request."""
-        trace_evals_resource._get.return_value = TraceEvaluation(**sample_trace_eval_data)
+        trace_evals_resource._get.return_value = sample_trace_eval_data
 
         trace_evals_resource.get("te-123")
 
         trace_evals_resource._get.assert_called_once_with(
             "/organizations/org-123/projects/proj-456/trace-evaluations/te-123",
             timeout=DEFAULT_TIMEOUT,
-            cast_to=TraceEvaluation,
+            cast_to=dict,
         )
 
     def test_get_trace_evaluation_none_response(self, trace_evals_resource):
@@ -280,13 +280,13 @@ class TestTraceEvaluations:
 
     def test_estimate_cost_success(self, trace_evals_resource):
         """estimate_cost returns CostEstimateResponse on success."""
-        trace_evals_resource._post.return_value = CostEstimateResponse(
-            estimated_cost=0.0045,
-            input_tokens=1500,
-            output_tokens=300,
-            model="claude-sonnet-4-20250514",
-            trace_count=5,
-        )
+        trace_evals_resource._post.return_value = {
+            "estimated_cost": 0.0045,
+            "input_tokens": 1500,
+            "output_tokens": 300,
+            "model": "claude-sonnet-4-20250514",
+            "trace_count": 5,
+        }
 
         result = trace_evals_resource.estimate_cost(
             trace_ids=["t1", "t2", "t3", "t4", "t5"],
@@ -299,9 +299,13 @@ class TestTraceEvaluations:
 
     def test_estimate_cost_request_parameters(self, trace_evals_resource):
         """estimate_cost makes correct API request."""
-        trace_evals_resource._post.return_value = CostEstimateResponse(
-            estimated_cost=0.01, input_tokens=100, output_tokens=50, model="test", trace_count=2
-        )
+        trace_evals_resource._post.return_value = {
+            "estimated_cost": 0.01,
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "model": "test",
+            "trace_count": 2,
+        }
 
         trace_evals_resource.estimate_cost(
             trace_ids=["t1", "t2"],
@@ -312,7 +316,7 @@ class TestTraceEvaluations:
             "/organizations/org-123/projects/proj-456/trace-evaluations/estimate",
             body={"trace_ids": ["t1", "t2"], "judge_id": "judge-789"},
             timeout=DEFAULT_TIMEOUT,
-            cast_to=CostEstimateResponse,
+            cast_to=dict,
         )
 
     def test_estimate_cost_none_response(self, trace_evals_resource):

@@ -11,10 +11,15 @@ from layerlens import Stratix
 
 client = Stratix()
 
-# Create a judge
+# Fetch a model to use for the judge
+models = client.models.get(type="public", name="gpt-4o")
+model = models[0]
+
+# Create a judge (model_id is required)
 judge = client.judges.create(
     name="Code Quality Judge",
     evaluation_goal="Evaluate the quality of code output including correctness, readability, and style",
+    model_id=model.id,
 )
 print(f"Created judge: {judge.name} (v{judge.version})")
 
@@ -47,7 +52,7 @@ client = Stratix()
 
 # Upload a JSONL file containing multiple traces
 result = client.traces.upload("./traces.jsonl")
-print(f"Uploaded {result.count} traces")
+print(f"Uploaded {len(result.trace_ids)} traces")
 
 # Upload a single JSON trace
 result = client.traces.upload("./single-trace.json")
@@ -64,9 +69,8 @@ client = Stratix()
 response = client.traces.get_many()
 print(f"Total traces: {response.total_count}")
 
-# Filter by source and time range
+# Filter by time range and sort
 response = client.traces.get_many(
-    source="upload",
     time_range="7d",
     sort_by="created_at",
     sort_order="desc",
@@ -119,6 +123,7 @@ print(f"Model: {estimate.model}")
 ### Run a Judge on a Trace
 
 ```python
+import time
 from layerlens import Stratix
 
 client = Stratix()
@@ -130,15 +135,25 @@ evaluation = client.trace_evaluations.create(
 )
 print(f"Evaluation {evaluation.id}: {evaluation.status}")
 
-# Get results
-results_response = client.trace_evaluations.get_results(evaluation.id)
-if results_response:
-    for result in results_response.results:
-        print(f"Score: {result.score}, Passed: {result.passed}")
-        print(f"Reasoning: {result.reasoning}")
-        print(f"Latency: {result.latency_ms}ms, Cost: ${result.total_cost:.4f}")
-        for step in result.steps:
-            print(f"  Step {step.step}: {step.reasoning}")
+# Wait for evaluation to complete (evaluations run asynchronously on the server)
+for _ in range(30):
+    evaluation = client.trace_evaluations.get(evaluation.id)
+    if evaluation.status.value in ("success", "failure"):
+        break
+    time.sleep(2)
+
+# Get results (only available after evaluation completes)
+try:
+    results_response = client.trace_evaluations.get_results(evaluation.id)
+    if results_response:
+        for result in results_response.results:
+            print(f"Score: {result.score}, Passed: {result.passed}")
+            print(f"Reasoning: {result.reasoning}")
+            print(f"Latency: {result.latency_ms}ms, Cost: ${result.total_cost:.4f}")
+            for step in result.steps:
+                print(f"  Step {step.step}: {step.reasoning}")
+except Exception:
+    print("Results not available yet")
 ```
 
 ### Browse Evaluation Results
@@ -172,20 +187,26 @@ response = client.trace_evaluations.get_many(
 
 ```python
 import asyncio
-from layerlens import AsyncStratix
+from layerlens import Stratix, AsyncStratix
 
 async def main():
+    # Fetch a model for judge creation
+    sync_client = Stratix()
+    models = sync_client.models.get(type="public", name="gpt-4o")
+    model = models[0]
+
     client = AsyncStratix()
 
-    # Create a judge
+    # Create a judge (model_id is required)
     judge = await client.judges.create(
         name="Response Quality Judge",
         evaluation_goal="Evaluate whether the response is accurate and well-structured",
+        model_id=model.id,
     )
 
     # Upload traces
     result = await client.traces.upload("./traces.jsonl")
-    print(f"Uploaded {result.count} traces")
+    print(f"Uploaded {len(result.trace_ids)} traces")
 
     # Get traces to evaluate
     traces_response = await client.traces.get_many(page_size=5)
@@ -198,17 +219,22 @@ async def main():
     ]
     evaluations = await asyncio.gather(*tasks)
 
-    # Fetch all results concurrently
-    result_tasks = [
-        client.trace_evaluations.get_results(e.id)
-        for e in evaluations if e
-    ]
-    all_results = await asyncio.gather(*result_tasks)
+    for evaluation in evaluations:
+        if evaluation:
+            print(f"Evaluation {evaluation.id}: {evaluation.status}")
 
-    for results_response in all_results:
-        if results_response:
-            for result in results_response.results:
-                print(f"Score: {result.score}, Passed: {result.passed}")
+    # Wait for evaluations to complete, then fetch results
+    await asyncio.sleep(10)
+    for evaluation in evaluations:
+        if not evaluation:
+            continue
+        try:
+            results_response = await client.trace_evaluations.get_results(evaluation.id)
+            if results_response:
+                for result in results_response.results:
+                    print(f"Score: {result.score}, Passed: {result.passed}")
+        except Exception:
+            print(f"Evaluation {evaluation.id}: results not available yet")
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -223,9 +249,14 @@ import layerlens
 client = Stratix()
 
 try:
+    # Fetch a model for the judge
+    models = client.models.get(type="public", name="gpt-4o")
+    model = models[0]
+
     judge = client.judges.create(
         name="My Judge",
         evaluation_goal="Evaluate output quality",
+        model_id=model.id,
     )
 
     evaluation = client.trace_evaluations.create(

@@ -15,7 +15,7 @@ client = Stratix()
 
 # Upload a trace file
 result = client.traces.upload("./traces.jsonl")
-print(f"Uploaded {result.count} traces")
+print(f"Uploaded {len(result.trace_ids)} traces")
 
 # List traces
 response = client.traces.get_many()
@@ -33,7 +33,7 @@ async def main():
     client = AsyncStratix()
 
     result = await client.traces.upload("./traces.jsonl")
-    print(f"Uploaded {result.count} traces")
+    print(f"Uploaded {len(result.trace_ids)} traces")
 
     response = await client.traces.get_many()
     for trace in response.traces:
@@ -77,7 +77,7 @@ Returns a `CreateTracesResponse` object if successful, `None` if the upload fail
 # Upload a JSONL file
 result = client.traces.upload("./my-traces.jsonl")
 if result:
-    print(f"Uploaded {result.count} traces")
+    print(f"Uploaded {len(result.trace_ids)} traces")
 
 # Upload a JSON file
 result = client.traces.upload("./single-trace.json")

@@ -19,6 +19,13 @@ DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 500
 
 
+def _unwrap(resp: Any) -> Any:
+    """Unwrap {"status": ..., "data": ...} envelope if present."""
+    if isinstance(resp, dict) and "data" in resp and "status" in resp:
+        return resp["data"]
+    return resp
+
+
 class JudgeOptimizations(SyncAPIResource):
     def _base_url(self) -> str:
         return f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/judge-optimizations"
@@ -39,9 +46,15 @@ class JudgeOptimizations(SyncAPIResource):
             f"{self._base_url()}/estimate",
             body=body,
             timeout=timeout,
-            cast_to=EstimateJudgeOptimizationCostResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, EstimateJudgeOptimizationCostResponse) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return EstimateJudgeOptimizationCostResponse(**data)
+            except Exception:
+                return None
+        return None
 
     def create(
         self,
@@ -59,9 +72,15 @@ class JudgeOptimizations(SyncAPIResource):
             self._base_url(),
             body=body,
             timeout=timeout,
-            cast_to=CreateJudgeOptimizationRunResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, CreateJudgeOptimizationRunResponse) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return CreateJudgeOptimizationRunResponse(**data)
+            except Exception:
+                return None
+        return None
 
     def get(
         self,
@@ -72,9 +91,15 @@ class JudgeOptimizations(SyncAPIResource):
         resp = self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=JudgeOptimizationRun,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, JudgeOptimizationRun) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return JudgeOptimizationRun(**data)
+            except Exception:
+                return None
+        return None
 
     def get_many(
         self,
@@ -104,12 +129,16 @@ class JudgeOptimizations(SyncAPIResource):
         if not resp or not isinstance(resp, dict):
             return None
 
+        data = _unwrap(resp)
+        if not isinstance(data, dict):
+            return None
+
         runs = [
             r if isinstance(r, JudgeOptimizationRun) else JudgeOptimizationRun(**r)
-            for r in resp.get("optimization_runs", [])
+            for r in data.get("optimization_runs", [])
         ]
-        count: int = resp.get("count", len(runs))
-        total: int = resp.get("total", count)
+        count: int = data.get("count", len(runs))
+        total: int = data.get("total", count)
 
         try:
             return JudgeOptimizationRunsResponse(optimization_runs=runs, count=count, total=total)
@@ -126,9 +155,15 @@ class JudgeOptimizations(SyncAPIResource):
             f"{self._base_url()}/{id}/apply",
             body={},
             timeout=timeout,
-            cast_to=ApplyJudgeOptimizationResultResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, ApplyJudgeOptimizationResultResponse) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return ApplyJudgeOptimizationResultResponse(**data)
+            except Exception:
+                return None
+        return None
 
 
 class AsyncJudgeOptimizations(AsyncAPIResource):
@@ -151,9 +186,15 @@ class AsyncJudgeOptimizations(AsyncAPIResource):
             f"{self._base_url()}/estimate",
             body=body,
             timeout=timeout,
-            cast_to=EstimateJudgeOptimizationCostResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, EstimateJudgeOptimizationCostResponse) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return EstimateJudgeOptimizationCostResponse(**data)
+            except Exception:
+                return None
+        return None
 
     async def create(
         self,
@@ -171,9 +212,15 @@ class AsyncJudgeOptimizations(AsyncAPIResource):
             self._base_url(),
             body=body,
             timeout=timeout,
-            cast_to=CreateJudgeOptimizationRunResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, CreateJudgeOptimizationRunResponse) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return CreateJudgeOptimizationRunResponse(**data)
+            except Exception:
+                return None
+        return None
 
     async def get(
         self,
@@ -184,9 +231,15 @@ class AsyncJudgeOptimizations(AsyncAPIResource):
         resp = await self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=JudgeOptimizationRun,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, JudgeOptimizationRun) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return JudgeOptimizationRun(**data)
+            except Exception:
+                return None
+        return None
 
     async def get_many(
         self,
@@ -216,12 +269,16 @@ class AsyncJudgeOptimizations(AsyncAPIResource):
         if not resp or not isinstance(resp, dict):
             return None
 
+        data = _unwrap(resp)
+        if not isinstance(data, dict):
+            return None
+
         runs = [
             r if isinstance(r, JudgeOptimizationRun) else JudgeOptimizationRun(**r)
-            for r in resp.get("optimization_runs", [])
+            for r in data.get("optimization_runs", [])
         ]
-        count: int = resp.get("count", len(runs))
-        total: int = resp.get("total", count)
+        count: int = data.get("count", len(runs))
+        total: int = data.get("total", count)
 
         try:
             return JudgeOptimizationRunsResponse(optimization_runs=runs, count=count, total=total)
@@ -238,6 +295,12 @@ class AsyncJudgeOptimizations(AsyncAPIResource):
             f"{self._base_url()}/{id}/apply",
             body={},
             timeout=timeout,
-            cast_to=ApplyJudgeOptimizationResultResponse,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, ApplyJudgeOptimizationResultResponse) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return ApplyJudgeOptimizationResultResponse(**data)
+            except Exception:
+                return None
+        return None

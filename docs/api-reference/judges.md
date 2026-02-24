@@ -13,10 +13,15 @@ from layerlens import Stratix
 
 client = Stratix()
 
+# Fetch a model to use for the judge
+models = client.models.get(type="public", name="gpt-4o")
+model = models[0]
+
 # Create a judge
 judge = client.judges.create(
     name="Code Quality Judge",
     evaluation_goal="Evaluate the quality of code output including correctness and style",
+    model_id=model.id,
 )
 
 print(f"Created judge: {judge.name} (v{judge.version})")
@@ -39,6 +44,7 @@ async def main():
     judge = await client.judges.create(
         name="Code Quality Judge",
         evaluation_goal="Evaluate the quality of code output including correctness and style",
+        model_id="model-abc123",
     )
 
     print(f"Created judge: {judge.name} (v{judge.version})")
@@ -61,7 +67,7 @@ Creates a new judge with the specified evaluation criteria.
 | ----------------- | -------------------------------- | -------- | -------------------------------------------- |
 | `name`            | `str`                            | Yes      | Display name for the judge                   |
 | `evaluation_goal` | `str`                            | Yes      | Description of what the judge should evaluate |
-| `model_id`        | `str \| None`                    | No       | ID of the LLM model to use                  |
+| `model_id`        | `str \| None`                    | Yes*     | ID of the LLM model to use (required by API)|
 | `timeout`         | `float \| httpx.Timeout \| None` | No       | Override request timeout                     |
 
 #### Returns

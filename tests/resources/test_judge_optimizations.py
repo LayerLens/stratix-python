@@ -100,9 +100,7 @@ class TestJudgeOptimizations:
 
     def test_estimate_success(self, resource):
         """estimate returns cost estimate on success."""
-        resource._post.return_value = EstimateJudgeOptimizationCostResponse(
-            estimated_cost=7.5, annotation_count=50, budget="medium"
-        )
+        resource._post.return_value = {"estimated_cost": 7.5, "annotation_count": 50, "budget": "medium"}
 
         result = resource.estimate(judge_id="judge-789", budget="medium")
 
@@ -113,9 +111,7 @@ class TestJudgeOptimizations:
 
     def test_estimate_request_parameters(self, resource):
         """estimate makes correct API request."""
-        resource._post.return_value = EstimateJudgeOptimizationCostResponse(
-            estimated_cost=7.5, annotation_count=50, budget="medium"
-        )
+        resource._post.return_value = {"estimated_cost": 7.5, "annotation_count": 50, "budget": "medium"}
 
         resource.estimate(judge_id="judge-789", budget="heavy")
 
@@ -123,14 +119,12 @@ class TestJudgeOptimizations:
             "/organizations/org-123/projects/proj-456/judge-optimizations/estimate",
             body={"judge_id": "judge-789", "budget": "heavy"},
             timeout=DEFAULT_TIMEOUT,
-            cast_to=EstimateJudgeOptimizationCostResponse,
+            cast_to=dict,
         )
 
     def test_estimate_default_budget(self, resource):
         """estimate uses medium budget by default."""
-        resource._post.return_value = EstimateJudgeOptimizationCostResponse(
-            estimated_cost=7.5, annotation_count=50, budget="medium"
-        )
+        resource._post.return_value = {"estimated_cost": 7.5, "annotation_count": 50, "budget": "medium"}
 
         resource.estimate(judge_id="judge-789")
 
@@ -149,9 +143,12 @@ class TestJudgeOptimizations:
 
     def test_create_success(self, resource):
         """create returns CreateJudgeOptimizationRunResponse on success."""
-        resource._post.return_value = CreateJudgeOptimizationRunResponse(
-            id="run-123", judge_id="judge-789", budget="medium", status="pending"
-        )
+        resource._post.return_value = {
+            "id": "run-123",
+            "judge_id": "judge-789",
+            "budget": "medium",
+            "status": "pending",
+        }
 
         result = resource.create(judge_id="judge-789", budget="medium")
 
@@ -162,9 +159,7 @@ class TestJudgeOptimizations:
 
     def test_create_request_parameters(self, resource):
         """create makes correct API request."""
-        resource._post.return_value = CreateJudgeOptimizationRunResponse(
-            id="run-123", judge_id="judge-789", budget="light", status="pending"
-        )
+        resource._post.return_value = {"id": "run-123", "judge_id": "judge-789", "budget": "light", "status": "pending"}
 
         resource.create(judge_id="judge-789", budget="light")
 
@@ -172,7 +167,7 @@ class TestJudgeOptimizations:
             "/organizations/org-123/projects/proj-456/judge-optimizations",
             body={"judge_id": "judge-789", "budget": "light"},
             timeout=DEFAULT_TIMEOUT,
-            cast_to=CreateJudgeOptimizationRunResponse,
+            cast_to=dict,
         )
 
     def test_create_none_response(self, resource):
@@ -187,7 +182,7 @@ class TestJudgeOptimizations:
 
     def test_get_success(self, resource, sample_run_data):
         """get returns JudgeOptimizationRun on success."""
-        resource._get.return_value = JudgeOptimizationRun(**sample_run_data)
+        resource._get.return_value = sample_run_data
 
         result = resource.get("run-123")
 
@@ -198,7 +193,7 @@ class TestJudgeOptimizations:
 
     def test_get_completed_run(self, resource, sample_completed_run_data):
         """get returns completed run with results."""
-        resource._get.return_value = JudgeOptimizationRun(**sample_completed_run_data)
+        resource._get.return_value = sample_completed_run_data
 
         result = resource.get("run-456")
 
@@ -210,14 +205,14 @@ class TestJudgeOptimizations:
 
     def test_get_request_parameters(self, resource, sample_run_data):
         """get makes correct API request."""
-        resource._get.return_value = JudgeOptimizationRun(**sample_run_data)
+        resource._get.return_value = sample_run_data
 
         resource.get("run-123")
 
         resource._get.assert_called_once_with(
             "/organizations/org-123/projects/proj-456/judge-optimizations/run-123",
             timeout=DEFAULT_TIMEOUT,
-            cast_to=JudgeOptimizationRun,
+            cast_to=dict,
         )
 
     def test_get_none_response(self, resource):
@@ -308,9 +303,11 @@ class TestJudgeOptimizations:
 
     def test_apply_success(self, resource):
         """apply returns ApplyJudgeOptimizationResultResponse on success."""
-        resource._post.return_value = ApplyJudgeOptimizationResultResponse(
-            judge_id="judge-789", new_version=3, message="Optimization result applied successfully"
-        )
+        resource._post.return_value = {
+            "judge_id": "judge-789",
+            "new_version": 3,
+            "message": "Optimization result applied successfully",
+        }
 
         result = resource.apply("run-456")
 
@@ -320,9 +317,11 @@ class TestJudgeOptimizations:
 
     def test_apply_request_parameters(self, resource):
         """apply makes correct API request."""
-        resource._post.return_value = ApplyJudgeOptimizationResultResponse(
-            judge_id="judge-789", new_version=3, message="Optimization result applied successfully"
-        )
+        resource._post.return_value = {
+            "judge_id": "judge-789",
+            "new_version": 3,
+            "message": "Optimization result applied successfully",
+        }
 
         resource.apply("run-456")
 
@@ -330,7 +329,7 @@ class TestJudgeOptimizations:
             "/organizations/org-123/projects/proj-456/judge-optimizations/run-456/apply",
             body={},
             timeout=DEFAULT_TIMEOUT,
-            cast_to=ApplyJudgeOptimizationResultResponse,
+            cast_to=dict,
         )
 
     def test_apply_none_response(self, resource):

@@ -9,7 +9,6 @@ import httpx
 from ...models import (
     Trace,
     TracesResponse,
-    UploadURLResponse,
     CreateTracesResponse,
     TraceWithEvaluations,
 )
@@ -21,6 +20,13 @@ DEFAULT_PAGE_SIZE = 100
 MAX_PAGE_SIZE = 500
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
+
+
+def _unwrap(resp: Any) -> Any:
+    """Unwrap {"status": ..., "data": ...} envelope if present."""
+    if isinstance(resp, dict) and "data" in resp and "status" in resp:
+        return resp["data"]
+    return resp
 
 
 class Traces(SyncAPIResource):
@@ -50,19 +56,21 @@ class Traces(SyncAPIResource):
         content_type = _get_content_type(filename)
 
         # Step 1: Get presigned upload URL
-        upload_resp = self._post(
+        raw_resp = self._post(
             f"{self._base_url()}/upload",
             body={"filename": filename, "type": content_type, "size": file_size},
             timeout=timeout,
-            cast_to=UploadURLResponse,
+            cast_to=dict,
         )
-        if not isinstance(upload_resp, UploadURLResponse):
+        data = _unwrap(raw_resp)
+        if not isinstance(data, dict) or "url" not in data:
             return None
+        upload_url: str = data["url"]
 
         # Step 2: Upload file to S3
         with open(file_path, "rb") as f:
             put_resp = httpx.put(
-                upload_resp.url,
+                upload_url,
                 content=f.read(),
                 headers={"Content-Type": content_type},
                 timeout=timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout),
@@ -70,13 +78,21 @@ class Traces(SyncAPIResource):
             put_resp.raise_for_status()
 
         # Step 3: Create trace records
-        create_resp = self._post(
+        raw_create = self._post(
             self._base_url(),
             body={"filename": filename},
             timeout=timeout,
-            cast_to=CreateTracesResponse,
+            cast_to=dict,
         )
-        return create_resp if isinstance(create_resp, CreateTracesResponse) else None
+        create_data = _unwrap(raw_create)
+        if isinstance(create_data, list):
+            return CreateTracesResponse(trace_ids=create_data)
+        if isinstance(create_data, dict):
+            try:
+                return CreateTracesResponse(**create_data)
+            except Exception:
+                return None
+        return None
 
     def get(
         self,
@@ -87,9 +103,15 @@ class Traces(SyncAPIResource):
         resp = self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=Trace,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, Trace) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return Trace(**data)
+            except Exception:
+                return None
+        return None
 
     def get_many(
         self,
@@ -137,11 +159,15 @@ class Traces(SyncAPIResource):
         if not resp or not isinstance(resp, dict):
             return None
 
+        data = _unwrap(resp)
+        if not isinstance(data, dict):
+            return None
+
         traces = [
-            t if isinstance(t, TraceWithEvaluations) else TraceWithEvaluations(**t) for t in resp.get("traces", [])
+            t if isinstance(t, TraceWithEvaluations) else TraceWithEvaluations(**t) for t in data.get("traces", [])
         ]
-        count: int = resp.get("count", len(traces))
-        total_count: int = resp.get("total_count", count)
+        count: int = data.get("count", len(traces))
+        total_count: int = data.get("total_count", count)
 
         try:
             return TracesResponse(traces=traces, count=count, total_count=total_count)
@@ -170,8 +196,9 @@ class Traces(SyncAPIResource):
             timeout=timeout,
             cast_to=dict,
         )
-        if isinstance(resp, dict):
-            return list(resp.get("sources", []))
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            return list(data.get("sources", []))
         return []
 
 
@@ -202,20 +229,22 @@ class AsyncTraces(AsyncAPIResource):
         content_type = _get_content_type(filename)
 
         # Step 1: Get presigned upload URL
-        upload_resp = await self._post(
+        raw_resp = await self._post(
             f"{self._base_url()}/upload",
             body={"filename": filename, "type": content_type, "size": file_size},
             timeout=timeout,
-            cast_to=UploadURLResponse,
+            cast_to=dict,
         )
-        if not isinstance(upload_resp, UploadURLResponse):
+        data = _unwrap(raw_resp)
+        if not isinstance(data, dict) or "url" not in data:
             return None
+        upload_url: str = data["url"]
 
         # Step 2: Upload file to S3
         async with httpx.AsyncClient() as upload_client:
             with open(file_path, "rb") as f:
                 put_resp = await upload_client.put(
-                    upload_resp.url,
+                    upload_url,
                     content=f.read(),
                     headers={"Content-Type": content_type},
                     timeout=timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout),
@@ -223,13 +252,21 @@ class AsyncTraces(AsyncAPIResource):
                 put_resp.raise_for_status()
 
         # Step 3: Create trace records
-        create_resp = await self._post(
+        raw_create = await self._post(
             self._base_url(),
             body={"filename": filename},
             timeout=timeout,
-            cast_to=CreateTracesResponse,
+            cast_to=dict,
         )
-        return create_resp if isinstance(create_resp, CreateTracesResponse) else None
+        create_data = _unwrap(raw_create)
+        if isinstance(create_data, list):
+            return CreateTracesResponse(trace_ids=create_data)
+        if isinstance(create_data, dict):
+            try:
+                return CreateTracesResponse(**create_data)
+            except Exception:
+                return None
+        return None
 
     async def get(
         self,
@@ -240,9 +277,15 @@ class AsyncTraces(AsyncAPIResource):
         resp = await self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
-            cast_to=Trace,
+            cast_to=dict,
         )
-        return resp if isinstance(resp, Trace) else None
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            try:
+                return Trace(**data)
+            except Exception:
+                return None
+        return None
 
     async def get_many(
         self,
@@ -290,11 +333,15 @@ class AsyncTraces(AsyncAPIResource):
         if not resp or not isinstance(resp, dict):
             return None
 
+        data = _unwrap(resp)
+        if not isinstance(data, dict):
+            return None
+
         traces = [
-            t if isinstance(t, TraceWithEvaluations) else TraceWithEvaluations(**t) for t in resp.get("traces", [])
+            t if isinstance(t, TraceWithEvaluations) else TraceWithEvaluations(**t) for t in data.get("traces", [])
         ]
-        count: int = resp.get("count", len(traces))
-        total_count: int = resp.get("total_count", count)
+        count: int = data.get("count", len(traces))
+        total_count: int = data.get("total_count", count)
 
         try:
             return TracesResponse(traces=traces, count=count, total_count=total_count)
@@ -323,8 +370,9 @@ class AsyncTraces(AsyncAPIResource):
             timeout=timeout,
             cast_to=dict,
         )
-        if isinstance(resp, dict):
-            return list(resp.get("sources", []))
+        data = _unwrap(resp)
+        if isinstance(data, dict):
+            return list(data.get("sources", []))
         return []
 
 
