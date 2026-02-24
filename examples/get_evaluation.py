@@ -11,7 +11,7 @@ async def main():
 
     # --- Get evaluation by id
     evaluation_id = "eval_123"
-    evaluation = await client.evaluations.get(evaluation_id)
+    evaluation = await client.evaluations.get_by_id(evaluation_id)
     print(f"Found evaluation {evaluation.id}")
     print(evaluation)
 
