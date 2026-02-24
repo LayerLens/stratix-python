@@ -16,7 +16,11 @@ from .api import (
     OrganizationResponse,
     TraceEvaluationsResponse,
     CreateEvaluationsResponse,
+    JudgeOptimizationRunsResponse,
     TraceEvaluationResultsResponse,
+    CreateJudgeOptimizationRunResponse,
+    ApplyJudgeOptimizationResultResponse,
+    EstimateJudgeOptimizationCostResponse,
 )
 from .judge import Judge, JudgeVersion
 from .model import Model, CustomModel, PublicModel
@@ -31,26 +35,38 @@ from .trace_evaluation import (
     TraceEvaluationResult,
     TraceEvaluationStatus,
 )
+from .judge_optimization import (
+    OptimizationBudget,
+    JudgeOptimizationRun,
+    OptimizationRunStatus,
+)
 
 __all__ = [
+    "ApplyJudgeOptimizationResultResponse",
     "Benchmark",
     "BenchmarksResponse",
     "CostEstimateResponse",
     "CreateEvaluationsResponse",
+    "CreateJudgeOptimizationRunResponse",
     "CreateJudgeResponse",
     "CreateTracesResponse",
     "CustomBenchmark",
     "CustomModel",
     "DeleteJudgeResponse",
+    "EstimateJudgeOptimizationCostResponse",
     "Evaluation",
     "EvaluationStatus",
     "EvaluationsResponse",
     "Judge",
+    "JudgeOptimizationRun",
+    "JudgeOptimizationRunsResponse",
     "JudgeSnapshot",
     "JudgeVersion",
     "JudgesResponse",
     "Model",
     "ModelsResponse",
+    "OptimizationBudget",
+    "OptimizationRunStatus",
     "Organization",
     "OrganizationResponse",
     "Pagination",

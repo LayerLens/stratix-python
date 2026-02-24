@@ -11,6 +11,7 @@ from .benchmark import Benchmark
 from .evaluation import Result, Evaluation
 from .organization import Organization
 from .trace_evaluation import TraceEvaluation, TraceEvaluationResult
+from .judge_optimization import JudgeOptimizationRun
 
 
 class BenchmarksResponse(BaseModel):
@@ -114,3 +115,28 @@ class CostEstimateResponse(BaseModel):
     output_tokens: int
     model: str
     trace_count: int
+
+
+class JudgeOptimizationRunsResponse(BaseModel):
+    optimization_runs: List[JudgeOptimizationRun]
+    count: int
+    total: int
+
+
+class CreateJudgeOptimizationRunResponse(BaseModel):
+    id: str
+    judge_id: str
+    budget: str
+    status: str
+
+
+class EstimateJudgeOptimizationCostResponse(BaseModel):
+    estimated_cost: float
+    annotation_count: int
+    budget: str
+
+
+class ApplyJudgeOptimizationResultResponse(BaseModel):
+    judge_id: str
+    new_version: int
+    message: str

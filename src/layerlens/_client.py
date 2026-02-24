@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .resources.benchmarks import Benchmarks, AsyncBenchmarks
     from .resources.evaluations import Evaluations, AsyncEvaluations
     from .resources.trace_evaluations import TraceEvaluations, AsyncTraceEvaluations
+    from .resources.judge_optimizations import JudgeOptimizations, AsyncJudgeOptimizations
 
 
 __all__ = ["Stratix", "Client"]
@@ -92,6 +93,12 @@ class Stratix(BaseClient):
         from .resources.judges import Judges
 
         return Judges(self)
+
+    @cached_property
+    def judge_optimizations(self) -> JudgeOptimizations:
+        from .resources.judge_optimizations import JudgeOptimizations
+
+        return JudgeOptimizations(self)
 
     @cached_property
     def models(self) -> Models:
@@ -249,6 +256,12 @@ class AsyncStratix(BaseAsyncClient):
         from .resources.judges import AsyncJudges
 
         return AsyncJudges(self)
+
+    @cached_property
+    def judge_optimizations(self) -> AsyncJudgeOptimizations:
+        from .resources.judge_optimizations import AsyncJudgeOptimizations
+
+        return AsyncJudgeOptimizations(self)
 
     @cached_property
     def models(self) -> AsyncModels:
