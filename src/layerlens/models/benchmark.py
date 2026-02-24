@@ -24,9 +24,17 @@ class CustomBenchmark(Benchmark):
     files: Optional[List[str]] = None
     disabled: Optional[bool] = None
 
+    @property
+    def type(self) -> str:
+        return "custom"
+
 
 class PublicBenchmark(Benchmark):
     description: Optional[str] = Field(None, alias="full_description")
     language: Optional[str] = None
     prompt_count: Optional[int] = None
     deprecated: Optional[bool] = None
+
+    @property
+    def type(self) -> str:
+        return "public"

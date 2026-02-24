@@ -116,18 +116,18 @@ async def get_all_results():
 asyncio.run(get_all_results())
 ```
 
-### `get(evaluation_id, page=None, page_size=None, timeout=None)`
+### `get(evaluation, page=None, page_size=None, timeout=None)`
 
 Retrieves detailed results for a specific evaluation with optional pagination support.
 
 #### Parameters
 
-| Parameter       | Type                             | Required | Description                                                                            |
-| --------------- | -------------------------------- | -------- | -------------------------------------------------------------------------------------- |
-| `evaluation_id` | `str`                            | Yes      | The evaluation identifier to get results for                                           |
-| `page`          | `int \| None`                    | No       | Page number for pagination. If not provided, returns first page is returned by default |
-| `page_size`     | `int \| None`                    | No       | Number of results per page (default: 100). Maximum allowed page_size is 500            |
-| `timeout`       | `float \| httpx.Timeout \| None` | No       | Override request timeout                                                               |
+| Parameter    | Type                             | Required | Description                                                                           |
+| ------------ | -------------------------------- | -------- | ------------------------------------------------------------------------------------- |
+| `evaluation` | `Evaluation`                     | Yes      | The evaluation object to get results for                                              |
+| `page`       | `int \| None`                    | No       | Page number for pagination. If not provided, the first page is returned by default    |
+| `page_size`  | `int \| None`                    | No       | Number of results per page (default: 100). Maximum allowed page_size is 500           |
+| `timeout`    | `float \| httpx.Timeout \| None` | No       | Override request timeout                                                              |
 
 #### Returns
 
@@ -148,32 +148,40 @@ from layerlens import Stratix
 
 client = Stratix()
 
-# Get all results for a specific evaluation
-results_data = client.results.get(evaluation_id="eval_12345")
+# Get evaluation first
+evaluation = client.evaluations.get_by_id("eval_12345")
 
-if results_data:
-    print(f"Evaluation ID: {results_data.evaluation_id}")
-    print(f"Retrieved {len(results_data.results)} results")
-    print(f"Total available: {results_data.pagination.total_count}")
-    print(f"Page size: {results_data.pagination.page_size}")
-    print(f"Total pages: {results_data.pagination.total_pages}")
+if evaluation:
+    # Get results for the evaluation
+    results_data = client.results.get(evaluation=evaluation)
 
-    # Access individual results
-    for i, result in enumerate(results_data.results[:3]):  # Show first 3
-        print(f"\nResult {i+1}:")
-        print(f"  Subset: {result.subset}")
-        print(f"  Score: {result.score}")
-        print(f"  Duration: {result.duration}")
+    if results_data:
+        print(f"Evaluation ID: {results_data.evaluation_id}")
+        print(f"Retrieved {len(results_data.results)} results")
+        print(f"Total available: {results_data.pagination.total_count}")
+        print(f"Page size: {results_data.pagination.page_size}")
+        print(f"Total pages: {results_data.pagination.total_pages}")
+
+        # Access individual results
+        for i, result in enumerate(results_data.results[:3]):  # Show first 3
+            print(f"\nResult {i+1}:")
+            print(f"  Subset: {result.subset}")
+            print(f"  Score: {result.score}")
+            print(f"  Duration: {result.duration}")
+    else:
+        print("No results found")
 else:
-    print("No results found or evaluation doesn't exist")
+    print("Evaluation not found")
 ```
+
+> **Tip:** If you only have an evaluation ID (string), use `client.results.get_by_id(evaluation_id="eval_12345")` instead.
 
 ##### Paginated Access
 
 ```python
 # Get specific page with custom page size
 results_data = client.results.get(
-    evaluation_id="eval_12345",
+    evaluation=evaluation,
     page=2,
     page_size=50
 )
@@ -192,13 +200,12 @@ if results_data:
 
 ```python
 # Process all results by iterating through pages
-evaluation_id = "eval_12345"
 page = 1
 page_size = 100
 
 while True:
     results_data = client.results.get(
-        evaluation_id=evaluation_id,
+        evaluation=evaluation,
         page=page,
         page_size=page_size
     )
@@ -226,7 +233,7 @@ print("Finished processing all results")
 The `pagination` object in the response provides detailed pagination metadata:
 
 ```python
-results_data = client.results.get(evaluation_id="eval_12345", page=1, page_size=50)
+results_data = client.results.get(evaluation=evaluation, page=1, page_size=50)
 
 if results_data:
     pagination = results_data.pagination
