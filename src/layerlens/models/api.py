@@ -4,10 +4,13 @@ from typing import List
 
 from pydantic import Field, BaseModel, ConfigDict
 
+from .judge import Judge
 from .model import Model
+from .trace import TraceWithEvaluations
 from .benchmark import Benchmark
 from .evaluation import Result, Evaluation
 from .organization import Organization
+from .trace_evaluation import TraceEvaluation, TraceEvaluationResult
 
 
 class BenchmarksResponse(BaseModel):
@@ -55,3 +58,59 @@ class ResultsResponse(BaseModel):
     results: List[Result]
     metrics: ResultMetrics
     pagination: Pagination
+
+
+class JudgesResponse(BaseModel):
+    judges: List[Judge]
+    count: int
+    total_count: int
+
+
+class CreateJudgeResponse(BaseModel):
+    id: str
+
+
+class UpdateJudgeResponse(BaseModel):
+    organization_id: str
+    project_id: str
+    id: str
+
+
+class DeleteJudgeResponse(BaseModel):
+    organization_id: str
+    project_id: str
+    id: str
+
+
+class TracesResponse(BaseModel):
+    traces: List[TraceWithEvaluations]
+    count: int
+    total_count: int
+
+
+class UploadURLResponse(BaseModel):
+    organization_id: str
+    project_id: str
+    url: str
+
+
+class CreateTracesResponse(BaseModel):
+    trace_ids: List[str]
+
+
+class TraceEvaluationsResponse(BaseModel):
+    trace_evaluations: List[TraceEvaluation]
+    count: int
+    total: int
+
+
+class TraceEvaluationResultsResponse(BaseModel):
+    results: List[TraceEvaluationResult]
+
+
+class CostEstimateResponse(BaseModel):
+    estimated_cost: float
+    input_tokens: int
+    output_tokens: int
+    model: str
+    trace_count: int

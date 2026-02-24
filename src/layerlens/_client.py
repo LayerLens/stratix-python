@@ -17,10 +17,13 @@ from ._exceptions import StratixError, APIStatusError
 from ._base_client import BaseClient, BaseAsyncClient
 
 if TYPE_CHECKING:
+    from .resources.judges import Judges, AsyncJudges
     from .resources.models import Models, AsyncModels
+    from .resources.traces import Traces, AsyncTraces
     from .resources.results import Results, AsyncResults
     from .resources.benchmarks import Benchmarks, AsyncBenchmarks
     from .resources.evaluations import Evaluations, AsyncEvaluations
+    from .resources.trace_evaluations import TraceEvaluations, AsyncTraceEvaluations
 
 
 __all__ = ["Stratix", "Client"]
@@ -85,6 +88,12 @@ class Stratix(BaseClient):
         return Evaluations(self)
 
     @cached_property
+    def judges(self) -> Judges:
+        from .resources.judges import Judges
+
+        return Judges(self)
+
+    @cached_property
     def models(self) -> Models:
         from .resources.models import Models
 
@@ -95,6 +104,18 @@ class Stratix(BaseClient):
         from .resources.results import Results
 
         return Results(self)
+
+    @cached_property
+    def traces(self) -> Traces:
+        from .resources.traces import Traces
+
+        return Traces(self)
+
+    @cached_property
+    def trace_evaluations(self) -> TraceEvaluations:
+        from .resources.trace_evaluations import TraceEvaluations
+
+        return TraceEvaluations(self)
 
     @property
     @override
@@ -224,6 +245,12 @@ class AsyncStratix(BaseAsyncClient):
         return AsyncEvaluations(self)
 
     @cached_property
+    def judges(self) -> AsyncJudges:
+        from .resources.judges import AsyncJudges
+
+        return AsyncJudges(self)
+
+    @cached_property
     def models(self) -> AsyncModels:
         from .resources.models import AsyncModels
 
@@ -234,6 +261,18 @@ class AsyncStratix(BaseAsyncClient):
         from .resources.results import AsyncResults
 
         return AsyncResults(self)
+
+    @cached_property
+    def traces(self) -> AsyncTraces:
+        from .resources.traces import AsyncTraces
+
+        return AsyncTraces(self)
+
+    @cached_property
+    def trace_evaluations(self) -> AsyncTraceEvaluations:
+        from .resources.trace_evaluations import AsyncTraceEvaluations
+
+        return AsyncTraceEvaluations(self)
 
     @property
     @override

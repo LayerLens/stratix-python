@@ -1,27 +1,54 @@
 from .api import (
     Pagination,
     ResultMetrics,
+    JudgesResponse,
     ModelsResponse,
+    TracesResponse,
     ResultsResponse,
+    UploadURLResponse,
     BenchmarksResponse,
+    CreateJudgeResponse,
+    DeleteJudgeResponse,
     EvaluationsResponse,
+    UpdateJudgeResponse,
+    CostEstimateResponse,
+    CreateTracesResponse,
     OrganizationResponse,
+    TraceEvaluationsResponse,
     CreateEvaluationsResponse,
+    TraceEvaluationResultsResponse,
 )
+from .judge import Judge, JudgeVersion
 from .model import Model, CustomModel, PublicModel
+from .trace import Trace, TraceWithEvaluations, TraceEvaluationSummary
 from .benchmark import Benchmark, CustomBenchmark, PublicBenchmark
 from .evaluation import Result, Evaluation, EvaluationStatus
 from .organization import Project, Organization
+from .trace_evaluation import (
+    JudgeSnapshot,
+    TraceEvaluation,
+    TraceEvaluationStep,
+    TraceEvaluationResult,
+    TraceEvaluationStatus,
+)
 
 __all__ = [
     "Benchmark",
     "BenchmarksResponse",
+    "CostEstimateResponse",
     "CreateEvaluationsResponse",
+    "CreateJudgeResponse",
+    "CreateTracesResponse",
     "CustomBenchmark",
     "CustomModel",
+    "DeleteJudgeResponse",
     "Evaluation",
     "EvaluationStatus",
     "EvaluationsResponse",
+    "Judge",
+    "JudgeSnapshot",
+    "JudgeVersion",
+    "JudgesResponse",
     "Model",
     "ModelsResponse",
     "Organization",
@@ -33,4 +60,16 @@ __all__ = [
     "Result",
     "ResultMetrics",
     "ResultsResponse",
+    "Trace",
+    "TraceEvaluation",
+    "TraceEvaluationResult",
+    "TraceEvaluationResultsResponse",
+    "TraceEvaluationStatus",
+    "TraceEvaluationStep",
+    "TraceEvaluationsResponse",
+    "TraceEvaluationSummary",
+    "TraceWithEvaluations",
+    "TracesResponse",
+    "UpdateJudgeResponse",
+    "UploadURLResponse",
 ]

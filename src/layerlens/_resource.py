@@ -15,6 +15,8 @@ class SyncAPIResource:
         self._client = client
         self._get = client.get_cast
         self._post = client.post_cast
+        self._patch = client.patch_cast
+        self._delete = client.delete_cast
 
     def _sleep(self, seconds: float) -> None:
         time.sleep(seconds)
@@ -27,6 +29,8 @@ class AsyncAPIResource:
         self._client = client
         self._get = client.get_cast
         self._post = client.post_cast
+        self._patch = client.patch_cast
+        self._delete = client.delete_cast
 
     async def _sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
