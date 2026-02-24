@@ -17,6 +17,10 @@ class CustomModel(Model):
     api_url: Optional[str] = None
     disabled: Optional[bool] = None
 
+    @property
+    def type(self) -> str:
+        return "custom"
+
 
 class PublicModel(Model):
     company: Optional[str] = None
@@ -29,3 +33,7 @@ class PublicModel(Model):
     open_weights: Optional[bool] = None
     region: Optional[str] = None
     deprecated: Optional[bool] = None
+
+    @property
+    def type(self) -> str:
+        return "public"
