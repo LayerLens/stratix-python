@@ -8,12 +8,14 @@ from .api import (
     UploadURLResponse,
     BenchmarksResponse,
     CreateJudgeResponse,
+    CreateModelResponse,
     DeleteJudgeResponse,
     EvaluationsResponse,
     UpdateJudgeResponse,
     CostEstimateResponse,
     CreateTracesResponse,
     OrganizationResponse,
+    CreateBenchmarkResponse,
     TraceEvaluationsResponse,
     CreateEvaluationsResponse,
     JudgeOptimizationRunsResponse,
@@ -25,6 +27,17 @@ from .api import (
 from .judge import Judge, JudgeVersion
 from .model import Model, CustomModel, PublicModel
 from .trace import Trace, TraceWithEvaluations, TraceEvaluationSummary
+from .public import (
+    BenchmarkPrompt,
+    ComparisonResult,
+    PublicModelDetail,
+    ComparisonResponse,
+    BenchmarkPromptsData,
+    PublicBenchmarkDetail,
+    BenchmarkPromptsResponse,
+    PublicModelsListResponse,
+    PublicBenchmarksListResponse,
+)
 from .benchmark import Benchmark, CustomBenchmark, PublicBenchmark
 from .evaluation import Result, Evaluation, EvaluationStatus
 from .organization import Project, Organization
@@ -44,9 +57,16 @@ from .judge_optimization import (
 __all__ = [
     "ApplyJudgeOptimizationResultResponse",
     "Benchmark",
+    "BenchmarkPrompt",
+    "BenchmarkPromptsData",
+    "BenchmarkPromptsResponse",
     "BenchmarksResponse",
+    "ComparisonResult",
+    "ComparisonResponse",
     "CostEstimateResponse",
+    "CreateBenchmarkResponse",
     "CreateEvaluationsResponse",
+    "CreateModelResponse",
     "CreateJudgeOptimizationRunResponse",
     "CreateJudgeResponse",
     "CreateTracesResponse",
@@ -72,7 +92,11 @@ __all__ = [
     "Pagination",
     "Project",
     "PublicBenchmark",
+    "PublicBenchmarkDetail",
+    "PublicBenchmarksListResponse",
     "PublicModel",
+    "PublicModelDetail",
+    "PublicModelsListResponse",
     "Result",
     "ResultMetrics",
     "ResultsResponse",

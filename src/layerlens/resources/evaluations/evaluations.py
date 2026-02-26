@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import time
 import asyncio
-from typing import Optional
+from typing import List, Literal, Optional
 
 import httpx
 
@@ -13,6 +13,7 @@ from ...models import (
     Evaluation,
     CustomModel,
     CustomBenchmark,
+    EvaluationStatus,
     EvaluationsResponse,
     CreateEvaluationsResponse,
 )
@@ -80,14 +81,24 @@ class Evaluations(SyncAPIResource):
         *,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
+        sort_by: Optional[Literal["submittedAt", "accuracy", "averageDuration"]] = None,
+        order: Optional[Literal["asc", "desc"]] = None,
+        model_ids: Optional[List[str]] = None,
+        benchmark_ids: Optional[List[str]] = None,
+        status: Optional[EvaluationStatus] = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[EvaluationsResponse]:
         """
-        Get evaluations with optional pagination.
+        Get evaluations with optional pagination, sorting, and filtering.
 
         Args:
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of evaluations per page (default: 100, optional)
+            sort_by: Sort evaluations by field (submittedAt, accuracy, averageDuration)
+            order: Sort order (asc or desc)
+            model_ids: Filter by model IDs
+            benchmark_ids: Filter by benchmark/dataset IDs
+            status: Filter by evaluation status
             timeout: Request timeout
 
         Returns:
@@ -103,6 +114,17 @@ class Evaluations(SyncAPIResource):
 
         params["page"] = str(effective_page)
         params["pageSize"] = str(effective_page_size)
+
+        if sort_by:
+            params["sortBy"] = sort_by
+        if order:
+            params["order"] = order
+        if model_ids:
+            params["models"] = ",".join(model_ids)
+        if benchmark_ids:
+            params["datasets"] = ",".join(benchmark_ids)
+        if status:
+            params["status"] = status.value
 
         resp = self._get(
             f"/evaluations",
@@ -214,14 +236,24 @@ class AsyncEvaluations(AsyncAPIResource):
         *,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
+        sort_by: Optional[Literal["submittedAt", "accuracy", "averageDuration"]] = None,
+        order: Optional[Literal["asc", "desc"]] = None,
+        model_ids: Optional[List[str]] = None,
+        benchmark_ids: Optional[List[str]] = None,
+        status: Optional[EvaluationStatus] = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[EvaluationsResponse]:
         """
-        Get evaluations with optional pagination.
+        Get evaluations with optional pagination, sorting, and filtering.
 
         Args:
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of evaluations per page (default: 100, optional)
+            sort_by: Sort evaluations by field (submittedAt, accuracy, averageDuration)
+            order: Sort order (asc or desc)
+            model_ids: Filter by model IDs
+            benchmark_ids: Filter by benchmark/dataset IDs
+            status: Filter by evaluation status
             timeout: Request timeout
 
         Returns:
@@ -237,6 +269,17 @@ class AsyncEvaluations(AsyncAPIResource):
 
         params["page"] = str(effective_page)
         params["pageSize"] = str(effective_page_size)
+
+        if sort_by:
+            params["sortBy"] = sort_by
+        if order:
+            params["order"] = order
+        if model_ids:
+            params["models"] = ",".join(model_ids)
+        if benchmark_ids:
+            params["datasets"] = ",".join(benchmark_ids)
+        if status:
+            params["status"] = status.value
 
         resp = await self._get(
             f"/evaluations",

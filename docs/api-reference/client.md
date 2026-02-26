@@ -51,6 +51,25 @@ The client automatically loads configuration from these environment variables:
 LAYERLENS_STRATIX_API_KEY="your_api_key_here"
 ```
 
+## Public Client
+
+For accessing public endpoints (models, benchmarks, comparisons), use `PublicClient` or `AsyncPublicClient`. See the [Public Client](public-client.md) reference for full details.
+
+```python
+from layerlens import PublicClient
+
+# Loads API key from the "LAYERLENS_STRATIX_API_KEY" environment variable
+public = PublicClient()
+models = public.models.get(companies=["OpenAI"])
+```
+
+You can also access public endpoints from an authenticated client via the `.public` property:
+
+```python
+client = Stratix()
+public_models = client.public.models.get(query="claude")
+```
+
 ## Timeout Configuration
 
 ### Simple Timeout

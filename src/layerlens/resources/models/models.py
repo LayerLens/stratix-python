@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 
-from ...models import Model, CustomModel, PublicModel, ModelsResponse
+from ...models import Model, CustomModel, PublicModel, ModelsResponse, CreateModelResponse
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
@@ -104,6 +104,90 @@ class Models(SyncAPIResource):
                 return model
         return None
 
+    def add(
+        self,
+        *model_ids: str,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Add models to the project by their IDs."""
+        current = self.get(timeout=timeout) or []
+        current_ids = [m.id for m in current]
+        new_ids = list(dict.fromkeys(current_ids + list(model_ids)))
+        return self._patch_project_models(new_ids, timeout)
+
+    def remove(
+        self,
+        *model_ids: str,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Remove models from the project by their IDs."""
+        current = self.get(timeout=timeout) or []
+        remove_set = set(model_ids)
+        new_ids = [m.id for m in current if m.id not in remove_set]
+        return self._patch_project_models(new_ids, timeout)
+
+    def _patch_project_models(
+        self,
+        model_ids: List[str],
+        timeout: float | httpx.Timeout | None,
+    ) -> bool:
+        url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}"
+        resp = self._patch(
+            url,
+            body={"models": model_ids},
+            timeout=timeout,
+            cast_to=dict,
+        )
+        return isinstance(resp, dict) and "id" in resp
+
+    def create_custom(
+        self,
+        *,
+        name: str,
+        key: str,
+        description: str,
+        api_url: str,
+        max_tokens: int,
+        api_key: Optional[str] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[CreateModelResponse]:
+        """Create a custom model backed by an OpenAI-compatible API.
+
+        Args:
+            name: Model name (max 256 characters).
+            key: Unique model key, lowercase alphanumeric with dots/hyphens/slashes (max 256 characters).
+            description: Model description (max 500 characters).
+            api_url: Base URL of the OpenAI-compatible API endpoint.
+            max_tokens: Maximum number of tokens the model supports.
+            api_key: Optional API key for the model provider.
+            timeout: Request timeout override.
+
+        Returns:
+            CreateModelResponse with model_id, or None on failure.
+        """
+        base = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}"
+        body: Dict[str, Any] = {
+            "name": name,
+            "key": key,
+            "description": description,
+            "api_url": api_url,
+            "max_tokens": max_tokens,
+        }
+        if api_key is not None:
+            body["api_key"] = api_key
+
+        resp = self._post(
+            f"{base}/custom-models",
+            body=body,
+            timeout=timeout,
+            cast_to=dict,
+        )
+        if isinstance(resp, dict) and "data" in resp and "status" in resp:
+            resp = resp["data"]
+        if isinstance(resp, dict) and "model_id" in resp:
+            return CreateModelResponse(**resp)
+        return None
+
 
 class AsyncModels(AsyncAPIResource):
     async def get(
@@ -198,4 +282,88 @@ class AsyncModels(AsyncAPIResource):
         for model in models:
             if model.key == key:
                 return model
+        return None
+
+    async def add(
+        self,
+        *model_ids: str,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Add models to the project by their IDs."""
+        current = await self.get(timeout=timeout) or []
+        current_ids = [m.id for m in current]
+        new_ids = list(dict.fromkeys(current_ids + list(model_ids)))
+        return await self._patch_project_models(new_ids, timeout)
+
+    async def remove(
+        self,
+        *model_ids: str,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Remove models from the project by their IDs."""
+        current = await self.get(timeout=timeout) or []
+        remove_set = set(model_ids)
+        new_ids = [m.id for m in current if m.id not in remove_set]
+        return await self._patch_project_models(new_ids, timeout)
+
+    async def _patch_project_models(
+        self,
+        model_ids: List[str],
+        timeout: float | httpx.Timeout | None,
+    ) -> bool:
+        url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}"
+        resp = await self._patch(
+            url,
+            body={"models": model_ids},
+            timeout=timeout,
+            cast_to=dict,
+        )
+        return isinstance(resp, dict) and "id" in resp
+
+    async def create_custom(
+        self,
+        *,
+        name: str,
+        key: str,
+        description: str,
+        api_url: str,
+        max_tokens: int,
+        api_key: Optional[str] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[CreateModelResponse]:
+        """Create a custom model backed by an OpenAI-compatible API.
+
+        Args:
+            name: Model name (max 256 characters).
+            key: Unique model key, lowercase alphanumeric with dots/hyphens/slashes (max 256 characters).
+            description: Model description (max 500 characters).
+            api_url: Base URL of the OpenAI-compatible API endpoint.
+            max_tokens: Maximum number of tokens the model supports.
+            api_key: Optional API key for the model provider.
+            timeout: Request timeout override.
+
+        Returns:
+            CreateModelResponse with model_id, or None on failure.
+        """
+        base = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}"
+        body: Dict[str, Any] = {
+            "name": name,
+            "key": key,
+            "description": description,
+            "api_url": api_url,
+            "max_tokens": max_tokens,
+        }
+        if api_key is not None:
+            body["api_key"] = api_key
+
+        resp = await self._post(
+            f"{base}/custom-models",
+            body=body,
+            timeout=timeout,
+            cast_to=dict,
+        )
+        if isinstance(resp, dict) and "data" in resp and "status" in resp:
+            resp = resp["data"]
+        if isinstance(resp, dict) and "model_id" in resp:
+            return CreateModelResponse(**resp)
         return None

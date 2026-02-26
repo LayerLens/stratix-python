@@ -177,17 +177,22 @@ async def get_evaluation():
 asyncio.run(get_evaluation())
 ```
 
-### `get_many(page=None, page_size=None, timeout=None)`
+### `get_many(page=None, page_size=None, sort_by=None, order=None, model_ids=None, benchmark_ids=None, status=None, timeout=None)`
 
-Retrieves multiple evaluations with optional pagination support.
+Retrieves multiple evaluations with optional pagination, sorting, and filtering.
 
 #### Parameters
 
-| Parameter   | Type                             | Required | Description                                             |
-| ----------- | -------------------------------- | -------- | ------------------------------------------------------- |
-| `page`      | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)     |
-| `page_size` | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500) |
-| `timeout`   | `float \| httpx.Timeout \| None` | No       | Override request timeout                                |
+| Parameter       | Type                             | Required | Description                                             |
+| --------------- | -------------------------------- | -------- | ------------------------------------------------------- |
+| `page`          | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)     |
+| `page_size`     | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500) |
+| `sort_by`       | `str \| None`                    | No       | Sort by field: `submittedAt`, `accuracy`, or `averageDuration` |
+| `order`         | `str \| None`                    | No       | Sort order: `asc` or `desc`                             |
+| `model_ids`     | `List[str] \| None`              | No       | Filter by model IDs                                     |
+| `benchmark_ids` | `List[str] \| None`              | No       | Filter by benchmark/dataset IDs                         |
+| `status`        | `EvaluationStatus \| None`       | No       | Filter by evaluation status                             |
+| `timeout`       | `float \| httpx.Timeout \| None` | No       | Override request timeout                                |
 
 #### Returns
 
@@ -197,6 +202,27 @@ Returns an `EvaluationsResponse` object containing:
 - `pagination`: Pagination metadata with `page`, `page_size`, `total_pages`, and `total_count`
 
 Returns `None` if the request fails.
+
+#### Example
+
+```python
+from layerlens import Stratix
+from layerlens.models import EvaluationStatus
+
+client = Stratix()
+
+# Get top evaluations by accuracy
+response = client.evaluations.get_many(
+    sort_by="accuracy",
+    order="desc",
+    status=EvaluationStatus.SUCCESS,
+    page_size=10,
+)
+
+if response:
+    for evaluation in response.evaluations:
+        print(f"{evaluation.id}: accuracy={evaluation.accuracy:.2f}%")
+```
 
 ### `get_results(page=None, page_size=None, timeout=None)`
 
