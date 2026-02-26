@@ -5,7 +5,14 @@ import pytest
 
 from layerlens.models import (
     Evaluation,
+    ErrorAnalysis,
+    AnalysisSummary,
+    EvaluationMetric,
     EvaluationStatus,
+    EvaluationDataset,
+    EvaluationSummary,
+    EvaluationTaskType,
+    PerformanceDetails,
     EvaluationsResponse,
     CreateEvaluationsResponse,
 )
@@ -446,3 +453,238 @@ class TestEvaluationsResourceIntegration:
         assert "/organizations/test-org/projects/test-project/evaluations" in call_args[0][0]
         assert call_args.kwargs["body"][0]["model_id"] == mock_model.id
         assert call_args.kwargs["body"][0]["dataset_id"] == mock_benchmark.id
+
+
+class TestEvaluationModelFields:
+    """Test Evaluation model parses all backend fields."""
+
+    @pytest.fixture
+    def full_evaluation_data(self):
+        return {
+            "id": "eval-full",
+            "status": "success",
+            "status_description": "Evaluation completed successfully",
+            "submitted_at": 1640995200,
+            "finished_at": 1640995800,
+            "model_id": "model-456",
+            "model_name": "GPT-4",
+            "model_key": "gpt-4",
+            "model_company": "OpenAI",
+            "dataset_id": "benchmark-789",
+            "dataset_name": "MMLU",
+            "average_duration": 2500,
+            "accuracy": 0.89,
+            "readability_score": 0.75,
+            "toxicity_score": 0.02,
+            "ethics_score": 0.95,
+            "failed_prompt_count": 3,
+            "queue_id": 42,
+            "summary": {
+                "name": "GPT-4 on MMLU",
+                "goal": "Evaluate general knowledge",
+                "metrics": [
+                    {"name": "accuracy", "description": "Correctness of responses"},
+                    {"name": "toxicity", "description": "Harmful content detection"},
+                ],
+                "task_types": [
+                    {"name": "multiple_choice", "description": "Select correct answer"},
+                ],
+                "dataset": {
+                    "total_size": 15908,
+                    "training_size": 0,
+                    "test_size": 15908,
+                    "characteristics": ["multi-domain", "multiple-choice"],
+                },
+                "model": {
+                    "model_name": "GPT-4",
+                    "performance": {"overall": 0.89},
+                },
+                "performance_details": {
+                    "strengths": ["Strong reasoning", "Good factual recall"],
+                    "challenges": ["Abstract math", "Ambiguous questions"],
+                },
+                "error_analysis": {
+                    "common_failure_modes": ["Off-by-one errors", "Misinterpreting negation"],
+                    "example": "Q: Which is NOT true? A: Selected a true statement.",
+                },
+                "analysis_summary": {
+                    "key_takeaways": [
+                        "Strong overall performance at 89%",
+                        "Struggles with negation-based questions",
+                    ],
+                },
+            },
+        }
+
+    def test_parse_all_fields(self, full_evaluation_data):
+        """Evaluation model parses all backend fields correctly."""
+        evaluation = Evaluation(**full_evaluation_data)
+
+        assert evaluation.id == "eval-full"
+        assert evaluation.status == EvaluationStatus.SUCCESS
+        assert evaluation.status_description == "Evaluation completed successfully"
+        assert evaluation.model_id == "model-456"
+        assert evaluation.model_name == "GPT-4"
+        assert evaluation.model_key == "gpt-4"
+        assert evaluation.model_company == "OpenAI"
+        assert evaluation.benchmark_id == "benchmark-789"
+        assert evaluation.benchmark_name == "MMLU"
+        assert evaluation.accuracy == 0.89
+        assert evaluation.readability_score == 0.75
+        assert evaluation.toxicity_score == 0.02
+        assert evaluation.ethics_score == 0.95
+        assert evaluation.failed_prompt_count == 3
+        assert evaluation.queue_id == 42
+
+    def test_parse_summary(self, full_evaluation_data):
+        """Evaluation model parses nested summary correctly."""
+        evaluation = Evaluation(**full_evaluation_data)
+
+        assert evaluation.summary is not None
+        summary = evaluation.summary
+        assert isinstance(summary, EvaluationSummary)
+        assert summary.name == "GPT-4 on MMLU"
+        assert summary.goal == "Evaluate general knowledge"
+
+    def test_parse_summary_metrics(self, full_evaluation_data):
+        """Summary metrics are parsed correctly."""
+        evaluation = Evaluation(**full_evaluation_data)
+        metrics = evaluation.summary.metrics
+
+        assert len(metrics) == 2
+        assert isinstance(metrics[0], EvaluationMetric)
+        assert metrics[0].name == "accuracy"
+        assert metrics[1].name == "toxicity"
+
+    def test_parse_summary_task_types(self, full_evaluation_data):
+        """Summary task types are parsed correctly."""
+        evaluation = Evaluation(**full_evaluation_data)
+        task_types = evaluation.summary.task_types
+
+        assert len(task_types) == 1
+        assert isinstance(task_types[0], EvaluationTaskType)
+        assert task_types[0].name == "multiple_choice"
+
+    def test_parse_summary_dataset(self, full_evaluation_data):
+        """Summary dataset info is parsed correctly."""
+        evaluation = Evaluation(**full_evaluation_data)
+        dataset = evaluation.summary.dataset
+
+        assert isinstance(dataset, EvaluationDataset)
+        assert dataset.total_size == 15908
+        assert dataset.test_size == 15908
+        assert "multi-domain" in dataset.characteristics
+
+    def test_parse_summary_performance_details(self, full_evaluation_data):
+        """Summary performance details are parsed correctly."""
+        evaluation = Evaluation(**full_evaluation_data)
+        perf = evaluation.summary.performance_details
+
+        assert isinstance(perf, PerformanceDetails)
+        assert len(perf.strengths) == 2
+        assert "Strong reasoning" in perf.strengths
+        assert len(perf.challenges) == 2
+
+    def test_parse_summary_error_analysis(self, full_evaluation_data):
+        """Summary error analysis is parsed correctly."""
+        evaluation = Evaluation(**full_evaluation_data)
+        errors = evaluation.summary.error_analysis
+
+        assert isinstance(errors, ErrorAnalysis)
+        assert len(errors.common_failure_modes) == 2
+        assert "Off-by-one errors" in errors.common_failure_modes
+        assert "NOT true" in errors.example
+
+    def test_parse_summary_analysis_summary(self, full_evaluation_data):
+        """Summary analysis summary is parsed correctly."""
+        evaluation = Evaluation(**full_evaluation_data)
+        analysis = evaluation.summary.analysis_summary
+
+        assert isinstance(analysis, AnalysisSummary)
+        assert len(analysis.key_takeaways) == 2
+
+    def test_missing_optional_fields_default(self):
+        """Evaluation model uses defaults for missing optional fields."""
+        minimal_data = {
+            "id": "eval-min",
+            "status": "pending",
+            "submitted_at": 1640995200,
+            "finished_at": 0,
+            "model_id": "m1",
+            "dataset_id": "b1",
+            "average_duration": 0,
+            "accuracy": 0.0,
+        }
+        evaluation = Evaluation(**minimal_data)
+
+        assert evaluation.status_description == ""
+        assert evaluation.model_name == ""
+        assert evaluation.model_key == ""
+        assert evaluation.model_company == ""
+        assert evaluation.benchmark_name == ""
+        assert evaluation.readability_score == 0.0
+        assert evaluation.toxicity_score == 0.0
+        assert evaluation.ethics_score == 0.0
+        assert evaluation.failed_prompt_count == 0
+        assert evaluation.queue_id == 0
+        assert evaluation.summary is None
+
+    def test_null_summary_field(self):
+        """Evaluation model handles null summary."""
+        data = {
+            "id": "eval-no-summary",
+            "status": "in-progress",
+            "submitted_at": 1640995200,
+            "finished_at": 0,
+            "model_id": "m1",
+            "dataset_id": "b1",
+            "average_duration": 0,
+            "accuracy": 0.0,
+            "summary": None,
+        }
+        evaluation = Evaluation(**data)
+        assert evaluation.summary is None
+
+    def test_get_by_id_returns_full_evaluation(self):
+        """get_by_id returns Evaluation with all fields populated."""
+        mock_client = Mock()
+        mock_client.organization_id = "org-123"
+        mock_client.project_id = "proj-456"
+        mock_client.get_cast = Mock()
+
+        full_eval = Evaluation(
+            id="eval-123",
+            status=EvaluationStatus.SUCCESS,
+            status_description="Done",
+            submitted_at=1640995200,
+            finished_at=1640995800,
+            model_id="m1",
+            model_name="GPT-4",
+            model_key="gpt-4",
+            model_company="OpenAI",
+            dataset_id="b1",
+            dataset_name="MMLU",
+            average_duration=2500,
+            accuracy=0.89,
+            readability_score=0.75,
+            toxicity_score=0.02,
+            ethics_score=0.95,
+            failed_prompt_count=3,
+            queue_id=42,
+            summary=EvaluationSummary(
+                name="Test",
+                goal="Evaluate",
+                metrics=[EvaluationMetric(name="accuracy", description="Correctness")],
+            ),
+        )
+        mock_client.get_cast.return_value = full_eval
+
+        evaluations = Evaluations(mock_client)
+        result = evaluations.get_by_id("eval-123")
+
+        assert result is not None
+        assert result.model_name == "GPT-4"
+        assert result.benchmark_name == "MMLU"
+        assert result.readability_score == 0.75
+        assert result.summary is not None
+        assert result.summary.goal == "Evaluate"

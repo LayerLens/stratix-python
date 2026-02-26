@@ -39,7 +39,19 @@ from .public import (
     PublicBenchmarksListResponse,
 )
 from .benchmark import Benchmark, CustomBenchmark, PublicBenchmark
-from .evaluation import Result, Evaluation, EvaluationStatus
+from .evaluation import (
+    Result,
+    Evaluation,
+    ErrorAnalysis,
+    AnalysisSummary,
+    EvaluationMetric,
+    EvaluationStatus,
+    EvaluationDataset,
+    EvaluationSummary,
+    EvaluationTaskType,
+    PerformanceDetails,
+    EvaluationModelInfo,
+)
 from .organization import Project, Organization
 from .trace_evaluation import (
     JudgeSnapshot,
@@ -74,8 +86,15 @@ __all__ = [
     "CustomModel",
     "DeleteJudgeResponse",
     "EstimateJudgeOptimizationCostResponse",
+    "AnalysisSummary",
+    "ErrorAnalysis",
     "Evaluation",
+    "EvaluationDataset",
+    "EvaluationMetric",
+    "EvaluationModelInfo",
     "EvaluationStatus",
+    "EvaluationSummary",
+    "EvaluationTaskType",
     "EvaluationsResponse",
     "Judge",
     "JudgeOptimizationRun",
@@ -90,6 +109,7 @@ __all__ = [
     "Organization",
     "OrganizationResponse",
     "Pagination",
+    "PerformanceDetails",
     "Project",
     "PublicBenchmark",
     "PublicBenchmarkDetail",
