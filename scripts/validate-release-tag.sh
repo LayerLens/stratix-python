@@ -1,6 +1,6 @@
 #!/bin/bash
 # Validate release requirements
-# - Checks if the tag matches naming convention (sdk-v*.*.*)
+# - Checks if the tag matches naming convention (v*.*.*)
 # - Checks if the tag matches the version in the package
 # - Ensures we're releasing from the release branch
 
@@ -20,14 +20,14 @@ git fetch --tags --prune --force
 
 TAG=$1
 
-# Check if tag starts with sdk-v
-if [[ ! "$TAG" =~ ^sdk-v ]]; then
-  echo "ERROR: Tag must start with 'sdk-v'"
+# Check if tag starts with v
+if [[ ! "$TAG" =~ ^v ]]; then
+  echo "ERROR: Tag must start with 'v'"
   exit 1
 fi
 
-# Extract version without the 'sdk-v' prefix
-VERSION=${TAG#sdk-v}
+# Extract version without the 'v' prefix
+VERSION=${TAG#v}
 
 PACKAGE_VERSION=$(bash "$ROOT_DIR/scripts/get_version.sh")
 
