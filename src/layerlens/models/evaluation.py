@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from datetime import timedelta
 
 import httpx
@@ -22,17 +22,76 @@ class EvaluationStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class EvaluationMetric(BaseModel):
+    name: str
+    description: str = ""
+
+
+class EvaluationTaskType(BaseModel):
+    name: str
+    description: str = ""
+
+
+class EvaluationDataset(BaseModel):
+    total_size: int = 0
+    training_size: int = 0
+    test_size: int = 0
+    characteristics: List[str] = []
+
+
+class EvaluationModelInfo(BaseModel):
+    model_name: str = ""
+    performance: Any = None
+
+
+class PerformanceDetails(BaseModel):
+    strengths: List[str] = []
+    challenges: List[str] = []
+
+
+class ErrorAnalysis(BaseModel):
+    common_failure_modes: List[str] = []
+    example: str = ""
+
+
+class AnalysisSummary(BaseModel):
+    key_takeaways: List[str] = []
+
+
+class EvaluationSummary(BaseModel):
+    name: str = ""
+    goal: str = ""
+    metrics: List[EvaluationMetric] = []
+    task_types: List[EvaluationTaskType] = []
+    dataset: Optional[EvaluationDataset] = None
+    model: Optional[EvaluationModelInfo] = None
+    performance_details: Optional[PerformanceDetails] = None
+    error_analysis: Optional[ErrorAnalysis] = None
+    analysis_summary: Optional[AnalysisSummary] = None
+
+
 class Evaluation(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
     status: EvaluationStatus
+    status_description: str = ""
     submitted_at: int
     finished_at: int
     model_id: str
+    model_name: str = ""
+    model_key: str = ""
+    model_company: str = ""
     benchmark_id: str = Field(..., alias="dataset_id")
+    benchmark_name: str = Field("", alias="dataset_name")
     average_duration: int
     accuracy: float
+    readability_score: float = 0.0
+    toxicity_score: float = 0.0
+    ethics_score: float = 0.0
+    failed_prompt_count: int = 0
+    queue_id: int = 0
+    summary: Optional[EvaluationSummary] = None
 
     _client: "Optional[Stratix | AsyncStratix]" = None
 
@@ -134,9 +193,15 @@ class Evaluation(BaseModel):
         )
         if evaluation:
             self.status = evaluation.status
+            self.status_description = evaluation.status_description
             self.finished_at = evaluation.finished_at
             self.average_duration = evaluation.average_duration
             self.accuracy = evaluation.accuracy
+            self.readability_score = evaluation.readability_score
+            self.toxicity_score = evaluation.toxicity_score
+            self.ethics_score = evaluation.ethics_score
+            self.failed_prompt_count = evaluation.failed_prompt_count
+            self.summary = evaluation.summary
 
         return self
 
@@ -156,9 +221,15 @@ class Evaluation(BaseModel):
         )
         if evaluation:
             self.status = evaluation.status
+            self.status_description = evaluation.status_description
             self.finished_at = evaluation.finished_at
             self.average_duration = evaluation.average_duration
             self.accuracy = evaluation.accuracy
+            self.readability_score = evaluation.readability_score
+            self.toxicity_score = evaluation.toxicity_score
+            self.ethics_score = evaluation.ethics_score
+            self.failed_prompt_count = evaluation.failed_prompt_count
+            self.summary = evaluation.summary
 
         return self
 

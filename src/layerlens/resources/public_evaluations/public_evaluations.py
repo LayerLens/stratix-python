@@ -1,23 +1,16 @@
 from __future__ import annotations
 
 import math
-import time
-import asyncio
 from typing import List, Literal, Optional
 
 import httpx
 
 from ...models import (
-    Model,
-    Benchmark,
     Evaluation,
-    CustomModel,
-    CustomBenchmark,
     EvaluationStatus,
     EvaluationsResponse,
-    CreateEvaluationsResponse,
 )
-from ..._resource import SyncAPIResource, AsyncAPIResource
+from ..._resource import SyncPublicAPIResource, AsyncPublicAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
 DEFAULT_PAGE = 1
@@ -25,41 +18,7 @@ DEFAULT_PAGE_SIZE = 100
 MAX_PAGE_SIZE = 500
 
 
-class Evaluations(SyncAPIResource):
-    def create(
-        self,
-        *,
-        model: Model,
-        benchmark: Benchmark,
-        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
-    ) -> Optional[Evaluation]:
-        evaluations = self._post(
-            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/evaluations",
-            body=[
-                {
-                    "model_id": model.id,
-                    "dataset_id": benchmark.id,
-                    "is_custom_model": isinstance(model, CustomModel),
-                    "is_custom_dataset": isinstance(benchmark, CustomBenchmark),
-                }
-            ],
-            timeout=timeout,
-            cast_to=CreateEvaluationsResponse,
-        )
-        if isinstance(evaluations, CreateEvaluationsResponse) and len(evaluations.data) > 0:
-            evaluation = evaluations.data[0]
-            evaluation.attach_client(self._client)
-            return evaluation
-        return None
-
-    def get(
-        self,
-        evaluation: Evaluation,
-        *,
-        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
-    ) -> Optional[Evaluation]:
-        return self.get_by_id(evaluation.id, timeout=timeout)
-
+class PublicEvaluationsResource(SyncPublicAPIResource):
     def get_by_id(
         self,
         id: str,
@@ -72,7 +31,6 @@ class Evaluations(SyncAPIResource):
             cast_to=Evaluation,
         )
         if isinstance(evaluation, Evaluation):
-            evaluation.attach_client(self._client)
             return evaluation
         return None
 
@@ -104,10 +62,7 @@ class Evaluations(SyncAPIResource):
         Returns:
             EvaluationsResponse object or None
         """
-        params = {
-            "organizationID": self._client.organization_id,
-            "projectID": self._client.project_id,
-        }
+        params: dict[str, str] = {}
 
         effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
         effective_page = page if page is not None else DEFAULT_PAGE
@@ -127,7 +82,7 @@ class Evaluations(SyncAPIResource):
             params["status"] = status.value
 
         resp = self._get(
-            f"/evaluations",
+            "/evaluations",
             params=params,
             timeout=timeout,
             cast_to=dict,
@@ -136,8 +91,6 @@ class Evaluations(SyncAPIResource):
             return None
 
         evaluations = [e if isinstance(e, Evaluation) else Evaluation(**e) for e in resp.get("evaluations", [])]
-        for e in evaluations:
-            e.attach_client(self._client)
 
         total_count = resp.get("total_count", 0)
         total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
@@ -157,64 +110,8 @@ class Evaluations(SyncAPIResource):
         except Exception:
             return None
 
-    def wait_for_completion(
-        self,
-        evaluation: Evaluation,
-        *,
-        interval_seconds: int = 30,
-        timeout_seconds: Optional[int] = None,
-    ) -> Optional[Evaluation]:
-        """Poll until the evaluation finishes or timeout is reached."""
-        start = time.time()
 
-        updated_evaluation: Optional[Evaluation] = self.get(evaluation)
-        while updated_evaluation and not updated_evaluation.is_finished:
-            if timeout_seconds and (time.time() - start) > timeout_seconds:
-                raise TimeoutError(
-                    f"Evaluation {updated_evaluation.id} did not complete within {timeout_seconds} seconds"
-                )
-
-            time.sleep(interval_seconds)
-            updated_evaluation = self.get(updated_evaluation)
-
-        return updated_evaluation
-
-
-class AsyncEvaluations(AsyncAPIResource):
-    async def create(
-        self,
-        *,
-        model: Model,
-        benchmark: Benchmark,
-        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
-    ) -> Optional[Evaluation]:
-        evaluations = await self._post(
-            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/evaluations",
-            body=[
-                {
-                    "model_id": model.id,
-                    "dataset_id": benchmark.id,
-                    "is_custom_model": isinstance(model, CustomModel),
-                    "is_custom_dataset": isinstance(benchmark, CustomBenchmark),
-                }
-            ],
-            timeout=timeout,
-            cast_to=CreateEvaluationsResponse,
-        )
-        if isinstance(evaluations, CreateEvaluationsResponse) and len(evaluations.data) > 0:
-            evaluation = evaluations.data[0]
-            evaluation.attach_client(self._client)
-            return evaluation
-        return None
-
-    async def get(
-        self,
-        evaluation: Evaluation,
-        *,
-        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
-    ) -> Optional[Evaluation]:
-        return await self.get_by_id(evaluation.id, timeout=timeout)
-
+class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
     async def get_by_id(
         self,
         id: str,
@@ -227,7 +124,6 @@ class AsyncEvaluations(AsyncAPIResource):
             cast_to=Evaluation,
         )
         if isinstance(evaluation, Evaluation):
-            evaluation.attach_client(self._client)
             return evaluation
         return None
 
@@ -259,10 +155,7 @@ class AsyncEvaluations(AsyncAPIResource):
         Returns:
             EvaluationsResponse object or None
         """
-        params = {
-            "organizationID": self._client.organization_id,
-            "projectID": self._client.project_id,
-        }
+        params: dict[str, str] = {}
 
         effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
         effective_page = page if page is not None else DEFAULT_PAGE
@@ -282,7 +175,7 @@ class AsyncEvaluations(AsyncAPIResource):
             params["status"] = status.value
 
         resp = await self._get(
-            f"/evaluations",
+            "/evaluations",
             params=params,
             timeout=timeout,
             cast_to=dict,
@@ -291,8 +184,6 @@ class AsyncEvaluations(AsyncAPIResource):
             return None
 
         evaluations = [e if isinstance(e, Evaluation) else Evaluation(**e) for e in resp.get("evaluations", [])]
-        for e in evaluations:
-            e.attach_client(self._client)
 
         total_count = resp.get("total_count", 0)
         total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
@@ -311,25 +202,3 @@ class AsyncEvaluations(AsyncAPIResource):
             return EvaluationsResponse.model_validate(resp_with_pagination)
         except Exception:
             return None
-
-    async def wait_for_completion(
-        self,
-        evaluation: Evaluation,
-        *,
-        interval_seconds: int = 30,
-        timeout_seconds: Optional[int] = None,
-    ) -> Optional[Evaluation]:
-        """Poll asynchronously until the evaluation finishes or timeout is reached."""
-        start = asyncio.get_event_loop().time()
-
-        updated_evaluation: Optional[Evaluation] = await self.get(evaluation)
-        while updated_evaluation and not updated_evaluation.is_finished:
-            if timeout_seconds and (asyncio.get_event_loop().time() - start) > timeout_seconds:
-                raise TimeoutError(
-                    f"Evaluation {updated_evaluation.id} did not complete within {timeout_seconds} seconds"
-                )
-
-            await asyncio.sleep(interval_seconds)
-            updated_evaluation = await self.get(updated_evaluation)
-
-        return updated_evaluation

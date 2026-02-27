@@ -1,6 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/layerlens/_version.py"
+pattern = '__version__ = "(?P<version>[^"]+)"'
+
 [project]
 name = "layerlens"
-version = "1.1.1"
+dynamic = ["version"]
 description = "The official Python library for the LayerLens Stratix API"
 license = "Apache-2.0"
 authors = [{ name = "LayerLens", email = "support@layerlens.ai" }]
@@ -30,7 +38,6 @@ Repository = "https://github.com/LayerLens/stratix-python"
 [project.scripts]
 layerlens = "layerlens.cli:main"
 
-
 [tool.rye]
 managed = true
 # version pins are in requirements-dev.lock
@@ -41,6 +48,8 @@ dev-dependencies = [
   "pytest-cov>=6.2.1",
   "ruff",
   "types-requests",
+  "build",
+  "twine==6.1.0",
 ]
 
 [tool.rye.scripts]

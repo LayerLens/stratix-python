@@ -177,17 +177,22 @@ async def get_evaluation():
 asyncio.run(get_evaluation())
 ```
 
-### `get_many(page=None, page_size=None, timeout=None)`
+### `get_many(page=None, page_size=None, sort_by=None, order=None, model_ids=None, benchmark_ids=None, status=None, timeout=None)`
 
-Retrieves multiple evaluations with optional pagination support.
+Retrieves multiple evaluations with optional pagination, sorting, and filtering.
 
 #### Parameters
 
-| Parameter   | Type                             | Required | Description                                             |
-| ----------- | -------------------------------- | -------- | ------------------------------------------------------- |
-| `page`      | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)     |
-| `page_size` | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500) |
-| `timeout`   | `float \| httpx.Timeout \| None` | No       | Override request timeout                                |
+| Parameter       | Type                             | Required | Description                                             |
+| --------------- | -------------------------------- | -------- | ------------------------------------------------------- |
+| `page`          | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)     |
+| `page_size`     | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500) |
+| `sort_by`       | `str \| None`                    | No       | Sort by field: `submittedAt`, `accuracy`, or `averageDuration` |
+| `order`         | `str \| None`                    | No       | Sort order: `asc` or `desc`                             |
+| `model_ids`     | `List[str] \| None`              | No       | Filter by model IDs                                     |
+| `benchmark_ids` | `List[str] \| None`              | No       | Filter by benchmark/dataset IDs                         |
+| `status`        | `EvaluationStatus \| None`       | No       | Filter by evaluation status                             |
+| `timeout`       | `float \| httpx.Timeout \| None` | No       | Override request timeout                                |
 
 #### Returns
 
@@ -197,6 +202,27 @@ Returns an `EvaluationsResponse` object containing:
 - `pagination`: Pagination metadata with `page`, `page_size`, `total_pages`, and `total_count`
 
 Returns `None` if the request fails.
+
+#### Example
+
+```python
+from layerlens import Stratix
+from layerlens.models import EvaluationStatus
+
+client = Stratix()
+
+# Get top evaluations by accuracy
+response = client.evaluations.get_many(
+    sort_by="accuracy",
+    order="desc",
+    status=EvaluationStatus.SUCCESS,
+    page_size=10,
+)
+
+if response:
+    for evaluation in response.evaluations:
+        print(f"{evaluation.id}: accuracy={evaluation.accuracy:.2f}%")
+```
 
 ### `get_results(page=None, page_size=None, timeout=None)`
 
@@ -378,16 +404,43 @@ The `create`, `get_by_id` and `get_many` method returns an `Evaluation` objects 
 
 ### Evaluation Object Properties
 
-| Property           | Type               | Description                                               |
-| ------------------ | ------------------ | --------------------------------------------------------- |
-| `id`               | `str`              | Unique evaluation identifier                              |
-| `status`           | `EvaluationStatus` | Current evaluation status (enum)                          |
-| `submitted_at`     | `int`              | Unix timestamp when evaluation was submitted              |
-| `finished_at`      | `int`              | Unix timestamp when evaluation finished                   |
-| `model_id`         | `str`              | ID of the model used in the evaluation                    |
-| `benchmark_id`     | `str`              | ID of the benchmark used (aliased as "dataset_id" in API) |
-| `average_duration` | `int`              | Average response time in milliseconds                     |
-| `accuracy`         | `float`            | Overall accuracy score (0.0 to 1.0)                       |
+| Property             | Type                          | Description                                               |
+| -------------------- | ----------------------------- | --------------------------------------------------------- |
+| `id`                 | `str`                         | Unique evaluation identifier                              |
+| `status`             | `EvaluationStatus`            | Current evaluation status (enum)                          |
+| `status_description` | `str`                         | Human-readable status description (default: `""`)         |
+| `submitted_at`       | `int`                         | Unix timestamp when evaluation was submitted              |
+| `finished_at`        | `int`                         | Unix timestamp when evaluation finished                   |
+| `model_id`           | `str`                         | ID of the model used in the evaluation                    |
+| `model_name`         | `str`                         | Name of the model (default: `""`)                         |
+| `model_key`          | `str`                         | Key identifier of the model (default: `""`)               |
+| `model_company`      | `str`                         | Company/provider of the model (default: `""`)             |
+| `benchmark_id`       | `str`                         | ID of the benchmark used (aliased as "dataset_id" in API) |
+| `benchmark_name`     | `str`                         | Name of the benchmark (aliased as "dataset_name" in API, default: `""`) |
+| `average_duration`   | `int`                         | Average response time in milliseconds                     |
+| `accuracy`           | `float`                       | Overall accuracy score (0.0 to 1.0)                       |
+| `readability_score`  | `float`                       | Readability score (default: `0.0`)                        |
+| `toxicity_score`     | `float`                       | Toxicity score (default: `0.0`)                           |
+| `ethics_score`       | `float`                       | Ethics score (default: `0.0`)                             |
+| `failed_prompt_count`| `int`                         | Number of failed prompts (default: `0`)                   |
+| `queue_id`           | `int`                         | Queue identifier (default: `0`)                           |
+| `summary`            | `EvaluationSummary \| None`   | Rich evaluation summary (see below, default: `None`)      |
+
+### EvaluationSummary Object
+
+The `summary` field contains a rich analysis of the evaluation when available.
+
+| Property              | Type                            | Description                              |
+| --------------------- | ------------------------------- | ---------------------------------------- |
+| `name`                | `str`                           | Summary title                            |
+| `goal`                | `str`                           | Goal of the evaluation                   |
+| `metrics`             | `List[EvaluationMetric]`        | Metrics used (each has `name`, `description`) |
+| `task_types`          | `List[EvaluationTaskType]`      | Task types (each has `name`, `description`)   |
+| `dataset`             | `EvaluationDataset \| None`     | Dataset info (`total_size`, `training_size`, `test_size`, `characteristics`) |
+| `model`               | `EvaluationModelInfo \| None`   | Model info (`model_name`, `performance`)  |
+| `performance_details` | `PerformanceDetails \| None`    | Strengths and challenges lists            |
+| `error_analysis`      | `ErrorAnalysis \| None`         | Common failure modes and example          |
+| `analysis_summary`    | `AnalysisSummary \| None`       | Key takeaways list                        |
 
 #### Evaluation Status
 

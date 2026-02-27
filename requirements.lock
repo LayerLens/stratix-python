@@ -4,7 +4,7 @@
 # last locked with the following flags:
 #   pre: false
 #   features: []
-#   all-features: false
+#   all-features: true
 #   with-sources: false
 #   generate-hashes: false
 #   universal: false
@@ -27,13 +27,13 @@ h11==0.16.0
 httpcore==1.0.9
     # via httpx
 httpx==0.28.1
-    # via atlas
+    # via test-atlas-lzok
 idna==3.10
     # via anyio
     # via httpx
     # via requests
 pydantic==2.11.7
-    # via atlas
+    # via test-atlas-lzok
 pydantic-core==2.33.2
     # via pydantic
 requests==2.32.5

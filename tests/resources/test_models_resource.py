@@ -3,7 +3,7 @@ from unittest.mock import Mock, call
 import httpx
 import pytest
 
-from layerlens.models import CustomModel, PublicModel, ModelsResponse
+from layerlens.models import CustomModel, PublicModel, ModelsResponse, CreateModelResponse
 from layerlens._constants import DEFAULT_TIMEOUT
 from layerlens.resources.models.models import Models
 
@@ -555,3 +555,291 @@ class TestModelsTyping:
         assert result[0].context_length == 200000
         assert isinstance(result[0].parameters, float)
         assert isinstance(result[0].context_length, int)
+
+
+class TestModelsAdd:
+    """Test Models.add() method."""
+
+    @pytest.fixture
+    def mock_client(self):
+        client = Mock()
+        client.organization_id = "org-123"
+        client.project_id = "proj-456"
+        client.get_cast = Mock()
+        client.patch_cast = Mock()
+        return client
+
+    @pytest.fixture
+    def models_resource(self, mock_client):
+        return Models(mock_client)
+
+    def test_add_single_model(self, models_resource):
+        """add() merges new ID with current models and PATCHes."""
+        existing = PublicModel(id="m1", key="m1", name="M1", description="")
+        models_resource.get = Mock(return_value=[existing])
+        models_resource._patch.return_value = {"id": "proj-456"}
+
+        result = models_resource.add("m2")
+
+        assert result is True
+        models_resource._patch.assert_called_once_with(
+            "/organizations/org-123/projects/proj-456",
+            body={"models": ["m1", "m2"]},
+            timeout=DEFAULT_TIMEOUT,
+            cast_to=dict,
+        )
+
+    def test_add_multiple_models(self, models_resource):
+        """add() handles multiple model IDs."""
+        models_resource.get = Mock(return_value=[])
+        models_resource._patch.return_value = {"id": "proj-456"}
+
+        result = models_resource.add("m1", "m2", "m3")
+
+        assert result is True
+        call_body = models_resource._patch.call_args.kwargs["body"]
+        assert call_body == {"models": ["m1", "m2", "m3"]}
+
+    def test_add_deduplicates(self, models_resource):
+        """add() deduplicates IDs already in the project."""
+        existing = PublicModel(id="m1", key="m1", name="M1", description="")
+        models_resource.get = Mock(return_value=[existing])
+        models_resource._patch.return_value = {"id": "proj-456"}
+
+        models_resource.add("m1", "m2")
+
+        call_body = models_resource._patch.call_args.kwargs["body"]
+        assert call_body == {"models": ["m1", "m2"]}
+
+    def test_add_returns_false_on_failure(self, models_resource):
+        """add() returns False when PATCH fails."""
+        models_resource.get = Mock(return_value=[])
+        models_resource._patch.return_value = "error"
+
+        result = models_resource.add("m1")
+
+        assert result is False
+
+    def test_add_with_none_get_response(self, models_resource):
+        """add() handles None from get() gracefully."""
+        models_resource.get = Mock(return_value=None)
+        models_resource._patch.return_value = {"id": "proj-456"}
+
+        result = models_resource.add("m1")
+
+        assert result is True
+        call_body = models_resource._patch.call_args.kwargs["body"]
+        assert call_body == {"models": ["m1"]}
+
+
+class TestModelsRemove:
+    """Test Models.remove() method."""
+
+    @pytest.fixture
+    def mock_client(self):
+        client = Mock()
+        client.organization_id = "org-123"
+        client.project_id = "proj-456"
+        client.get_cast = Mock()
+        client.patch_cast = Mock()
+        return client
+
+    @pytest.fixture
+    def models_resource(self, mock_client):
+        return Models(mock_client)
+
+    def test_remove_single_model(self, models_resource):
+        """remove() removes specified ID and PATCHes remaining."""
+        m1 = PublicModel(id="m1", key="m1", name="M1", description="")
+        m2 = PublicModel(id="m2", key="m2", name="M2", description="")
+        models_resource.get = Mock(return_value=[m1, m2])
+        models_resource._patch.return_value = {"id": "proj-456"}
+
+        result = models_resource.remove("m1")
+
+        assert result is True
+        call_body = models_resource._patch.call_args.kwargs["body"]
+        assert call_body == {"models": ["m2"]}
+
+    def test_remove_multiple_models(self, models_resource):
+        """remove() handles removing multiple IDs."""
+        m1 = PublicModel(id="m1", key="m1", name="M1", description="")
+        m2 = PublicModel(id="m2", key="m2", name="M2", description="")
+        m3 = PublicModel(id="m3", key="m3", name="M3", description="")
+        models_resource.get = Mock(return_value=[m1, m2, m3])
+        models_resource._patch.return_value = {"id": "proj-456"}
+
+        models_resource.remove("m1", "m3")
+
+        call_body = models_resource._patch.call_args.kwargs["body"]
+        assert call_body == {"models": ["m2"]}
+
+    def test_remove_nonexistent_id(self, models_resource):
+        """remove() ignores IDs that aren't in the project."""
+        m1 = PublicModel(id="m1", key="m1", name="M1", description="")
+        models_resource.get = Mock(return_value=[m1])
+        models_resource._patch.return_value = {"id": "proj-456"}
+
+        models_resource.remove("nonexistent")
+
+        call_body = models_resource._patch.call_args.kwargs["body"]
+        assert call_body == {"models": ["m1"]}
+
+    def test_remove_returns_false_on_failure(self, models_resource):
+        """remove() returns False when PATCH fails."""
+        models_resource.get = Mock(return_value=[])
+        models_resource._patch.return_value = None
+
+        result = models_resource.remove("m1")
+
+        assert result is False
+
+
+class TestModelsCreateCustom:
+    """Test Models.create_custom() method."""
+
+    @pytest.fixture
+    def mock_client(self):
+        client = Mock()
+        client.organization_id = "org-123"
+        client.project_id = "proj-456"
+        client.get_cast = Mock()
+        client.post_cast = Mock()
+        return client
+
+    @pytest.fixture
+    def models_resource(self, mock_client):
+        return Models(mock_client)
+
+    def test_create_custom_success_with_envelope(self, models_resource):
+        """create_custom() unwraps envelope and returns CreateModelResponse."""
+        models_resource._post.return_value = {
+            "status": "success",
+            "data": {
+                "model_id": "new-model-123",
+                "organization_id": "org-123",
+                "project_id": "proj-456",
+            },
+        }
+
+        result = models_resource.create_custom(
+            name="Test Model",
+            key="test/model-v1",
+            description="A test model",
+            api_url="https://api.example.com/v1",
+            max_tokens=4096,
+        )
+
+        assert isinstance(result, CreateModelResponse)
+        assert result.model_id == "new-model-123"
+        assert result.organization_id == "org-123"
+        assert result.project_id == "proj-456"
+
+    def test_create_custom_success_without_envelope(self, models_resource):
+        """create_custom() works when response has no envelope."""
+        models_resource._post.return_value = {
+            "model_id": "new-model-123",
+            "organization_id": "org-123",
+            "project_id": "proj-456",
+        }
+
+        result = models_resource.create_custom(
+            name="Test Model",
+            key="test/model-v1",
+            description="A test model",
+            api_url="https://api.example.com/v1",
+            max_tokens=4096,
+        )
+
+        assert isinstance(result, CreateModelResponse)
+        assert result.model_id == "new-model-123"
+
+    def test_create_custom_sends_correct_body(self, models_resource):
+        """create_custom() sends all required fields in the request body."""
+        models_resource._post.return_value = {
+            "status": "success",
+            "data": {"model_id": "x", "organization_id": "o", "project_id": "p"},
+        }
+
+        models_resource.create_custom(
+            name="My Model",
+            key="my/model",
+            description="desc",
+            api_url="https://example.com/v1",
+            max_tokens=8192,
+            api_key="sk-secret",
+        )
+
+        call_kwargs = models_resource._post.call_args.kwargs
+        assert call_kwargs["body"] == {
+            "name": "My Model",
+            "key": "my/model",
+            "description": "desc",
+            "api_url": "https://example.com/v1",
+            "max_tokens": 8192,
+            "api_key": "sk-secret",
+        }
+
+    def test_create_custom_omits_api_key_when_none(self, models_resource):
+        """create_custom() does not include api_key when not provided."""
+        models_resource._post.return_value = {
+            "status": "success",
+            "data": {"model_id": "x", "organization_id": "o", "project_id": "p"},
+        }
+
+        models_resource.create_custom(
+            name="My Model",
+            key="my/model",
+            description="desc",
+            api_url="https://example.com/v1",
+            max_tokens=4096,
+        )
+
+        call_body = models_resource._post.call_args.kwargs["body"]
+        assert "api_key" not in call_body
+
+    def test_create_custom_correct_url(self, models_resource):
+        """create_custom() posts to the correct endpoint."""
+        models_resource._post.return_value = {
+            "status": "success",
+            "data": {"model_id": "x", "organization_id": "o", "project_id": "p"},
+        }
+
+        models_resource.create_custom(
+            name="M",
+            key="k",
+            description="d",
+            api_url="https://x.com",
+            max_tokens=1,
+        )
+
+        call_args = models_resource._post.call_args
+        assert call_args[0][0] == "/organizations/org-123/projects/proj-456/custom-models"
+
+    def test_create_custom_returns_none_on_failure(self, models_resource):
+        """create_custom() returns None when response is unexpected."""
+        models_resource._post.return_value = "not-a-dict"
+
+        result = models_resource.create_custom(
+            name="M",
+            key="k",
+            description="d",
+            api_url="https://x.com",
+            max_tokens=1,
+        )
+
+        assert result is None
+
+    def test_create_custom_returns_none_on_error_envelope(self, models_resource):
+        """create_custom() returns None when response has no model_id."""
+        models_resource._post.return_value = {"status": "error", "data": {"message": "failed"}}
+
+        result = models_resource.create_custom(
+            name="M",
+            key="k",
+            description="d",
+            api_url="https://x.com",
+            max_tokens=1,
+        )
+
+        assert result is None

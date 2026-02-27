@@ -9,6 +9,7 @@
 
 ## API Reference
 * [Client Configuration](api-reference/client.md)
+* [Public Client](api-reference/public-client.md)
 * [Evaluations](api-reference/evaluations.md)
 * [Results](api-reference/results.md)
 * [Models & Benchmarks](api-reference/models-benchmarks.md)
