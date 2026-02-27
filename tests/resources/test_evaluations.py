@@ -780,29 +780,11 @@ class TestPublicEvaluationsResource:
         }
         public_evaluations._get.return_value = resp
 
-        result = public_evaluations.get_many(
-            organization_id="org-123",
-            project_id="proj-456",
-        )
+        result = public_evaluations.get_many()
 
         assert isinstance(result, EvaluationsResponse)
         assert len(result.evaluations) == 1
         assert result.evaluations[0].id == "eval-pub-123"
-
-    def test_get_many_sends_org_and_project(self, public_evaluations, sample_evaluation_data):
-        """get_many sends organizationID and projectID as params."""
-        resp = {"evaluations": [sample_evaluation_data], "total_count": 1}
-        public_evaluations._get.return_value = resp
-
-        public_evaluations.get_many(
-            organization_id="org-abc",
-            project_id="proj-xyz",
-        )
-
-        call_args = public_evaluations._get.call_args
-        params = call_args.kwargs.get("params") or call_args[1].get("params")
-        assert params["organizationID"] == "org-abc"
-        assert params["projectID"] == "proj-xyz"
 
     def test_get_many_with_filters(self, public_evaluations, sample_evaluation_data):
         """get_many passes filter parameters correctly."""
@@ -810,8 +792,6 @@ class TestPublicEvaluationsResource:
         public_evaluations._get.return_value = resp
 
         public_evaluations.get_many(
-            organization_id="org-123",
-            project_id="proj-456",
             page=2,
             page_size=50,
             sort_by="accuracy",
@@ -830,6 +810,8 @@ class TestPublicEvaluationsResource:
         assert params["models"] == "m1,m2"
         assert params["datasets"] == "b1"
         assert params["status"] == "success"
+        assert "organizationID" not in params
+        assert "projectID" not in params
 
     def test_get_many_pagination(self, public_evaluations, sample_evaluation_data):
         """get_many computes pagination correctly."""
@@ -837,8 +819,6 @@ class TestPublicEvaluationsResource:
         public_evaluations._get.return_value = resp
 
         result = public_evaluations.get_many(
-            organization_id="org-123",
-            project_id="proj-456",
             page=1,
             page_size=10,
         )
@@ -852,10 +832,7 @@ class TestPublicEvaluationsResource:
         """get_many returns None when response is invalid."""
         public_evaluations._get.return_value = "not-a-dict"
 
-        result = public_evaluations.get_many(
-            organization_id="org-123",
-            project_id="proj-456",
-        )
+        result = public_evaluations.get_many()
 
         assert result is None
 
@@ -864,10 +841,7 @@ class TestPublicEvaluationsResource:
         resp = {"evaluations": [], "total_count": 0}
         public_evaluations._get.return_value = resp
 
-        result = public_evaluations.get_many(
-            organization_id="org-123",
-            project_id="proj-456",
-        )
+        result = public_evaluations.get_many()
 
         assert isinstance(result, EvaluationsResponse)
         assert len(result.evaluations) == 0

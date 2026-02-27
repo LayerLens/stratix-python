@@ -282,14 +282,12 @@ Returns an `Evaluation` object if found, `None` otherwise. See [Evaluations](eva
 
 ### `evaluations.get_many(...)`
 
-Retrieves evaluations for a given organization and project with optional pagination, sorting, and filtering.
+Retrieves evaluations with optional pagination, sorting, and filtering.
 
 #### Parameters
 
 | Parameter         | Type                             | Required | Description                                                        |
 | ----------------- | -------------------------------- | -------- | ------------------------------------------------------------------ |
-| `organization_id` | `str`                            | Yes      | Organization ID (MongoDB ObjectID format)                          |
-| `project_id`      | `str`                            | Yes      | Project ID (MongoDB ObjectID format)                               |
 | `page`            | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)                |
 | `page_size`       | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500)            |
 | `sort_by`         | `str \| None`                    | No       | Sort by field: `submittedAt`, `accuracy`, or `averageDuration`     |
@@ -325,10 +323,8 @@ if evaluation:
         for takeaway in evaluation.summary.analysis_summary.key_takeaways:
             print(f"  - {takeaway}")
 
-# List evaluations for an organization/project
+# List successful evaluations sorted by accuracy
 response = client.evaluations.get_many(
-    organization_id="683e63925ef7e1c53c1f4b28",
-    project_id="683e63925ef7e1c53c1f4b29",
     status=EvaluationStatus.SUCCESS,
     sort_by="accuracy",
     order="desc",
@@ -416,4 +412,48 @@ if comparison:
     for result in comparison.results:
         print(f"  Prompt: {result.prompt[:80]}...")
         print(f"  Model 1 score: {result.score1}, Model 2 score: {result.score2}")
+```
+
+### `comparisons.compare_models(...)`
+
+Compares two models on a benchmark by automatically finding their most recent successful evaluations. This is a convenience method that wraps `compare()`.
+
+#### Parameters
+
+| Parameter        | Type                   | Required | Description                                |
+| ---------------- | ---------------------- | -------- | ------------------------------------------ |
+| `benchmark_id`   | `str`                  | Yes      | Benchmark ID to compare on                 |
+| `model_id_1`     | `str`                  | Yes      | First model ID                             |
+| `model_id_2`     | `str`                  | Yes      | Second model ID                            |
+| `page`           | `int \| None`          | No       | Page number (1-based)                      |
+| `page_size`      | `int \| None`          | No       | Results per page                           |
+| `outcome_filter` | `str \| None`          | No       | Filter by outcome (same options as `compare`) |
+| `search`         | `str \| None`          | No       | Search within results                      |
+| `timeout`        | `float \| httpx.Timeout \| None` | No | Override request timeout               |
+
+#### Returns
+
+Returns a `ComparisonResponse` (same as `compare()`), or `None` if the comparison request fails.
+
+Raises `ValueError` if no successful evaluation is found for either model on the given benchmark.
+
+#### Example
+
+```python
+from layerlens import PublicClient
+
+client = PublicClient()
+
+# Compare two models on AIME 2025 - no need to look up evaluation IDs
+comparison = client.comparisons.compare_models(
+    benchmark_id="682bddc1e014f9fa440f8a91",
+    model_id_1="699f9761e014f9c3072b0513",
+    model_id_2="699f9761e014f9c3072b0512",
+    page=1,
+    page_size=10,
+)
+
+if comparison:
+    print(f"Model 1: {comparison.correct_count_1}/{comparison.total_results_1} correct")
+    print(f"Model 2: {comparison.correct_count_2}/{comparison.total_results_2} correct")
 ```
