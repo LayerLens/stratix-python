@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .resources.comparisons import Comparisons, AsyncComparisons
     from .resources.public_models import PublicModelsResource, AsyncPublicModelsResource
     from .resources.public_benchmarks import PublicBenchmarksResource, AsyncPublicBenchmarksResource
+    from .resources.public_evaluations import PublicEvaluationsResource, AsyncPublicEvaluationsResource
 
 
 __all__ = ["PublicClient", "AsyncPublicClient"]
@@ -96,6 +97,12 @@ class PublicClient(BaseClient):
 
         return Comparisons(self)
 
+    @cached_property
+    def evaluations(self) -> PublicEvaluationsResource:
+        from .resources.public_evaluations import PublicEvaluationsResource
+
+        return PublicEvaluationsResource(self)
+
     @property
     @override
     def auth_headers(self) -> dict[str, str]:
@@ -173,6 +180,12 @@ class AsyncPublicClient(BaseAsyncClient):
         from .resources.comparisons import AsyncComparisons
 
         return AsyncComparisons(self)
+
+    @cached_property
+    def evaluations(self) -> AsyncPublicEvaluationsResource:
+        from .resources.public_evaluations import AsyncPublicEvaluationsResource
+
+        return AsyncPublicEvaluationsResource(self)
 
     @property
     @override

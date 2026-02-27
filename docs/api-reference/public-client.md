@@ -1,6 +1,6 @@
 # Public Client
 
-The `PublicClient` (synchronous) and `AsyncPublicClient` (asynchronous) classes provide access to public LayerLens API endpoints for browsing public models, benchmarks, benchmark content, and comparing evaluations.
+The `PublicClient` (synchronous) and `AsyncPublicClient` (asynchronous) classes provide access to public LayerLens API endpoints for browsing public models, benchmarks, benchmark content, fetching evaluations, and comparing evaluation results.
 
 ## Basic Usage
 
@@ -261,6 +261,83 @@ if benchmarks and benchmarks.datasets:
     # Or fetch all prompts at once
     all_prompts = client.benchmarks.get_all_prompts(benchmark.id)
     print(f"All prompts: {len(all_prompts)}")
+```
+
+## Evaluations
+
+### `evaluations.get_by_id(id, ...)`
+
+Retrieves a single evaluation by its unique identifier, including the full evaluation summary.
+
+#### Parameters
+
+| Parameter | Type                             | Required | Description                      |
+| --------- | -------------------------------- | -------- | -------------------------------- |
+| `id`      | `str`                            | Yes      | The unique evaluation identifier |
+| `timeout` | `float \| httpx.Timeout \| None` | No       | Override request timeout         |
+
+#### Returns
+
+Returns an `Evaluation` object if found, `None` otherwise. See [Evaluations](evaluations.md) for the full `Evaluation` object properties.
+
+### `evaluations.get_many(...)`
+
+Retrieves evaluations for a given organization and project with optional pagination, sorting, and filtering.
+
+#### Parameters
+
+| Parameter         | Type                             | Required | Description                                                        |
+| ----------------- | -------------------------------- | -------- | ------------------------------------------------------------------ |
+| `organization_id` | `str`                            | Yes      | Organization ID (MongoDB ObjectID format)                          |
+| `project_id`      | `str`                            | Yes      | Project ID (MongoDB ObjectID format)                               |
+| `page`            | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)                |
+| `page_size`       | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500)            |
+| `sort_by`         | `str \| None`                    | No       | Sort by field: `submittedAt`, `accuracy`, or `averageDuration`     |
+| `order`           | `str \| None`                    | No       | Sort order: `asc` or `desc`                                       |
+| `model_ids`       | `List[str] \| None`              | No       | Filter by model IDs                                                |
+| `benchmark_ids`   | `List[str] \| None`              | No       | Filter by benchmark/dataset IDs                                    |
+| `status`          | `EvaluationStatus \| None`       | No       | Filter by evaluation status                                        |
+| `timeout`         | `float \| httpx.Timeout \| None` | No       | Override request timeout                                           |
+
+#### Returns
+
+Returns an `EvaluationsResponse` object containing:
+
+- `evaluations`: List of `Evaluation` objects
+- `pagination`: Pagination metadata with `page`, `page_size`, `total_pages`, and `total_count`
+
+Returns `None` if the request fails.
+
+#### Example
+
+```python
+from layerlens import PublicClient
+from layerlens.models import EvaluationStatus
+
+client = PublicClient()
+
+# Get a specific evaluation by ID (with full summary)
+evaluation = client.evaluations.get_by_id("eval_abc123")
+if evaluation:
+    print(f"{evaluation.model_name} on {evaluation.benchmark_name}: {evaluation.accuracy:.2f}%")
+    if evaluation.summary:
+        print(f"Goal: {evaluation.summary.goal}")
+        for takeaway in evaluation.summary.analysis_summary.key_takeaways:
+            print(f"  - {takeaway}")
+
+# List evaluations for an organization/project
+response = client.evaluations.get_many(
+    organization_id="683e63925ef7e1c53c1f4b28",
+    project_id="683e63925ef7e1c53c1f4b29",
+    status=EvaluationStatus.SUCCESS,
+    sort_by="accuracy",
+    order="desc",
+    page_size=10,
+)
+if response:
+    print(f"Top evaluations ({response.pagination.total_count} total):")
+    for e in response.evaluations:
+        print(f"  {e.model_name}: {e.accuracy:.2f}%")
 ```
 
 ## Comparisons

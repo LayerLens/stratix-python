@@ -18,6 +18,9 @@ from layerlens.models import (
 )
 from layerlens._constants import DEFAULT_TIMEOUT
 from layerlens.resources.evaluations.evaluations import Evaluations
+from layerlens.resources.public_evaluations.public_evaluations import (
+    PublicEvaluationsResource,
+)
 
 
 class TestEvaluations:
@@ -688,3 +691,184 @@ class TestEvaluationModelFields:
         assert result.readability_score == 0.75
         assert result.summary is not None
         assert result.summary.goal == "Evaluate"
+
+
+class TestPublicEvaluationsResource:
+    """Test PublicEvaluationsResource for the public client."""
+
+    @pytest.fixture
+    def mock_public_client(self):
+        """Mock PublicClient."""
+        client = Mock()
+        client.get_cast = Mock()
+        return client
+
+    @pytest.fixture
+    def public_evaluations(self, mock_public_client):
+        """PublicEvaluationsResource instance."""
+        return PublicEvaluationsResource(mock_public_client)
+
+    @pytest.fixture
+    def sample_evaluation_data(self):
+        return {
+            "id": "eval-pub-123",
+            "status": "success",
+            "status_description": "Done",
+            "submitted_at": 1640995200,
+            "finished_at": 1640995800,
+            "model_id": "model-456",
+            "model_name": "GPT-4",
+            "dataset_id": "benchmark-789",
+            "dataset_name": "MMLU",
+            "average_duration": 2500,
+            "accuracy": 0.89,
+            "summary": {
+                "name": "GPT-4 on MMLU",
+                "goal": "Evaluate general knowledge",
+                "metrics": [{"name": "accuracy", "description": "Correctness"}],
+            },
+        }
+
+    def test_get_by_id_success(self, public_evaluations, sample_evaluation_data):
+        """get_by_id returns Evaluation on success."""
+        evaluation = Evaluation(**sample_evaluation_data)
+        public_evaluations._get.return_value = evaluation
+
+        result = public_evaluations.get_by_id("eval-pub-123")
+
+        assert isinstance(result, Evaluation)
+        assert result.id == "eval-pub-123"
+        assert result.model_name == "GPT-4"
+        assert result.summary is not None
+        assert result.summary.name == "GPT-4 on MMLU"
+
+    def test_get_by_id_correct_url(self, public_evaluations, sample_evaluation_data):
+        """get_by_id calls correct endpoint."""
+        evaluation = Evaluation(**sample_evaluation_data)
+        public_evaluations._get.return_value = evaluation
+
+        public_evaluations.get_by_id("eval-pub-123")
+
+        public_evaluations._get.assert_called_once_with(
+            "/evaluations/eval-pub-123",
+            timeout=DEFAULT_TIMEOUT,
+            cast_to=Evaluation,
+        )
+
+    def test_get_by_id_returns_none_on_invalid(self, public_evaluations):
+        """get_by_id returns None when response is not Evaluation."""
+        public_evaluations._get.return_value = None
+
+        result = public_evaluations.get_by_id("nonexistent")
+
+        assert result is None
+
+    def test_get_by_id_no_client_attached(self, public_evaluations, sample_evaluation_data):
+        """get_by_id does not attach client (public client has no org/project)."""
+        evaluation = Evaluation(**sample_evaluation_data)
+        public_evaluations._get.return_value = evaluation
+
+        result = public_evaluations.get_by_id("eval-pub-123")
+
+        assert result._client is None
+
+    def test_get_many_success(self, public_evaluations, sample_evaluation_data):
+        """get_many returns EvaluationsResponse with evaluations."""
+        resp = {
+            "evaluations": [sample_evaluation_data],
+            "total_count": 1,
+        }
+        public_evaluations._get.return_value = resp
+
+        result = public_evaluations.get_many(
+            organization_id="org-123",
+            project_id="proj-456",
+        )
+
+        assert isinstance(result, EvaluationsResponse)
+        assert len(result.evaluations) == 1
+        assert result.evaluations[0].id == "eval-pub-123"
+
+    def test_get_many_sends_org_and_project(self, public_evaluations, sample_evaluation_data):
+        """get_many sends organizationID and projectID as params."""
+        resp = {"evaluations": [sample_evaluation_data], "total_count": 1}
+        public_evaluations._get.return_value = resp
+
+        public_evaluations.get_many(
+            organization_id="org-abc",
+            project_id="proj-xyz",
+        )
+
+        call_args = public_evaluations._get.call_args
+        params = call_args.kwargs.get("params") or call_args[1].get("params")
+        assert params["organizationID"] == "org-abc"
+        assert params["projectID"] == "proj-xyz"
+
+    def test_get_many_with_filters(self, public_evaluations, sample_evaluation_data):
+        """get_many passes filter parameters correctly."""
+        resp = {"evaluations": [sample_evaluation_data], "total_count": 1}
+        public_evaluations._get.return_value = resp
+
+        public_evaluations.get_many(
+            organization_id="org-123",
+            project_id="proj-456",
+            page=2,
+            page_size=50,
+            sort_by="accuracy",
+            order="desc",
+            model_ids=["m1", "m2"],
+            benchmark_ids=["b1"],
+            status=EvaluationStatus.SUCCESS,
+        )
+
+        call_args = public_evaluations._get.call_args
+        params = call_args.kwargs.get("params") or call_args[1].get("params")
+        assert params["page"] == "2"
+        assert params["pageSize"] == "50"
+        assert params["sortBy"] == "accuracy"
+        assert params["order"] == "desc"
+        assert params["models"] == "m1,m2"
+        assert params["datasets"] == "b1"
+        assert params["status"] == "success"
+
+    def test_get_many_pagination(self, public_evaluations, sample_evaluation_data):
+        """get_many computes pagination correctly."""
+        resp = {"evaluations": [sample_evaluation_data] * 3, "total_count": 25}
+        public_evaluations._get.return_value = resp
+
+        result = public_evaluations.get_many(
+            organization_id="org-123",
+            project_id="proj-456",
+            page=1,
+            page_size=10,
+        )
+
+        assert result.pagination.page == 1
+        assert result.pagination.page_size == 10
+        assert result.pagination.total_count == 25
+        assert result.pagination.total_pages == 3  # ceil(25/10)
+
+    def test_get_many_returns_none_on_invalid(self, public_evaluations):
+        """get_many returns None when response is invalid."""
+        public_evaluations._get.return_value = "not-a-dict"
+
+        result = public_evaluations.get_many(
+            organization_id="org-123",
+            project_id="proj-456",
+        )
+
+        assert result is None
+
+    def test_get_many_empty_results(self, public_evaluations):
+        """get_many handles empty evaluations list."""
+        resp = {"evaluations": [], "total_count": 0}
+        public_evaluations._get.return_value = resp
+
+        result = public_evaluations.get_many(
+            organization_id="org-123",
+            project_id="proj-456",
+        )
+
+        assert isinstance(result, EvaluationsResponse)
+        assert len(result.evaluations) == 0
+        assert result.pagination.total_count == 0
