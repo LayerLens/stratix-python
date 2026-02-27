@@ -21,6 +21,7 @@ jobs:
     env:
       TWINE_USERNAME: __token__
       TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+      PYPI_REPO: testpypi
 
     steps:
       - uses: actions/checkout@v4
@@ -31,10 +32,10 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install build dependencies
-        working-directory: py
-        run: |
-          make install-build-deps
-      - name: Verify, build and publish to TestPyPI
-        working-directory: py
-        run: |
-          make publish-to-testpypi
+        run: make install-build-deps
+      - name: Build
+        run: make build
+      - name: Test wheel
+        run: make test-wheel
+      - name: Publish to TestPyPI
+        run: make _publish

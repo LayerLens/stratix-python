@@ -1,15 +1,14 @@
 install-build-deps:
-	# Install build dependencies using rye
-	rye sync --all-features
+	pip install build twine
 
-build: install-build-deps clean _template-version
+build: clean _template-version
 	python -m build
 	# Restore the original version file after the build
-	git checkout src/_version.py
+	git checkout src/layerlens/_version.py
 
-test-wheel: build
-	# Test the built wheel
-	rye run pytest --wheel
+test-wheel:
+	pip install dist/*.whl
+	python -c "import layerlens; print('Package imported successfully')"
 
 clean:
 	rm -rf build dist

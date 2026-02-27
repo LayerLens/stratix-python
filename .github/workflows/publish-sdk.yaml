@@ -45,11 +45,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Build, Verify and Publish
-        working-directory: py
-        run: |
-          make install-build-deps
-          make build
+      - name: Install build dependencies
+        run: make install-build-deps
+      - name: Build
+        run: make build
+      - name: Test wheel
+        run: make test-wheel
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -57,6 +58,6 @@ jobs:
           path: dist/
           retention-days: 5
       - name: Publish to PyPI
-        working-directory: py
-        run: |
-          make publish-to-pypi
+        run: make _publish
+        env:
+          PYPI_REPO: pypi

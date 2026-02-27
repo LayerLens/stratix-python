@@ -93,14 +93,11 @@ pyright==1.1.399
 pytest==8.4.1
     # via pytest-cov
 pytest-cov==6.2.1
-<<<<<<< HEAD
-requests==2.32.5
-    # via atlas
-=======
 readme-renderer==44.0
     # via twine
-requests==2.32.4
+requests==2.32.5
     # via id
+    # via layerlens
     # via requests-toolbelt
     # via twine
 requests-toolbelt==1.0.0
@@ -109,7 +106,6 @@ rfc3986==2.0.0
     # via twine
 rich==14.1.0
     # via twine
->>>>>>> a605835 (feat | LAY-885 Added twine to publish the package. Updated scripts.)
 ruff==0.12.7
 sniffio==1.3.1
     # via anyio
@@ -118,11 +114,8 @@ tomli==2.2.1
     # via coverage
     # via mypy
     # via pytest
-<<<<<<< HEAD
-types-requests==2.32.4.20250809
-=======
 twine==6.1.0
->>>>>>> a605835 (feat | LAY-885 Added twine to publish the package. Updated scripts.)
+types-requests==2.32.4.20250809
 typing-extensions==4.14.1
     # via anyio
     # via exceptiongroup
@@ -135,10 +128,7 @@ typing-inspection==0.4.1
     # via pydantic
 urllib3==2.5.0
     # via requests
-<<<<<<< HEAD
-    # via types-requests
-=======
     # via twine
->>>>>>> a605835 (feat | LAY-885 Added twine to publish the package. Updated scripts.)
+    # via types-requests
 zipp==3.23.0
     # via importlib-metadata
