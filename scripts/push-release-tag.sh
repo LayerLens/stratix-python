@@ -23,7 +23,7 @@ done
 git fetch --tags --prune
 
 REPO_URL="https://github.com/LayerLens/atlas-python"
-TAG_PREFIX="sdk-v"
+TAG_PREFIX="v"
 COMMIT=$(git rev-parse --short HEAD)
 VERSION=$(bash "$ROOT_DIR/scripts/get_version.sh")
 TAG="${TAG_PREFIX}${VERSION}"
