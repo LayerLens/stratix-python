@@ -1,13 +1,13 @@
 # This workflow is used to publish the Python SDK to the actual PyPI.
 # It is triggered by a tag push, and will only publish if the tag is valid.
-# The tag must match the format sdk-v*.*.*
+# The tag must match the format v*.*.*
 
 name: Publish Python SDK
 
 on:
   push:
     tags:
-      - "sdk-v*.*.*" # Trigger on version tags like sdk-v0.1.0 etc.
+      - "v*.*.*" # Trigger on version tags like v0.1.0 etc.
 
 jobs:
   validate:
