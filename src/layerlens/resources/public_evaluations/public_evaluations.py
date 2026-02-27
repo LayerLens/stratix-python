@@ -37,8 +37,6 @@ class PublicEvaluationsResource(SyncPublicAPIResource):
     def get_many(
         self,
         *,
-        organization_id: str,
-        project_id: str,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         sort_by: Optional[Literal["submittedAt", "accuracy", "averageDuration"]] = None,
@@ -52,8 +50,6 @@ class PublicEvaluationsResource(SyncPublicAPIResource):
         Get evaluations with optional pagination, sorting, and filtering.
 
         Args:
-            organization_id: Organization ID (required)
-            project_id: Project ID (required)
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of evaluations per page (default: 100, optional)
             sort_by: Sort evaluations by field (submittedAt, accuracy, averageDuration)
@@ -66,10 +62,7 @@ class PublicEvaluationsResource(SyncPublicAPIResource):
         Returns:
             EvaluationsResponse object or None
         """
-        params = {
-            "organizationID": organization_id,
-            "projectID": project_id,
-        }
+        params: dict[str, str] = {}
 
         effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
         effective_page = page if page is not None else DEFAULT_PAGE
@@ -137,8 +130,6 @@ class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
     async def get_many(
         self,
         *,
-        organization_id: str,
-        project_id: str,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         sort_by: Optional[Literal["submittedAt", "accuracy", "averageDuration"]] = None,
@@ -152,8 +143,6 @@ class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
         Get evaluations with optional pagination, sorting, and filtering.
 
         Args:
-            organization_id: Organization ID (required)
-            project_id: Project ID (required)
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of evaluations per page (default: 100, optional)
             sort_by: Sort evaluations by field (submittedAt, accuracy, averageDuration)
@@ -166,10 +155,7 @@ class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
         Returns:
             EvaluationsResponse object or None
         """
-        params = {
-            "organizationID": organization_id,
-            "projectID": project_id,
-        }
+        params: dict[str, str] = {}
 
         effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
         effective_page = page if page is not None else DEFAULT_PAGE

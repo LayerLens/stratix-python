@@ -30,13 +30,8 @@ def main():
     else:
         print(f"Evaluation {evaluation_id} not found")
 
-    # --- List evaluations for a specific organization/project
-    organization_id = "683e63925ef7e1c53c1f4b28"
-    project_id = "683e63925ef7e1c53c1f4b29"
-
+    # --- List latest evaluations
     response = client.evaluations.get_many(
-        organization_id=organization_id,
-        project_id=project_id,
         page=1,
         page_size=5,
         sort_by="submittedAt",
@@ -49,8 +44,6 @@ def main():
 
     # --- Filter by status (only successful)
     response = client.evaluations.get_many(
-        organization_id=organization_id,
-        project_id=project_id,
         status=EvaluationStatus.SUCCESS,
         sort_by="accuracy",
         order="desc",
