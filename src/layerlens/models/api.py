@@ -95,6 +95,18 @@ class UploadURLResponse(BaseModel):
     url: str
 
 
+class CreateBenchmarkResponse(BaseModel):
+    organization_id: str
+    project_id: str
+    benchmark_id: str
+
+
+class CreateModelResponse(BaseModel):
+    organization_id: str
+    project_id: str
+    model_id: str
+
+
 class CreateTracesResponse(BaseModel):
     trace_ids: List[str]
 

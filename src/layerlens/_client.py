@@ -17,6 +17,7 @@ from ._exceptions import StratixError, APIStatusError
 from ._base_client import BaseClient, BaseAsyncClient
 
 if TYPE_CHECKING:
+    from ._public_client import PublicClient, AsyncPublicClient
     from .resources.judges import Judges, AsyncJudges
     from .resources.models import Models, AsyncModels
     from .resources.traces import Traces, AsyncTraces
@@ -123,6 +124,12 @@ class Stratix(BaseClient):
         from .resources.trace_evaluations import TraceEvaluations
 
         return TraceEvaluations(self)
+
+    @cached_property
+    def public(self) -> PublicClient:
+        from ._public_client import PublicClient
+
+        return PublicClient(api_key=self.api_key, base_url=str(self.base_url), timeout=self.timeout)
 
     @property
     @override
@@ -286,6 +293,12 @@ class AsyncStratix(BaseAsyncClient):
         from .resources.trace_evaluations import AsyncTraceEvaluations
 
         return AsyncTraceEvaluations(self)
+
+    @cached_property
+    def public(self) -> AsyncPublicClient:
+        from ._public_client import AsyncPublicClient
+
+        return AsyncPublicClient(api_key=self.api_key, base_url=str(self.base_url), timeout=self.timeout)
 
     @property
     @override
