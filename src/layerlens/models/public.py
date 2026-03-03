@@ -31,6 +31,10 @@ class PublicModelDetail(BaseModel):
 class PublicModelsListResponse(BaseModel):
     models: List[PublicModelDetail]
     categories: List[str] = []
+    companies: List[str] = []
+    regions: List[str] = []
+    licenses: List[str] = []
+    sizes: List[str] = []
     count: int
     total_count: int
 
@@ -54,6 +58,7 @@ class PublicBenchmarkDetail(BaseModel):
 class PublicBenchmarksListResponse(BaseModel):
     datasets: List[PublicBenchmarkDetail]
     categories: List[str] = []
+    languages: List[str] = []
     count: int
     total_count: int
 

@@ -22,7 +22,7 @@ done
 
 git fetch --tags --prune
 
-REPO_URL="https://github.com/LayerLens/atlas-python"
+REPO_URL="https://github.com/LayerLens/stratix-python"
 TAG_PREFIX="v"
 COMMIT=$(git rev-parse --short HEAD)
 VERSION=$(bash "$ROOT_DIR/scripts/get_version.sh")
@@ -68,5 +68,5 @@ git push origin "$TAG"
 
 echo ""
 echo "Tag ${TAG} has been created and pushed to origin. Check GitHub Actions for build progress:"
-echo "https://github.com/LayerLens/atlas-python/actions/workflows/publish-sdk.yaml"
+echo "https://github.com/LayerLens/stratix-python/actions/workflows/publish-sdk.yaml"
 echo ""
