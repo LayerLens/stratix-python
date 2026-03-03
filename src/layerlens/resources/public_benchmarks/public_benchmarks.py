@@ -13,6 +13,10 @@ from ...models import (
 from ..._resource import SyncPublicAPIResource, AsyncPublicAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
+DEFAULT_PAGE = 1
+DEFAULT_PAGE_SIZE = 100
+MAX_PAGE_SIZE = 500
+
 DEFAULT_PROMPTS_PAGE_SIZE = 100
 MAX_PROMPTS_PAGE_SIZE = 500
 
@@ -47,14 +51,16 @@ class PublicBenchmarksResource(SyncPublicAPIResource):
             params["categories"] = ",".join(categories)
         if languages:
             params["languages"] = ",".join(languages)
+        effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
+        effective_page = page if page is not None else DEFAULT_PAGE
+
+        params["page"] = str(effective_page)
+        params["pageSize"] = str(effective_page_size)
+
         if sort_by:
             params["sortBy"] = sort_by
         if order:
             params["order"] = order
-        if page is not None:
-            params["page"] = str(page)
-        if page_size is not None:
-            params["pageSize"] = str(page_size)
         if include_deprecated is not None:
             params["include_deprecated"] = str(include_deprecated).lower()
 
@@ -170,14 +176,16 @@ class AsyncPublicBenchmarksResource(AsyncPublicAPIResource):
             params["categories"] = ",".join(categories)
         if languages:
             params["languages"] = ",".join(languages)
+        effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
+        effective_page = page if page is not None else DEFAULT_PAGE
+
+        params["page"] = str(effective_page)
+        params["pageSize"] = str(effective_page_size)
+
         if sort_by:
             params["sortBy"] = sort_by
         if order:
             params["order"] = order
-        if page is not None:
-            params["page"] = str(page)
-        if page_size is not None:
-            params["pageSize"] = str(page_size)
         if include_deprecated is not None:
             params["include_deprecated"] = str(include_deprecated).lower()
 

@@ -6,6 +6,11 @@ on:
       # e.g. v1.0.0, v1.0.1, v1.0.0-rc1, etc.
       - "v[0-9]+.[0-9]+.[0-9]+*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to deploy (e.g. v1.2.0). Must match a tag that already exists."
+        required: true
+        type: string
 
 env:
   PACKAGE_NAME: layerlens
@@ -24,7 +29,11 @@ jobs:
         id: set_release_tag
         # ensure the tag is valid (matches code, is on release branch, etc)
         run: |
-          RELEASE_TAG=${GITHUB_REF#refs/tags/}
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RELEASE_TAG="${{ github.event.inputs.release_tag }}"
+          else
+            RELEASE_TAG=${GITHUB_REF#refs/tags/}
+          fi
           echo "Using tag: $RELEASE_TAG"
           chmod +x ./scripts/validate_release_tag.sh
           ./scripts/validate_release_tag.sh "$RELEASE_TAG"

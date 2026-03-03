@@ -17,9 +17,11 @@ def main():
     response = client.benchmarks.get(languages=["English"])
     print(f"\nFound {response.total_count} English benchmarks")
 
-    # --- Filter by category
+    # --- Discover available filter values
     if response.categories:
         print(f"\nAvailable categories: {response.categories}")
+    if response.languages:
+        print(f"Available languages: {response.languages}")
 
     # --- Search by name
     response = client.benchmarks.get(query="mmlu")

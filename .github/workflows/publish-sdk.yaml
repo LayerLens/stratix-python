@@ -1,5 +1,5 @@
 # This workflow is used to publish the Python SDK to the actual PyPI.
-# It is triggered by a tag push, and will only publish if the tag is valid.
+# It is triggered by a tag push or manually, and will only publish if the tag is valid.
 # The tag must match the format v*.*.*
 
 name: Publish Python SDK
@@ -8,6 +8,12 @@ on:
   push:
     tags:
       - "v*.*.*" # Trigger on version tags like v0.1.0 etc.
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish (e.g. v1.2.0). Must match a tag that already exists."
+        required: true
+        type: string
 
 jobs:
   validate:
@@ -21,9 +27,13 @@ jobs:
           fetch-depth: 0 # Fetch all history for checking branch
       - name: Set release tag
         id: set_release_tag
-        # ensure the tag is valid (matches code, is on main, etc)
+        # ensure the tag is valid (matches code, is on release branch, etc)
         run: |
-          RELEASE_TAG=${GITHUB_REF#refs/tags/}
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RELEASE_TAG="${{ github.event.inputs.release_tag }}"
+          else
+            RELEASE_TAG=${GITHUB_REF#refs/tags/}
+          fi
           echo "Using tag: $RELEASE_TAG"
           ./scripts/validate-release-tag.sh "$RELEASE_TAG"
           echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV

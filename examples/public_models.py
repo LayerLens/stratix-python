@@ -44,6 +44,15 @@ def main():
     response = client.models.get(include_deprecated=True)
     print(f"\nTotal models (including deprecated): {response.total_count}")
 
+    # --- Discover available filter values
+    response = client.models.get(page=1, page_size=1)
+    print(f"\nAvailable filter values:")
+    print(f"  Categories: {response.categories}")
+    print(f"  Companies:  {response.companies}")
+    print(f"  Regions:    {response.regions}")
+    print(f"  Licenses:   {response.licenses}")
+    print(f"  Sizes:      {response.sizes}")
+
 
 if __name__ == "__main__":
     main()

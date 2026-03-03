@@ -36,7 +36,7 @@ class EvaluationDataset(BaseModel):
     total_size: int = 0
     training_size: int = 0
     test_size: int = 0
-    characteristics: List[str] = []
+    characteristics: Optional[List[str]] = []
 
 
 class EvaluationModelInfo(BaseModel):
@@ -45,24 +45,24 @@ class EvaluationModelInfo(BaseModel):
 
 
 class PerformanceDetails(BaseModel):
-    strengths: List[str] = []
-    challenges: List[str] = []
+    strengths: Optional[List[str]] = []
+    challenges: Optional[List[str]] = []
 
 
 class ErrorAnalysis(BaseModel):
-    common_failure_modes: List[str] = []
+    common_failure_modes: Optional[List[str]] = []
     example: str = ""
 
 
 class AnalysisSummary(BaseModel):
-    key_takeaways: List[str] = []
+    key_takeaways: Optional[List[str]] = []
 
 
 class EvaluationSummary(BaseModel):
     name: str = ""
     goal: str = ""
-    metrics: List[EvaluationMetric] = []
-    task_types: List[EvaluationTaskType] = []
+    metrics: Optional[List[EvaluationMetric]] = []
+    task_types: Optional[List[EvaluationTaskType]] = []
     dataset: Optional[EvaluationDataset] = None
     model: Optional[EvaluationModelInfo] = None
     performance_details: Optional[PerformanceDetails] = None
