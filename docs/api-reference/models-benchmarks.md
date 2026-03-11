@@ -132,6 +132,13 @@ Removes models from the project by their IDs.
 
 Returns `bool` - `True` if the operation succeeded, `False` otherwise.
 
+#### Example
+
+```python
+client = Stratix()
+success = client.models.remove("model-id-1", "model-id-2")
+```
+
 ### `create_custom(name, key, description, api_url, max_tokens, api_key=None, timeout=None)`
 
 Creates a custom model backed by an OpenAI-compatible API endpoint. This allows you to evaluate any model accessible via a chat completions endpoint.
@@ -270,6 +277,13 @@ Removes benchmarks from the project by their IDs.
 #### Returns
 
 Returns `bool` - `True` if the operation succeeded, `False` otherwise.
+
+#### Example
+
+```python
+client = Stratix()
+success = client.benchmarks.remove("benchmark-id-1", "benchmark-id-2")
+```
 
 ### `create_custom(name, description, file_path, additional_metrics=None, custom_scorer_ids=None, input_type=None, timeout=None)`
 

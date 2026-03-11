@@ -168,6 +168,14 @@ Deletes a trace by its unique identifier.
 
 Returns `True` if the trace was deleted, `False` otherwise.
 
+#### Example
+
+```python
+deleted = client.traces.delete("trace-abc123")
+if deleted:
+    print("Trace deleted successfully")
+```
+
 ### `get_sources(timeout=None)`
 
 Retrieves the list of available trace sources for the current project.

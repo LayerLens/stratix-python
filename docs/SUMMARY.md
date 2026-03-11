@@ -21,10 +21,10 @@
 
 ## Code Examples
 * [Creating Evaluations](examples/creating-evaluations.md)
-* [Judges and Traces](examples/judges-and-traces.md)
 * [Retrieving Results](examples/retrieving-results.md)
-* [Working with Timeouts](examples/timeouts.md)
-* [Advanced Usage Patterns](examples/advanced-usage.md)
+* [Models and Benchmarks](examples/models-and-benchmarks.md)
+* [Judges and Traces](examples/judges-and-traces.md)
+* [Public API](examples/public-api.md)
 
 ## Troubleshooting
 * [Common Issues](troubleshooting/common-issues.md)
