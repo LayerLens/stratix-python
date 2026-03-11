@@ -4,7 +4,7 @@ Welcome to the official documentation for the Layerlens Python SDK for the Strat
 
 ## What is Stratix?
 
-Stratix is an evaluation platform that allows you to benchmark AI models against various datasets and metrics. The Python SDK provides two HTTP clients (syncronous and asynchronous) powered by [httpx](https://github.com/encode/httpx) and [Pydantic](https://pydantic.dev/) models for type-safe API interactions.
+Stratix is an evaluation platform that allows you to benchmark AI models against various datasets and metrics. The Python SDK provides two HTTP clients (synchronous and asynchronous) powered by [httpx](https://github.com/encode/httpx) and [Pydantic](https://pydantic.dev/) models for type-safe API interactions.
 
 ## Quick Start
 
@@ -13,7 +13,7 @@ Stratix is an evaluation platform that allows you to benchmark AI models against
 Install the layerlens python sdk using the following command
 
 ```bash
-pip install layerlens --index-url https://sdk.layerlens.ai/package
+pip install layerlens --extra-index-url https://sdk.layerlens.ai/package
 ```
 
 ### Generate an api key on the Stratix platform
@@ -88,7 +88,7 @@ async def run_evaluation_async():
     )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_evaluation_async())
 ```
 
 ## Next steps
