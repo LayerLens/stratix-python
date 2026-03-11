@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+
 from layerlens import Stratix
 
 
@@ -20,7 +22,7 @@ def main():
         key="my-org/custom-model-v1",
         description="Custom fine-tuned model served via vLLM",
         api_url="https://my-model-endpoint.example.com/v1",
-        api_key="my-provider-api-key",
+        api_key=os.environ["MY_PROVIDER_API_KEY"],
         max_tokens=4096,
     )
 
