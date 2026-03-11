@@ -10,7 +10,7 @@ import httpx
 
 from . import _exceptions
 from ._utils import is_mapping
-from ._constants import DEFAULT_TIMEOUT
+from ._constants import DEFAULT_TIMEOUT, DEFAULT_BASE_URL
 from ._exceptions import APIStatusError
 from ._base_client import BaseClient, BaseAsyncClient
 
@@ -75,7 +75,7 @@ class PublicClient(BaseClient):
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_STRATIX_BASE_URL") or os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
-            base_url = "https://api.layerlens.ai/api/v1"
+            base_url = DEFAULT_BASE_URL
 
         super().__init__(base_url=base_url, timeout=timeout)
 
@@ -159,7 +159,7 @@ class AsyncPublicClient(BaseAsyncClient):
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_STRATIX_BASE_URL") or os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
-            base_url = "https://api.layerlens.ai/api/v1"
+            base_url = DEFAULT_BASE_URL
 
         super().__init__(base_url=base_url, timeout=timeout)
 

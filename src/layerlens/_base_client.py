@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import logging
 from typing import Any, Dict, Type, Union, TypeVar, Optional
 
@@ -11,6 +12,11 @@ from . import _exceptions
 from ._utils import SensitiveHeadersFilter
 
 ResponseT = TypeVar("ResponseT")
+
+MAX_RETRIES = 2
+RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+INITIAL_RETRY_DELAY = 0.5
+MAX_RETRY_DELAY = 8.0
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -52,27 +58,45 @@ class BaseClient(httpx.Client):
         **kwargs: Any,
     ) -> Union[ResponseT, httpx.Response]:
         combined_headers = {**self.default_headers, **(headers or {})}
+        retries_left = MAX_RETRIES
+        delay = INITIAL_RETRY_DELAY
 
-        response = super().request(
-            method=method,
-            url=url,
-            json=body,
-            params=params,
-            headers=combined_headers,
-            **kwargs,
-        )
+        while True:
+            response = super().request(
+                method=method,
+                url=url,
+                json=body,
+                params=params,
+                headers=combined_headers,
+                **kwargs,
+            )
 
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as err:
-            log.debug("Encountered httpx.HTTPStatusError", exc_info=True)
-            log.debug("Re-raising status error")
-            raise self._make_status_error_from_response(err.response) from None
+            if response.status_code in RETRY_STATUS_CODES and retries_left > 0:
+                retry_after = response.headers.get("retry-after")
+                sleep_time = float(retry_after) if retry_after else delay
+                sleep_time = min(sleep_time, MAX_RETRY_DELAY)
+                log.debug(
+                    "Retrying request after %.1fs (status %d, %d retries left)",
+                    sleep_time,
+                    response.status_code,
+                    retries_left,
+                )
+                time.sleep(sleep_time)
+                delay = min(delay * 2, MAX_RETRY_DELAY)
+                retries_left -= 1
+                continue
 
-        if cast_to:
-            data = response.json()
-            return cast_to(**data)
-        return response
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as err:
+                log.debug("Encountered httpx.HTTPStatusError", exc_info=True)
+                log.debug("Re-raising status error")
+                raise self._make_status_error_from_response(err.response) from None
+
+            if cast_to:
+                data = response.json()
+                return cast_to(**data)
+            return response
 
     def get_cast(
         self,
@@ -177,28 +201,48 @@ class BaseAsyncClient(httpx.AsyncClient):
         headers: Optional[Dict[str, str]] = None,
         **kwargs: Any,
     ) -> Union[ResponseT, httpx.Response]:
+        import asyncio
+
         combined_headers = {**self.default_headers, **(headers or {})}
+        retries_left = MAX_RETRIES
+        delay = INITIAL_RETRY_DELAY
 
-        response = await super().request(
-            method=method,
-            url=url,
-            json=body,
-            params=params,
-            headers=combined_headers,
-            **kwargs,
-        )
+        while True:
+            response = await super().request(
+                method=method,
+                url=url,
+                json=body,
+                params=params,
+                headers=combined_headers,
+                **kwargs,
+            )
 
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as err:
-            log.debug("Encountered httpx.HTTPStatusError", exc_info=True)
-            log.debug("Re-raising status error")
-            raise self._make_status_error_from_response(err.response) from None
+            if response.status_code in RETRY_STATUS_CODES and retries_left > 0:
+                retry_after = response.headers.get("retry-after")
+                sleep_time = float(retry_after) if retry_after else delay
+                sleep_time = min(sleep_time, MAX_RETRY_DELAY)
+                log.debug(
+                    "Retrying request after %.1fs (status %d, %d retries left)",
+                    sleep_time,
+                    response.status_code,
+                    retries_left,
+                )
+                await asyncio.sleep(sleep_time)
+                delay = min(delay * 2, MAX_RETRY_DELAY)
+                retries_left -= 1
+                continue
 
-        if cast_to:
-            data = response.json()
-            return cast_to(**data)
-        return response
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as err:
+                log.debug("Encountered httpx.HTTPStatusError", exc_info=True)
+                log.debug("Re-raising status error")
+                raise self._make_status_error_from_response(err.response) from None
+
+            if cast_to:
+                data = response.json()
+                return cast_to(**data)
+            return response
 
     async def get_cast(
         self,
