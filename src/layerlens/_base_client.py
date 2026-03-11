@@ -75,7 +75,12 @@ class BaseClient(httpx.Client):
                 retry_after = response.headers.get("retry-after")
                 sleep_time = float(retry_after) if retry_after else delay
                 sleep_time = min(sleep_time, MAX_RETRY_DELAY)
-                log.debug("Retrying request after %.1fs (status %d, %d retries left)", sleep_time, response.status_code, retries_left)
+                log.debug(
+                    "Retrying request after %.1fs (status %d, %d retries left)",
+                    sleep_time,
+                    response.status_code,
+                    retries_left,
+                )
                 time.sleep(sleep_time)
                 delay = min(delay * 2, MAX_RETRY_DELAY)
                 retries_left -= 1
@@ -216,7 +221,12 @@ class BaseAsyncClient(httpx.AsyncClient):
                 retry_after = response.headers.get("retry-after")
                 sleep_time = float(retry_after) if retry_after else delay
                 sleep_time = min(sleep_time, MAX_RETRY_DELAY)
-                log.debug("Retrying request after %.1fs (status %d, %d retries left)", sleep_time, response.status_code, retries_left)
+                log.debug(
+                    "Retrying request after %.1fs (status %d, %d retries left)",
+                    sleep_time,
+                    response.status_code,
+                    retries_left,
+                )
                 await asyncio.sleep(sleep_time)
                 delay = min(delay * 2, MAX_RETRY_DELAY)
                 retries_left -= 1
