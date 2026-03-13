@@ -58,14 +58,13 @@ for _ in range(30):
 
 # --- Get evaluation results (may 404 if still in progress)
 try:
-    results_response = client.trace_evaluations.get_results(evaluation.id)
-    if results_response and results_response.results:
-        for result in results_response.results:
-            print(f"  Score: {result.score}, Passed: {result.passed}")
-            print(f"  Reasoning: {result.reasoning}")
-            if result.steps:
-                for step in result.steps:
-                    print(f"    Step {step.step}: {step.reasoning}")
+    result = client.trace_evaluations.get_results(evaluation.id)
+    if result:
+        print(f"  Score: {result.score}, Passed: {result.passed}")
+        print(f"  Reasoning: {result.reasoning}")
+        if result.steps:
+            for step in result.steps:
+                print(f"    Tool: {step.tool}, Result: {step.result[:80]}")
     else:
         print("  No results returned")
 except Exception:

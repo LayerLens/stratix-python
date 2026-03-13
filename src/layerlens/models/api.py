@@ -117,8 +117,8 @@ class TraceEvaluationsResponse(BaseModel):
     total: int
 
 
-class TraceEvaluationResultsResponse(BaseModel):
-    results: List[TraceEvaluationResult]
+class TraceEvaluationResultsResponse(TraceEvaluationResult):
+    pass
 
 
 class CostEstimateResponse(BaseModel):

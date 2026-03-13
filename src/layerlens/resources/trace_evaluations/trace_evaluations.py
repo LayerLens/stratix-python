@@ -7,7 +7,6 @@ import httpx
 from ...models import (
     TraceEvaluation,
     CostEstimateResponse,
-    TraceEvaluationResult,
     TraceEvaluationsResponse,
     TraceEvaluationResultsResponse,
 )
@@ -146,12 +145,8 @@ class TraceEvaluations(SyncAPIResource):
         if not data or not isinstance(data, dict):
             return None
 
-        results = [
-            r if isinstance(r, TraceEvaluationResult) else TraceEvaluationResult(**r) for r in data.get("results", [])
-        ]
-
         try:
-            return TraceEvaluationResultsResponse(results=results)
+            return TraceEvaluationResultsResponse(**data)
         except Exception:
             return None
 
@@ -297,12 +292,8 @@ class AsyncTraceEvaluations(AsyncAPIResource):
         if not data or not isinstance(data, dict):
             return None
 
-        results = [
-            r if isinstance(r, TraceEvaluationResult) else TraceEvaluationResult(**r) for r in data.get("results", [])
-        ]
-
         try:
-            return TraceEvaluationResultsResponse(results=results)
+            return TraceEvaluationResultsResponse(**data)
         except Exception:
             return None
 

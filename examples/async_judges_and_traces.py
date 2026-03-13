@@ -64,10 +64,9 @@ async def main():
         if not evaluation:
             continue
         try:
-            results_response = await client.trace_evaluations.get_results(evaluation.id)
-            if results_response and results_response.results:
-                for result in results_response.results:
-                    print(f"  Score: {result.score}, Passed: {result.passed}")
+            result = await client.trace_evaluations.get_results(evaluation.id)
+            if result:
+                print(f"  Score: {result.score}, Passed: {result.passed}")
             else:
                 print(f"  Evaluation {evaluation.id}: no results yet")
         except Exception:

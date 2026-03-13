@@ -66,8 +66,8 @@ class TestTraceEvaluations:
             "passed": True,
             "reasoning": "The output meets quality standards",
             "steps": [
-                {"step": 1, "reasoning": "Checked correctness"},
-                {"step": 2, "reasoning": "Checked style"},
+                {"tool": "jq", "args": {"query": "."}, "result": "Checked correctness"},
+                {"tool": "submit_evaluation", "args": {"score": 0.85}, "result": "Checked style"},
             ],
             "model": "claude-sonnet-4-20250514",
             "turns": 3,
@@ -232,26 +232,22 @@ class TestTraceEvaluations:
 
     def test_get_results_success(self, trace_evals_resource, sample_result_data):
         """get_results returns TraceEvaluationResultsResponse on success."""
-        trace_evals_resource._get.return_value = {
-            "results": [sample_result_data],
-        }
+        trace_evals_resource._get.return_value = sample_result_data
 
         result = trace_evals_resource.get_results("te-123")
 
         assert isinstance(result, TraceEvaluationResultsResponse)
-        assert len(result.results) == 1
-        res = result.results[0]
-        assert res.id == "result-123"
-        assert res.score == 0.85
-        assert res.passed is True
-        assert res.reasoning == "The output meets quality standards"
-        assert len(res.steps) == 2
-        assert res.model == "claude-sonnet-4-20250514"
-        assert res.latency_ms == 2500
+        assert result.id == "result-123"
+        assert result.score == 0.85
+        assert result.passed is True
+        assert result.reasoning == "The output meets quality standards"
+        assert len(result.steps) == 2
+        assert result.model == "claude-sonnet-4-20250514"
+        assert result.latency_ms == 2500
 
     def test_get_results_request_parameters(self, trace_evals_resource, sample_result_data):
         """get_results makes correct API request."""
-        trace_evals_resource._get.return_value = {"results": [sample_result_data]}
+        trace_evals_resource._get.return_value = sample_result_data
 
         trace_evals_resource.get_results("te-123")
 
@@ -262,13 +258,12 @@ class TestTraceEvaluations:
         )
 
     def test_get_results_empty(self, trace_evals_resource):
-        """get_results returns empty results list."""
-        trace_evals_resource._get.return_value = {"results": []}
+        """get_results returns None when response has no data."""
+        trace_evals_resource._get.return_value = {}
 
         result = trace_evals_resource.get_results("te-123")
 
-        assert isinstance(result, TraceEvaluationResultsResponse)
-        assert len(result.results) == 0
+        assert result is None
 
     def test_get_results_none_response(self, trace_evals_resource):
         """get_results returns None when response is invalid."""
