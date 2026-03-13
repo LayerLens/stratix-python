@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field, BaseModel, ConfigDict
 
@@ -36,8 +36,9 @@ class TraceEvaluation(BaseModel):
 
 
 class TraceEvaluationStep(BaseModel):
-    step: int
-    reasoning: str
+    tool: str
+    args: Dict[str, Any] = {}
+    result: str = ""
 
 
 class TraceEvaluationResult(BaseModel):
