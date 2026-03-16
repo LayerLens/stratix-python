@@ -311,10 +311,10 @@ class TestEvaluations:
         evaluations_resource._get.assert_called_once_with(
             "/evaluations",
             params={
-                "organizationID": mock_client.organization_id,
-                "projectID": mock_client.project_id,
+                "organization_id": mock_client.organization_id,
+                "project_id": mock_client.project_id,
                 "page": "1",
-                "pageSize": "100",
+                "page_size": "100",
             },
             timeout=DEFAULT_TIMEOUT,
             cast_to=dict,
@@ -804,14 +804,14 @@ class TestPublicEvaluationsResource:
         call_args = public_evaluations._get.call_args
         params = call_args.kwargs.get("params") or call_args[1].get("params")
         assert params["page"] == "2"
-        assert params["pageSize"] == "50"
-        assert params["sortBy"] == "accuracy"
+        assert params["page_size"] == "50"
+        assert params["sort_by"] == "accuracy"
         assert params["order"] == "desc"
         assert params["models"] == "m1,m2"
         assert params["datasets"] == "b1"
         assert params["status"] == "success"
-        assert "organizationID" not in params
-        assert "projectID" not in params
+        assert "organization_id" not in params
+        assert "project_id" not in params
 
     def test_get_many_pagination(self, public_evaluations, sample_evaluation_data):
         """get_many computes pagination correctly."""

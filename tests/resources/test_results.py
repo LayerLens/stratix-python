@@ -87,7 +87,7 @@ class TestResults:
 
         results_resource._get.assert_called_once_with(
             "/results",
-            params={"evaluation_id": "eval-456", "page": "1", "pageSize": "100"},
+            params={"evaluation_id": "eval-456", "page": "1", "page_size": "100"},
             timeout=DEFAULT_TIMEOUT,
             cast_to=dict,
         )
@@ -583,7 +583,7 @@ class TestResultsPagination:
             params={
                 "evaluation_id": "eval-paginated",
                 "page": "2",
-                "pageSize": "50",
+                "page_size": "50",
             },
             timeout=DEFAULT_TIMEOUT,
             cast_to=dict,
@@ -618,9 +618,9 @@ class TestResultsPagination:
 
         # Verify parameters are converted to strings
         assert params["page"] == "3"
-        assert params["pageSize"] == "25"
+        assert params["page_size"] == "25"
         assert isinstance(params["page"], str)
-        assert isinstance(params["pageSize"], str)
+        assert isinstance(params["page_size"], str)
 
     def test_get_results_default_page_parameter(self, results_resource, sample_result_data):
         """get method defaults to page 1 when no page is specified."""
@@ -642,7 +642,7 @@ class TestResultsPagination:
         call_args = results_resource._get.call_args
         params = call_args.kwargs["params"]
         assert params["page"] == "1"
-        assert params["pageSize"] == "100"  # pageSize is now always included with default value
+        assert params["page_size"] == "100"  # pageSize is now always included with default value
 
     def test_get_results_pagination_metadata_calculation(self, results_resource, sample_result_data):
         """get method correctly calculates pagination metadata."""
@@ -854,7 +854,7 @@ class TestResultsPaginationErrorHandling:
         call_args = results_resource._get.call_args
         params = call_args.kwargs["params"]
         assert params["page"] == "-1"
-        assert params["pageSize"] == "1"  # negative page_size should be corrected to 1
+        assert params["page_size"] == "1"  # negative page_size should be corrected to 1
 
         assert isinstance(result, ResultsResponse)
         assert result.pagination.page_size == 1  # negative page_size should be corrected to 1

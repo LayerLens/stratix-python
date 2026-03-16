@@ -137,14 +137,14 @@ class TestTraces:
         call_args = traces_resource._get.call_args
         params = call_args.kwargs["params"]
         assert params["page"] == "2"
-        assert params["pageSize"] == "50"
+        assert params["page_size"] == "50"
         assert params["source"] == "test-file.json"
-        assert params["judgeId"] == "judge-1"
+        assert params["judge_id"] == "judge-1"
         assert params["status"] == "pass"
-        assert params["timeRange"] == "7d"
+        assert params["time_range"] == "7d"
         assert params["search"] == "hello"
-        assert params["sortBy"] == "created_at"
-        assert params["sortOrder"] == "desc"
+        assert params["sort_by"] == "created_at"
+        assert params["sort_order"] == "desc"
 
     def test_get_many_traces_default_pagination(self, traces_resource):
         """get_many uses default pagination."""
@@ -159,7 +159,7 @@ class TestTraces:
         call_args = traces_resource._get.call_args
         params = call_args.kwargs["params"]
         assert params["page"] == "1"
-        assert params["pageSize"] == "100"
+        assert params["page_size"] == "100"
 
     def test_get_many_traces_none_response(self, traces_resource):
         """get_many returns None when response is invalid."""
