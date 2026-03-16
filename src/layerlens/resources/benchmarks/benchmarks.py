@@ -40,6 +40,8 @@ class Benchmarks(SyncAPIResource):
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
         key: Optional[str] = None,
+        categories: Optional[List[str]] = None,
+        languages: Optional[List[str]] = None,
     ) -> Optional[List[Benchmark]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks"
 
@@ -49,6 +51,10 @@ class Benchmarks(SyncAPIResource):
                 params["name"] = name
             if key:
                 params["key"] = key
+            if categories:
+                params["categories"] = ",".join(categories)
+            if languages:
+                params["languages"] = ",".join(languages)
 
             resp = self._get(
                 base_url,
@@ -76,6 +82,9 @@ class Benchmarks(SyncAPIResource):
             resp = fetch(type)
             if resp:
                 benchmarks.extend([cast_benchmark(b, type) for b in resp.data.benchmarks])
+
+        if name:
+            benchmarks = [b for b in benchmarks if name.lower() in b.name.lower()]
 
         return benchmarks
 
@@ -304,6 +313,8 @@ class AsyncBenchmarks(AsyncAPIResource):
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
         key: Optional[str] = None,
+        categories: Optional[List[str]] = None,
+        languages: Optional[List[str]] = None,
     ) -> Optional[List[Benchmark]]:
         base_url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks"
 
@@ -313,6 +324,10 @@ class AsyncBenchmarks(AsyncAPIResource):
                 params["name"] = name
             if key:
                 params["key"] = key
+            if categories:
+                params["categories"] = ",".join(categories)
+            if languages:
+                params["languages"] = ",".join(languages)
 
             resp = await self._get(
                 base_url,
@@ -340,6 +355,9 @@ class AsyncBenchmarks(AsyncAPIResource):
             resp = await fetch(type)
             if resp:
                 benchmarks.extend([cast_benchmark(b, type) for b in resp.data.benchmarks])
+
+        if name:
+            benchmarks = [b for b in benchmarks if name.lower() in b.name.lower()]
 
         return benchmarks
 

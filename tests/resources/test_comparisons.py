@@ -85,7 +85,7 @@ class TestCompareModels:
         assert calls[0].kwargs["model_ids"] == ["model-a"]
         assert calls[0].kwargs["benchmark_ids"] == ["bench-1"]
         assert calls[0].kwargs["status"] == EvaluationStatus.SUCCESS
-        assert calls[0].kwargs["sort_by"] == "submittedAt"
+        assert calls[0].kwargs["sort_by"] == "submitted_at"
         assert calls[0].kwargs["order"] == "desc"
         assert calls[0].kwargs["page_size"] == 1
 
@@ -166,8 +166,8 @@ class TestCompareModels:
         compare_call = comparisons._get.call_args
         params = compare_call.kwargs.get("params") or compare_call[1].get("params")
         assert params["page"] == "2"
-        assert params["pageSize"] == "50"
-        assert params["outcomeFilter"] == "both_succeed"
+        assert params["page_size"] == "50"
+        assert params["outcome_filter"] == "both_succeed"
         assert params["search"] == "test query"
 
     def test_compare_models_picks_most_recent(self, comparisons, mock_public_client):
@@ -195,7 +195,7 @@ class TestCompareModels:
         )
 
         for call in mock_public_client.evaluations.get_many.call_args_list:
-            assert call.kwargs["sort_by"] == "submittedAt"
+            assert call.kwargs["sort_by"] == "submitted_at"
             assert call.kwargs["order"] == "desc"
             assert call.kwargs["page_size"] == 1
             assert call.kwargs["status"] == EvaluationStatus.SUCCESS

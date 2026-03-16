@@ -81,7 +81,7 @@ class Evaluations(SyncAPIResource):
         *,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
-        sort_by: Optional[Literal["submittedAt", "accuracy", "averageDuration"]] = None,
+        sort_by: Optional[Literal["submitted_at", "accuracy", "average_duration"]] = None,
         order: Optional[Literal["asc", "desc"]] = None,
         model_ids: Optional[List[str]] = None,
         benchmark_ids: Optional[List[str]] = None,
@@ -94,7 +94,7 @@ class Evaluations(SyncAPIResource):
         Args:
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of evaluations per page (default: 100, optional)
-            sort_by: Sort evaluations by field (submittedAt, accuracy, averageDuration)
+            sort_by: Sort evaluations by field (submitted_at, accuracy, average_duration)
             order: Sort order (asc or desc)
             model_ids: Filter by model IDs
             benchmark_ids: Filter by benchmark/dataset IDs
@@ -105,18 +105,18 @@ class Evaluations(SyncAPIResource):
             EvaluationsResponse object or None
         """
         params = {
-            "organizationID": self._client.organization_id,
-            "projectID": self._client.project_id,
+            "organization_id": self._client.organization_id,
+            "project_id": self._client.project_id,
         }
 
         effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if order:
             params["order"] = order
         if model_ids:
@@ -154,7 +154,7 @@ class Evaluations(SyncAPIResource):
 
         try:
             return EvaluationsResponse.model_validate(resp_with_pagination)
-        except Exception:
+        except (ValueError, KeyError):
             return None
 
     def wait_for_completion(
@@ -236,7 +236,7 @@ class AsyncEvaluations(AsyncAPIResource):
         *,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
-        sort_by: Optional[Literal["submittedAt", "accuracy", "averageDuration"]] = None,
+        sort_by: Optional[Literal["submitted_at", "accuracy", "average_duration"]] = None,
         order: Optional[Literal["asc", "desc"]] = None,
         model_ids: Optional[List[str]] = None,
         benchmark_ids: Optional[List[str]] = None,
@@ -249,7 +249,7 @@ class AsyncEvaluations(AsyncAPIResource):
         Args:
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of evaluations per page (default: 100, optional)
-            sort_by: Sort evaluations by field (submittedAt, accuracy, averageDuration)
+            sort_by: Sort evaluations by field (submitted_at, accuracy, average_duration)
             order: Sort order (asc or desc)
             model_ids: Filter by model IDs
             benchmark_ids: Filter by benchmark/dataset IDs
@@ -260,18 +260,18 @@ class AsyncEvaluations(AsyncAPIResource):
             EvaluationsResponse object or None
         """
         params = {
-            "organizationID": self._client.organization_id,
-            "projectID": self._client.project_id,
+            "organization_id": self._client.organization_id,
+            "project_id": self._client.project_id,
         }
 
         effective_page_size = min(max(page_size, 1), MAX_PAGE_SIZE) if page_size is not None else DEFAULT_PAGE_SIZE
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if order:
             params["order"] = order
         if model_ids:
@@ -309,7 +309,7 @@ class AsyncEvaluations(AsyncAPIResource):
 
         try:
             return EvaluationsResponse.model_validate(resp_with_pagination)
-        except Exception:
+        except (ValueError, KeyError):
             return None
 
     async def wait_for_completion(

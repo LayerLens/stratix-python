@@ -92,19 +92,19 @@ class TraceEvaluations(SyncAPIResource):
         params["page_size"] = str(effective_page_size)
 
         if judge_id is not None:
-            params["judgeId"] = judge_id
+            params["judge_id"] = judge_id
         if trace_id is not None:
-            params["traceId"] = trace_id
+            params["trace_id"] = trace_id
         if outcome is not None:
             params["outcome"] = outcome
         if time_range is not None:
-            params["timeRange"] = time_range
+            params["time_range"] = time_range
         if search is not None:
             params["search"] = search
         if sort_by is not None:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if sort_order is not None:
-            params["sortOrder"] = sort_order
+            params["sort_order"] = sort_order
 
         resp = self._get(
             self._base_url(),
@@ -239,19 +239,19 @@ class AsyncTraceEvaluations(AsyncAPIResource):
         params["page_size"] = str(effective_page_size)
 
         if judge_id is not None:
-            params["judgeId"] = judge_id
+            params["judge_id"] = judge_id
         if trace_id is not None:
-            params["traceId"] = trace_id
+            params["trace_id"] = trace_id
         if outcome is not None:
             params["outcome"] = outcome
         if time_range is not None:
-            params["timeRange"] = time_range
+            params["time_range"] = time_range
         if search is not None:
             params["search"] = search
         if sort_by is not None:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if sort_order is not None:
-            params["sortOrder"] = sort_order
+            params["sort_order"] = sort_order
 
         resp = await self._get(
             self._base_url(),

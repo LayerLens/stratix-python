@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import Field, BaseModel
+from pydantic import Field, BaseModel, ConfigDict
 
 
 class Benchmark(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     id: str
     key: str
     name: str
@@ -32,6 +34,7 @@ class CustomBenchmark(Benchmark):
 class PublicBenchmark(Benchmark):
     description: Optional[str] = Field(None, alias="full_description")
     language: Optional[str] = None
+    categories: Optional[List[str]] = None
     prompt_count: Optional[int] = None
     deprecated: Optional[bool] = None
 

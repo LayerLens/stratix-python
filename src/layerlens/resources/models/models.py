@@ -17,6 +17,7 @@ class Models(SyncAPIResource):
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
         key: Optional[str] = None,
+        categories: Optional[List[str]] = None,
         companies: Optional[List[str]] = None,
         regions: Optional[List[str]] = None,
         licenses: Optional[List[str]] = None,
@@ -29,6 +30,8 @@ class Models(SyncAPIResource):
                 params["name"] = name
             if key:
                 params["key"] = key
+            if categories:
+                params["categories"] = ",".join(categories)
             if companies:
                 params["companies"] = ",".join(companies)
             if regions:
@@ -62,6 +65,9 @@ class Models(SyncAPIResource):
             resp = fetch(type)
             if resp:
                 models.extend([cast_model(m, type) for m in resp.data.models])
+
+        if name:
+            models = [m for m in models if name.lower() in m.name.lower()]
 
         return models
 
@@ -197,6 +203,7 @@ class AsyncModels(AsyncAPIResource):
         type: Literal["custom", "public"] | None = None,
         name: Optional[str] = None,
         key: Optional[str] = None,
+        categories: Optional[List[str]] = None,
         companies: Optional[List[str]] = None,
         regions: Optional[List[str]] = None,
         licenses: Optional[List[str]] = None,
@@ -209,6 +216,8 @@ class AsyncModels(AsyncAPIResource):
                 params["name"] = name
             if key:
                 params["key"] = key
+            if categories:
+                params["categories"] = ",".join(categories)
             if companies:
                 params["companies"] = ",".join(companies)
             if regions:
@@ -242,6 +251,9 @@ class AsyncModels(AsyncAPIResource):
             resp = await fetch(type)
             if resp:
                 models.extend([cast_model(m, type) for m in resp.data.models])
+
+        if name:
+            models = [m for m in models if name.lower() in m.name.lower()]
 
         return models
 

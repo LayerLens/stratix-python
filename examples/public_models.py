@@ -35,7 +35,7 @@ def main():
     print(f"\nFound {response.total_count} open-source models")
 
     # --- Sort by release date (newest first)
-    response = client.models.get(sort_by="releasedAt", order="desc", page_size=5)
+    response = client.models.get(sort_by="released_at", order="desc", page_size=5)
     print(f"\nNewest 5 models:")
     for model in response.models:
         print(f"  - {model.name} (released_at={model.released_at})")

@@ -39,7 +39,7 @@ class PublicEvaluationsResource(SyncPublicAPIResource):
         *,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
-        sort_by: Optional[Literal["submittedAt", "accuracy", "averageDuration"]] = None,
+        sort_by: Optional[Literal["submitted_at", "accuracy", "average_duration"]] = None,
         order: Optional[Literal["asc", "desc"]] = None,
         model_ids: Optional[List[str]] = None,
         benchmark_ids: Optional[List[str]] = None,
@@ -52,7 +52,7 @@ class PublicEvaluationsResource(SyncPublicAPIResource):
         Args:
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of evaluations per page (default: 100, optional)
-            sort_by: Sort evaluations by field (submittedAt, accuracy, averageDuration)
+            sort_by: Sort evaluations by field (submitted_at, accuracy, average_duration)
             order: Sort order (asc or desc)
             model_ids: Filter by model IDs
             benchmark_ids: Filter by benchmark/dataset IDs
@@ -68,10 +68,10 @@ class PublicEvaluationsResource(SyncPublicAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if order:
             params["order"] = order
         if model_ids:
@@ -107,7 +107,7 @@ class PublicEvaluationsResource(SyncPublicAPIResource):
 
         try:
             return EvaluationsResponse.model_validate(resp_with_pagination)
-        except Exception:
+        except (ValueError, KeyError):
             return None
 
 
@@ -132,7 +132,7 @@ class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
         *,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
-        sort_by: Optional[Literal["submittedAt", "accuracy", "averageDuration"]] = None,
+        sort_by: Optional[Literal["submitted_at", "accuracy", "average_duration"]] = None,
         order: Optional[Literal["asc", "desc"]] = None,
         model_ids: Optional[List[str]] = None,
         benchmark_ids: Optional[List[str]] = None,
@@ -145,7 +145,7 @@ class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
         Args:
             page: Page number for pagination (1-based, defaults to 1 if not provided)
             page_size: Number of evaluations per page (default: 100, optional)
-            sort_by: Sort evaluations by field (submittedAt, accuracy, averageDuration)
+            sort_by: Sort evaluations by field (submitted_at, accuracy, average_duration)
             order: Sort order (asc or desc)
             model_ids: Filter by model IDs
             benchmark_ids: Filter by benchmark/dataset IDs
@@ -161,10 +161,10 @@ class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if order:
             params["order"] = order
         if model_ids:
@@ -200,5 +200,5 @@ class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
 
         try:
             return EvaluationsResponse.model_validate(resp_with_pagination)
-        except Exception:
+        except (ValueError, KeyError):
             return None

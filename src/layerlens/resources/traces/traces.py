@@ -133,22 +133,22 @@ class Traces(SyncAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if source is not None:
             params["source"] = source
         if judge_id is not None:
-            params["judgeId"] = judge_id
+            params["judge_id"] = judge_id
         if status is not None:
             params["status"] = status
         if time_range is not None:
-            params["timeRange"] = time_range
+            params["time_range"] = time_range
         if search is not None:
             params["search"] = search
         if sort_by is not None:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if sort_order is not None:
-            params["sortOrder"] = sort_order
+            params["sort_order"] = sort_order
 
         resp = self._get(
             self._base_url(),
@@ -307,22 +307,22 @@ class AsyncTraces(AsyncAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if source is not None:
             params["source"] = source
         if judge_id is not None:
-            params["judgeId"] = judge_id
+            params["judge_id"] = judge_id
         if status is not None:
             params["status"] = status
         if time_range is not None:
-            params["timeRange"] = time_range
+            params["time_range"] = time_range
         if search is not None:
             params["search"] = search
         if sort_by is not None:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if sort_order is not None:
-            params["sortOrder"] = sort_order
+            params["sort_order"] = sort_order
 
         resp = await self._get(
             self._base_url(),

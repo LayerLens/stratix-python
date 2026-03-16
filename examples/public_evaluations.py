@@ -34,7 +34,7 @@ def main():
     response = client.evaluations.get_many(
         page=1,
         page_size=5,
-        sort_by="submittedAt",
+        sort_by="submitted_at",
         order="desc",
     )
     if response:

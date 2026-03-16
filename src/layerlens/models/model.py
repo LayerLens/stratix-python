@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class Model(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     id: str
     key: str
     name: str

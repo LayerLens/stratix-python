@@ -23,7 +23,7 @@ async def main():
 
     # --- Get evaluations sorted by submission date (newest first)
     response = await client.evaluations.get_many(
-        sort_by="submittedAt",
+        sort_by="submitted_at",
         order="desc",
         page_size=5,
     )
@@ -34,7 +34,7 @@ async def main():
 
     # --- Get evaluations sorted by average duration (fastest first)
     response = await client.evaluations.get_many(
-        sort_by="averageDuration",
+        sort_by="average_duration",
         order="asc",
         page_size=5,
     )
@@ -66,7 +66,7 @@ async def main():
     # Replace with actual benchmark IDs from your organization
     response = await client.evaluations.get_many(
         benchmark_ids=["your-benchmark-id"],
-        sort_by="submittedAt",
+        sort_by="submitted_at",
         order="desc",
     )
     if response:

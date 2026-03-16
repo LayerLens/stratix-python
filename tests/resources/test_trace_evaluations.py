@@ -199,13 +199,13 @@ class TestTraceEvaluations:
         params = call_args.kwargs["params"]
         assert params["page"] == "2"
         assert params["page_size"] == "10"
-        assert params["judgeId"] == "judge-789"
-        assert params["traceId"] == "trace-456"
+        assert params["judge_id"] == "judge-789"
+        assert params["trace_id"] == "trace-456"
         assert params["outcome"] == "pass"
-        assert params["timeRange"] == "7d"
+        assert params["time_range"] == "7d"
         assert params["search"] == "quality"
-        assert params["sortBy"] == "created_at"
-        assert params["sortOrder"] == "desc"
+        assert params["sort_by"] == "created_at"
+        assert params["sort_order"] == "desc"
 
     def test_get_many_default_pagination(self, trace_evals_resource):
         """get_many uses default pagination."""
