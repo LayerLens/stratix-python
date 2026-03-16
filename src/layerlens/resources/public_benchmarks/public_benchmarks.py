@@ -55,10 +55,10 @@ class PublicBenchmarksResource(SyncPublicAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if order:
             params["order"] = order
         if include_deprecated is not None:
@@ -92,15 +92,15 @@ class PublicBenchmarksResource(SyncPublicAPIResource):
         if page is not None:
             params["page"] = str(page)
         if page_size is not None:
-            params["pageSize"] = str(page_size)
+            params["page_size"] = str(page_size)
         if search_field:
             params["search"] = search_field
         if search_value:
-            params["searchValue"] = search_value
+            params["search_value"] = search_value
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if sort_order:
-            params["sortOrder"] = sort_order
+            params["sort_order"] = sort_order
 
         resp = self._get(
             f"/datasets/{benchmark_id}/prompts",
@@ -180,10 +180,10 @@ class AsyncPublicBenchmarksResource(AsyncPublicAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if order:
             params["order"] = order
         if include_deprecated is not None:
@@ -217,15 +217,15 @@ class AsyncPublicBenchmarksResource(AsyncPublicAPIResource):
         if page is not None:
             params["page"] = str(page)
         if page_size is not None:
-            params["pageSize"] = str(page_size)
+            params["page_size"] = str(page_size)
         if search_field:
             params["search"] = search_field
         if search_value:
-            params["searchValue"] = search_value
+            params["search_value"] = search_value
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if sort_order:
-            params["sortOrder"] = sort_order
+            params["sort_order"] = sort_order
 
         resp = await self._get(
             f"/datasets/{benchmark_id}/prompts",

@@ -82,7 +82,7 @@ class Judges(SyncAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         resp = self._get(
             self._base_url(),
@@ -221,7 +221,7 @@ class AsyncJudges(AsyncAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         resp = await self._get(
             self._base_url(),

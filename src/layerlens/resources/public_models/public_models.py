@@ -27,7 +27,7 @@ class PublicModelsResource(SyncPublicAPIResource):
         licenses: Optional[List[str]] = None,
         sizes: Optional[List[str]] = None,
         sort_by: Optional[
-            Literal["name", "createdAt", "releasedAt", "architectureType", "contextLength", "license", "region"]
+            Literal["name", "created_at", "released_at", "architecture_type", "context_length", "license", "region"]
         ] = None,
         order: Optional[Literal["asc", "desc"]] = None,
         page: Optional[int] = None,
@@ -58,10 +58,10 @@ class PublicModelsResource(SyncPublicAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if order:
             params["order"] = order
         if include_deprecated is not None:
@@ -94,7 +94,7 @@ class AsyncPublicModelsResource(AsyncPublicAPIResource):
         licenses: Optional[List[str]] = None,
         sizes: Optional[List[str]] = None,
         sort_by: Optional[
-            Literal["name", "createdAt", "releasedAt", "architectureType", "contextLength", "license", "region"]
+            Literal["name", "created_at", "released_at", "architecture_type", "context_length", "license", "region"]
         ] = None,
         order: Optional[Literal["asc", "desc"]] = None,
         page: Optional[int] = None,
@@ -125,10 +125,10 @@ class AsyncPublicModelsResource(AsyncPublicAPIResource):
         effective_page = page if page is not None else DEFAULT_PAGE
 
         params["page"] = str(effective_page)
-        params["pageSize"] = str(effective_page_size)
+        params["page_size"] = str(effective_page_size)
 
         if sort_by:
-            params["sortBy"] = sort_by
+            params["sort_by"] = sort_by
         if order:
             params["order"] = order
         if include_deprecated is not None:

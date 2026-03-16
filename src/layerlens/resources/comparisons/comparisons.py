@@ -37,9 +37,9 @@ class Comparisons(SyncPublicAPIResource):
         if page is not None:
             params["page"] = str(page)
         if page_size is not None:
-            params["pageSize"] = str(page_size)
+            params["page_size"] = str(page_size)
         if outcome_filter:
-            params["outcomeFilter"] = outcome_filter
+            params["outcome_filter"] = outcome_filter
         if search:
             params["search"] = search
 
@@ -79,7 +79,7 @@ class Comparisons(SyncPublicAPIResource):
             model_ids=[model_id_1],
             benchmark_ids=[benchmark_id],
             status=EvaluationStatus.SUCCESS,
-            sort_by="submittedAt",
+            sort_by="submitted_at",
             order="desc",
             page_size=1,
             timeout=timeout,
@@ -90,7 +90,7 @@ class Comparisons(SyncPublicAPIResource):
             model_ids=[model_id_2],
             benchmark_ids=[benchmark_id],
             status=EvaluationStatus.SUCCESS,
-            sort_by="submittedAt",
+            sort_by="submitted_at",
             order="desc",
             page_size=1,
             timeout=timeout,
@@ -127,9 +127,9 @@ class AsyncComparisons(AsyncPublicAPIResource):
         if page is not None:
             params["page"] = str(page)
         if page_size is not None:
-            params["pageSize"] = str(page_size)
+            params["page_size"] = str(page_size)
         if outcome_filter:
-            params["outcomeFilter"] = outcome_filter
+            params["outcome_filter"] = outcome_filter
         if search:
             params["search"] = search
 
@@ -169,7 +169,7 @@ class AsyncComparisons(AsyncPublicAPIResource):
             model_ids=[model_id_1],
             benchmark_ids=[benchmark_id],
             status=EvaluationStatus.SUCCESS,
-            sort_by="submittedAt",
+            sort_by="submitted_at",
             order="desc",
             page_size=1,
             timeout=timeout,
@@ -180,7 +180,7 @@ class AsyncComparisons(AsyncPublicAPIResource):
             model_ids=[model_id_2],
             benchmark_ids=[benchmark_id],
             status=EvaluationStatus.SUCCESS,
-            sort_by="submittedAt",
+            sort_by="submitted_at",
             order="desc",
             page_size=1,
             timeout=timeout,

@@ -177,7 +177,7 @@ class TestJudges:
             "/organizations/org-123/projects/proj-456/judges",
             params={
                 "page": "2",
-                "pageSize": "50",
+                "page_size": "50",
             },
             timeout=DEFAULT_TIMEOUT,
             cast_to=dict,
@@ -196,7 +196,7 @@ class TestJudges:
         call_args = judges_resource._get.call_args
         params = call_args.kwargs["params"]
         assert params["page"] == "1"
-        assert params["pageSize"] == "100"
+        assert params["page_size"] == "100"
 
     def test_get_many_judges_none_response(self, judges_resource):
         """get_many returns None when response is invalid."""
