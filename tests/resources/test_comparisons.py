@@ -88,6 +88,7 @@ class TestCompareModels:
         assert calls[0].kwargs["sort_by"] == "submitted_at"
         assert calls[0].kwargs["order"] == "desc"
         assert calls[0].kwargs["page_size"] == 1
+        assert calls[0].kwargs["unique"] is True
 
         assert calls[1].kwargs["model_ids"] == ["model-b"]
 
@@ -199,3 +200,4 @@ class TestCompareModels:
             assert call.kwargs["order"] == "desc"
             assert call.kwargs["page_size"] == 1
             assert call.kwargs["status"] == EvaluationStatus.SUCCESS
+            assert call.kwargs["unique"] is True

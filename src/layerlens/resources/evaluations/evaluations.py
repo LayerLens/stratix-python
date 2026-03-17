@@ -86,6 +86,7 @@ class Evaluations(SyncAPIResource):
         model_ids: Optional[List[str]] = None,
         benchmark_ids: Optional[List[str]] = None,
         status: Optional[EvaluationStatus] = None,
+        unique: bool = False,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[EvaluationsResponse]:
         """
@@ -99,6 +100,7 @@ class Evaluations(SyncAPIResource):
             model_ids: Filter by model IDs
             benchmark_ids: Filter by benchmark/dataset IDs
             status: Filter by evaluation status
+            unique: If True, deduplicate by model+dataset keeping only the latest evaluation per pair
             timeout: Request timeout
 
         Returns:
@@ -125,6 +127,8 @@ class Evaluations(SyncAPIResource):
             params["datasets"] = ",".join(benchmark_ids)
         if status:
             params["status"] = status.value
+        if unique:
+            params["unique"] = "true"
 
         resp = self._get(
             f"/evaluations",
@@ -241,6 +245,7 @@ class AsyncEvaluations(AsyncAPIResource):
         model_ids: Optional[List[str]] = None,
         benchmark_ids: Optional[List[str]] = None,
         status: Optional[EvaluationStatus] = None,
+        unique: bool = False,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[EvaluationsResponse]:
         """
@@ -254,6 +259,7 @@ class AsyncEvaluations(AsyncAPIResource):
             model_ids: Filter by model IDs
             benchmark_ids: Filter by benchmark/dataset IDs
             status: Filter by evaluation status
+            unique: If True, deduplicate by model+dataset keeping only the latest evaluation per pair
             timeout: Request timeout
 
         Returns:
@@ -280,6 +286,8 @@ class AsyncEvaluations(AsyncAPIResource):
             params["datasets"] = ",".join(benchmark_ids)
         if status:
             params["status"] = status.value
+        if unique:
+            params["unique"] = "true"
 
         resp = await self._get(
             f"/evaluations",
