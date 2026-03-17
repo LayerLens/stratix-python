@@ -82,6 +82,7 @@ class Comparisons(SyncPublicAPIResource):
             sort_by="submitted_at",
             order="desc",
             page_size=1,
+            unique=True,
             timeout=timeout,
         )
         eval_id_1 = _find_evaluation_id(resp1, model_id_1, benchmark_id)
@@ -93,6 +94,7 @@ class Comparisons(SyncPublicAPIResource):
             sort_by="submitted_at",
             order="desc",
             page_size=1,
+            unique=True,
             timeout=timeout,
         )
         eval_id_2 = _find_evaluation_id(resp2, model_id_2, benchmark_id)
@@ -172,6 +174,7 @@ class AsyncComparisons(AsyncPublicAPIResource):
             sort_by="submitted_at",
             order="desc",
             page_size=1,
+            unique=True,
             timeout=timeout,
         )
         eval_id_1 = _find_evaluation_id(resp1, model_id_1, benchmark_id)
@@ -183,6 +186,7 @@ class AsyncComparisons(AsyncPublicAPIResource):
             sort_by="submitted_at",
             order="desc",
             page_size=1,
+            unique=True,
             timeout=timeout,
         )
         eval_id_2 = _find_evaluation_id(resp2, model_id_2, benchmark_id)
