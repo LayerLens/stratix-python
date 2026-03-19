@@ -1,0 +1,100 @@
+# LayerLens CI — GitLab CI Evaluation Job
+# Runs evaluations in a GitLab pipeline and gates on pass rate.
+#
+# Setup:
+#   1. Add LAYERLENS_API_KEY to CI/CD variables (masked)
+#   2. Set LAYERLENS_JUDGE_ID and LAYERLENS_DATASET_ID in CI/CD variables
+#   3. Include this file in your .gitlab-ci.yml:
+#      include:
+#        - local: samples/cli/ci/gitlab-ci.yml
+
+variables:
+  LAYERLENS_API_URL: "https://api.layerlens.ai"
+  LAYERLENS_PASS_THRESHOLD: "0.8"
+  EVAL_TIMEOUT: "600"
+
+stages:
+  - evaluate
+
+layerlens-evaluation:
+  stage: evaluate
+  image: python:3.11-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "web"
+  before_script:
+    - pip install -q layerlens
+    - |
+      if [ -z "$LAYERLENS_API_KEY" ]; then
+        echo "ERROR: LAYERLENS_API_KEY not set in CI/CD variables."
+        exit 1
+      fi
+  script:
+    - |
+      set -euo pipefail
+      AUTH="Authorization: Bearer $LAYERLENS_API_KEY"
+      CT="Content-Type: application/json"
+
+      echo "== Submitting evaluation =="
+      echo "   Judge:     $LAYERLENS_JUDGE_ID"
+      echo "   Dataset:   $LAYERLENS_DATASET_ID"
+      echo "   Threshold: $LAYERLENS_PASS_THRESHOLD"
+
+      EVAL_RESP=$(curl -sf -X POST \
+        -H "$AUTH" -H "$CT" \
+        -d "{\"judge_id\": \"$LAYERLENS_JUDGE_ID\", \"dataset_id\": \"$LAYERLENS_DATASET_ID\"}" \
+        "$LAYERLENS_API_URL/v1/evaluations")
+
+      EVAL_ID=$(echo "$EVAL_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+      echo "   Eval ID: $EVAL_ID"
+
+      # Poll for completion
+      ELAPSED=0
+      POLL=10
+      while true; do
+        if [ "$ELAPSED" -ge "$EVAL_TIMEOUT" ]; then
+          echo "ERROR: Evaluation timed out after ${EVAL_TIMEOUT}s."
+          exit 1
+        fi
+        sleep "$POLL"
+        ELAPSED=$((ELAPSED + POLL))
+
+        STATUS=$(curl -sf -H "$AUTH" \
+          "$LAYERLENS_API_URL/v1/evaluations/$EVAL_ID" \
+          | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+        echo "   [${ELAPSED}s] status=$STATUS"
+
+        [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ] && break
+      done
+
+      if [ "$STATUS" = "failed" ]; then
+        echo "ERROR: Evaluation failed."
+        exit 1
+      fi
+
+      # Check pass rate
+      RESULTS=$(curl -sf -H "$AUTH" \
+        "$LAYERLENS_API_URL/v1/evaluations/$EVAL_ID/results")
+
+      python3 -c "
+      import json, sys
+      data = json.loads('''$RESULTS''')
+      scores = [r['score'] for r in data.get('results', []) if 'score' in r]
+      if not scores:
+          print('WARNING: No scored results. Passing by default.')
+          sys.exit(0)
+      passing = sum(1 for s in scores if s >= 0.7)
+      rate = passing / len(scores)
+      threshold = float('$LAYERLENS_PASS_THRESHOLD')
+      print(f'Samples: {len(scores)}  Pass rate: {rate:.2%}  Threshold: {threshold:.2%}')
+      if rate < threshold:
+          print(f'FAILED: {rate:.2%} < {threshold:.2%}')
+          sys.exit(1)
+      print('PASSED')
+      "
+  artifacts:
+    when: always
+    reports:
+      dotenv: eval.env
+  timeout: 15 minutes

@@ -1,0 +1,12 @@
+{"timestamp": "2025-07-15T14:00:00Z", "region": "ERCOT_NORTH", "load_mw": 48200, "temperature": 102.3, "expected_forecast": 49800, "renewable_pct": 28.5}
+{"timestamp": "2025-01-22T07:00:00Z", "region": "PJM_WEST", "load_mw": 31500, "temperature": 12.4, "expected_forecast": 33200, "renewable_pct": 8.2}
+{"timestamp": "2025-03-21T12:00:00Z", "region": "CAISO", "load_mw": 24800, "temperature": 68.5, "expected_forecast": 23900, "renewable_pct": 62.4}
+{"timestamp": "2025-06-30T18:00:00Z", "region": "ERCOT_SOUTH", "load_mw": 52100, "temperature": 98.7, "expected_forecast": 54300, "renewable_pct": 18.3}
+{"timestamp": "2025-12-10T06:00:00Z", "region": "MISO_CENTRAL", "load_mw": 28400, "temperature": 22.1, "expected_forecast": 29100, "renewable_pct": 15.7}
+{"timestamp": "2025-04-05T15:00:00Z", "region": "CAISO", "load_mw": 22100, "temperature": 74.2, "expected_forecast": 21500, "renewable_pct": 71.8}
+{"timestamp": "2025-08-02T16:00:00Z", "region": "NYISO_NYC", "load_mw": 11200, "temperature": 95.6, "expected_forecast": 11850, "renewable_pct": 5.1}
+{"timestamp": "2025-11-15T09:00:00Z", "region": "SPP_NORTH", "load_mw": 18700, "temperature": 38.4, "expected_forecast": 18200, "renewable_pct": 48.9}
+{"timestamp": "2025-09-12T19:00:00Z", "region": "ERCOT_NORTH", "load_mw": 44500, "temperature": 89.1, "expected_forecast": 43800, "renewable_pct": 12.4}
+{"timestamp": "2025-02-14T20:00:00Z", "region": "ISO_NE", "load_mw": 19800, "temperature": 18.7, "expected_forecast": 20500, "renewable_pct": 11.3}
+{"timestamp": "2025-05-20T13:00:00Z", "region": "CAISO", "load_mw": 26300, "temperature": 82.1, "expected_forecast": 25700, "renewable_pct": 58.6}
+{"timestamp": "2025-07-28T17:00:00Z", "region": "PJM_EAST", "load_mw": 38900, "temperature": 97.2, "expected_forecast": 40200, "renewable_pct": 9.8}

@@ -1,0 +1,98 @@
+{
+  "name": "default-policy",
+  "description": "Default STRATIX policy configuration for agent guardrails. Defines safety boundaries, content filters, and operational limits for production agents.",
+  "version": "1.2.0",
+  "created": "2026-01-20T00:00:00Z",
+  "updated": "2026-03-15T00:00:00Z",
+  "rules": [
+    {
+      "id": "POL-FIN-001",
+      "name": "high_value_transfer_limit",
+      "category": "financial",
+      "description": "Block automated financial transactions above the threshold and require manual review",
+      "condition": {
+        "field": "transaction_amount",
+        "operator": "gt",
+        "value": 10000,
+        "currency": "USD"
+      },
+      "action": "block",
+      "escalation": "manual_review",
+      "severity": "critical"
+    },
+    {
+      "id": "POL-PII-001",
+      "name": "pii_output_filter",
+      "category": "data_protection",
+      "description": "Prevent agent from including PII in responses",
+      "condition": {
+        "detect": ["ssn", "credit_card", "bank_account", "date_of_birth"],
+        "scope": "output"
+      },
+      "action": "redact",
+      "fallback_message": "I cannot share that personal information. Please contact our support team directly for account-specific details.",
+      "severity": "critical"
+    },
+    {
+      "id": "POL-CONTENT-001",
+      "name": "content_safety_filter",
+      "category": "safety",
+      "description": "Filter harmful, toxic, or inappropriate content in agent responses",
+      "condition": {
+        "detect": ["toxicity", "hate_speech", "violence", "self_harm"],
+        "threshold": 0.7,
+        "scope": "output"
+      },
+      "action": "block",
+      "fallback_message": "I'm unable to assist with that request. Is there something else I can help you with?",
+      "severity": "critical"
+    },
+    {
+      "id": "POL-SCOPE-001",
+      "name": "topic_boundary",
+      "category": "operational",
+      "description": "Keep agent responses within the defined scope of the service",
+      "condition": {
+        "out_of_scope_topics": ["medical_advice", "legal_advice", "financial_advice", "political_opinions"],
+        "scope": "output"
+      },
+      "action": "deflect",
+      "fallback_message": "That falls outside my area of expertise. I'd recommend consulting a qualified professional for that question.",
+      "severity": "warning"
+    },
+    {
+      "id": "POL-RATE-001",
+      "name": "conversation_rate_limit",
+      "category": "operational",
+      "description": "Limit the number of agent turns per session to prevent abuse",
+      "condition": {
+        "field": "session_turn_count",
+        "operator": "gt",
+        "value": 50
+      },
+      "action": "warn_and_limit",
+      "fallback_message": "We've reached the conversation limit for this session. Please start a new session or contact support for extended assistance.",
+      "severity": "warning"
+    },
+    {
+      "id": "POL-AUTH-001",
+      "name": "action_authorization",
+      "category": "security",
+      "description": "Require explicit user confirmation before executing destructive or irreversible actions",
+      "condition": {
+        "action_types": ["delete", "cancel", "transfer", "downgrade"],
+        "scope": "tool_calls"
+      },
+      "action": "require_confirmation",
+      "confirmation_prompt": "I want to confirm: you'd like me to proceed with {action}. This action {reversibility}. Please confirm with 'yes' to proceed.",
+      "severity": "warning"
+    }
+  ],
+  "global_settings": {
+    "enforcement_mode": "strict",
+    "log_all_violations": true,
+    "violation_webhook": "${STRATIX_WEBHOOK_URL}",
+    "max_retries_on_violation": 2,
+    "fallback_behavior": "safe_response"
+  }
+}

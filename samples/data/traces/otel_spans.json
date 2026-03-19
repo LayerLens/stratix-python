@@ -1,0 +1,83 @@
+{
+  "resource": {
+    "attributes": {
+      "service.name": "atlas-agent-service",
+      "service.version": "1.4.2",
+      "deployment.environment": "staging",
+      "telemetry.sdk.name": "atlas-python",
+      "telemetry.sdk.version": "0.9.0"
+    }
+  },
+  "scopeSpans": [
+    {
+      "scope": {
+        "name": "atlas.instrumentation",
+        "version": "0.9.0"
+      },
+      "spans": [
+        {
+          "traceId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+          "spanId": "1000000000000001",
+          "parentSpanId": "",
+          "name": "agent.run",
+          "kind": 2,
+          "startTimeUnixNano": 1742292000000000000,
+          "endTimeUnixNano": 1742292003500000000,
+          "status": {"code": 1, "message": "OK"},
+          "attributes": [
+            {"key": "atlas.agent_id", "value": {"stringValue": "support-agent"}},
+            {"key": "atlas.trace_id", "value": {"stringValue": "tr-otel-001"}},
+            {"key": "atlas.total_tokens", "value": {"intValue": 198}}
+          ]
+        },
+        {
+          "traceId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+          "spanId": "1000000000000002",
+          "parentSpanId": "1000000000000001",
+          "name": "retrieval.query",
+          "kind": 3,
+          "startTimeUnixNano": 1742292000200000000,
+          "endTimeUnixNano": 1742292000850000000,
+          "status": {"code": 1, "message": "OK"},
+          "attributes": [
+            {"key": "atlas.retrieval.index", "value": {"stringValue": "knowledge-base-v2"}},
+            {"key": "atlas.retrieval.top_k", "value": {"intValue": 5}},
+            {"key": "atlas.retrieval.num_results", "value": {"intValue": 3}},
+            {"key": "atlas.retrieval.latency_ms", "value": {"intValue": 650}}
+          ]
+        },
+        {
+          "traceId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+          "spanId": "1000000000000003",
+          "parentSpanId": "1000000000000001",
+          "name": "model.invoke",
+          "kind": 3,
+          "startTimeUnixNano": 1742292001000000000,
+          "endTimeUnixNano": 1742292002120000000,
+          "status": {"code": 1, "message": "OK"},
+          "attributes": [
+            {"key": "gen_ai.system", "value": {"stringValue": "openai"}},
+            {"key": "gen_ai.request.model", "value": {"stringValue": "gpt-4o"}},
+            {"key": "gen_ai.usage.prompt_tokens", "value": {"intValue": 385}},
+            {"key": "gen_ai.usage.completion_tokens", "value": {"intValue": 210}},
+            {"key": "atlas.model.latency_ms", "value": {"intValue": 1120}}
+          ]
+        },
+        {
+          "traceId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+          "spanId": "1000000000000004",
+          "parentSpanId": "1000000000000001",
+          "name": "agent.output",
+          "kind": 2,
+          "startTimeUnixNano": 1742292002200000000,
+          "endTimeUnixNano": 1742292003500000000,
+          "status": {"code": 1, "message": "OK"},
+          "attributes": [
+            {"key": "atlas.output.role", "value": {"stringValue": "assistant"}},
+            {"key": "atlas.output.tokens", "value": {"intValue": 210}}
+          ]
+        }
+      ]
+    }
+  ]
+}

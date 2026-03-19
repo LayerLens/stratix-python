@@ -1,0 +1,116 @@
+{
+  "trace_id": "tr-demo-004",
+  "agent_id": "orchestrator",
+  "events": [
+    {
+      "event_type": "agent.input",
+      "timestamp": "2026-03-18T10:15:00Z",
+      "payload": {
+        "message": "I need to cancel my subscription and get a prorated refund for the remaining months",
+        "role": "human",
+        "session_id": "sess-8832"
+      }
+    },
+    {
+      "event_type": "agent.delegate",
+      "timestamp": "2026-03-18T10:15:00.500Z",
+      "payload": {
+        "from_agent": "orchestrator",
+        "to_agent": "billing-agent",
+        "reason": "Request involves subscription and refund handling",
+        "context_keys": ["customer_id", "message"]
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "timestamp": "2026-03-18T10:15:01Z",
+      "payload": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-20250514",
+        "tokens_in": 195,
+        "tokens_out": 68,
+        "latency_ms": 620,
+        "agent_id": "billing-agent"
+      }
+    },
+    {
+      "event_type": "tool.call",
+      "timestamp": "2026-03-18T10:15:01.800Z",
+      "payload": {
+        "tool_name": "lookup_subscription",
+        "arguments": {"customer_id": "cust-44210"},
+        "result": {"plan": "Pro Annual", "start_date": "2025-11-01", "renewal_date": "2026-11-01", "monthly_rate": 49.99, "status": "active"},
+        "latency_ms": 150,
+        "agent_id": "billing-agent"
+      }
+    },
+    {
+      "event_type": "agent.delegate",
+      "timestamp": "2026-03-18T10:15:02.200Z",
+      "payload": {
+        "from_agent": "billing-agent",
+        "to_agent": "policy-agent",
+        "reason": "Verify cancellation and refund eligibility per company policy",
+        "context_keys": ["subscription", "customer_id"]
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "timestamp": "2026-03-18T10:15:02.800Z",
+      "payload": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-20250514",
+        "tokens_in": 310,
+        "tokens_out": 112,
+        "latency_ms": 780,
+        "agent_id": "policy-agent"
+      }
+    },
+    {
+      "event_type": "agent.delegate.return",
+      "timestamp": "2026-03-18T10:15:03.600Z",
+      "payload": {
+        "from_agent": "policy-agent",
+        "to_agent": "billing-agent",
+        "result": {
+          "eligible": true,
+          "refund_months": 7,
+          "refund_amount": 349.93,
+          "policy_reference": "POL-CANCEL-003"
+        }
+      }
+    },
+    {
+      "event_type": "tool.call",
+      "timestamp": "2026-03-18T10:15:04Z",
+      "payload": {
+        "tool_name": "process_cancellation",
+        "arguments": {"customer_id": "cust-44210", "refund_amount": 349.93, "effective_date": "2026-03-18"},
+        "result": {"confirmation_id": "CXL-20260318-0091", "status": "processed"},
+        "latency_ms": 420,
+        "agent_id": "billing-agent"
+      }
+    },
+    {
+      "event_type": "agent.delegate.return",
+      "timestamp": "2026-03-18T10:15:04.500Z",
+      "payload": {
+        "from_agent": "billing-agent",
+        "to_agent": "orchestrator",
+        "result": {
+          "action": "cancellation_processed",
+          "refund_amount": 349.93,
+          "confirmation_id": "CXL-20260318-0091"
+        }
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "timestamp": "2026-03-18T10:15:05Z",
+      "payload": {
+        "message": "Your Pro Annual subscription has been cancelled effective today. A prorated refund of $349.93 (covering the remaining 7 months) will be processed to your original payment method within 5-7 business days. Your confirmation number is CXL-20260318-0091.",
+        "role": "assistant"
+      }
+    }
+  ]
+}

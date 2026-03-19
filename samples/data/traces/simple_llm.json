@@ -1,0 +1,33 @@
+{
+  "trace_id": "tr-demo-001",
+  "agent_id": "support-agent",
+  "events": [
+    {
+      "event_type": "agent.input",
+      "timestamp": "2026-03-18T10:00:00Z",
+      "payload": {
+        "message": "What is your refund policy?",
+        "role": "human"
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "timestamp": "2026-03-18T10:00:01Z",
+      "payload": {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "tokens_in": 42,
+        "tokens_out": 156,
+        "latency_ms": 890
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "timestamp": "2026-03-18T10:00:02Z",
+      "payload": {
+        "message": "Our refund policy allows returns within 30 days of purchase. Items must be in original condition with proof of purchase. Refunds are processed to the original payment method within 5-7 business days.",
+        "role": "assistant"
+      }
+    }
+  ]
+}

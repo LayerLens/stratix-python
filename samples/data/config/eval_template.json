@@ -1,0 +1,52 @@
+{
+  "name": "standard-support-v2",
+  "description": "Standard evaluation template for customer support agent responses. Runs accuracy, safety, and compliance judges against a QA dataset.",
+  "version": "2.0.0",
+  "created": "2026-02-15T00:00:00Z",
+  "updated": "2026-03-14T00:00:00Z",
+  "judges": [
+    {
+      "ref": "accuracy-judge",
+      "config_path": "config/judge_accuracy.json",
+      "required": true
+    },
+    {
+      "ref": "safety-judge",
+      "config_path": "config/judge_safety.json",
+      "required": true
+    },
+    {
+      "ref": "compliance-judge",
+      "config_path": "config/judge_compliance.json",
+      "required": false
+    }
+  ],
+  "dataset": {
+    "ref": "qa-support-v2",
+    "path": "datasets/qa_pairs.jsonl",
+    "format": "jsonl",
+    "columns": {
+      "input": "question",
+      "expected": "expected_answer",
+      "context": "context"
+    }
+  },
+  "execution": {
+    "parallelism": 5,
+    "timeout_seconds": 120,
+    "retry_policy": {
+      "max_retries": 2,
+      "backoff_ms": 1000
+    }
+  },
+  "scoring": {
+    "aggregation": "weighted_average",
+    "pass_threshold": 0.75,
+    "fail_fast_on_critical": true
+  },
+  "output": {
+    "format": "json",
+    "include_reasoning": true,
+    "include_trace_ids": true
+  }
+}

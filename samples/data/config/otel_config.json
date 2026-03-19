@@ -1,0 +1,60 @@
+{
+  "service_name": "atlas-agent-service",
+  "service_version": "1.4.2",
+  "exporter": {
+    "type": "otlp",
+    "endpoint": "http://localhost:4317",
+    "protocol": "grpc",
+    "headers": {
+      "x-api-key": "${ATLAS_API_KEY}"
+    },
+    "timeout_ms": 10000,
+    "compression": "gzip"
+  },
+  "resource_attributes": {
+    "deployment.environment": "staging",
+    "service.namespace": "atlas",
+    "service.instance.id": "${HOSTNAME}",
+    "telemetry.sdk.name": "atlas-python",
+    "telemetry.sdk.version": "0.9.0"
+  },
+  "sampling": {
+    "strategy": "parent_based",
+    "root_sampler": {
+      "type": "trace_id_ratio",
+      "ratio": 0.1
+    },
+    "overrides": [
+      {
+        "match": {"attribute": "atlas.agent_id", "value": "billing-agent"},
+        "ratio": 1.0,
+        "comment": "Always sample billing agent traces for compliance"
+      },
+      {
+        "match": {"attribute": "http.status_code", "value_gte": 500},
+        "ratio": 1.0,
+        "comment": "Always sample error traces"
+      }
+    ]
+  },
+  "span_processors": [
+    {
+      "type": "batch",
+      "max_queue_size": 2048,
+      "max_export_batch_size": 512,
+      "schedule_delay_ms": 5000
+    }
+  ],
+  "propagation": {
+    "formats": ["tracecontext", "baggage"]
+  },
+  "instrumentation": {
+    "auto_instrument": true,
+    "libraries": ["requests", "httpx", "openai", "anthropic", "langchain"],
+    "custom_attributes": {
+      "atlas.trace_id": true,
+      "atlas.agent_id": true,
+      "atlas.model.tokens": true
+    }
+  }
+}

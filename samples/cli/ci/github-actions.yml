@@ -1,0 +1,127 @@
+# LayerLens CI — GitHub Actions Evaluation Workflow
+# Runs evaluations on pull requests and gates merges on pass rate.
+#
+# Setup:
+#   1. Add LAYERLENS_API_KEY to repository secrets
+#   2. Set LAYERLENS_JUDGE_ID and LAYERLENS_DATASET_ID in repository variables
+#   3. Copy this file to .github/workflows/layerlens-eval.yml
+
+name: LayerLens Evaluation
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      judge_id:
+        description: "Judge ID override"
+        required: false
+      pass_threshold:
+        description: "Minimum pass rate (0.0-1.0)"
+        required: false
+        default: "0.8"
+
+env:
+  LAYERLENS_API_URL: https://api.layerlens.ai
+  PASS_THRESHOLD: ${{ github.event.inputs.pass_threshold || '0.8' }}
+
+jobs:
+  evaluate:
+    name: Run Evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install LayerLens SDK
+        run: pip install layerlens
+
+      - name: Run evaluation
+        id: eval
+        env:
+          LAYERLENS_API_KEY: ${{ secrets.LAYERLENS_API_KEY }}
+          JUDGE_ID: ${{ github.event.inputs.judge_id || vars.LAYERLENS_JUDGE_ID }}
+          DATASET_ID: ${{ vars.LAYERLENS_DATASET_ID }}
+        run: |
+          set -euo pipefail
+
+          # Submit evaluation
+          EVAL_RESP=$(curl -sf -X POST \
+            -H "Authorization: Bearer $LAYERLENS_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"judge_id\": \"$JUDGE_ID\", \"dataset_id\": \"$DATASET_ID\"}" \
+            "$LAYERLENS_API_URL/v1/evaluations")
+
+          EVAL_ID=$(echo "$EVAL_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "eval_id=$EVAL_ID" >> "$GITHUB_OUTPUT"
+          echo "::notice::Evaluation started: $EVAL_ID"
+
+          # Poll for completion (max 10 minutes)
+          for i in $(seq 1 60); do
+            sleep 10
+            STATUS=$(curl -sf \
+              -H "Authorization: Bearer $LAYERLENS_API_KEY" \
+              "$LAYERLENS_API_URL/v1/evaluations/$EVAL_ID" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+            echo "  [$((i*10))s] status=$STATUS"
+            [[ "$STATUS" == "completed" || "$STATUS" == "failed" ]] && break
+          done
+
+          if [[ "$STATUS" == "failed" ]]; then
+            echo "::error::Evaluation failed"
+            exit 1
+          fi
+
+          # Extract pass rate
+          RESULTS=$(curl -sf \
+            -H "Authorization: Bearer $LAYERLENS_API_KEY" \
+            "$LAYERLENS_API_URL/v1/evaluations/$EVAL_ID/results")
+
+          PASS_RATE=$(echo "$RESULTS" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          scores = [r['score'] for r in data.get('results', []) if 'score' in r]
+          rate = sum(1 for s in scores if s >= 0.7) / len(scores) if scores else 0
+          print(f'{rate:.4f}')
+          ")
+
+          echo "pass_rate=$PASS_RATE" >> "$GITHUB_OUTPUT"
+          echo "::notice::Pass rate: $PASS_RATE (threshold: $PASS_THRESHOLD)"
+
+      - name: Gate on pass rate
+        run: |
+          python3 -c "
+          import sys
+          rate = float('${{ steps.eval.outputs.pass_rate }}')
+          threshold = float('${{ env.PASS_THRESHOLD }}')
+          if rate < threshold:
+              print(f'FAILED: pass rate {rate:.2%} < threshold {threshold:.2%}')
+              sys.exit(1)
+          print(f'PASSED: pass rate {rate:.2%} >= threshold {threshold:.2%}')
+          "
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const passRate = '${{ steps.eval.outputs.pass_rate }}';
+            const evalId = '${{ steps.eval.outputs.eval_id }}';
+            const threshold = '${{ env.PASS_THRESHOLD }}';
+            const passed = parseFloat(passRate) >= parseFloat(threshold);
+            const icon = passed ? '✅' : '❌';
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## ${icon} LayerLens Evaluation\n\n| Metric | Value |\n|--------|-------|\n| Eval ID | \`${evalId}\` |\n| Pass Rate | **${(parseFloat(passRate)*100).toFixed(1)}%** |\n| Threshold | ${(parseFloat(threshold)*100).toFixed(1)}% |\n| Result | ${passed ? 'PASSED' : 'FAILED'} |`
+            });

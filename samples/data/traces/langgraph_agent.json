@@ -1,0 +1,107 @@
+{
+  "trace_id": "tr-demo-003",
+  "agent_id": "research-agent",
+  "graph_id": "research-workflow-v1",
+  "events": [
+    {
+      "event_type": "agent.input",
+      "timestamp": "2026-03-18T10:10:00Z",
+      "payload": {
+        "message": "Find the current stock price of NVDA and summarize recent news",
+        "role": "human"
+      }
+    },
+    {
+      "event_type": "graph.node.enter",
+      "timestamp": "2026-03-18T10:10:00.100Z",
+      "payload": {
+        "node_id": "planner",
+        "node_type": "llm",
+        "state_keys": ["messages", "plan"]
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "timestamp": "2026-03-18T10:10:01Z",
+      "payload": {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "tokens_in": 78,
+        "tokens_out": 95,
+        "latency_ms": 740
+      }
+    },
+    {
+      "event_type": "graph.edge",
+      "timestamp": "2026-03-18T10:10:01.100Z",
+      "payload": {
+        "from_node": "planner",
+        "to_node": "tool_executor",
+        "condition": "has_tool_calls"
+      }
+    },
+    {
+      "event_type": "graph.node.enter",
+      "timestamp": "2026-03-18T10:10:01.200Z",
+      "payload": {
+        "node_id": "tool_executor",
+        "node_type": "tool",
+        "state_keys": ["messages", "tool_results"]
+      }
+    },
+    {
+      "event_type": "tool.call",
+      "timestamp": "2026-03-18T10:10:01.300Z",
+      "payload": {
+        "tool_name": "get_stock_price",
+        "arguments": {"symbol": "NVDA"},
+        "result": {"price": 892.45, "currency": "USD", "timestamp": "2026-03-18T10:09:55Z"},
+        "latency_ms": 320
+      }
+    },
+    {
+      "event_type": "tool.call",
+      "timestamp": "2026-03-18T10:10:01.700Z",
+      "payload": {
+        "tool_name": "search_news",
+        "arguments": {"query": "NVDA NVIDIA recent news", "limit": 3},
+        "result": {
+          "articles": [
+            {"title": "NVIDIA Reports Record Q4 Revenue", "source": "Reuters", "date": "2026-03-15"},
+            {"title": "NVIDIA Expands Data Center AI Partnerships", "source": "Bloomberg", "date": "2026-03-16"},
+            {"title": "Analysts Raise NVDA Price Target After Earnings Beat", "source": "CNBC", "date": "2026-03-17"}
+          ]
+        },
+        "latency_ms": 580
+      }
+    },
+    {
+      "event_type": "graph.edge",
+      "timestamp": "2026-03-18T10:10:02.400Z",
+      "payload": {
+        "from_node": "tool_executor",
+        "to_node": "synthesizer",
+        "condition": "tools_complete"
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "timestamp": "2026-03-18T10:10:03Z",
+      "payload": {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "tokens_in": 412,
+        "tokens_out": 185,
+        "latency_ms": 920
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "timestamp": "2026-03-18T10:10:04Z",
+      "payload": {
+        "message": "NVDA (NVIDIA) is currently trading at $892.45 USD.\n\nRecent highlights:\n- NVIDIA reported record Q4 revenue, beating analyst expectations\n- The company announced expanded data center AI partnerships\n- Multiple analysts have raised their price targets following the strong earnings report",
+        "role": "assistant"
+      }
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "name": "support-synthetic-v1",
+  "description": "Configuration for generating synthetic customer support conversations for testing and evaluation.",
+  "generator": {
+    "model": "gpt-4o",
+    "provider": "openai",
+    "temperature": 0.9,
+    "max_tokens": 1024
+  },
+  "output": {
+    "format": "jsonl",
+    "path": "datasets/synthetic_qa.jsonl",
+    "num_samples": 100,
+    "deduplicate": true,
+    "dedup_threshold": 0.85
+  },
+  "categories": [
+    {
+      "name": "billing",
+      "weight": 0.25,
+      "topics": ["refunds", "subscription changes", "payment methods", "invoicing", "overage charges"],
+      "persona_hint": "Customer with billing questions, varying levels of frustration"
+    },
+    {
+      "name": "technical",
+      "weight": 0.30,
+      "topics": ["API errors", "rate limits", "authentication", "SDK setup", "webhooks"],
+      "persona_hint": "Developer integrating the API, ranging from beginner to expert"
+    },
+    {
+      "name": "account",
+      "weight": 0.20,
+      "topics": ["password reset", "2FA setup", "team management", "profile updates", "account deletion"],
+      "persona_hint": "End user managing their account"
+    },
+    {
+      "name": "security",
+      "weight": 0.15,
+      "topics": ["SSO configuration", "encryption", "compliance certifications", "audit logs", "IP allowlists"],
+      "persona_hint": "IT administrator or security officer evaluating the platform"
+    },
+    {
+      "name": "adversarial",
+      "weight": 0.10,
+      "topics": ["prompt injection", "social engineering", "policy circumvention", "PII extraction attempts"],
+      "persona_hint": "User attempting to manipulate the agent into unsafe behavior"
+    }
+  ],
+  "constraints": {
+    "min_turns": 1,
+    "max_turns": 6,
+    "include_context": true,
+    "include_expected_answer": true,
+    "language": "en",
+    "difficulty_distribution": {
+      "easy": 0.3,
+      "medium": 0.5,
+      "hard": 0.2
+    }
+  },
+  "seed": 42,
+  "metadata": {
+    "version": "1.0.0",
+    "created": "2026-03-01T00:00:00Z"
+  }
+}

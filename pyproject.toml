@@ -13,7 +13,7 @@ description = "The official Python library for the LayerLens Stratix API"
 license = "Apache-2.0"
 authors = [{ name = "LayerLens", email = "support@layerlens.ai" }]
 dependencies = ["httpx>=0.23.0, <1", "pydantic>=1.9.0, <3"]
-requires-python = ">= 3.8"
+requires-python = ">= 3.9"
 classifiers = [
   "Typing :: Typed",
   "Intended Audience :: Developers",
@@ -30,6 +30,23 @@ classifiers = [
   "Operating System :: Microsoft :: Windows",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+
+[project.optional-dependencies]
+instrument = ["pydantic>=2.0"]
+otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20", "opentelemetry-exporter-otlp-proto-grpc>=1.20"]
+langgraph = ["langgraph>=0.2"]
+langchain = ["langchain-core>=0.2"]
+crewai = ["crewai>=0.28"]
+autogen = ["pyautogen>=0.2"]
+openai-agents = ["openai>=1.0"]
+google-adk = ["google-adk>=0.1"]
+bedrock = ["boto3>=1.28"]
+llama-index = ["llama-index-core>=0.10"]
+pydantic-ai = ["pydantic-ai>=0.1"]
+semantic-kernel = ["semantic-kernel>=0.9"]
+smolagents = ["smolagents>=0.1"]
+langfuse = ["langfuse>=2.0"]
+all = ["layerlens[instrument,otel,langgraph,langchain,crewai,autogen,openai-agents,google-adk,bedrock,llama-index,pydantic-ai,semantic-kernel,smolagents,langfuse]"]
 
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
@@ -133,10 +150,11 @@ known-first-party = ["openai", "tests"]
 "tests/**.py" = ["T201", "T203"]
 "examples/**.py" = ["T201", "T203"]
 "src/layerlens/cli.py" = ["T201", "T203"]
+"src/layerlens/instrument/**.py" = ["T201", "T203", "F401"]
 
 [tool.pyright]
 include = ["src", "tests"]
-exclude = ["**/__pycache__"]
+exclude = ["**/__pycache__", "src/layerlens/instrument/**"]
 reportMissingTypeStubs = false
 
 # Less strict settings for tests

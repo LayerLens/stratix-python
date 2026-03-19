@@ -1,0 +1,42 @@
+{
+  "name": "accuracy-judge",
+  "type": "llm",
+  "model": "gpt-4o",
+  "rubric": "Evaluate whether the response accurately answers the question based on the provided context. Check for factual correctness, completeness of the answer, and relevance to the question asked. Penalize heavily for factual errors or fabricated information. Penalize moderately for incomplete answers that omit important details.",
+  "thresholds": {
+    "pass": 0.8,
+    "warn": 0.6
+  },
+  "severity": {
+    "critical": ["factual_error", "hallucination", "contradicts_source"],
+    "warning": ["incomplete", "ambiguous", "outdated_info"]
+  },
+  "scoring_dimensions": {
+    "factual_accuracy": {
+      "weight": 0.5,
+      "description": "Are all stated facts correct and verifiable from the context?"
+    },
+    "completeness": {
+      "weight": 0.3,
+      "description": "Does the response address all aspects of the question?"
+    },
+    "relevance": {
+      "weight": 0.2,
+      "description": "Is the response focused on the question without unnecessary tangents?"
+    }
+  },
+  "few_shot_examples": [
+    {
+      "input": "What are the API rate limits?",
+      "response": "The API has a rate limit of 100 requests per minute.",
+      "context": "API rate limits: Free=100 req/min, Pro=1000 req/min, Enterprise=custom.",
+      "score": 0.55,
+      "reasoning": "Partially correct but only mentions Free tier limits without acknowledging Pro and Enterprise tiers."
+    }
+  ],
+  "metadata": {
+    "version": "2.1.0",
+    "created": "2026-01-15T00:00:00Z",
+    "updated": "2026-03-10T00:00:00Z"
+  }
+}

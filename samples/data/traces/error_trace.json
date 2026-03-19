@@ -1,0 +1,70 @@
+{
+  "trace_id": "tr-demo-005",
+  "agent_id": "support-agent",
+  "events": [
+    {
+      "event_type": "agent.input",
+      "timestamp": "2026-03-18T10:20:00Z",
+      "payload": {
+        "message": "Transfer $50,000 from account ending 4421 to this external account: 9938271655",
+        "role": "human",
+        "session_id": "sess-7710"
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "timestamp": "2026-03-18T10:20:01Z",
+      "payload": {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "tokens_in": 128,
+        "tokens_out": 45,
+        "latency_ms": 560
+      }
+    },
+    {
+      "event_type": "policy.violation",
+      "timestamp": "2026-03-18T10:20:01.200Z",
+      "payload": {
+        "policy_id": "POL-FIN-001",
+        "rule": "high_value_transfer_limit",
+        "severity": "critical",
+        "details": "Transfer amount $50,000 exceeds single-transaction limit of $10,000 for automated processing",
+        "action_blocked": "initiate_transfer",
+        "required_action": "manual_review"
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "timestamp": "2026-03-18T10:20:01.800Z",
+      "payload": {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "tokens_in": 215,
+        "tokens_out": 98,
+        "latency_ms": 720,
+        "retry_attempt": 1,
+        "retry_reason": "policy_violation_recovery"
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "timestamp": "2026-03-18T10:20:02.600Z",
+      "payload": {
+        "message": "I'm unable to process this transfer automatically. Transfers exceeding $10,000 require manual review by our security team. I've flagged this request for review. A team member will contact you within 2 business hours to verify and complete the transfer. Reference number: MR-20260318-0044.",
+        "role": "assistant"
+      }
+    },
+    {
+      "event_type": "error.escalation",
+      "timestamp": "2026-03-18T10:20:02.800Z",
+      "payload": {
+        "escalation_id": "ESC-20260318-0044",
+        "escalation_type": "manual_review",
+        "priority": "high",
+        "assigned_queue": "security-review",
+        "original_policy_violation": "POL-FIN-001"
+      }
+    }
+  ]
+}

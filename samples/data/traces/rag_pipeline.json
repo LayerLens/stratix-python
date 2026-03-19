@@ -1,0 +1,58 @@
+{
+  "trace_id": "tr-demo-002",
+  "agent_id": "rag-agent",
+  "events": [
+    {
+      "event_type": "agent.input",
+      "timestamp": "2026-03-18T10:05:00Z",
+      "payload": {
+        "message": "How do I configure SSO for my organization?",
+        "role": "human"
+      }
+    },
+    {
+      "event_type": "retrieval.query",
+      "timestamp": "2026-03-18T10:05:00.200Z",
+      "payload": {
+        "query": "configure SSO organization setup",
+        "index": "knowledge-base-v2",
+        "top_k": 5,
+        "embedding_model": "text-embedding-3-small"
+      }
+    },
+    {
+      "event_type": "retrieval.results",
+      "timestamp": "2026-03-18T10:05:00.850Z",
+      "payload": {
+        "num_results": 3,
+        "latency_ms": 650,
+        "chunks": [
+          {"doc_id": "doc-sso-01", "score": 0.94, "text": "To enable SSO, navigate to Settings > Authentication > SSO Configuration..."},
+          {"doc_id": "doc-sso-02", "score": 0.88, "text": "Supported SSO providers include Okta, Azure AD, and Google Workspace..."},
+          {"doc_id": "doc-sso-03", "score": 0.82, "text": "After configuring SSO, all users will be required to authenticate via your identity provider..."}
+        ]
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "timestamp": "2026-03-18T10:05:01Z",
+      "payload": {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "tokens_in": 385,
+        "tokens_out": 210,
+        "latency_ms": 1120,
+        "system_prompt_hash": "sp-rag-v3"
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "timestamp": "2026-03-18T10:05:02Z",
+      "payload": {
+        "message": "To configure SSO for your organization:\n\n1. Navigate to Settings > Authentication > SSO Configuration\n2. Select your identity provider (Okta, Azure AD, or Google Workspace)\n3. Enter your IdP metadata URL or upload the metadata XML\n4. Map user attributes (email, name, groups)\n5. Test the connection and enable SSO\n\nOnce enabled, all users will authenticate through your identity provider.",
+        "role": "assistant",
+        "citations": ["doc-sso-01", "doc-sso-02", "doc-sso-03"]
+      }
+    }
+  ]
+}
