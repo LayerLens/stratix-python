@@ -5,6 +5,7 @@ from .api import (
     ModelsResponse,
     TracesResponse,
     ResultsResponse,
+    ScorersResponse,
     UploadURLResponse,
     BenchmarksResponse,
     CreateJudgeResponse,
@@ -14,8 +15,11 @@ from .api import (
     UpdateJudgeResponse,
     CostEstimateResponse,
     CreateTracesResponse,
+    IntegrationsResponse,
     OrganizationResponse,
     CreateBenchmarkResponse,
+    TestIntegrationResponse,
+    EvaluationSpacesResponse,
     TraceEvaluationsResponse,
     CreateEvaluationsResponse,
     JudgeOptimizationRunsResponse,
@@ -38,6 +42,7 @@ from .public import (
     PublicModelsListResponse,
     PublicBenchmarksListResponse,
 )
+from .scorer import Scorer
 from .benchmark import Benchmark, CustomBenchmark, PublicBenchmark
 from .evaluation import (
     Result,
@@ -52,7 +57,14 @@ from .evaluation import (
     PerformanceDetails,
     EvaluationModelInfo,
 )
+from .integration import Integration
 from .organization import Project, Organization
+from .evaluation_space import (
+    EvaluationSpace,
+    EvaluationSpaceFilters,
+    EvaluationSpaceModelFilter,
+    EvaluationSpaceDatasetFilter,
+)
 from .trace_evaluation import (
     JudgeSnapshot,
     TraceEvaluation,
@@ -86,6 +98,14 @@ __all__ = [
     "CustomModel",
     "DeleteJudgeResponse",
     "EstimateJudgeOptimizationCostResponse",
+    "EvaluationSpace",
+    "EvaluationSpaceDatasetFilter",
+    "EvaluationSpaceFilters",
+    "EvaluationSpaceModelFilter",
+    "EvaluationSpacesResponse",
+    "Integration",
+    "IntegrationsResponse",
+    "TestIntegrationResponse",
     "AnalysisSummary",
     "ErrorAnalysis",
     "Evaluation",
@@ -120,6 +140,8 @@ __all__ = [
     "Result",
     "ResultMetrics",
     "ResultsResponse",
+    "Scorer",
+    "ScorersResponse",
     "Trace",
     "TraceEvaluation",
     "TraceEvaluationResult",

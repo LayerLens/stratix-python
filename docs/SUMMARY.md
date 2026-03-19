@@ -20,6 +20,11 @@
   * [Judge Optimizations](api-reference/judge-optimizations.md)
   * [Error Handling](api-reference/errors.md)
 
+## CLI
+* [Getting Started](cli/getting-started.md)
+* [Command Reference](cli/commands.md)
+* [Workflow Examples](cli/examples.md)
+
 ## Code Examples
 * [Overview](examples/README.md)
   * [Creating Evaluations](examples/creating-evaluations.md)

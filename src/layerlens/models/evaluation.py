@@ -40,6 +40,8 @@ class EvaluationDataset(BaseModel):
 
 
 class EvaluationModelInfo(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model_name: str = ""
     performance: Any = None
 
@@ -71,7 +73,7 @@ class EvaluationSummary(BaseModel):
 
 
 class Evaluation(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, protected_namespaces=())
 
     id: str
     status: EvaluationStatus
