@@ -25,12 +25,26 @@ from .commands.integration import integration
     help="Output format.",
 )
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable verbose/debug output.")
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Suppress the startup banner.")
 @click.version_option(version=__version__, prog_name="layerlens")
 @click.pass_context
 def cli(
-    ctx: click.Context, api_key: str | None, host: str | None, port: int | None, output_format: str, verbose: bool
+    ctx: click.Context,
+    api_key: str | None,
+    host: str | None,
+    port: int | None,
+    output_format: str,
+    verbose: bool,
+    quiet: bool,
 ) -> None:
     """LayerLens Stratix CLI — manage traces, judges, evaluations, integrations, and more."""
+    import sys
+
+    if not quiet and sys.stderr.isatty():
+        from ._banner import banner
+
+        click.echo(banner(__version__), err=True)
+
     ctx.ensure_object(dict)
     ctx.obj["api_key"] = api_key
     ctx.obj["output_format"] = output_format
