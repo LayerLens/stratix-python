@@ -1,11 +1,11 @@
 # CLI — Command Reference
 
-Complete reference for all `layerlens` CLI commands.
+Complete reference for all `stratix` CLI commands.
 
 ## Command tree
 
 ```
-layerlens [global-options]
+stratix [global-options]
 ├── trace
 │   ├── list          List traces
 │   ├── get           Get a trace by ID
@@ -68,7 +68,7 @@ Manage traces.
 List traces with optional filtering and pagination.
 
 ```bash
-layerlens trace list [OPTIONS]
+stratix trace list [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -85,7 +85,7 @@ layerlens trace list [OPTIONS]
 Get a single trace by ID.
 
 ```bash
-layerlens trace get <ID>
+stratix trace get <ID>
 ```
 
 ### `trace search`
@@ -93,7 +93,7 @@ layerlens trace get <ID>
 Search traces by query string.
 
 ```bash
-layerlens trace search <QUERY> [OPTIONS]
+stratix trace search <QUERY> [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -110,7 +110,7 @@ layerlens trace search <QUERY> [OPTIONS]
 Export a trace as JSON.
 
 ```bash
-layerlens trace export <ID> [OPTIONS]
+stratix trace export <ID> [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -122,7 +122,7 @@ layerlens trace export <ID> [OPTIONS]
 Delete a trace by ID.
 
 ```bash
-layerlens trace delete <ID> [OPTIONS]
+stratix trace delete <ID> [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -138,7 +138,7 @@ Manage judges.
 ### `judge list`
 
 ```bash
-layerlens judge list [OPTIONS]
+stratix judge list [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -149,7 +149,7 @@ layerlens judge list [OPTIONS]
 ### `judge get`
 
 ```bash
-layerlens judge get <ID>
+stratix judge get <ID>
 ```
 
 ### `judge create`
@@ -157,7 +157,7 @@ layerlens judge get <ID>
 Create a new judge.
 
 ```bash
-layerlens judge create [OPTIONS]
+stratix judge create [OPTIONS]
 ```
 
 | Option | Type | Required | Description |
@@ -171,7 +171,7 @@ layerlens judge create [OPTIONS]
 Test a judge by running it against a trace. Creates a trace evaluation.
 
 ```bash
-layerlens judge test [OPTIONS]
+stratix judge test [OPTIONS]
 ```
 
 | Option | Type | Required | Description |
@@ -188,7 +188,7 @@ Manage evaluations.
 ### `evaluate list`
 
 ```bash
-layerlens evaluate list [OPTIONS]
+stratix evaluate list [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -202,7 +202,7 @@ layerlens evaluate list [OPTIONS]
 ### `evaluate get`
 
 ```bash
-layerlens evaluate get <ID>
+stratix evaluate get <ID>
 ```
 
 ### `evaluate run`
@@ -210,7 +210,7 @@ layerlens evaluate get <ID>
 Run a new evaluation. Accepts model/benchmark by ID, key, or name.
 
 ```bash
-layerlens evaluate run [OPTIONS]
+stratix evaluate run [OPTIONS]
 ```
 
 | Option | Type | Required | Description |
@@ -228,7 +228,7 @@ Manage integrations.
 ### `integration list`
 
 ```bash
-layerlens integration list [OPTIONS]
+stratix integration list [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -241,7 +241,7 @@ layerlens integration list [OPTIONS]
 Test an integration by ID.
 
 ```bash
-layerlens integration test <ID>
+stratix integration test <ID>
 ```
 
 ---
@@ -253,7 +253,7 @@ Manage scorers.
 ### `scorer list`
 
 ```bash
-layerlens scorer list [OPTIONS]
+stratix scorer list [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -264,13 +264,13 @@ layerlens scorer list [OPTIONS]
 ### `scorer get`
 
 ```bash
-layerlens scorer get <ID>
+stratix scorer get <ID>
 ```
 
 ### `scorer create`
 
 ```bash
-layerlens scorer create [OPTIONS]
+stratix scorer create [OPTIONS]
 ```
 
 | Option | Type | Required | Description |
@@ -284,7 +284,7 @@ layerlens scorer create [OPTIONS]
 ### `scorer delete`
 
 ```bash
-layerlens scorer delete <ID> [OPTIONS]
+stratix scorer delete <ID> [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -301,7 +301,7 @@ Manage evaluation spaces.
 ### `space list`
 
 ```bash
-layerlens space list [OPTIONS]
+stratix space list [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -314,7 +314,7 @@ layerlens space list [OPTIONS]
 ### `space get`
 
 ```bash
-layerlens space get <ID>
+stratix space get <ID>
 ```
 
 Accepts an ID or slug.
@@ -322,7 +322,7 @@ Accepts an ID or slug.
 ### `space create`
 
 ```bash
-layerlens space create [OPTIONS]
+stratix space create [OPTIONS]
 ```
 
 | Option | Type | Required | Description |
@@ -335,7 +335,7 @@ layerlens space create [OPTIONS]
 ### `space delete`
 
 ```bash
-layerlens space delete <ID> [OPTIONS]
+stratix space delete <ID> [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -356,7 +356,7 @@ Run evaluations in bulk. Supports two modes:
 **Mode 1: JSONL file**
 
 ```bash
-layerlens bulk eval --file jobs.jsonl [OPTIONS]
+stratix bulk eval --file jobs.jsonl [OPTIONS]
 ```
 
 Each line in the JSONL file is a JSON object with `model` and `benchmark` fields:
@@ -369,13 +369,13 @@ Each line in the JSONL file is a JSON object with `model` and `benchmark` fields
 **Mode 2: Single model + benchmark**
 
 ```bash
-layerlens bulk eval --model openai/gpt-4o --benchmark arc-agi-2 --wait [OPTIONS]
+stratix bulk eval --model openai/gpt-4o --benchmark arc-agi-2 --wait [OPTIONS]
 ```
 
 **Mode 3: Judge + trace IDs**
 
 ```bash
-layerlens bulk eval --judge-id <JUDGE_ID> --traces trace_ids.txt [OPTIONS]
+stratix bulk eval --judge-id <JUDGE_ID> --traces trace_ids.txt [OPTIONS]
 ```
 
 The traces file contains one trace ID per line.
@@ -401,7 +401,7 @@ CI/CD pipeline helpers.
 Generate a markdown summary of recent evaluations, suitable for GitHub Actions job summaries.
 
 ```bash
-layerlens ci report [OPTIONS]
+stratix ci report [OPTIONS]
 ```
 
 | Option | Type | Description |
@@ -417,7 +417,7 @@ layerlens ci report [OPTIONS]
 Print shell completion setup instructions.
 
 ```bash
-layerlens completion <SHELL>
+stratix completion <SHELL>
 ```
 
 Where `SHELL` is one of: `bash`, `zsh`, `fish`, `powershell`.

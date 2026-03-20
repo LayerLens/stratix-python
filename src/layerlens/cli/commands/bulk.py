@@ -22,8 +22,8 @@ def bulk() -> None:
 
     \b
     Examples:
-      layerlens bulk eval --file jobs.jsonl
-      layerlens bulk eval --model gpt-4 --benchmark mmlu --traces trace_ids.txt
+      stratix bulk eval --file jobs.jsonl
+      stratix bulk eval --model gpt-4 --benchmark mmlu --traces trace_ids.txt
     """
 
 
@@ -63,10 +63,10 @@ def bulk_eval(
 
     \b
     Examples:
-      layerlens bulk eval --file jobs.jsonl
-      layerlens bulk eval --file jobs.jsonl --dry-run
-      layerlens bulk eval --model gpt-4 --benchmark mmlu --wait
-      layerlens bulk eval --judge-id <id> --traces trace_ids.txt
+      stratix bulk eval --file jobs.jsonl
+      stratix bulk eval --file jobs.jsonl --dry-run
+      stratix bulk eval --model gpt-4 --benchmark mmlu --wait
+      stratix bulk eval --judge-id <id> --traces trace_ids.txt
     """
     client = get_client(ctx)
 

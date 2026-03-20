@@ -9,13 +9,13 @@ mkdir -p "$OUTPUT_DIR"
 
 echo "==> Exporting traces to $OUTPUT_DIR/"
 
-layerlens --format json trace list | python3 -c "
+stratix --format json trace list | python3 -c "
 import sys, json
 for t in json.load(sys.stdin):
     print(t['id'])
 " | while read -r id; do
   echo "  Exporting $id..."
-  layerlens trace export "$id" -o "$OUTPUT_DIR/${id}.json"
+  stratix trace export "$id" -o "$OUTPUT_DIR/${id}.json"
 done
 
 echo "==> Done. Files in $OUTPUT_DIR/"

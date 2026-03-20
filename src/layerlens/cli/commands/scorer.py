@@ -22,10 +22,10 @@ def scorer() -> None:
 
     \b
     Examples:
-      layerlens scorer list
-      layerlens scorer get <scorer-id>
-      layerlens scorer create --name "Quality" --description "..." --model-id <id> --prompt "..."
-      layerlens scorer delete <scorer-id>
+      stratix scorer list
+      stratix scorer get <scorer-id>
+      stratix scorer create --name "Quality" --description "..." --model-id <id> --prompt "..."
+      stratix scorer delete <scorer-id>
     """
 
 
@@ -39,8 +39,8 @@ def list_scorers(ctx: click.Context, page: int | None, page_size: int | None) ->
 
     \b
     Examples:
-      layerlens scorer list
-      layerlens scorer list --page-size 10
+      stratix scorer list
+      stratix scorer list --page-size 10
     """
     client = get_client(ctx)
     result = client.scorers.get_many(page=page, page_size=page_size)
@@ -64,8 +64,8 @@ def get_scorer(ctx: click.Context, id: str) -> None:
 
     \b
     Examples:
-      layerlens scorer get abc123
-      layerlens scorer get abc123 --format json
+      stratix scorer get abc123
+      stratix scorer get abc123 --format json
     """
     client = get_client(ctx)
     s = client.scorers.get(id)
@@ -90,8 +90,8 @@ def create_scorer(ctx: click.Context, name: str, description: str, model_id: str
 
     \b
     Examples:
-      layerlens scorer create --name "Quality" --description "Evaluate quality" --model-id abc123 --prompt "Rate the quality..."
-      layerlens scorer create --name "Test" --description "Test scorer" --model-id abc123 --prompt "..." --dry-run
+      stratix scorer create --name "Quality" --description "Evaluate quality" --model-id abc123 --prompt "Rate the quality..."
+      stratix scorer create --name "Test" --description "Test scorer" --model-id abc123 --prompt "..." --dry-run
     """
     if dry_run:
         click.echo(f"[dry-run] Would create scorer: {name}")
@@ -121,9 +121,9 @@ def delete_scorer(ctx: click.Context, id: str, yes: bool, dry_run: bool) -> None
 
     \b
     Examples:
-      layerlens scorer delete abc123
-      layerlens scorer delete abc123 --yes
-      layerlens scorer delete abc123 --dry-run
+      stratix scorer delete abc123
+      stratix scorer delete abc123 --yes
+      stratix scorer delete abc123 --dry-run
     """
     if dry_run:
         click.echo(f"[dry-run] Would delete scorer {id}")

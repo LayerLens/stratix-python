@@ -13,14 +13,14 @@ Set up, list traces, inspect one, and evaluate it with a judge.
 export LAYERLENS_STRATIX_API_KEY="sk-..."
 
 # See what traces are available
-layerlens trace list
+stratix trace list
 
 # Inspect a specific trace
-layerlens trace get <TRACE_ID>
+stratix trace get <TRACE_ID>
 
 # Create a judge and test it against the trace
-layerlens judge create --name "Accuracy" --goal "Rate factual accuracy of the response" --model-id <MODEL_ID>
-layerlens judge test --judge-id <JUDGE_ID> --trace-id <TRACE_ID>
+stratix judge create --name "Accuracy" --goal "Rate factual accuracy of the response" --model-id <MODEL_ID>
+stratix judge test --judge-id <JUDGE_ID> --trace-id <TRACE_ID>
 ```
 
 ---
@@ -29,15 +29,15 @@ layerlens judge test --judge-id <JUDGE_ID> --trace-id <TRACE_ID>
 
 ```bash
 # Run and block until done
-layerlens evaluate run \
+stratix evaluate run \
   --model openai/gpt-4o \
   --benchmark arc-agi-2 \
   --wait
 
 # Or fire and check later
-layerlens evaluate run --model openai/gpt-4o --benchmark arc-agi-2
-layerlens evaluate list --status in-progress
-layerlens evaluate get <EVAL_ID>
+stratix evaluate run --model openai/gpt-4o --benchmark arc-agi-2
+stratix evaluate list --status in-progress
+stratix evaluate get <EVAL_ID>
 ```
 
 ---
@@ -45,11 +45,11 @@ layerlens evaluate get <EVAL_ID>
 ## 3. Compare models on the same benchmark
 
 ```bash
-layerlens evaluate run --model openai/gpt-4o --benchmark arc-agi-2 --wait
-layerlens evaluate run --model anthropic/claude-3-opus --benchmark arc-agi-2 --wait
+stratix evaluate run --model openai/gpt-4o --benchmark arc-agi-2 --wait
+stratix evaluate run --model anthropic/claude-3-opus --benchmark arc-agi-2 --wait
 
 # List results sorted by accuracy
-layerlens evaluate list --sort-by accuracy --order desc
+stratix evaluate list --sort-by accuracy --order desc
 ```
 
 ---
@@ -58,19 +58,19 @@ layerlens evaluate list --sort-by accuracy --order desc
 
 ```bash
 # Create a judge
-layerlens judge create \
+stratix judge create \
   --name "Helpfulness" \
   --goal "Rate how helpful and actionable the response is on a 1-5 scale" \
   --model-id <MODEL_ID>
 
 # Test against a sample trace
-layerlens judge test --judge-id <JUDGE_ID> --trace-id <TRACE_ID>
+stratix judge test --judge-id <JUDGE_ID> --trace-id <TRACE_ID>
 
 # Review the result
-layerlens --format json judge get <JUDGE_ID>
+stratix --format json judge get <JUDGE_ID>
 
 # Iterate: create a refined version
-layerlens judge create \
+stratix judge create \
   --name "Helpfulness v2" \
   --goal "Rate helpfulness on a 1-5 scale with justification" \
   --model-id <MODEL_ID>
@@ -82,13 +82,13 @@ layerlens judge create \
 
 ```bash
 # Search for traces matching a keyword
-layerlens trace search "customer support" --page-size 5
+stratix trace search "customer support" --page-size 5
 
 # Export a trace to a file
-layerlens trace export <TRACE_ID> -o trace_backup.json
+stratix trace export <TRACE_ID> -o trace_backup.json
 
 # Export as JSON for piping
-layerlens --format json trace get <TRACE_ID> | jq '.id'
+stratix --format json trace get <TRACE_ID> | jq '.id'
 ```
 
 ---
@@ -104,10 +104,10 @@ cat > jobs.jsonl <<'EOF'
 EOF
 
 # Dry-run to preview
-layerlens bulk eval --file jobs.jsonl --dry-run
+stratix bulk eval --file jobs.jsonl --dry-run
 
 # Execute and wait
-layerlens bulk eval --file jobs.jsonl --wait
+stratix bulk eval --file jobs.jsonl --wait
 ```
 
 ---
@@ -116,16 +116,16 @@ layerlens bulk eval --file jobs.jsonl --wait
 
 ```bash
 # Create a trace ID file
-layerlens --format json trace list | jq -r '.[].id' > trace_ids.txt
+stratix --format json trace list | jq -r '.[].id' > trace_ids.txt
 
 # Dry-run to preview
-layerlens bulk eval \
+stratix bulk eval \
   --judge-id <JUDGE_ID> \
   --traces trace_ids.txt \
   --dry-run
 
 # Run trace evaluations for all traces
-layerlens bulk eval \
+stratix bulk eval \
   --judge-id <JUDGE_ID> \
   --traces trace_ids.txt
 ```
@@ -136,16 +136,16 @@ layerlens bulk eval \
 
 ```bash
 # In your GitHub Actions workflow:
-layerlens evaluate run \
+stratix evaluate run \
   --model openai/gpt-4o \
   --benchmark arc-agi-2 \
   --wait
 
 # Generate a summary for the GitHub job
-layerlens ci report -o "$GITHUB_STEP_SUMMARY"
+stratix ci report -o "$GITHUB_STEP_SUMMARY"
 
 # Or output JSON for custom processing
-layerlens ci report -o report.json
+stratix ci report -o report.json
 ```
 
 ---
@@ -154,13 +154,13 @@ layerlens ci report -o report.json
 
 ```bash
 # List all integrations
-layerlens integration list
+stratix integration list
 
 # Test a specific integration
-layerlens integration test <INTEGRATION_ID>
+stratix integration test <INTEGRATION_ID>
 
 # JSON output for scripting
-layerlens --format json integration list | jq '.[] | select(.status != "active")'
+stratix --format json integration list | jq '.[] | select(.status != "active")'
 ```
 
 ---
@@ -169,10 +169,10 @@ layerlens --format json integration list | jq '.[] | select(.status != "active")
 
 ```bash
 # List existing scorers
-layerlens scorer list
+stratix scorer list
 
 # Create a scorer with dry-run
-layerlens scorer create \
+stratix scorer create \
   --name "Code Quality" \
   --description "Evaluates generated code for correctness, readability, and best practices" \
   --model-id <MODEL_ID> \
@@ -180,17 +180,17 @@ layerlens scorer create \
   --dry-run
 
 # Create for real
-layerlens scorer create \
+stratix scorer create \
   --name "Code Quality" \
   --description "Evaluates generated code for correctness, readability, and best practices" \
   --model-id <MODEL_ID> \
   --prompt "Score the following code on a 1-10 scale for quality..."
 
 # Delete with confirmation
-layerlens scorer delete <SCORER_ID>
+stratix scorer delete <SCORER_ID>
 
 # Delete without prompt
-layerlens scorer delete <SCORER_ID> -y
+stratix scorer delete <SCORER_ID> -y
 ```
 
 ---
@@ -199,25 +199,25 @@ layerlens scorer delete <SCORER_ID> -y
 
 ```bash
 # List spaces
-layerlens space list
+stratix space list
 
 # Create a private space
-layerlens space create \
+stratix space create \
   --name "Q1 Model Comparison" \
   --description "Comparing GPT-4o vs Claude 3 Opus for Q1 release" \
   --visibility private
 
 # Create a public space (dry-run first)
-layerlens space create \
+stratix space create \
   --name "Public Leaderboard" \
   --visibility public \
   --dry-run
 
 # Get space details by slug or ID
-layerlens space get q1-model-comparison
+stratix space get q1-model-comparison
 
 # Clean up
-layerlens space delete <SPACE_ID> -y
+stratix space delete <SPACE_ID> -y
 ```
 
 ---
@@ -226,17 +226,17 @@ layerlens space delete <SPACE_ID> -y
 
 ```bash
 # Pipe trace IDs into a loop
-layerlens --format json trace list | jq -r '.[].id' | while read id; do
+stratix --format json trace list | jq -r '.[].id' | while read id; do
   echo "Exporting $id..."
-  layerlens trace export "$id" -o "traces/${id}.json"
+  stratix trace export "$id" -o "traces/${id}.json"
 done
 
 # Get evaluation accuracy as a number
-ACCURACY=$(layerlens --format json evaluate get <EVAL_ID> | jq -r '.accuracy')
+ACCURACY=$(stratix --format json evaluate get <EVAL_ID> | jq -r '.accuracy')
 echo "Accuracy: $ACCURACY"
 
 # Filter evaluations by status
-layerlens --format json evaluate list | jq '[.[] | select(.status == "success")]'
+stratix --format json evaluate list | jq '[.[] | select(.status == "success")]'
 ```
 
 ---
@@ -245,15 +245,15 @@ layerlens --format json evaluate list | jq '[.[] | select(.status == "success")]
 
 ```bash
 # Page through traces
-layerlens trace list --page 1 --page-size 20
-layerlens trace list --page 2 --page-size 20
+stratix trace list --page 1 --page-size 20
+stratix trace list --page 2 --page-size 20
 
 # Sort evaluations
-layerlens evaluate list --sort-by accuracy --order desc --page-size 5
-layerlens evaluate list --sort-by submitted_at --order asc
+stratix evaluate list --sort-by accuracy --order desc --page-size 5
+stratix evaluate list --sort-by submitted_at --order asc
 
 # Sort spaces
-layerlens space list --sort-by created_at --order desc
+stratix space list --sort-by created_at --order desc
 ```
 
 ---
@@ -262,13 +262,13 @@ layerlens space list --sort-by created_at --order desc
 
 ```bash
 # Enable verbose output to see HTTP requests
-layerlens -v trace list
+stratix -v trace list
 
 # Combine with JSON output
-layerlens -v --format json evaluate get <EVAL_ID>
+stratix -v --format json evaluate get <EVAL_ID>
 
 # Debug authentication issues
-layerlens -v integration list
+stratix -v integration list
 ```
 
 ---
@@ -277,15 +277,15 @@ layerlens -v integration list
 
 ```bash
 # Delete a trace (with confirmation prompt)
-layerlens trace delete <TRACE_ID>
+stratix trace delete <TRACE_ID>
 
 # Delete without prompting
-layerlens trace delete <TRACE_ID> -y
+stratix trace delete <TRACE_ID> -y
 
 # Delete a scorer (dry-run first)
-layerlens scorer delete <SCORER_ID> --dry-run
-layerlens scorer delete <SCORER_ID> -y
+stratix scorer delete <SCORER_ID> --dry-run
+stratix scorer delete <SCORER_ID> -y
 
 # Delete a space
-layerlens space delete <SPACE_ID> -y
+stratix space delete <SPACE_ID> -y
 ```

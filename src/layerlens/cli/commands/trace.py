@@ -23,11 +23,11 @@ def trace() -> None:
 
     \b
     Examples:
-      layerlens trace list
-      layerlens trace get <trace-id>
-      layerlens trace search "user login"
-      layerlens trace export <trace-id> --output trace.json
-      layerlens trace delete <trace-id> --yes
+      stratix trace list
+      stratix trace get <trace-id>
+      stratix trace search "user login"
+      stratix trace export <trace-id> --output trace.json
+      stratix trace delete <trace-id> --yes
     """
 
 
@@ -53,9 +53,9 @@ def list_traces(
 
     \b
     Examples:
-      layerlens trace list
-      layerlens trace list --page-size 10
-      layerlens trace list --source sdk --sort-by created_at --sort-order desc
+      stratix trace list
+      stratix trace list --page-size 10
+      stratix trace list --source sdk --sort-by created_at --sort-order desc
     """
     client = get_client(ctx)
     result = client.traces.get_many(
@@ -86,8 +86,8 @@ def get_trace(ctx: click.Context, id: str) -> None:
 
     \b
     Examples:
-      layerlens trace get abc123-def4-5678-ghij-klmnopqrstuv
-      layerlens trace get abc123 --format json
+      stratix trace get abc123-def4-5678-ghij-klmnopqrstuv
+      stratix trace get abc123 --format json
     """
     client = get_client(ctx)
     trace = client.traces.get(id)
@@ -123,8 +123,8 @@ def search_traces(
 
     \b
     Examples:
-      layerlens trace search "user login"
-      layerlens trace search "error" --source sdk --page-size 5
+      stratix trace search "user login"
+      stratix trace search "error" --source sdk --page-size 5
     """
     client = get_client(ctx)
     result = client.traces.get_many(
@@ -159,8 +159,8 @@ def export_trace(ctx: click.Context, id: str, output_file: str | None) -> None:
 
     \b
     Examples:
-      layerlens trace export abc123
-      layerlens trace export abc123 --output trace.json
+      stratix trace export abc123
+      stratix trace export abc123 --output trace.json
     """
     client = get_client(ctx)
     trace = client.traces.get(id)
@@ -188,8 +188,8 @@ def delete_trace(ctx: click.Context, id: str, yes: bool) -> None:
 
     \b
     Examples:
-      layerlens trace delete abc123
-      layerlens trace delete abc123 --yes
+      stratix trace delete abc123
+      stratix trace delete abc123 --yes
     """
     if not yes:
         click.confirm(f"Are you sure you want to delete trace {id}?", abort=True)

@@ -23,8 +23,8 @@ def integration() -> None:
 
     \b
     Examples:
-      layerlens integration list
-      layerlens integration test <integration-id>
+      stratix integration list
+      stratix integration test <integration-id>
     """
 
 
@@ -38,8 +38,8 @@ def list_integrations(ctx: click.Context, page: int | None, page_size: int | Non
 
     \b
     Examples:
-      layerlens integration list
-      layerlens integration list --page-size 10
+      stratix integration list
+      stratix integration list --page-size 10
     """
     client = get_client(ctx)
     result = client.integrations.get_many(page=page, page_size=page_size)
@@ -63,8 +63,8 @@ def test_integration(ctx: click.Context, id: str) -> None:
 
     \b
     Examples:
-      layerlens integration test abc123
-      layerlens integration test abc123 --format json
+      stratix integration test abc123
+      stratix integration test abc123 --format json
     """
     client = get_client(ctx)
     result = client.integrations.test(id)

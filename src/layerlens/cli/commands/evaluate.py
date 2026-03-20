@@ -24,9 +24,9 @@ def evaluate() -> None:
 
     \b
     Examples:
-      layerlens evaluate list
-      layerlens evaluate get <evaluation-id>
-      layerlens evaluate run --model gpt-4 --benchmark mmlu --wait
+      stratix evaluate list
+      stratix evaluate get <evaluation-id>
+      stratix evaluate run --model gpt-4 --benchmark mmlu --wait
     """
 
 
@@ -52,9 +52,9 @@ def list_evaluations(
 
     \b
     Examples:
-      layerlens evaluate list
-      layerlens evaluate list --status success --sort-by accuracy --order desc
-      layerlens evaluate list --page-size 5
+      stratix evaluate list
+      stratix evaluate list --status success --sort-by accuracy --order desc
+      stratix evaluate list --page-size 5
     """
     from ...models import EvaluationStatus
 
@@ -98,8 +98,8 @@ def get_evaluation(ctx: click.Context, id: str) -> None:
 
     \b
     Examples:
-      layerlens evaluate get abc123
-      layerlens evaluate get abc123 --format json
+      stratix evaluate get abc123
+      stratix evaluate get abc123 --format json
     """
     client = get_client(ctx)
     evaluation = client.evaluations.get_by_id(id)
@@ -126,9 +126,9 @@ def run_evaluation(ctx: click.Context, model_id: str, benchmark_id: str, wait: b
 
     \b
     Examples:
-      layerlens evaluate run --model gpt-4 --benchmark mmlu
-      layerlens evaluate run --model abc123-uuid --benchmark def456-uuid --wait
-      layerlens evaluate run --model "GPT-4" --benchmark "MMLU" --wait --format json
+      stratix evaluate run --model gpt-4 --benchmark mmlu
+      stratix evaluate run --model abc123-uuid --benchmark def456-uuid --wait
+      stratix evaluate run --model "GPT-4" --benchmark "MMLU" --wait --format json
     """
     client = get_client(ctx)
 

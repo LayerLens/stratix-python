@@ -14,7 +14,12 @@ from .commands.integration import integration
 
 
 @click.group()
-@click.option("--api-key", envvar="LAYERLENS_STRATIX_API_KEY", default=None, help="API key for authentication.")
+@click.option(
+    "--api-key",
+    envvar="LAYERLENS_STRATIX_API_KEY",
+    default=None,
+    help="API key for authentication.",
+)
 @click.option("--host", default=None, help="API host (e.g. api.layerlens.ai).")
 @click.option("--port", default=None, type=int, help="API port.")
 @click.option(
@@ -81,10 +86,10 @@ def completion(shell: str) -> None:
 
     \b
     Examples:
-      layerlens completion bash
-      layerlens completion zsh
-      layerlens completion fish
-      layerlens completion powershell
+      stratix completion bash
+      stratix completion zsh
+      stratix completion fish
+      stratix completion powershell
     """
     import os
 

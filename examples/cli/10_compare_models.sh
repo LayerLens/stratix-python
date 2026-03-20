@@ -17,7 +17,7 @@ echo "==> Comparing ${#MODELS[@]} models on $BENCHMARK"
 
 for model in "${MODELS[@]}"; do
   echo "  Running: $model"
-  layerlens evaluate run --model "$model" --benchmark "$BENCHMARK" --wait &
+  stratix evaluate run --model "$model" --benchmark "$BENCHMARK" --wait &
 done
 
 # Wait for all background evaluations
@@ -25,4 +25,4 @@ wait
 
 echo ""
 echo "==> Results (sorted by accuracy):"
-layerlens evaluate list --sort-by accuracy --order desc --page-size 10
+stratix evaluate list --sort-by accuracy --order desc --page-size 10

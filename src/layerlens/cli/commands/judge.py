@@ -23,10 +23,10 @@ def judge() -> None:
 
     \b
     Examples:
-      layerlens judge list
-      layerlens judge get <judge-id>
-      layerlens judge create --name "Quality" --goal "Evaluate response quality"
-      layerlens judge test --judge-id <id> --trace-id <id>
+      stratix judge list
+      stratix judge get <judge-id>
+      stratix judge create --name "Quality" --goal "Evaluate response quality"
+      stratix judge test --judge-id <id> --trace-id <id>
     """
 
 
@@ -40,8 +40,8 @@ def list_judges(ctx: click.Context, page: int | None, page_size: int | None) -> 
 
     \b
     Examples:
-      layerlens judge list
-      layerlens judge list --page-size 5
+      stratix judge list
+      stratix judge list --page-size 5
     """
     client = get_client(ctx)
     result = client.judges.get_many(page=page, page_size=page_size)
@@ -65,8 +65,8 @@ def get_judge(ctx: click.Context, id: str) -> None:
 
     \b
     Examples:
-      layerlens judge get abc123
-      layerlens judge get abc123 --format json
+      stratix judge get abc123
+      stratix judge get abc123 --format json
     """
     client = get_client(ctx)
     j = client.judges.get(id)
@@ -89,8 +89,8 @@ def create_judge(ctx: click.Context, name: str, goal: str, model_id: str | None)
 
     \b
     Examples:
-      layerlens judge create --name "Quality" --goal "Evaluate response quality"
-      layerlens judge create --name "Safety" --goal "Check for harmful content" --model-id abc123
+      stratix judge create --name "Quality" --goal "Evaluate response quality"
+      stratix judge create --name "Safety" --goal "Check for harmful content" --model-id abc123
     """
     client = get_client(ctx)
     j = client.judges.create(name=name, evaluation_goal=goal, model_id=model_id)
@@ -115,8 +115,8 @@ def test_judge(ctx: click.Context, judge_id: str, trace_id: str) -> None:
 
     \b
     Examples:
-      layerlens judge test --judge-id abc123 --trace-id def456
-      layerlens judge test --judge-id abc123 --trace-id def456 --format json
+      stratix judge test --judge-id abc123 --trace-id def456
+      stratix judge test --judge-id abc123 --trace-id def456 --format json
     """
     client = get_client(ctx)
     te = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_id)

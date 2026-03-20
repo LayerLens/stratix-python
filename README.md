@@ -267,22 +267,22 @@ export LAYERLENS_STRATIX_API_KEY="your-api-key"
 ### Usage
 
 ```bash
-layerlens --help                   # Show all commands
-layerlens trace list               # List traces
-layerlens evaluate run \
+stratix --help                   # Show all commands
+stratix trace list               # List traces
+stratix evaluate run \
   --model openai/gpt-4o \
   --benchmark arc-agi-2 --wait     # Run an evaluation and wait for results
-layerlens judge create \
+stratix judge create \
   --name "Quality" \
   --goal "Rate response quality" \
   --model-id <MODEL_ID>            # Create a judge
-layerlens ci report -o summary.md  # Generate CI report
+stratix ci report -o summary.md  # Generate CI report
 ```
 
 Shell completions are available for bash, zsh, fish, and powershell:
 
 ```bash
-layerlens completion bash          # Print setup instructions
+stratix completion bash          # Print setup instructions
 ```
 
 Full CLI docs: [docs/cli/](docs/cli/)

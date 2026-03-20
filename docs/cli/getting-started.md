@@ -25,7 +25,7 @@ pip install -e ".[cli]"
 Verify the installation:
 
 ```bash
-layerlens --version
+stratix --version
 ```
 
 ## Configuration
@@ -41,7 +41,7 @@ export LAYERLENS_STRATIX_API_KEY="your-api-key"
 Or pass it per-command:
 
 ```bash
-layerlens --api-key "your-api-key" trace list
+stratix --api-key "your-api-key" trace list
 ```
 
 ### Custom host
@@ -49,8 +49,8 @@ layerlens --api-key "your-api-key" trace list
 By default the CLI talks to `api.layerlens.ai`. Override with:
 
 ```bash
-layerlens --host my-instance.example.com trace list
-layerlens --host my-instance.example.com --port 8443 trace list
+stratix --host my-instance.example.com trace list
+stratix --host my-instance.example.com --port 8443 trace list
 ```
 
 ## Global options
@@ -71,7 +71,7 @@ Every command accepts these options:
 The default output is a human-readable table:
 
 ```bash
-layerlens trace list
+stratix trace list
 ```
 
 ```
@@ -84,7 +84,7 @@ e5f6a7b8-...                         2026-03-14 09:12     batch_02.json    1
 Switch to JSON for scripting:
 
 ```bash
-layerlens --format json trace list
+stratix --format json trace list
 ```
 
 ```json
@@ -104,10 +104,10 @@ The CLI supports tab-completion for commands, options, and resource IDs.
 
 ```bash
 # Print setup instructions for your shell
-layerlens completion bash
-layerlens completion zsh
-layerlens completion fish
-layerlens completion powershell
+stratix completion bash
+stratix completion zsh
+stratix completion fish
+stratix completion powershell
 ```
 
 Follow the printed instructions to enable completions. After setup, you can tab-complete trace IDs, judge IDs, model names, and more.
@@ -117,31 +117,31 @@ Follow the printed instructions to enable completions. After setup, you can tab-
 ### List your traces
 
 ```bash
-layerlens trace list
+stratix trace list
 ```
 
 ### Run an evaluation
 
 ```bash
-layerlens evaluate run --model openai/gpt-4o --benchmark arc-agi-2 --wait
+stratix evaluate run --model openai/gpt-4o --benchmark arc-agi-2 --wait
 ```
 
 ### Create a judge
 
 ```bash
-layerlens judge create --name "Response Quality" --goal "Rate accuracy and completeness" --model-id <MODEL_ID>
+stratix judge create --name "Response Quality" --goal "Rate accuracy and completeness" --model-id <MODEL_ID>
 ```
 
 ### Check integrations
 
 ```bash
-layerlens integration list
+stratix integration list
 ```
 
 ### Generate a CI report
 
 ```bash
-layerlens ci report -o summary.md
+stratix ci report -o summary.md
 ```
 
 ## Next steps

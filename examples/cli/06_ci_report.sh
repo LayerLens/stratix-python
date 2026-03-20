@@ -5,7 +5,7 @@ set -euo pipefail
 OUTPUT="${1:-summary.md}"
 
 echo "==> Generating CI report..."
-layerlens ci report --limit 10 -o "$OUTPUT"
+stratix ci report --limit 10 -o "$OUTPUT"
 
 echo "==> Report written to $OUTPUT"
 cat "$OUTPUT"

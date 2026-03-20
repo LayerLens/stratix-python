@@ -24,10 +24,10 @@ def space() -> None:
 
     \b
     Examples:
-      layerlens space list
-      layerlens space get <space-id>
-      layerlens space create --name "My Space"
-      layerlens space delete <space-id>
+      stratix space list
+      stratix space get <space-id>
+      stratix space create --name "My Space"
+      stratix space delete <space-id>
     """
 
 
@@ -45,9 +45,9 @@ def list_spaces(
 
     \b
     Examples:
-      layerlens space list
-      layerlens space list --page-size 10
-      layerlens space list --sort-by created_at --order desc
+      stratix space list
+      stratix space list --page-size 10
+      stratix space list --sort-by created_at --order desc
     """
     client = get_client(ctx)
     result = client.evaluation_spaces.get_many(page=page, page_size=page_size, sort_by=sort_by, order=order)
@@ -71,9 +71,9 @@ def get_space(ctx: click.Context, id: str) -> None:
 
     \b
     Examples:
-      layerlens space get abc123
-      layerlens space get my-space-slug
-      layerlens space get abc123 --format json
+      stratix space get abc123
+      stratix space get my-space-slug
+      stratix space get abc123 --format json
     """
     client = get_client(ctx)
     s = client.evaluation_spaces.get(id)
@@ -99,9 +99,9 @@ def create_space(ctx: click.Context, name: str, description: str | None, visibil
 
     \b
     Examples:
-      layerlens space create --name "Production"
-      layerlens space create --name "Public Board" --visibility public
-      layerlens space create --name "Test" --dry-run
+      stratix space create --name "Production"
+      stratix space create --name "Public Board" --visibility public
+      stratix space create --name "Test" --dry-run
     """
     if dry_run:
         click.echo(f"[dry-run] Would create evaluation space: {name}")
@@ -131,9 +131,9 @@ def delete_space(ctx: click.Context, id: str, yes: bool, dry_run: bool) -> None:
 
     \b
     Examples:
-      layerlens space delete abc123
-      layerlens space delete abc123 --yes
-      layerlens space delete abc123 --dry-run
+      stratix space delete abc123
+      stratix space delete abc123 --yes
+      stratix space delete abc123 --dry-run
     """
     if dry_run:
         click.echo(f"[dry-run] Would delete evaluation space {id}")
