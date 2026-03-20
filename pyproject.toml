@@ -33,6 +33,10 @@ classifiers = [
 
 [project.optional-dependencies]
 cli = ["click>=8.0.0"]
+openai = ["openai>=1.0.0"]
+anthropic = ["anthropic>=0.18.0"]
+langchain = ["langchain-core>=0.1.0"]
+litellm = ["litellm>=1.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
@@ -138,6 +142,8 @@ known-first-party = ["openai", "tests"]
 "tests/**.py" = ["T201", "T203"]
 "examples/**.py" = ["T201", "T203"]
 "src/layerlens/cli/**" = ["T201", "T203"]
+"src/layerlens/instrument/adapters/frameworks/langchain.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/langgraph.py" = ["ARG002"]
 
 [tool.pyright]
 include = ["src", "tests"]
