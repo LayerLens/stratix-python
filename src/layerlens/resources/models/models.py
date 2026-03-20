@@ -5,6 +5,55 @@ from typing import Any, Dict, List, Literal, Optional
 import httpx
 
 from ...models import Model, CustomModel, PublicModel, ModelsResponse, CreateModelResponse
+
+
+def _exclude_custom_models(
+    models: List[Model],
+    *,
+    categories: Optional[List[str]] = None,
+    companies: Optional[List[str]] = None,
+    regions: Optional[List[str]] = None,
+    licenses: Optional[List[str]] = None,
+) -> List[Model]:
+    """Exclude custom models when filtering by fields they don't have.
+
+    The API correctly filters public models and custom models by name/key,
+    but custom models don't have categories/companies/regions/licenses fields,
+    so they must be excluded from results when those filters are active.
+    """
+    if categories:
+        cat_set = {c.lower() for c in categories}
+
+        def matches_category(m: Model) -> bool:
+            if not isinstance(m, PublicModel):
+                return False
+            arch = (m.architecture_type or "").lower()
+            for cat in cat_set:
+                if cat == "open-source" and m.open_weights:
+                    return True
+                if cat == "closed-source" and not m.open_weights and arch:
+                    return True
+                if arch and cat == arch:
+                    return True
+            return False
+
+        models = [m for m in models if matches_category(m)]
+
+    if companies:
+        comp_set = {c.lower() for c in companies}
+        models = [m for m in models if isinstance(m, PublicModel) and m.company and m.company.lower() in comp_set]
+
+    if regions:
+        reg_set = {r.lower() for r in regions}
+        models = [m for m in models if isinstance(m, PublicModel) and m.region and m.region.lower() in reg_set]
+
+    if licenses:
+        lic_set = {l.lower() for l in licenses}
+        models = [m for m in models if isinstance(m, PublicModel) and m.license and m.license.lower() in lic_set]
+
+    return models
+
+
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
 
@@ -66,8 +115,13 @@ class Models(SyncAPIResource):
             if resp:
                 models.extend([cast_model(m, type) for m in resp.data.models])
 
-        if name:
-            models = [m for m in models if name.lower() in m.name.lower()]
+        models = _exclude_custom_models(
+            models,
+            categories=categories,
+            companies=companies,
+            regions=regions,
+            licenses=licenses,
+        )
 
         return models
 
@@ -252,8 +306,13 @@ class AsyncModels(AsyncAPIResource):
             if resp:
                 models.extend([cast_model(m, type) for m in resp.data.models])
 
-        if name:
-            models = [m for m in models if name.lower() in m.name.lower()]
+        models = _exclude_custom_models(
+            models,
+            categories=categories,
+            companies=companies,
+            regions=regions,
+            licenses=licenses,
+        )
 
         return models
 

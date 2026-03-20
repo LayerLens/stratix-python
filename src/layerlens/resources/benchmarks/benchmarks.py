@@ -83,8 +83,22 @@ class Benchmarks(SyncAPIResource):
             if resp:
                 benchmarks.extend([cast_benchmark(b, type) for b in resp.data.benchmarks])
 
-        if name:
-            benchmarks = [b for b in benchmarks if name.lower() in b.name.lower()]
+        # Exclude custom benchmarks when filtering by fields they don't have
+        if categories:
+            cat_set = {c.lower() for c in categories}
+            benchmarks = [
+                b
+                for b in benchmarks
+                if isinstance(b, PublicBenchmark) and b.categories and any(c.lower() in cat_set for c in b.categories)
+            ]
+
+        if languages:
+            lang_set = {l.lower() for l in languages}
+            benchmarks = [
+                b
+                for b in benchmarks
+                if isinstance(b, PublicBenchmark) and b.language and b.language.lower() in lang_set
+            ]
 
         return benchmarks
 
@@ -356,8 +370,22 @@ class AsyncBenchmarks(AsyncAPIResource):
             if resp:
                 benchmarks.extend([cast_benchmark(b, type) for b in resp.data.benchmarks])
 
-        if name:
-            benchmarks = [b for b in benchmarks if name.lower() in b.name.lower()]
+        # Exclude custom benchmarks when filtering by fields they don't have
+        if categories:
+            cat_set = {c.lower() for c in categories}
+            benchmarks = [
+                b
+                for b in benchmarks
+                if isinstance(b, PublicBenchmark) and b.categories and any(c.lower() in cat_set for c in b.categories)
+            ]
+
+        if languages:
+            lang_set = {l.lower() for l in languages}
+            benchmarks = [
+                b
+                for b in benchmarks
+                if isinstance(b, PublicBenchmark) and b.language and b.language.lower() in lang_set
+            ]
 
         return benchmarks
 
