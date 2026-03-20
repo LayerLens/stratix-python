@@ -286,16 +286,17 @@ Retrieves evaluations with optional pagination, sorting, and filtering.
 
 #### Parameters
 
-| Parameter         | Type                             | Required | Description                                                        |
-| ----------------- | -------------------------------- | -------- | ------------------------------------------------------------------ |
-| `page`            | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)                |
-| `page_size`       | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500)            |
-| `sort_by`         | `str \| None`                    | No       | Sort by field: `submittedAt`, `accuracy`, or `averageDuration`     |
-| `order`           | `str \| None`                    | No       | Sort order: `asc` or `desc`                                       |
-| `model_ids`       | `List[str] \| None`              | No       | Filter by model IDs                                                |
-| `benchmark_ids`   | `List[str] \| None`              | No       | Filter by benchmark/dataset IDs                                    |
-| `status`          | `EvaluationStatus \| None`       | No       | Filter by evaluation status                                        |
-| `timeout`         | `float \| httpx.Timeout \| None` | No       | Override request timeout                                           |
+| Parameter         | Type                             | Required | Description                                                                        |
+| ----------------- | -------------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| `page`            | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)                                |
+| `page_size`       | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500)                            |
+| `sort_by`         | `str \| None`                    | No       | Sort by field: `submitted_at`, `accuracy`, or `average_duration`                   |
+| `order`           | `str \| None`                    | No       | Sort order: `asc` or `desc`                                                        |
+| `model_ids`       | `List[str] \| None`              | No       | Filter by model IDs                                                                |
+| `benchmark_ids`   | `List[str] \| None`              | No       | Filter by benchmark/dataset IDs                                                    |
+| `status`          | `EvaluationStatus \| None`       | No       | Filter by evaluation status                                                        |
+| `unique`          | `bool`                           | No       | If `True`, deduplicate by model+benchmark pair, keeping only the latest evaluation |
+| `timeout`         | `float \| httpx.Timeout \| None` | No       | Override request timeout                                                           |
 
 #### Returns
 

@@ -15,6 +15,7 @@
   * [Results](api-reference/results.md)
   * [Models & Benchmarks](api-reference/models-benchmarks.md)
   * [Judges](api-reference/judges.md)
+  * [Scorers](api-reference/scorers.md)
   * [Traces](api-reference/traces.md)
   * [Trace Evaluations](api-reference/trace-evaluations.md)
   * [Judge Optimizations](api-reference/judge-optimizations.md)

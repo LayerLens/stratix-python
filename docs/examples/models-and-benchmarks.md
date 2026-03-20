@@ -30,6 +30,20 @@ async def main():
     models = await client.models.get(regions=region_names)
     print(f"Found {len(models)} models with regions {region_names}")
 
+    # --- Filter by categories
+    categories = ["Open-Source"]
+    models = await client.models.get(categories=categories)
+    print(f"Found {len(models)} open-source models")
+
+    # --- Filter by key
+    models = await client.models.get(key="gpt-4")
+    print(f"Found {len(models)} models matching key 'gpt-4'")
+
+    # --- Filter by license
+    licenses = ["apache-2.0"]
+    models = await client.models.get(licenses=licenses)
+    print(f"Found {len(models)} models with license {licenses}")
+
     # --- Filter by type
     model_type = "public"
     models = await client.models.get(type=model_type)
@@ -57,6 +71,20 @@ async def main():
     benchmark_name = "mmlu"
     benchmarks = await client.benchmarks.get(name=benchmark_name)
     print(f"Found {len(benchmarks)} benchmarks with name {benchmark_name}")
+
+    # --- Filter by categories
+    categories = ["reasoning"]
+    benchmarks = await client.benchmarks.get(categories=categories)
+    print(f"Found {len(benchmarks)} benchmarks with categories {categories}")
+
+    # --- Filter by language
+    languages = ["english"]
+    benchmarks = await client.benchmarks.get(languages=languages)
+    print(f"Found {len(benchmarks)} english benchmarks")
+
+    # --- Filter by key
+    benchmarks = await client.benchmarks.get(key="mmlu")
+    print(f"Found {len(benchmarks)} benchmarks matching key 'mmlu'")
 
     # --- Filter by type
     benchmark_type = "public"
