@@ -53,6 +53,7 @@ dev-dependencies = [
   "ruff",
   "build",
   "twine==6.1.0",
+  "click>=8.0.0",
 ]
 
 [tool.rye.scripts]
@@ -145,6 +146,6 @@ reportMissingTypeStubs = false
 
 # Less strict settings for tests and cli
 executionEnvironments = [
-  { root = "src/layerlens/cli", reportMissingImports = false, reportFunctionMemberAccess = false, reportCallIssue = false, reportArgumentType = false },
+  { root = "src/layerlens/cli", reportMissingImports = false, reportFunctionMemberAccess = false, reportCallIssue = false, reportArgumentType = false, reportAttributeAccessIssue = false },
   { root = "tests", reportGeneralTypeIssues = false, reportOptionalSubscript = false, reportOptionalMemberAccess = false, reportUntypedFunctionDecorator = false, reportUnknownArgumentType = false, reportUnknownMemberType = false, reportUnknownVariableType = false, reportUnnecessaryIsInstance = false, reportUnnecessaryComparison = false, reportArgumentType = false, reportCallIssue = false },
 ]

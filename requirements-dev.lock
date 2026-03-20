@@ -21,10 +21,16 @@ certifi==2025.7.14
     # via httpcore
     # via httpx
     # via requests
+cffi==2.0.0
+    # via cryptography
 charset-normalizer==3.4.3
     # via requests
+click==8.1.8
+    # via layerlens
 coverage==7.10.2
     # via pytest-cov
+cryptography==46.0.5
+    # via secretstorage
 docutils==0.22
     # via readme-renderer
 exceptiongroup==1.3.0
@@ -35,7 +41,7 @@ h11==0.16.0
 httpcore==1.0.9
     # via httpx
 httpx==0.28.1
-    # via test-atlas-lzok
+    # via layerlens
 id==1.5.0
     # via twine
 idna==3.10
@@ -54,6 +60,9 @@ jaraco-context==6.0.1
     # via keyring
 jaraco-functools==4.2.1
     # via keyring
+jeepney==0.9.0
+    # via keyring
+    # via secretstorage
 keyring==25.6.0
     # via twine
 markdown-it-py==3.0.0
@@ -79,8 +88,10 @@ pathspec==0.12.1
 pluggy==1.6.0
     # via pytest
     # via pytest-cov
+pycparser==2.23
+    # via cffi
 pydantic==2.11.7
-    # via test-atlas-lzok
+    # via layerlens
 pydantic-core==2.33.2
     # via pydantic
 pygments==2.19.2
@@ -97,7 +108,6 @@ readme-renderer==44.0
     # via twine
 requests==2.32.5
     # via id
-    # via layerlens
     # via requests-toolbelt
     # via twine
 requests-toolbelt==1.0.0
@@ -107,6 +117,8 @@ rfc3986==2.0.0
 rich==14.1.0
     # via twine
 ruff==0.12.7
+secretstorage==3.3.3
+    # via keyring
 sniffio==1.3.1
     # via anyio
 tomli==2.2.1
@@ -115,9 +127,9 @@ tomli==2.2.1
     # via mypy
     # via pytest
 twine==6.1.0
-types-requests==2.32.4.20250809
 typing-extensions==4.14.1
     # via anyio
+    # via cryptography
     # via exceptiongroup
     # via mypy
     # via pydantic
@@ -129,6 +141,5 @@ typing-inspection==0.4.1
 urllib3==2.5.0
     # via requests
     # via twine
-    # via types-requests
 zipp==3.23.0
     # via importlib-metadata

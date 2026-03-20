@@ -23,7 +23,14 @@ def ci() -> None:
 
 
 @ci.command("report")
-@click.option("--output", "-o", "output_file", default=None, type=click.Path(), help="Output file path.")
+@click.option(
+    "--output",
+    "-o",
+    "output_file",
+    default=None,
+    type=click.Path(),
+    help="Output file path.",
+)
 @click.option("--limit", default=10, type=int, help="Number of recent evaluations to include.")
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without fetching data.")
 @click.pass_context
