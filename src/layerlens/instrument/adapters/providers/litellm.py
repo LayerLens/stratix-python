@@ -17,8 +17,8 @@ _CAPTURE_PARAMS = frozenset(
     }
 )
 
-_original_completion = None
-_original_acompletion = None
+_original_completion: Any = None
+_original_acompletion: Any = None
 
 
 def instrument_litellm() -> None:

@@ -9,7 +9,7 @@ try:
     from langchain_core.callbacks import BaseCallbackHandler  # pyright: ignore[reportAssignmentType]
 except ImportError:
 
-    class BaseCallbackHandler:  # type: ignore[no-redef,misc]
+    class BaseCallbackHandler:  # type: ignore[no-redef]
         def __init_subclass__(cls, **kwargs: Any) -> None:
             raise ImportError(
                 "The 'langchain-core' package is required for LangChain instrumentation. "
