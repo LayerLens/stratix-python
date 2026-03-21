@@ -17,9 +17,8 @@ anyio==4.9.0
 certifi==2025.7.14
     # via httpcore
     # via httpx
-    # via requests
-charset-normalizer==3.4.3
-    # via requests
+click==8.1.8
+    # via layerlens
 exceptiongroup==1.3.0
     # via anyio
 h11==0.16.0
@@ -27,17 +26,14 @@ h11==0.16.0
 httpcore==1.0.9
     # via httpx
 httpx==0.28.1
-    # via test-atlas-lzok
+    # via layerlens
 idna==3.10
     # via anyio
     # via httpx
-    # via requests
 pydantic==2.11.7
-    # via test-atlas-lzok
+    # via layerlens
 pydantic-core==2.33.2
     # via pydantic
-requests==2.32.5
-    # via atlas
 sniffio==1.3.1
     # via anyio
 typing-extensions==4.14.1
@@ -48,5 +44,3 @@ typing-extensions==4.14.1
     # via typing-inspection
 typing-inspection==0.4.1
     # via pydantic
-urllib3==2.5.0
-    # via requests

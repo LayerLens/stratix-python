@@ -21,8 +21,11 @@ if TYPE_CHECKING:
     from .resources.models import Models, AsyncModels
     from .resources.traces import Traces, AsyncTraces
     from .resources.results import Results, AsyncResults
+    from .resources.scorers import Scorers, AsyncScorers
     from .resources.benchmarks import Benchmarks, AsyncBenchmarks
     from .resources.evaluations import Evaluations, AsyncEvaluations
+    from .resources.integrations import Integrations, AsyncIntegrations
+    from .resources.evaluation_spaces import EvaluationSpaces, AsyncEvaluationSpaces
     from .resources.trace_evaluations import TraceEvaluations, AsyncTraceEvaluations
     from .resources.judge_optimizations import JudgeOptimizations, AsyncJudgeOptimizations
 
@@ -123,6 +126,24 @@ class Stratix(BaseClient):
         from .resources.trace_evaluations import TraceEvaluations
 
         return TraceEvaluations(self)
+
+    @cached_property
+    def integrations(self) -> Integrations:
+        from .resources.integrations import Integrations
+
+        return Integrations(self)
+
+    @cached_property
+    def scorers(self) -> Scorers:
+        from .resources.scorers import Scorers
+
+        return Scorers(self)
+
+    @cached_property
+    def evaluation_spaces(self) -> EvaluationSpaces:
+        from .resources.evaluation_spaces import EvaluationSpaces
+
+        return EvaluationSpaces(self)
 
     @cached_property
     def public(self) -> PublicClient:
@@ -292,6 +313,24 @@ class AsyncStratix(BaseAsyncClient):
         from .resources.trace_evaluations import AsyncTraceEvaluations
 
         return AsyncTraceEvaluations(self)
+
+    @cached_property
+    def integrations(self) -> AsyncIntegrations:
+        from .resources.integrations import AsyncIntegrations
+
+        return AsyncIntegrations(self)
+
+    @cached_property
+    def scorers(self) -> AsyncScorers:
+        from .resources.scorers import AsyncScorers
+
+        return AsyncScorers(self)
+
+    @cached_property
+    def evaluation_spaces(self) -> AsyncEvaluationSpaces:
+        from .resources.evaluation_spaces import AsyncEvaluationSpaces
+
+        return AsyncEvaluationSpaces(self)
 
     @cached_property
     def public(self) -> AsyncPublicClient:

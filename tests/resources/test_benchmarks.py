@@ -976,3 +976,179 @@ class TestBenchmarksUploadFile:
         assert body["filename"] == "data.jsonl"
         assert "type" in body
         assert "size" in body
+
+
+class TestBenchmarksClientSideFiltering:
+    """Test client-side filtering for benchmarks (fixes API not filtering custom objects)."""
+
+    @pytest.fixture
+    def mock_client(self):
+        client = Mock()
+        client.organization_id = "org-123"
+        client.project_id = "proj-456"
+        client.get_cast = Mock()
+        return client
+
+    @pytest.fixture
+    def benchmarks_resource(self, mock_client):
+        return Benchmarks(mock_client)
+
+    @pytest.fixture
+    def public_reasoning(self):
+        return PublicBenchmark(
+            id="pub-1",
+            key="mmlu",
+            name="MMLU",
+            language="english",
+            categories=["reasoning", "knowledge"],
+        )
+
+    @pytest.fixture
+    def public_coding(self):
+        return PublicBenchmark(
+            id="pub-2",
+            key="humaneval",
+            name="HumanEval",
+            language="english",
+            categories=["coding"],
+        )
+
+    @pytest.fixture
+    def public_french(self):
+        return PublicBenchmark(
+            id="pub-3",
+            key="french-bench",
+            name="French Bench",
+            language="french",
+            categories=["reasoning"],
+        )
+
+    @pytest.fixture
+    def custom_bench(self):
+        return CustomBenchmark(
+            id="custom-1",
+            key="my-bench",
+            name="My Custom Benchmark",
+        )
+
+    def _mock_responses(self, resource, custom_list, public_list):
+        """Helper to set up mock API responses returning custom and public benchmarks."""
+        custom_resp = BenchmarksResponse(data=BenchmarksResponse.Data(benchmarks=custom_list))
+        public_resp = BenchmarksResponse(data=BenchmarksResponse.Data(benchmarks=public_list))
+        resource._get.side_effect = lambda *_, **kwargs: (
+            custom_resp if kwargs.get("params", {}).get("type") == "custom" else public_resp
+        )
+
+    def test_filter_by_categories_excludes_custom(
+        self,
+        benchmarks_resource,
+        custom_bench,
+        public_reasoning,
+        public_coding,
+    ):
+        """Filtering by categories excludes custom benchmarks (they have no categories)."""
+        self._mock_responses(benchmarks_resource, [custom_bench], [public_reasoning, public_coding])
+
+        result = benchmarks_resource.get(categories=["reasoning"])
+
+        assert len(result) == 1
+        assert result[0].key == "mmlu"
+        assert isinstance(result[0], PublicBenchmark)
+
+    def test_filter_by_categories_no_match_returns_empty(
+        self,
+        benchmarks_resource,
+        custom_bench,
+        public_coding,
+    ):
+        """Filtering by a category that no benchmark matches returns empty list."""
+        self._mock_responses(benchmarks_resource, [custom_bench], [public_coding])
+
+        result = benchmarks_resource.get(categories=["math"])
+
+        assert result == []
+
+    def test_filter_by_languages_excludes_custom(
+        self,
+        benchmarks_resource,
+        custom_bench,
+        public_reasoning,
+        public_french,
+    ):
+        """Filtering by language excludes custom benchmarks (they have no language)."""
+        self._mock_responses(benchmarks_resource, [custom_bench], [public_reasoning, public_french])
+
+        result = benchmarks_resource.get(languages=["french"])
+
+        assert len(result) == 1
+        assert result[0].key == "french-bench"
+
+    def test_filter_by_languages_no_match_returns_empty(
+        self,
+        benchmarks_resource,
+        custom_bench,
+        public_reasoning,
+    ):
+        """Filtering by a language that no benchmark matches returns empty list."""
+        self._mock_responses(benchmarks_resource, [custom_bench], [public_reasoning])
+
+        result = benchmarks_resource.get(languages=["spanish"])
+
+        assert result == []
+
+    def test_filter_by_key_sends_param_to_api(
+        self,
+        benchmarks_resource,
+        public_reasoning,
+    ):
+        """Filtering by key sends the key param to the API."""
+        self._mock_responses(benchmarks_resource, [], [public_reasoning])
+
+        benchmarks_resource.get(key="mmlu")
+
+        # Verify key param was sent in API calls
+        for c in benchmarks_resource._get.call_args_list:
+            assert c.kwargs["params"]["key"] == "mmlu"
+
+    def test_combined_filters_categories_and_languages(
+        self,
+        benchmarks_resource,
+        custom_bench,
+        public_reasoning,
+        public_french,
+    ):
+        """Multiple filters are applied together (AND logic)."""
+        self._mock_responses(benchmarks_resource, [custom_bench], [public_reasoning, public_french])
+
+        result = benchmarks_resource.get(categories=["reasoning"], languages=["french"])
+
+        assert len(result) == 1
+        assert result[0].key == "french-bench"
+
+    def test_no_filters_returns_all(
+        self,
+        benchmarks_resource,
+        custom_bench,
+        public_reasoning,
+        public_coding,
+    ):
+        """When no filters are applied, all benchmarks are returned."""
+        self._mock_responses(benchmarks_resource, [custom_bench], [public_reasoning, public_coding])
+
+        result = benchmarks_resource.get()
+
+        assert len(result) == 3
+
+    def test_filter_case_insensitive(
+        self,
+        benchmarks_resource,
+        custom_bench,
+        public_reasoning,
+    ):
+        """Filters are case-insensitive."""
+        self._mock_responses(benchmarks_resource, [custom_bench], [public_reasoning])
+
+        result = benchmarks_resource.get(categories=["REASONING"])
+
+        assert len(result) == 1
+        assert result[0].key == "mmlu"

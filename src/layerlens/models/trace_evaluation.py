@@ -14,7 +14,7 @@ class TraceEvaluationStatus(str, Enum):
 
 
 class JudgeSnapshot(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, protected_namespaces=())
 
     name: str
     version: int
