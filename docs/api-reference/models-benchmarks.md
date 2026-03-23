@@ -35,20 +35,24 @@ benchmarks = client.benchmarks.get()
 
 ## Models
 
-### `get(type=None, name=None, companies=None, regions=None, licenses=None, timeout=None)`
+### `get(type=None, name=None, key=None, categories=None, companies=None, regions=None, licenses=None, timeout=None)`
 
 Retrieves a list of available models with optional filtering parameters. Both the `Stratix` and `AsyncStratix` clients have this method.
 
 #### Parameters
 
-| Parameter   | Type                                  | Required | Description                                                            |
-| ----------- | ------------------------------------- | -------- | ---------------------------------------------------------------------- |
-| `type`      | `Literal["custom", "public"] \| None` | No       | Filter by model type. If `None`, returns both custom and public models |
-| `name`      | `str \| None`                         | No       | Filter models by name (partial match search)                           |
-| `companies` | `List[str] \| None`                   | No       | Filter by model companies/providers                                    |
-| `regions`   | `List[str] \| None`                   | No       | Filter by supported regions                                            |
-| `licenses`  | `List[str] \| None`                   | No       | Filter by license types                                                |
-| `timeout`   | `float \| httpx.Timeout \| None`      | No       | Override request timeout                                               |
+| Parameter    | Type                                  | Required | Description                                                                                    |
+| ------------ | ------------------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `type`       | `Literal["custom", "public"] \| None` | No       | Filter by model type. If `None`, returns both custom and public models                         |
+| `name`       | `str \| None`                         | No       | Filter models by name (partial match search)                                                   |
+| `key`        | `str \| None`                         | No       | Filter models by key (partial match search)                                                    |
+| `categories` | `List[str] \| None`                   | No       | Filter by categories: `Transformer`, `MoE`, `Open-Source`, `Closed-Source`                     |
+| `companies`  | `List[str] \| None`                   | No       | Filter by model companies/providers                                                            |
+| `regions`    | `List[str] \| None`                   | No       | Filter by supported regions                                                                    |
+| `licenses`   | `List[str] \| None`                   | No       | Filter by license types                                                                        |
+| `timeout`    | `float \| httpx.Timeout \| None`      | No       | Override request timeout                                                                       |
+
+> **Note:** When filtering by `categories`, `companies`, `regions`, or `licenses`, only public models are returned since custom models do not have these fields.
 
 #### Returns
 
@@ -185,17 +189,22 @@ if result:
 
 ## Benchmarks
 
-### `get(type=None, name=None, timeout=None)`
+### `get(type=None, name=None, key=None, categories=None, languages=None, timeout=None)`
 
 Retrieves a list of available benchmarks with optional filtering parameters. Both the `Stratix` and `AsyncStratix` clients have this method.
 
 #### Parameters
 
-| Parameter | Type                                  | Required | Description                                                                    |
-| --------- | ------------------------------------- | -------- | ------------------------------------------------------------------------------ |
-| `type`    | `Literal["custom", "public"] \| None` | No       | Filter by benchmark type. If `None`, returns both custom and public benchmarks |
-| `name`    | `str \| None`                         | No       | Filter benchmarks by name (partial match search)                               |
-| `timeout` | `float \| httpx.Timeout \| None`      | No       | Override request timeout                                                       |
+| Parameter    | Type                                  | Required | Description                                                                    |
+| ------------ | ------------------------------------- | -------- | ------------------------------------------------------------------------------ |
+| `type`       | `Literal["custom", "public"] \| None` | No       | Filter by benchmark type. If `None`, returns both custom and public benchmarks |
+| `name`       | `str \| None`                         | No       | Filter benchmarks by name (partial match search)                               |
+| `key`        | `str \| None`                         | No       | Filter benchmarks by key (partial match search)                                |
+| `categories` | `List[str] \| None`                   | No       | Filter by categories (e.g., `reasoning`, `knowledge`, `coding`)                |
+| `languages`  | `List[str] \| None`                   | No       | Filter by language (e.g., `english`, `french`)                                 |
+| `timeout`    | `float \| httpx.Timeout \| None`      | No       | Override request timeout                                                       |
+
+> **Note:** When filtering by `categories` or `languages`, only public benchmarks are returned since custom benchmarks do not have these fields.
 
 #### Returns
 

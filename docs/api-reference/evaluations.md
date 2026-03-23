@@ -177,22 +177,23 @@ async def get_evaluation():
 asyncio.run(get_evaluation())
 ```
 
-### `get_many(page=None, page_size=None, sort_by=None, order=None, model_ids=None, benchmark_ids=None, status=None, timeout=None)`
+### `get_many(page=None, page_size=None, sort_by=None, order=None, model_ids=None, benchmark_ids=None, status=None, unique=False, timeout=None)`
 
 Retrieves multiple evaluations with optional pagination, sorting, and filtering.
 
 #### Parameters
 
-| Parameter       | Type                             | Required | Description                                             |
-| --------------- | -------------------------------- | -------- | ------------------------------------------------------- |
-| `page`          | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)     |
-| `page_size`     | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500) |
-| `sort_by`       | `str \| None`                    | No       | Sort by field: `submittedAt`, `accuracy`, or `averageDuration` |
-| `order`         | `str \| None`                    | No       | Sort order: `asc` or `desc`                             |
-| `model_ids`     | `List[str] \| None`              | No       | Filter by model IDs                                     |
-| `benchmark_ids` | `List[str] \| None`              | No       | Filter by benchmark/dataset IDs                         |
-| `status`        | `EvaluationStatus \| None`       | No       | Filter by evaluation status                             |
-| `timeout`       | `float \| httpx.Timeout \| None` | No       | Override request timeout                                |
+| Parameter       | Type                             | Required | Description                                                                         |
+| --------------- | -------------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `page`          | `int \| None`                    | No       | Page number for pagination (1-based, defaults to 1)                                 |
+| `page_size`     | `int \| None`                    | No       | Number of evaluations per page (default: 100, max: 500)                             |
+| `sort_by`       | `str \| None`                    | No       | Sort by field: `submitted_at`, `accuracy`, or `average_duration`                    |
+| `order`         | `str \| None`                    | No       | Sort order: `asc` or `desc`                                                         |
+| `model_ids`     | `List[str] \| None`              | No       | Filter by model IDs                                                                 |
+| `benchmark_ids` | `List[str] \| None`              | No       | Filter by benchmark/dataset IDs                                                     |
+| `status`        | `EvaluationStatus \| None`       | No       | Filter by evaluation status                                                         |
+| `unique`        | `bool`                           | No       | If `True`, deduplicate by model+benchmark pair, keeping only the latest evaluation  |
+| `timeout`       | `float \| httpx.Timeout \| None` | No       | Override request timeout                                                            |
 
 #### Returns
 
@@ -222,6 +223,13 @@ response = client.evaluations.get_many(
 if response:
     for evaluation in response.evaluations:
         print(f"{evaluation.id}: accuracy={evaluation.accuracy:.2f}%")
+
+# Get only the latest evaluation per model+benchmark pair
+response = client.evaluations.get_many(
+    unique=True,
+    sort_by="accuracy",
+    order="desc",
+)
 ```
 
 ### `get_results(page=None, page_size=None, timeout=None)`

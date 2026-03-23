@@ -1,6 +1,7 @@
 from .models import (
     Judge,
     Trace,
+    Integration,
     JudgeVersion,
     JudgeSnapshot,
     BenchmarkPrompt,
@@ -47,6 +48,7 @@ __all__ = [
     "Client",
     "ComparisonResult",
     "ComparisonResponse",
+    "Integration",
     "Judge",
     "JudgeOptimizationRun",
     "JudgeSnapshot",

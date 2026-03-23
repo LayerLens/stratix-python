@@ -248,15 +248,62 @@ Catch the most specific exception first. The hierarchy:
 
 Note: Only `StratixError`, `APIError`, `BadRequestError`, `AuthenticationError`, and `NotFoundError` are exported from the top-level package. For other exception types, import from `layerlens._exceptions`.
 
+## CLI
+
+The LayerLens CLI lets you manage traces, judges, evaluations, integrations, and more from the terminal.
+
+### Install
+
+```bash
+pip install layerlens[cli] --extra-index-url https://sdk.layerlens.ai/package
+```
+
+### Configure
+
+```bash
+export LAYERLENS_STRATIX_API_KEY="your-api-key"
+```
+
+### Usage
+
+```bash
+stratix --help                   # Show all commands
+stratix trace list               # List traces
+stratix evaluate run \
+  --model openai/gpt-4o \
+  --benchmark arc-agi-2 --wait     # Run an evaluation and wait for results
+stratix judge create \
+  --name "Quality" \
+  --goal "Rate response quality" \
+  --model-id <MODEL_ID>            # Create a judge
+stratix ci report -o summary.md  # Generate CI report
+```
+
+Shell completions are available for bash, zsh, fish, and powershell:
+
+```bash
+stratix completion bash          # Print setup instructions
+```
+
+Full CLI docs: [docs/cli/](docs/cli/)
+
+| Guide | Description |
+| --- | --- |
+| [Getting Started](docs/cli/getting-started.md) | Installation, configuration, first commands |
+| [Command Reference](docs/cli/commands.md) | All commands and options |
+| [Examples](docs/cli/examples.md) | 15 common workflows as copy-paste shell sessions |
+
 ## Requirements
 
 - Python 3.8+
 - Dependencies: `httpx`, `pydantic`, `requests`
+- CLI extra: `click>=8.0.0`
 
 ## Documentation
 
 Full API reference and examples are available in the [docs/](docs/) directory:
 
+- [CLI Guide](docs/cli/) (getting started, command reference, workflow examples)
 - [API Reference](docs/api-reference/) (client config, all resource methods, error handling)
 - [Code Examples](docs/examples/) (evaluations, judges, traces)
 - [Troubleshooting](docs/troubleshooting/) (auth issues, error codes)

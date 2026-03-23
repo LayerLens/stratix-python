@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field, BaseModel, ConfigDict
 
 from .judge import Judge
 from .model import Model
 from .trace import TraceWithEvaluations
+from .scorer import Scorer
 from .benchmark import Benchmark
 from .evaluation import Result, Evaluation
+from .integration import Integration
 from .organization import Organization
+from .evaluation_space import EvaluationSpace
 from .trace_evaluation import TraceEvaluation, TraceEvaluationResult
 from .judge_optimization import JudgeOptimizationRun
 
@@ -152,3 +155,26 @@ class ApplyJudgeOptimizationResultResponse(BaseModel):
     judge_id: str
     new_version: int
     message: str
+
+
+class IntegrationsResponse(BaseModel):
+    integrations: List[Integration]
+    count: int
+    total_count: int
+
+
+class TestIntegrationResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+
+
+class ScorersResponse(BaseModel):
+    scorers: List[Scorer]
+    count: int
+    total_count: int
+
+
+class EvaluationSpacesResponse(BaseModel):
+    evaluation_spaces: List[EvaluationSpace]
+    count: int
+    total_count: int

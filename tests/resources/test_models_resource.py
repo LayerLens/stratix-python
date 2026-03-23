@@ -843,3 +843,242 @@ class TestModelsCreateCustom:
         )
 
         assert result is None
+
+
+class TestModelsClientSideFiltering:
+    """Test client-side filtering for models (fixes API not filtering custom objects)."""
+
+    @pytest.fixture
+    def mock_client(self):
+        client = Mock()
+        client.organization_id = "org-123"
+        client.project_id = "proj-456"
+        client.get_cast = Mock()
+        return client
+
+    @pytest.fixture
+    def models_resource(self, mock_client):
+        return Models(mock_client)
+
+    @pytest.fixture
+    def public_openai(self):
+        return PublicModel(
+            id="pub-1",
+            key="gpt-4",
+            name="GPT-4",
+            description="OpenAI model",
+            company="OpenAI",
+            architecture_type="Transformer",
+            open_weights=False,
+            region="us-east-1",
+            license="proprietary",
+        )
+
+    @pytest.fixture
+    def public_meta(self):
+        return PublicModel(
+            id="pub-2",
+            key="llama-3",
+            name="Llama 3",
+            description="Meta model",
+            company="Meta",
+            architecture_type="Transformer",
+            open_weights=True,
+            region="us-west-2",
+            license="llama-community",
+        )
+
+    @pytest.fixture
+    def public_mistral(self):
+        return PublicModel(
+            id="pub-3",
+            key="mixtral",
+            name="Mixtral",
+            description="Mistral MoE",
+            company="Mistral",
+            architecture_type="MoE",
+            open_weights=True,
+            region="eu-west-1",
+            license="apache-2.0",
+        )
+
+    @pytest.fixture
+    def custom_model(self):
+        return CustomModel(
+            id="custom-1",
+            key="my-model",
+            name="My Custom Model",
+            description="Custom",
+            max_tokens=4096,
+        )
+
+    def _mock_responses(self, resource, custom_list, public_list):
+        """Helper to set up mock API responses."""
+        custom_resp = ModelsResponse(data=ModelsResponse.Data(models=custom_list))
+        public_resp = ModelsResponse(data=ModelsResponse.Data(models=public_list))
+        resource._get.side_effect = lambda *_, **kwargs: (
+            custom_resp if kwargs.get("params", {}).get("type") == "custom" else public_resp
+        )
+
+    def test_filter_by_companies_excludes_custom(
+        self,
+        models_resource,
+        custom_model,
+        public_openai,
+        public_meta,
+    ):
+        """Filtering by company excludes custom models (they have no company)."""
+        self._mock_responses(models_resource, [custom_model], [public_openai, public_meta])
+
+        result = models_resource.get(companies=["OpenAI"])
+
+        assert len(result) == 1
+        assert result[0].key == "gpt-4"
+
+    def test_filter_by_companies_no_match_returns_empty(
+        self,
+        models_resource,
+        custom_model,
+        public_openai,
+    ):
+        """Filtering by a company with no match returns empty list."""
+        self._mock_responses(models_resource, [custom_model], [public_openai])
+
+        result = models_resource.get(companies=["Google"])
+
+        assert result == []
+
+    def test_filter_by_regions_excludes_custom(
+        self,
+        models_resource,
+        custom_model,
+        public_openai,
+        public_mistral,
+    ):
+        """Filtering by region excludes custom models."""
+        self._mock_responses(models_resource, [custom_model], [public_openai, public_mistral])
+
+        result = models_resource.get(regions=["eu-west-1"])
+
+        assert len(result) == 1
+        assert result[0].key == "mixtral"
+
+    def test_filter_by_licenses_excludes_custom(
+        self,
+        models_resource,
+        custom_model,
+        public_meta,
+        public_mistral,
+    ):
+        """Filtering by license excludes custom models."""
+        self._mock_responses(models_resource, [custom_model], [public_meta, public_mistral])
+
+        result = models_resource.get(licenses=["apache-2.0"])
+
+        assert len(result) == 1
+        assert result[0].key == "mixtral"
+
+    def test_filter_by_categories_open_source(
+        self,
+        models_resource,
+        custom_model,
+        public_openai,
+        public_meta,
+    ):
+        """Filtering by 'Open-Source' category matches models with open_weights=True."""
+        self._mock_responses(models_resource, [custom_model], [public_openai, public_meta])
+
+        result = models_resource.get(categories=["Open-Source"])
+
+        assert len(result) == 1
+        assert result[0].key == "llama-3"
+
+    def test_filter_by_categories_closed_source(
+        self,
+        models_resource,
+        custom_model,
+        public_openai,
+        public_meta,
+    ):
+        """Filtering by 'Closed-Source' matches models with open_weights=False."""
+        self._mock_responses(models_resource, [custom_model], [public_openai, public_meta])
+
+        result = models_resource.get(categories=["Closed-Source"])
+
+        assert len(result) == 1
+        assert result[0].key == "gpt-4"
+
+    def test_filter_by_categories_architecture(
+        self,
+        models_resource,
+        custom_model,
+        public_openai,
+        public_mistral,
+    ):
+        """Filtering by architecture type category (MoE) works."""
+        self._mock_responses(models_resource, [custom_model], [public_openai, public_mistral])
+
+        result = models_resource.get(categories=["MoE"])
+
+        assert len(result) == 1
+        assert result[0].key == "mixtral"
+
+    def test_filter_by_key_sends_param_to_api(
+        self,
+        models_resource,
+        public_openai,
+    ):
+        """Filtering by key sends the key param to the API."""
+        self._mock_responses(models_resource, [], [public_openai])
+
+        models_resource.get(key="gpt")
+
+        for c in models_resource._get.call_args_list:
+            assert c.kwargs["params"]["key"] == "gpt"
+
+    def test_combined_filters(
+        self,
+        models_resource,
+        custom_model,
+        public_openai,
+        public_meta,
+        public_mistral,
+    ):
+        """Multiple filters work together (AND logic)."""
+        self._mock_responses(
+            models_resource,
+            [custom_model],
+            [public_openai, public_meta, public_mistral],
+        )
+
+        result = models_resource.get(categories=["Open-Source"], regions=["eu-west-1"])
+
+        assert len(result) == 1
+        assert result[0].key == "mixtral"
+
+    def test_no_filters_returns_all(
+        self,
+        models_resource,
+        custom_model,
+        public_openai,
+        public_meta,
+    ):
+        """When no filters are applied, all models are returned."""
+        self._mock_responses(models_resource, [custom_model], [public_openai, public_meta])
+
+        result = models_resource.get()
+
+        assert len(result) == 3
+
+    def test_filter_excludes_all_when_no_match(
+        self,
+        models_resource,
+        custom_model,
+        public_openai,
+    ):
+        """Filtering with no matches returns empty list, including no custom models."""
+        self._mock_responses(models_resource, [custom_model], [public_openai])
+
+        result = models_resource.get(regions=["ap-southeast-1"])
+
+        assert result == []
