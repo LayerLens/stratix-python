@@ -19,7 +19,14 @@
   * [Traces](api-reference/traces.md)
   * [Trace Evaluations](api-reference/trace-evaluations.md)
   * [Judge Optimizations](api-reference/judge-optimizations.md)
+  * [Instrumentation](api-reference/instrumentation.md)
   * [Error Handling](api-reference/errors.md)
+
+## Instrumentation
+* [Overview](instrumentation/README.md)
+  * [Quick Start](instrumentation/quickstart.md)
+  * [LLM Providers](instrumentation/providers.md)
+  * [Agent Frameworks](instrumentation/frameworks.md)
 
 ## CLI
 * [Getting Started](cli/getting-started.md)
