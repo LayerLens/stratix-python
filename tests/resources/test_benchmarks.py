@@ -5,9 +5,11 @@ import pytest
 
 from layerlens.models import (
     Benchmark,
+    BenchmarkPrompt,
     CustomBenchmark,
     PublicBenchmark,
     BenchmarksResponse,
+    BenchmarkPromptsData,
     CreateBenchmarkResponse,
 )
 from layerlens._constants import DEFAULT_TIMEOUT
@@ -1152,3 +1154,147 @@ class TestBenchmarksClientSideFiltering:
 
         assert len(result) == 1
         assert result[0].key == "mmlu"
+
+
+class TestBenchmarksGetPrompts:
+    """Test Benchmarks.get_prompts() and get_all_prompts() methods."""
+
+    @pytest.fixture
+    def mock_client(self):
+        client = Mock()
+        client.organization_id = "org-123"
+        client.project_id = "proj-456"
+        return client
+
+    @pytest.fixture
+    def benchmarks_resource(self, mock_client):
+        return Benchmarks(mock_client)
+
+    @pytest.fixture
+    def sample_prompts_response(self):
+        return {
+            "prompts": [
+                {"id": "p1", "input": [{"role": "user", "content": "What is 2+2?"}], "truth": "4"},
+                {"id": "p2", "input": "Translate hello", "truth": "Bonjour"},
+            ],
+            "count": 2,
+        }
+
+    def test_get_prompts_success(self, benchmarks_resource, sample_prompts_response):
+        """get_prompts() returns BenchmarkPromptsData from org-scoped endpoint."""
+        benchmarks_resource._get.return_value = sample_prompts_response
+
+        result = benchmarks_resource.get_prompts("bench-123")
+
+        assert isinstance(result, BenchmarkPromptsData)
+        assert len(result.prompts) == 2
+        assert result.count == 2
+        assert result.prompts[0].id == "p1"
+        assert result.prompts[1].truth == "Bonjour"
+
+    def test_get_prompts_uses_org_scoped_url(self, benchmarks_resource, sample_prompts_response):
+        """get_prompts() calls the org/project-scoped endpoint."""
+        benchmarks_resource._get.return_value = sample_prompts_response
+
+        benchmarks_resource.get_prompts("bench-123")
+
+        call_args = benchmarks_resource._get.call_args
+        assert call_args[0][0] == "/organizations/org-123/projects/proj-456/benchmarks/bench-123/prompts"
+
+    def test_get_prompts_passes_query_params(self, benchmarks_resource, sample_prompts_response):
+        """get_prompts() passes pagination and search params."""
+        benchmarks_resource._get.return_value = sample_prompts_response
+
+        benchmarks_resource.get_prompts(
+            "bench-123",
+            page=2,
+            page_size=50,
+            search_field="input",
+            search_value="hello",
+            sort_by="truth",
+            sort_order="desc",
+        )
+
+        call_kwargs = benchmarks_resource._get.call_args.kwargs
+        assert call_kwargs["params"] == {
+            "page": "2",
+            "page_size": "50",
+            "search": "input",
+            "search_value": "hello",
+            "sort_by": "truth",
+            "sort_order": "desc",
+        }
+
+    def test_get_prompts_returns_none_on_invalid_response(self, benchmarks_resource):
+        """get_prompts() returns None when response is not a dict."""
+        benchmarks_resource._get.return_value = "not-a-dict"
+
+        result = benchmarks_resource.get_prompts("bench-123")
+
+        assert result is None
+
+    def test_get_prompts_omits_unset_params(self, benchmarks_resource, sample_prompts_response):
+        """get_prompts() only sends params that are explicitly set."""
+        benchmarks_resource._get.return_value = sample_prompts_response
+
+        benchmarks_resource.get_prompts("bench-123", page=1)
+
+        call_kwargs = benchmarks_resource._get.call_args.kwargs
+        assert call_kwargs["params"] == {"page": "1"}
+
+    def test_get_all_prompts_single_page(self, benchmarks_resource):
+        """get_all_prompts() returns all prompts when they fit in one page."""
+        benchmarks_resource.get_prompts = Mock(
+            return_value=BenchmarkPromptsData(
+                prompts=[
+                    BenchmarkPrompt(id="p1", input="Q1", truth="A1"),
+                    BenchmarkPrompt(id="p2", input="Q2", truth="A2"),
+                ],
+                count=2,
+            )
+        )
+
+        result = benchmarks_resource.get_all_prompts("bench-123")
+
+        assert len(result) == 2
+        assert result[0].id == "p1"
+
+    def test_get_all_prompts_paginates(self, benchmarks_resource):
+        """get_all_prompts() fetches multiple pages until all prompts are collected."""
+        page1 = BenchmarkPromptsData(
+            prompts=[BenchmarkPrompt(id=f"p{i}", input=f"Q{i}", truth=f"A{i}") for i in range(100)],
+            count=150,
+        )
+        page2 = BenchmarkPromptsData(
+            prompts=[BenchmarkPrompt(id=f"p{i}", input=f"Q{i}", truth=f"A{i}") for i in range(100, 150)],
+            count=150,
+        )
+
+        benchmarks_resource.get_prompts = Mock(side_effect=[page1, page2])
+
+        result = benchmarks_resource.get_all_prompts("bench-123")
+
+        assert len(result) == 150
+        assert benchmarks_resource.get_prompts.call_count == 2
+
+    def test_get_all_prompts_empty(self, benchmarks_resource):
+        """get_all_prompts() returns empty list when no prompts exist."""
+        benchmarks_resource.get_prompts = Mock(return_value=None)
+
+        result = benchmarks_resource.get_all_prompts("bench-123")
+
+        assert result == []
+
+    def test_get_all_prompts_stops_on_empty_page(self, benchmarks_resource):
+        """get_all_prompts() stops when a page returns no prompts."""
+        page1 = BenchmarkPromptsData(
+            prompts=[BenchmarkPrompt(id="p1", input="Q", truth="A")],
+            count=1,
+        )
+
+        benchmarks_resource.get_prompts = Mock(return_value=page1)
+
+        result = benchmarks_resource.get_all_prompts("bench-123")
+
+        assert len(result) == 1
+        assert benchmarks_resource.get_prompts.call_count == 1

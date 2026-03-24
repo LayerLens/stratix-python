@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import math
 import mimetypes
 from typing import Any, Dict, List, Literal, Optional
 
@@ -8,13 +9,17 @@ import httpx
 
 from ...models import (
     Benchmark,
+    BenchmarkPrompt,
     CustomBenchmark,
     PublicBenchmark,
     BenchmarksResponse,
+    BenchmarkPromptsData,
     CreateBenchmarkResponse,
 )
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
+
+DEFAULT_PROMPTS_PAGE_SIZE = 100
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 
@@ -162,6 +167,99 @@ class Benchmarks(SyncAPIResource):
         remove_set = set(benchmark_ids)
         new_ids = [b.id for b in current if b.id not in remove_set]
         return self._patch_project_benchmarks(new_ids, timeout)
+
+    def get_prompts(
+        self,
+        benchmark_id: str,
+        *,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        search_field: Optional[Literal["id", "input", "truth"]] = None,
+        search_value: Optional[str] = None,
+        sort_by: Optional[Literal["id", "input", "truth"]] = None,
+        sort_order: Optional[Literal["asc", "desc"]] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[BenchmarkPromptsData]:
+        """Fetch a page of prompts for a benchmark.
+
+        Uses the org-scoped endpoint:
+        GET /organizations/{org}/projects/{proj}/benchmarks/{id}/prompts
+
+        Args:
+            benchmark_id: The benchmark / dataset ID.
+            page: Page number (1-based).
+            page_size: Number of prompts per page.
+            search_field: Field to search in.
+            search_value: Value to search for.
+            sort_by: Field to sort by.
+            sort_order: Sort direction.
+            timeout: Request timeout override.
+
+        Returns:
+            BenchmarkPromptsData with prompts list and count, or None on failure.
+        """
+        params: Dict[str, str] = {}
+        if page is not None:
+            params["page"] = str(page)
+        if page_size is not None:
+            params["page_size"] = str(page_size)
+        if search_field:
+            params["search"] = search_field
+        if search_value:
+            params["search_value"] = search_value
+        if sort_by:
+            params["sort_by"] = sort_by
+        if sort_order:
+            params["sort_order"] = sort_order
+
+        url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks/{benchmark_id}/prompts"
+        resp = self._get(
+            url,
+            params=params,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        # Unwrap {"status": ..., "data": {...}} envelope if present
+        if "data" in resp and "status" in resp:
+            resp = resp["data"]
+
+        return BenchmarkPromptsData.model_validate(resp)
+
+    def get_all_prompts(
+        self,
+        benchmark_id: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> List[BenchmarkPrompt]:
+        """Fetch all prompts for a benchmark, automatically paginating."""
+        all_prompts: List[BenchmarkPrompt] = []
+        page = 1
+        page_size = DEFAULT_PROMPTS_PAGE_SIZE
+
+        while True:
+            resp = self.get_prompts(
+                benchmark_id,
+                page=page,
+                page_size=page_size,
+                timeout=timeout,
+            )
+            if resp is None or not resp.prompts:
+                break
+
+            all_prompts.extend(resp.prompts)
+
+            total_count = resp.count
+            total_pages = math.ceil(total_count / page_size) if total_count > 0 else 0
+            if page >= total_pages:
+                break
+
+            page += 1
+
+        return all_prompts
 
     def _patch_project_benchmarks(
         self,
@@ -451,6 +549,82 @@ class AsyncBenchmarks(AsyncAPIResource):
         remove_set = set(benchmark_ids)
         new_ids = [b.id for b in current if b.id not in remove_set]
         return await self._patch_project_benchmarks(new_ids, timeout)
+
+    async def get_prompts(
+        self,
+        benchmark_id: str,
+        *,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+        search_field: Optional[Literal["id", "input", "truth"]] = None,
+        search_value: Optional[str] = None,
+        sort_by: Optional[Literal["id", "input", "truth"]] = None,
+        sort_order: Optional[Literal["asc", "desc"]] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> Optional[BenchmarkPromptsData]:
+        """Fetch a page of prompts for a benchmark."""
+        params: Dict[str, str] = {}
+        if page is not None:
+            params["page"] = str(page)
+        if page_size is not None:
+            params["page_size"] = str(page_size)
+        if search_field:
+            params["search"] = search_field
+        if search_value:
+            params["search_value"] = search_value
+        if sort_by:
+            params["sort_by"] = sort_by
+        if sort_order:
+            params["sort_order"] = sort_order
+
+        url = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/benchmarks/{benchmark_id}/prompts"
+        resp = await self._get(
+            url,
+            params=params,
+            timeout=timeout,
+            cast_to=dict,
+        )
+
+        if not isinstance(resp, dict):
+            return None
+
+        # Unwrap {"status": ..., "data": {...}} envelope if present
+        if "data" in resp and "status" in resp:
+            resp = resp["data"]
+
+        return BenchmarkPromptsData.model_validate(resp)
+
+    async def get_all_prompts(
+        self,
+        benchmark_id: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> List[BenchmarkPrompt]:
+        """Fetch all prompts for a benchmark, automatically paginating."""
+        all_prompts: List[BenchmarkPrompt] = []
+        page = 1
+        page_size = DEFAULT_PROMPTS_PAGE_SIZE
+
+        while True:
+            resp = await self.get_prompts(
+                benchmark_id,
+                page=page,
+                page_size=page_size,
+                timeout=timeout,
+            )
+            if resp is None or not resp.prompts:
+                break
+
+            all_prompts.extend(resp.prompts)
+
+            total_count = resp.count
+            total_pages = math.ceil(total_count / page_size) if total_count > 0 else 0
+            if page >= total_pages:
+                break
+
+            page += 1
+
+        return all_prompts
 
     async def _patch_project_benchmarks(
         self,
