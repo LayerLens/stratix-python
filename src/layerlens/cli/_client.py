@@ -13,11 +13,37 @@ from .._exceptions import StratixError, NotFoundError, AuthenticationError
 
 
 def get_client(ctx: click.Context) -> Stratix:
-    """Create a Stratix client from CLI context options."""
+    """Create a Stratix client from CLI context options.
+
+    Resolution order for the API key:
+    1. ``--api-key`` CLI option
+    2. ``LAYERLENS_STRATIX_API_KEY`` / ``LAYERLENS_ATLAS_API_KEY`` env vars (handled by Stratix)
+    3. ``LAYERLENS_API_KEY`` env var
+    4. Stored OAuth token from ``layerlens login``
+    """
+    import os
+
+    api_key = ctx.obj.get("api_key")
+    use_bearer_auth = False
+
+    # Fall back to LAYERLENS_API_KEY env var, then stored credentials
+    if (
+        not api_key
+        and not os.environ.get("LAYERLENS_STRATIX_API_KEY")
+        and not os.environ.get("LAYERLENS_ATLAS_API_KEY")
+    ):
+        from ._auth import get_valid_token
+
+        token = get_valid_token()
+        if token:
+            api_key = token
+            use_bearer_auth = True
+
     try:
         return Stratix(
-            api_key=ctx.obj.get("api_key"),
+            api_key=api_key,
             base_url=ctx.obj.get("base_url"),
+            use_bearer_auth=use_bearer_auth,
         )
     except StratixError as e:
         click.echo(f"Error: {e}", err=True)
