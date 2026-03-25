@@ -4,16 +4,23 @@ import os
 import json
 import logging
 import tempfile
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 log: logging.Logger = logging.getLogger(__name__)
 
 
-def upload_trace(client: Any, trace_data: Dict[str, Any]) -> None:
+def upload_trace(
+    client: Any,
+    trace_data: Dict[str, Any],
+    attestation: Optional[Dict[str, Any]] = None,
+) -> None:
+    payload = trace_data
+    if attestation:
+        payload = {**trace_data, "attestation": attestation}
     fd, path = tempfile.mkstemp(suffix=".json", prefix="layerlens_trace_")
     try:
         with os.fdopen(fd, "w") as f:
-            json.dump([trace_data], f, default=str)
+            json.dump([payload], f, default=str)
         client.traces.upload(path)
     finally:
         try:
@@ -22,11 +29,18 @@ def upload_trace(client: Any, trace_data: Dict[str, Any]) -> None:
             log.debug("Failed to remove temp trace file: %s", path)
 
 
-async def async_upload_trace(client: Any, trace_data: Dict[str, Any]) -> None:
+async def async_upload_trace(
+    client: Any,
+    trace_data: Dict[str, Any],
+    attestation: Optional[Dict[str, Any]] = None,
+) -> None:
+    payload = trace_data
+    if attestation:
+        payload = {**trace_data, "attestation": attestation}
     fd, path = tempfile.mkstemp(suffix=".json", prefix="layerlens_trace_")
     try:
         with os.fdopen(fd, "w") as f:
-            json.dump([trace_data], f, default=str)
+            json.dump([payload], f, default=str)
         await client.traces.upload(path)
     finally:
         try:
