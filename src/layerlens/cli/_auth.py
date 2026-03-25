@@ -84,17 +84,17 @@ def fetch_auth_config(base_url: Optional[str] = None) -> Dict[str, str]:
     # Also check if stored credentials already have the config cached
     creds = load_credentials()
     if creds and "auth_config" in creds:
-        config = creds["auth_config"]
-        _cached_auth_config = config
-        return config
+        cached: Dict[str, str] = creds["auth_config"]
+        _cached_auth_config = cached
+        return cached
 
     url = (base_url or _get_base_url()).rstrip("/") + AUTH_CLI_CONFIG_PATH
     resp = httpx.get(url, timeout=15)
     resp.raise_for_status()
-    config = resp.json()
+    fetched: Dict[str, str] = resp.json()
 
-    _cached_auth_config = config
-    return config
+    _cached_auth_config = fetched
+    return fetched
 
 
 def _cognito_base_url(config: Dict[str, str]) -> str:
@@ -112,8 +112,8 @@ def _token_url(config: Dict[str, str]) -> str:
 
 def is_token_expired(creds: Dict[str, Any]) -> bool:
     """Check whether the access token is expired or about to expire."""
-    expires_at = creds.get("expires_at", 0)
-    return time.time() >= (expires_at - TOKEN_REFRESH_MARGIN)
+    expires_at: float = creds.get("expires_at", 0)
+    return bool(time.time() >= (expires_at - TOKEN_REFRESH_MARGIN))
 
 
 def refresh_access_token(creds: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -247,7 +247,8 @@ def get_user_info(access_token: str) -> Optional[Dict[str, Any]]:
 
     # First try stored user info from login response
     if creds and creds.get("user"):
-        return creds["user"]
+        user_info: Dict[str, Any] = creds["user"]
+        return user_info
 
     # Fall back to Cognito userInfo endpoint
     auth_config = (creds or {}).get("auth_config")
@@ -265,6 +266,7 @@ def get_user_info(access_token: str) -> Optional[Dict[str, Any]]:
             timeout=15,
         )
         resp.raise_for_status()
-        return resp.json()
+        result: Dict[str, Any] = resp.json()
+        return result
     except httpx.HTTPError:
         return None
