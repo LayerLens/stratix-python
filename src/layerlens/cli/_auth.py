@@ -84,8 +84,9 @@ def fetch_auth_config(base_url: Optional[str] = None) -> Dict[str, str]:
     # Also check if stored credentials already have the config cached
     creds = load_credentials()
     if creds and "auth_config" in creds:
-        _cached_auth_config = creds["auth_config"]
-        return _cached_auth_config
+        config = creds["auth_config"]
+        _cached_auth_config = config
+        return config
 
     url = (base_url or _get_base_url()).rstrip("/") + AUTH_CLI_CONFIG_PATH
     resp = httpx.get(url, timeout=15)

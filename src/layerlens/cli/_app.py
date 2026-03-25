@@ -30,12 +30,8 @@ from .commands.integration import integration
     default="table",
     help="Output format.",
 )
-@click.option(
-    "--verbose", "-v", is_flag=True, default=False, help="Enable verbose/debug output."
-)
-@click.option(
-    "--quiet", "-q", is_flag=True, default=False, help="Suppress the startup banner."
-)
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Enable verbose/debug output.")
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Suppress the startup banner.")
 @click.version_option(version=__version__, prog_name="layerlens")
 @click.pass_context
 def cli(

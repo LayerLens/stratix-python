@@ -57,7 +57,6 @@ class MockHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path.endswith("/dgklmnr/auth/cli-login"):
-
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             if not body.get("email") or not body.get("password"):

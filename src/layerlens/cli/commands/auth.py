@@ -1,4 +1,5 @@
 """Authentication commands: login, logout, whoami."""
+
 from __future__ import annotations
 
 import sys
@@ -42,7 +43,7 @@ def login(ctx: click.Context) -> None:
 @click.command()
 def logout() -> None:
     """Clear stored authentication credentials."""
-    from .._auth import clear_credentials, load_credentials
+    from .._auth import load_credentials, clear_credentials
 
     if load_credentials() is None:
         click.echo("Not currently logged in.", err=True)
