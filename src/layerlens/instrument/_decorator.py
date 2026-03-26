@@ -6,7 +6,7 @@ from typing import Any, Dict, Tuple, Callable, Optional
 
 from ._types import SpanData
 from ._context import _current_span, _current_recorder
-from ._recorder import TraceRecorder
+from ._recorder import _SENTINEL, TraceRecorder
 
 
 def trace(
@@ -14,6 +14,7 @@ def trace(
     *,
     name: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    signing_service: Any = _SENTINEL,
 ) -> Callable[..., Any]:
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         span_name = name or fn.__name__
@@ -22,7 +23,7 @@ def trace(
 
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-                recorder = TraceRecorder(client)
+                recorder = TraceRecorder(client, signing_service=signing_service)
                 root = SpanData(
                     name=span_name,
                     kind="chain",
@@ -52,7 +53,7 @@ def trace(
 
             @functools.wraps(fn)
             def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-                recorder = TraceRecorder(client)
+                recorder = TraceRecorder(client, signing_service=signing_service)
                 root = SpanData(
                     name=span_name,
                     kind="chain",

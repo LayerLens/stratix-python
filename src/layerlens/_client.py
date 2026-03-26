@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from .resources.benchmarks import Benchmarks, AsyncBenchmarks
     from .resources.evaluations import Evaluations, AsyncEvaluations
     from .resources.integrations import Integrations, AsyncIntegrations
+    from .resources.signing_keys import SigningKeys, AsyncSigningKeys
     from .resources.evaluation_spaces import EvaluationSpaces, AsyncEvaluationSpaces
     from .resources.trace_evaluations import TraceEvaluations, AsyncTraceEvaluations
     from .resources.judge_optimizations import JudgeOptimizations, AsyncJudgeOptimizations
@@ -138,6 +139,12 @@ class Stratix(BaseClient):
         from .resources.scorers import Scorers
 
         return Scorers(self)
+
+    @cached_property
+    def signing_keys(self) -> SigningKeys:
+        from .resources.signing_keys import SigningKeys
+
+        return SigningKeys(self)
 
     @cached_property
     def evaluation_spaces(self) -> EvaluationSpaces:
@@ -325,6 +332,12 @@ class AsyncStratix(BaseAsyncClient):
         from .resources.scorers import AsyncScorers
 
         return AsyncScorers(self)
+
+    @cached_property
+    def signing_keys(self) -> AsyncSigningKeys:
+        from .resources.signing_keys import AsyncSigningKeys
+
+        return AsyncSigningKeys(self)
 
     @cached_property
     def evaluation_spaces(self) -> AsyncEvaluationSpaces:

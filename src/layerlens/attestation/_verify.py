@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from dataclasses import field, dataclass
 
 from ._hash import compute_hash
+from ._signing import hmac_verify
 from ._envelope import HashScope, AttestationEnvelope
 
 
@@ -14,6 +15,17 @@ class ChainVerification:
     valid: bool
     break_index: Optional[int] = None
     error: Optional[str] = None
+
+
+@dataclass
+class TrialVerification:
+    """Result of verifying a full trial: chain + root hash + signatures."""
+
+    valid: bool
+    chain_valid: bool = True
+    trial_hash_valid: bool = True
+    signatures_valid: bool = True
+    errors: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -58,31 +70,61 @@ def verify_chain(envelopes: List[AttestationEnvelope]) -> ChainVerification:
 def verify_trial(
     envelopes: List[AttestationEnvelope],
     trial_envelope: AttestationEnvelope,
-) -> ChainVerification:
+    signing_secret: Optional[bytes] = None,
+) -> TrialVerification:
     """Verify a trial envelope against its event chain.
 
-    Checks chain integrity, then verifies the trial hash is correctly
-    computed over all event hashes.
+    Checks chain integrity, trial hash correctness, and (optionally) signatures.
+    Pass ``signing_secret`` to verify HMAC-SHA256 signatures.
     """
+    errors: List[str] = []
+
+    # 1. Chain continuity
     chain_result = verify_chain(envelopes)
-    if not chain_result.valid:
-        return chain_result
+    chain_valid = chain_result.valid
+    if not chain_valid:
+        errors.append(f"Chain integrity failed: {chain_result.error}")
 
+    # 2. Trial scope + hash
+    trial_hash_valid = True
     if trial_envelope.scope != HashScope.TRIAL:
-        return ChainVerification(
-            valid=False,
-            error=f"Trial envelope has wrong scope: {trial_envelope.scope}",
-        )
+        trial_hash_valid = False
+        errors.append(f"Trial envelope has wrong scope: {trial_envelope.scope}")
+    else:
+        event_hashes = [e.hash for e in envelopes]
+        expected_hash = compute_hash({"event_hashes": event_hashes})
+        if trial_envelope.hash != expected_hash:
+            trial_hash_valid = False
+            errors.append("Trial hash does not match event hashes")
 
-    event_hashes = [e.hash for e in envelopes]
-    expected_hash = compute_hash({"event_hashes": event_hashes})
-    if trial_envelope.hash != expected_hash:
-        return ChainVerification(
-            valid=False,
-            error="Trial hash does not match event hashes",
-        )
+    # 3. Signatures (only if a signing secret is provided)
+    signatures_valid = True
+    if signing_secret is not None:
+        for i, envelope in enumerate(envelopes):
+            if not envelope.signature:
+                signatures_valid = False
+                errors.append(f"Missing signature on event {i}")
+            else:
+                if not hmac_verify(signing_secret, envelope.hash.encode("utf-8"), envelope.signature):
+                    signatures_valid = False
+                    errors.append(f"Invalid signature on event {i}")
 
-    return ChainVerification(valid=True)
+        if not trial_envelope.signature:
+            signatures_valid = False
+            errors.append("Missing signature on trial envelope")
+        else:
+            if not hmac_verify(signing_secret, trial_envelope.hash.encode("utf-8"), trial_envelope.signature):
+                signatures_valid = False
+                errors.append("Invalid signature on trial envelope")
+
+    valid = chain_valid and trial_hash_valid and signatures_valid
+    return TrialVerification(
+        valid=valid,
+        chain_valid=chain_valid,
+        trial_hash_valid=trial_hash_valid,
+        signatures_valid=signatures_valid,
+        errors=errors,
+    )
 
 
 def detect_tampering(

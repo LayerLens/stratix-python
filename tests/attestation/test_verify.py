@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from layerlens.attestation._chain import HashChain
-from layerlens.attestation._verify import (
+from layerlens.attestation import (
+    HashChain,
+    HashScope,
     verify_chain,
     verify_trial,
     detect_tampering,
 )
-from layerlens.attestation._envelope import HashScope
 
 
 class TestVerifyChain:
@@ -71,7 +71,8 @@ class TestVerifyTrial:
         trial.scope = HashScope.EVENT  # Wrong scope
         result = verify_trial(envelopes, trial)
         assert not result.valid
-        assert "scope" in (result.error or "")
+        assert not result.trial_hash_valid
+        assert any("scope" in e for e in result.errors)
 
     def test_tampered_trial_hash(self):
         chain = HashChain()
@@ -81,7 +82,8 @@ class TestVerifyTrial:
         trial.hash = "sha256:" + "0" * 64  # Wrong hash
         result = verify_trial(envelopes, trial)
         assert not result.valid
-        assert "does not match" in (result.error or "")
+        assert not result.trial_hash_valid
+        assert any("does not match" in e for e in result.errors)
 
 
 class TestDetectTampering:
@@ -125,3 +127,21 @@ class TestDetectTampering:
         result = detect_tampering(chain.envelopes, [{"name": "a"}])
         assert result.tampered
         assert result.chain_broken
+
+    def test_detect_tampering_with_signed_chain(self):
+        """detect_tampering works correctly on chains that were signed."""
+        data = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
+        chain = HashChain(signing_key_id="org-1", signing_secret=b"test-key")
+        for d in data:
+            chain.add_event(d)
+
+        # No tampering — should pass
+        result = detect_tampering(chain.envelopes, data)
+        assert not result.tampered
+        assert result.modified_indices == []
+
+        # Tamper with one event
+        tampered = [{"name": "a"}, {"name": "CHANGED"}, {"name": "c"}]
+        result = detect_tampering(chain.envelopes, tampered)
+        assert result.tampered
+        assert 1 in result.modified_indices

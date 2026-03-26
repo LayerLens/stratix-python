@@ -60,3 +60,12 @@ class TestComputeHash:
     def test_empty_dict(self):
         h = compute_hash({})
         assert re.match(r"^sha256:[0-9a-f]{64}$", h)
+
+    def test_cross_language_vector(self):
+        """Pinned vector shared with Go backend (TestComputeCanonicalHash_CrossLanguageVector).
+
+        If this test fails, Python and Go will produce different root hashes
+        for the same trace, breaking attestation verification.
+        """
+        h = compute_hash({"event_hashes": ["sha256:aaa", "sha256:bbb"]})
+        assert h == "sha256:b930d0a2cbda5171b8a12d17445c38b8c0842344f2d691a00d24b3359a854db5"
