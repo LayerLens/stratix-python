@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import copy
 from typing import Any, Dict, List, Optional
 
 from ._hash import compute_hash
@@ -25,7 +26,7 @@ class HashChain:
 
     @property
     def envelopes(self) -> List[AttestationEnvelope]:
-        return list(self._chain)
+        return [copy(e) for e in self._chain]
 
     @property
     def is_terminated(self) -> bool:

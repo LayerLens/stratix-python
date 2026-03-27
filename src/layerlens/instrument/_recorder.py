@@ -59,9 +59,9 @@ class TraceRecorder:
         trace_data = self.root.to_dict()
         try:
             attestation = self._build_attestation()
-        except Exception:
+        except Exception as exc:
             log.warning("Failed to build attestation chain", exc_info=True)
-            attestation = {}
+            attestation = {"attestation_error": str(exc)}
         upload_trace(self._client, trace_data, attestation)
 
     async def async_flush(self) -> None:
@@ -70,7 +70,7 @@ class TraceRecorder:
         trace_data = self.root.to_dict()
         try:
             attestation = self._build_attestation()
-        except Exception:
+        except Exception as exc:
             log.warning("Failed to build attestation chain", exc_info=True)
-            attestation = {}
+            attestation = {"attestation_error": str(exc)}
         await async_upload_trace(self._client, trace_data, attestation)
