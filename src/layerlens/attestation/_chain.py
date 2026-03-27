@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from ._hash import compute_hash
-from ._signing import hmac_sign
 from ._envelope import HashScope, AttestationEnvelope
 
 
@@ -14,23 +13,15 @@ class HashChain:
     a tamper-evident chain. If any event is modified after the fact,
     the chain breaks at that point.
 
-    If ``signing_secret`` is provided, each envelope's hash is
-    HMAC-SHA256 signed for authenticity on top of integrity.
+    Signing is handled server-side at trace ingestion. The SDK builds
+    the hash chain for integrity; the backend signs for authenticity.
     """
 
-    def __init__(
-        self,
-        signing_key_id: Optional[str] = None,
-        signing_secret: Optional[bytes] = None,
-    ) -> None:
-        if signing_secret is not None and not signing_key_id:
-            raise ValueError("signing_key_id is required when signing_secret is provided")
+    def __init__(self) -> None:
         self._chain: List[AttestationEnvelope] = []
         self._last_hash: Optional[str] = None
         self._terminated: bool = False
         self._terminate_reason: Optional[str] = None
-        self._signing_key_id = signing_key_id
-        self._signing_secret = signing_secret
 
     @property
     def envelopes(self) -> List[AttestationEnvelope]:
@@ -44,12 +35,6 @@ class HashChain:
         if self._terminated:
             raise RuntimeError(f"Hash chain terminated: {self._terminate_reason}. No further events can be added.")
 
-    def _sign_envelope(self, envelope: AttestationEnvelope) -> None:
-        """Sign an envelope's hash if a signing secret is configured."""
-        if self._signing_secret is not None:
-            envelope.signature = hmac_sign(self._signing_secret, envelope.hash.encode("utf-8"))
-            envelope.signing_key_id = self._signing_key_id
-
     def add_event(self, data: Dict[str, Any]) -> AttestationEnvelope:
         """Hash an event and append it to the chain."""
         self._check_active()
@@ -61,7 +46,6 @@ class HashChain:
             scope=HashScope.EVENT,
             previous_hash=self._last_hash,
         )
-        self._sign_envelope(envelope)
         self._chain.append(envelope)
         self._last_hash = event_hash
         return envelope
@@ -86,7 +70,6 @@ class HashChain:
             scope=HashScope.TRIAL,
             previous_hash=self._last_hash,
         )
-        self._sign_envelope(trial_envelope)
         # Seal — no more events after finalization
         self._terminated = True
         self._terminate_reason = "chain finalized"

@@ -128,10 +128,10 @@ class TestDetectTampering:
         assert result.tampered
         assert result.chain_broken
 
-    def test_detect_tampering_with_signed_chain(self):
-        """detect_tampering works correctly on chains that were signed."""
+    def test_detect_tampering_with_multi_event_chain(self):
+        """detect_tampering works correctly on multi-event chains."""
         data = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
-        chain = HashChain(signing_key_id="org-1", signing_secret=b"test-key")
+        chain = HashChain()
         for d in data:
             chain.add_event(d)
 

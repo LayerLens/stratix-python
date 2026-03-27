@@ -44,27 +44,7 @@ class TestHMACSigning:
         assert not hmac_verify(b"key-2", b"data", sig)
 
 
-class TestChainWithSigning:
-    def test_signed_envelopes(self):
-        chain = HashChain(signing_key_id="org-123", signing_secret=b"test-key")
-        e1 = chain.add_event({"name": "span-1"})
-        e2 = chain.add_event({"name": "span-2"})
-
-        assert e1.signature is not None
-        assert e1.signing_key_id == "org-123"
-        assert e2.signature is not None
-        assert e2.signing_key_id == "org-123"
-        # Different events get different signatures
-        assert e1.signature != e2.signature
-
-    def test_trial_signed(self):
-        chain = HashChain(signing_key_id="org-123", signing_secret=b"test-key")
-        chain.add_event({"name": "span-1"})
-        trial = chain.finalize()
-
-        assert trial.signature is not None
-        assert trial.signing_key_id == "org-123"
-
+class TestUnsignedChainHasNoSignatures:
     def test_unsigned_chain_has_no_signatures(self):
         chain = HashChain()
         e1 = chain.add_event({"name": "span-1"})
@@ -73,15 +53,6 @@ class TestChainWithSigning:
         assert e1.signature is None
         assert e1.signing_key_id is None
         assert trial.signature is None
-
-    def test_to_dict_includes_signature_fields(self):
-        chain = HashChain(signing_key_id="org-123", signing_secret=b"test-key")
-        chain.add_event({"name": "span-1"})
-        d = chain.to_dict()
-
-        event = d["events"][0]
-        assert "signature" in event
-        assert "signing_key_id" in event
 
     def test_to_dict_omits_signature_when_unsigned(self):
         chain = HashChain()
@@ -94,13 +65,33 @@ class TestChainWithSigning:
 
 
 class TestVerifyTrialWithSigning:
-    def test_valid_signed_trial(self):
-        secret = b"test-key"
-        chain = HashChain(signing_key_id="org-123", signing_secret=secret)
+    """Verify that verify_trial still works with externally-signed envelopes.
+
+    In the server-side signing model, the backend signs the chain after
+    ingestion. These tests simulate that by manually signing envelopes
+    and verifying them with verify_trial().
+    """
+
+    def _build_and_sign(self, secret: bytes, key_id: str = "org-123"):
+        """Build an unsigned chain, then manually sign each envelope."""
+        chain = HashChain()
         chain.add_event({"name": "a"})
         chain.add_event({"name": "b"})
         envelopes = chain.envelopes
         trial = chain.finalize()
+
+        # Simulate server-side signing
+        for env in envelopes:
+            env.signature = hmac_sign(secret, env.hash.encode("utf-8"))
+            env.signing_key_id = key_id
+        trial.signature = hmac_sign(secret, trial.hash.encode("utf-8"))
+        trial.signing_key_id = key_id
+
+        return envelopes, trial
+
+    def test_valid_signed_trial(self):
+        secret = b"test-key"
+        envelopes, trial = self._build_and_sign(secret)
 
         result = verify_trial(envelopes, trial, signing_secret=secret)
         assert result.valid
@@ -111,10 +102,7 @@ class TestVerifyTrialWithSigning:
 
     def test_tampered_signature_detected(self):
         secret = b"test-key"
-        chain = HashChain(signing_key_id="org-123", signing_secret=secret)
-        chain.add_event({"name": "a"})
-        envelopes = chain.envelopes
-        trial = chain.finalize()
+        envelopes, trial = self._build_and_sign(secret)
 
         # Tamper with the event signature
         envelopes[0].signature = "dGFtcGVyZWQ="  # base64("tampered")
@@ -122,14 +110,11 @@ class TestVerifyTrialWithSigning:
         result = verify_trial(envelopes, trial, signing_secret=secret)
         assert not result.valid
         assert not result.signatures_valid
-        assert result.chain_valid  # chain structure is still fine
-        assert result.trial_hash_valid  # trial hash is still fine
+        assert result.chain_valid
+        assert result.trial_hash_valid
 
     def test_wrong_key_rejects(self):
-        chain = HashChain(signing_key_id="org-123", signing_secret=b"key-1")
-        chain.add_event({"name": "a"})
-        envelopes = chain.envelopes
-        trial = chain.finalize()
+        envelopes, trial = self._build_and_sign(b"key-1")
 
         result = verify_trial(envelopes, trial, signing_secret=b"key-2")
         assert not result.valid
@@ -149,10 +134,7 @@ class TestVerifyTrialWithSigning:
     def test_stripped_signatures_detected(self):
         """When signing_secret is provided, missing signatures should fail."""
         secret = b"test-key"
-        chain = HashChain(signing_key_id="org-123", signing_secret=secret)
-        chain.add_event({"name": "a"})
-        envelopes = chain.envelopes
-        trial = chain.finalize()
+        envelopes, trial = self._build_and_sign(secret)
 
         # Strip signatures
         envelopes[0].signature = None
@@ -163,24 +145,20 @@ class TestVerifyTrialWithSigning:
         assert not result.signatures_valid
         assert any("Missing signature" in e for e in result.errors)
 
-    def test_backward_compat_old_verify_trial(self):
-        """Old-style verify_trial (no signing_secret) still returns valid for valid chains."""
-        chain = HashChain()
-        chain.add_event({"name": "a"})
-        chain.add_event({"name": "b"})
-        envelopes = chain.envelopes
-        trial = chain.finalize()
-
-        result = verify_trial(envelopes, trial)
-        assert result.valid
-
     def test_single_event_signed_chain(self):
         """Signed chain with exactly one event works correctly."""
         secret = b"test-key"
-        chain = HashChain(signing_key_id="org-1", signing_secret=secret)
+        chain = HashChain()
         chain.add_event({"name": "only"})
         envelopes = chain.envelopes
         trial = chain.finalize()
+
+        # Manually sign
+        for env in envelopes:
+            env.signature = hmac_sign(secret, env.hash.encode("utf-8"))
+            env.signing_key_id = "org-1"
+        trial.signature = hmac_sign(secret, trial.hash.encode("utf-8"))
+        trial.signing_key_id = "org-1"
 
         assert len(envelopes) == 1
         assert envelopes[0].signature is not None
