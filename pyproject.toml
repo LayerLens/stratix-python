@@ -137,6 +137,7 @@ known-first-party = ["openai", "tests"]
 "scripts/**.py" = ["T201", "T203"]
 "tests/**.py" = ["T201", "T203"]
 "examples/**.py" = ["T201", "T203"]
+"samples/**.py" = ["T201", "T203"]
 "src/layerlens/cli/**" = ["T201", "T203"]
 
 [tool.pyright]

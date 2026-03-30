@@ -4,6 +4,11 @@ from unittest import mock
 import pytest
 
 
+def pytest_configure(config):
+    """Register custom markers."""
+    config.addinivalue_line("markers", "live: run against the real LayerLens API")
+
+
 @pytest.fixture
 def env_vars():
     """Clean environment variables for testing."""

@@ -1,0 +1,3 @@
+{"input": "What is the capital of France?", "output": "The capital of France is Paris.", "model": "gpt-4", "latency_ms": 450, "tokens": 28}
+{"input": "Explain quantum computing in simple terms.", "output": "Quantum computing uses quantum bits (qubits) that can exist in multiple states simultaneously, unlike classical bits which are either 0 or 1. This allows quantum computers to process many possibilities at once, making them potentially much faster for certain types of problems like cryptography and drug discovery.", "model": "gpt-4", "latency_ms": 1200, "tokens": 65}
+{"input": "Write a Python function to reverse a string.", "output": "def reverse_string(s):\n    return s[::-1]", "model": "gpt-4", "latency_ms": 320, "tokens": 22}
