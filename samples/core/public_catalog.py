@@ -130,6 +130,26 @@ def main() -> None:
                 print(f"  - Input: {input_preview}...")
                 print(f"    Truth: {truth_preview}")
 
+        # --- Additional: get_prompts with search_field, search_value, sort_by, sort_order ---
+        try:
+            search_results = client.benchmarks.get_prompts(
+                benchmark.id,
+                search_field="truth",
+                search_value="the",
+                sort_by="id",
+                sort_order="asc",
+                page_size=3,
+            )
+            if search_results:
+                data = getattr(search_results, "data", search_results)
+                count = getattr(data, "count", len(getattr(data, "prompts", [])))
+                print(f"\nSearch results (truth contains 'the'): {count} matches")
+                for p in getattr(data, "prompts", [])[:3]:
+                    truth_preview = (p.truth[:60] if p.truth else "N/A")
+                    print(f"  [{p.id}] truth: {truth_preview}")
+        except Exception as exc:
+            print(f"\nget_prompts search/sort not available: {exc}")
+
         # Fetch all prompts (auto-paginates)
         print(f"\nFetching ALL prompts for '{benchmark.name}'...")
         all_prompts = client.benchmarks.get_all_prompts(benchmark.id)
@@ -179,6 +199,20 @@ def main() -> None:
                 print(f"  Goal: {evaluation.summary.goal}")
                 if evaluation.summary.metrics:
                     print(f"  Metrics: {', '.join(m.name for m in evaluation.summary.metrics)}")
+
+                # --- Additional: performance_details.strengths ---
+                perf = getattr(evaluation.summary, "performance_details", None)
+                if perf:
+                    strengths = getattr(perf, "strengths", None)
+                    if strengths:
+                        print(f"  Strengths: {strengths}")
+
+                # --- Additional: analysis_summary.key_takeaways ---
+                analysis = getattr(evaluation.summary, "analysis_summary", None)
+                if analysis:
+                    takeaways = getattr(analysis, "key_takeaways", None)
+                    if takeaways:
+                        print(f"  Key takeaways: {takeaways}")
 
     print("\nDone.")
 

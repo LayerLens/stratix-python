@@ -32,6 +32,7 @@ Expected output: a trace ID, judge ID, and evaluation summary printed to the con
 | `run_evaluation.py` | QA leads running scheduled quality checks | Execute a full evaluation lifecycle: configure judges, submit traces, and collect scored results. |
 | `create_judge.py` | Platform teams defining quality standards | CRUD operations for judge resources -- create, read, update, and delete evaluation judges. |
 | `trace_evaluation.py` | Developers validating prompt changes | Evaluate traced LLM interactions against one or more judges to detect regressions. |
+| `benchmark_evaluation.py` | ML teams comparing model performance | Run a model against a benchmark, wait for completion, retrieve and analyze scored results. |
 | `judge_optimization.py` | ML engineers tuning evaluation criteria | Programmatically refine judge configurations to improve scoring precision and recall. |
 | `compare_evaluations.py` | Teams comparing prompt or model variants | Compare scored results across multiple evaluation runs to identify the best-performing configuration. |
 | `async_workflow.py` | High-throughput pipelines | Asynchronous SDK usage for non-blocking trace uploads and evaluation submissions. |

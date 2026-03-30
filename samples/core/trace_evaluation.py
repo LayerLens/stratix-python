@@ -174,13 +174,42 @@ def main() -> None:
         else:
             logger.info("No results yet (evaluation may still be processing)")
 
-        # --- Step 6: List trace evaluations ---
-        logger.info("Step 6: List trace evaluations")
+        # --- Step 6: Get results with steps iteration ---
+        logger.info("Step 6: Get results with step-level detail")
+        try:
+            result = client.trace_evaluations.get_results(trace_eval.id)
+            if result:
+                logger.info("  Score: %s  Passed: %s", result.score, result.passed)
+                logger.info("  Reasoning: %s", (result.reasoning or "")[:80])
+                if result.steps:
+                    for step in result.steps:
+                        logger.info("    Tool: %s, Result: %s",
+                                    step.tool, (step.result or "")[:80])
+                else:
+                    logger.info("  No steps in result")
+            else:
+                logger.info("  No results returned")
+        except Exception:
+            logger.info("  No results yet (evaluation may still be in progress)")
+
+        # --- Step 7: List trace evaluations (filtered by judge) ---
+        logger.info("Step 7: List trace evaluations (filtered by judge)")
         evals_resp = client.trace_evaluations.get_many(judge_id=judge.id)
         if evals_resp:
-            logger.info("Found %d trace evaluation(s)", evals_resp.count)
+            logger.info("Found %d trace evaluation(s) for this judge", evals_resp.count)
         else:
-            logger.info("No trace evaluations found")
+            logger.info("No trace evaluations found for this judge")
+
+        # --- Additional: get_many() without judge_id filter ---
+        logger.info("Step 7b: List ALL trace evaluations (no judge filter)")
+        try:
+            all_evals_resp = client.trace_evaluations.get_many()
+            if all_evals_resp:
+                logger.info("Found %d total trace evaluation(s)", all_evals_resp.total)
+            else:
+                logger.info("No trace evaluations found")
+        except Exception as exc:
+            logger.info("get_many() without filter not available: %s", exc)
 
     finally:
         # --- Cleanup ---

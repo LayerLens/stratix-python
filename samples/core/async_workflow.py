@@ -133,6 +133,33 @@ async def main() -> None:
     else:
         logger.warning("Evaluation did not succeed: %s", evaluation.status)
 
+    # --- Additional: Instance-method alternatives ---
+    # The evaluation object itself has async convenience methods that mirror
+    # the client-level calls above.  These are an alternative approach.
+    logger.info("=" * 60)
+    logger.info("Step 5: Instance-method async alternatives")
+    logger.info("=" * 60)
+
+    try:
+        # wait_for_completion_async() on the evaluation instance
+        evaluation2 = await client.evaluations.create(model=model, benchmark=benchmark)
+        if evaluation2:
+            logger.info("Created second evaluation: %s", evaluation2.id)
+            evaluation2 = await evaluation2.wait_for_completion_async()
+            logger.info("Instance wait complete: status=%s", evaluation2.status)
+
+            # get_results_async() on the evaluation instance
+            if evaluation2.is_success:
+                results = await evaluation2.get_results_async()
+                if results and results.results:
+                    logger.info("Instance get_results: %d result(s)", len(results.results))
+                else:
+                    logger.info("Instance get_results: no results")
+    except AttributeError:
+        logger.info("Instance-level async methods not available on this SDK version")
+    except Exception as exc:
+        logger.info("Instance async methods failed: %s", exc)
+
     # --- Cleanup ---
     await client.aclose()
     logger.info("Sample complete.")

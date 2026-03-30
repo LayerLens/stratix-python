@@ -70,6 +70,7 @@ Master the building blocks of trace management, judge creation, evaluation execu
 | `create_judge.py` | Define, read, update, and delete judges to codify your quality criteria |
 | `judge_creation_and_test.py` | Build a custom PII detection judge and validate it against known inputs |
 | `trace_evaluation.py` | Connect a trace to a judge and run a complete evaluation workflow |
+| `benchmark_evaluation.py` | Run a model against a benchmark, wait for completion, retrieve scored results |
 | `trace_investigation.py` | Surface errors, latency outliers, and anomalies in trace data |
 | `evaluation_pipeline.py` | Chain judges, traces, and result retrieval into a single automated pipeline |
 | `judge_optimization.py` | Estimate, execute, and apply judge optimizations to improve scoring accuracy |

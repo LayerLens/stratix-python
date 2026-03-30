@@ -385,3 +385,11 @@ except layerlens.NotFoundError:
 except layerlens.APIError as e:
     print(f"API error: {e}")
 ```
+
+## Related Samples
+
+- [`samples/core/benchmark_evaluation.py`](../../samples/core/benchmark_evaluation.py) -- Full model+benchmark evaluation workflow with result pagination
+- [`samples/core/run_evaluation.py`](../../samples/core/run_evaluation.py) -- Evaluation lifecycle management
+- [`samples/core/trace_evaluation.py`](../../samples/core/trace_evaluation.py) -- Trace-level evaluation with judges
+- [`samples/core/async_results.py`](../../samples/core/async_results.py) -- Concurrent async evaluation and result fetching
+- [`samples/core/compare_evaluations.py`](../../samples/core/compare_evaluations.py) -- Side-by-side evaluation comparison

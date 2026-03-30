@@ -136,6 +136,80 @@ def main() -> None:
     except Exception as exc:
         logger.info("Public catalog not available: %s", exc)
 
+    # --- Additional: Add/remove models from the project ---
+    logger.info("=" * 60)
+    logger.info("Add/Remove Models")
+    logger.info("=" * 60)
+
+    try:
+        # Add a public model to the project by ID
+        success = client.models.add("model-id")
+        logger.info("Add model: %s", "success" if success else "failed")
+
+        # Remove a model from the project by ID
+        success = client.models.remove("model-id")
+        logger.info("Remove model: %s", "success" if success else "failed")
+    except Exception as exc:
+        logger.info("models.add/remove not available: %s", exc)
+
+    # --- Additional: Add/remove benchmarks from the project ---
+    logger.info("=" * 60)
+    logger.info("Add/Remove Benchmarks")
+    logger.info("=" * 60)
+
+    try:
+        # Add a public benchmark to the project by ID
+        success = client.benchmarks.add("benchmark-id")
+        logger.info("Add benchmark: %s", "success" if success else "failed")
+
+        # Remove a benchmark from the project by ID
+        success = client.benchmarks.remove("benchmark-id")
+        logger.info("Remove benchmark: %s", "success" if success else "failed")
+    except Exception as exc:
+        logger.info("benchmarks.add/remove not available: %s", exc)
+
+    # --- Additional: Filter models by company and region ---
+    logger.info("=" * 60)
+    logger.info("Model Filters: companies and regions")
+    logger.info("=" * 60)
+
+    try:
+        # Filter models by company names
+        filtered_models = client.models.get(companies=["openai", "anthropic"])
+        if filtered_models:
+            logger.info("Models from openai/anthropic: %d", len(filtered_models))
+        else:
+            logger.info("No models found for those companies")
+    except Exception as exc:
+        logger.info("models.get(companies=) not available: %s", exc)
+
+    try:
+        # Filter models by region
+        regional_models = client.models.get(regions=["usa"])
+        if regional_models:
+            logger.info("Models in region 'usa': %d", len(regional_models))
+        else:
+            logger.info("No models found for that region")
+    except Exception as exc:
+        logger.info("models.get(regions=) not available: %s", exc)
+
+    # --- Additional: Filter benchmarks by name ---
+    logger.info("=" * 60)
+    logger.info("Benchmark Filter: by name")
+    logger.info("=" * 60)
+
+    try:
+        # Filter benchmarks by name
+        mmlu = client.benchmarks.get(name="mmlu")
+        if mmlu:
+            logger.info("Found %d benchmark(s) matching 'mmlu'", len(mmlu))
+            for b in mmlu:
+                logger.info("  - %s (id=%s)", b.name, b.id)
+        else:
+            logger.info("No benchmarks matching 'mmlu'")
+    except Exception as exc:
+        logger.info("benchmarks.get(name=) not available: %s", exc)
+
     logger.info("Sample complete.")
 
 

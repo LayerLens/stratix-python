@@ -38,6 +38,7 @@ import os
 import sys
 import time
 
+import layerlens
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -136,10 +137,19 @@ def main() -> None:
     logger.info("Step 2: Create optimization run")
     logger.info("=" * 60)
 
-    run = client.judge_optimizations.create(
-        judge_id=judge_id,
-        budget=args.budget,
-    )
+    # --- Additional: BadRequestError catch for insufficient annotations ---
+    # Optimization requires at least 10 annotations (trace evaluation results).
+    # If the judge doesn't have enough, the API returns a 400 error.
+    try:
+        run = client.judge_optimizations.create(
+            judge_id=judge_id,
+            budget=args.budget,
+        )
+    except layerlens.BadRequestError as e:
+        logger.error("Cannot start optimization (insufficient annotations?): %s", e)
+        logger.info("Tip: Run trace evaluations with this judge first to build up annotations.")
+        sys.exit(1)
+
     if not run:
         logger.error("Failed to create optimization run")
         sys.exit(1)
@@ -165,7 +175,18 @@ def main() -> None:
         status = getattr(run_status, "status", "unknown")
         logger.info("  Run %s: status=%s (attempt %d/%d)", run.id, status, attempt, max_attempts)
 
-        if status in ("completed", "failed", "cancelled"):
+        if status in ("completed", "failed", "cancelled", "success", "failure"):
+            # --- Additional: Access optimization accuracy & goal details ---
+            try:
+                logger.info("  Baseline accuracy: %s", run_status.baseline_accuracy)
+                logger.info("  Optimized accuracy: %s", run_status.optimized_accuracy)
+                if run_status.original_goal:
+                    logger.info("  Original goal: %s", (run_status.original_goal or "")[:80])
+                if run_status.optimized_goal:
+                    logger.info("  Optimized goal: %s", (run_status.optimized_goal or "")[:80])
+                logger.info("  Actual cost: $%.4f", run_status.actual_cost)
+            except AttributeError:
+                logger.info("  (Detailed accuracy/goal fields not available on this response)")
             break
 
         time.sleep(poll_delay)
@@ -195,6 +216,13 @@ def main() -> None:
         applied = client.judge_optimizations.apply(run.id)
         if applied:
             logger.info("Optimization results applied: %s", applied)
+            # --- Additional: Access apply result fields ---
+            try:
+                logger.info("  Judge ID: %s", applied.judge_id)
+                logger.info("  New version: v%s", applied.new_version)
+                logger.info("  Message: %s", applied.message)
+            except AttributeError:
+                logger.info("  (Detailed apply fields not available on this response)")
         else:
             logger.warning("Failed to apply optimization results")
     else:

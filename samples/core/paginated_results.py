@@ -121,6 +121,25 @@ def main() -> None:
             print(f"     Prompt: {result.prompt[:100]}...")
             print(f"     Response: {result.result[:100]}...")
 
+    # ── Alternative: get_by_id (using evaluation_id instead of object) ─
+    print("\n" + "=" * 60)
+    print("ALTERNATIVE: results.get_by_id(evaluation_id=...)")
+    print("=" * 60)
+
+    try:
+        results_data = client.results.get_by_id(
+            evaluation_id=evaluation.id,
+            page=1,
+            page_size=10,
+        )
+        if results_data and results_data.results:
+            print(f"get_by_id returned {len(results_data.results)} results "
+                  f"(total: {results_data.pagination.total_count})")
+        else:
+            print("get_by_id returned no results")
+    except Exception as exc:
+        print(f"results.get_by_id() not available: {exc}")
+
     # ── Approach 2: Automatic get_all ─────────────────────────────────
     print("\n" + "=" * 60)
     print("AUTOMATIC PAGINATION (get_all)")

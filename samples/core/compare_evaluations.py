@@ -129,6 +129,53 @@ def main() -> None:
     else:
         logger.warning("Comparison returned no results (evaluations may use different benchmarks)")
 
+    # --- Additional: compare_models() ---
+    logger.info("=" * 60)
+    logger.info("Step 3: Compare two models on the same benchmark")
+    logger.info("=" * 60)
+
+    try:
+        # compare_models() finds the most recent successful evaluation for each
+        # model on the given benchmark automatically.
+        # Use real IDs from your project; placeholders shown here.
+        benchmark_id = "your-benchmark-id"
+        model_id_1 = "your-model-id-1"
+        model_id_2 = "your-model-id-2"
+
+        comparison = client.public.comparisons.compare_models(
+            benchmark_id=benchmark_id,
+            model_id_1=model_id_1,
+            model_id_2=model_id_2,
+        )
+        if comparison:
+            logger.info("Model 1: %d/%d correct",
+                        comparison.correct_count_1, comparison.total_results_1)
+            logger.info("Model 2: %d/%d correct",
+                        comparison.correct_count_2, comparison.total_results_2)
+            logger.info("Total compared: %s", comparison.total_count)
+    except Exception as exc:
+        logger.info("compare_models() not available or IDs invalid: %s", exc)
+
+    # --- Additional: outcome_filter parameter ---
+    logger.info("=" * 60)
+    logger.info("Step 4: Compare with outcome_filter")
+    logger.info("=" * 60)
+
+    try:
+        # outcome_filter narrows results to specific comparison outcomes, e.g.
+        # "reference_fails" shows prompts where model 1 fails but model 2 succeeds.
+        comparison = client.public.comparisons.compare_models(
+            benchmark_id=benchmark_id,
+            model_id_1=model_id_1,
+            model_id_2=model_id_2,
+            outcome_filter="reference_fails",
+        )
+        if comparison:
+            logger.info("Cases where model 1 fails but model 2 succeeds: %s",
+                        comparison.total_count)
+    except Exception as exc:
+        logger.info("outcome_filter not available: %s", exc)
+
     logger.info("Sample complete.")
 
 
