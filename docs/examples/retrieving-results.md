@@ -4,7 +4,7 @@ Examples for fetching evaluation results using the LayerLens Python SDK, includi
 
 ## Paginated Results
 
-> Source: [`examples/paginated_results.py`](../../examples/paginated_results.py)
+> Source: [`samples/core/paginated_results.py`](../../samples/core/paginated_results.py)
 
 Walk through results page by page with full control over page size.
 
@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
 ## All Results Without Pagination
 
-> Source: [`examples/all_results_no_pagination.py`](../../examples/all_results_no_pagination.py)
+> Source: [`samples/core/paginated_results.py`](../../samples/core/paginated_results.py)
 
 Use `get_all()` to fetch every result in a single call. Simpler but loads everything into memory.
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
 ## Fetch Results for Multiple Evaluations Concurrently
 
-> Source: [`examples/fetch_results_async.py`](../../examples/fetch_results_async.py)
+> Source: [`samples/core/async_results.py`](../../samples/core/async_results.py)
 
 Use `asyncio.gather` to load results for several evaluations in parallel.
 

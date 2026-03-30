@@ -8,7 +8,7 @@ Examples for creating evaluations on the Stratix platform using the LayerLens Py
 
 ### Using Synchronous Client
 
-> Source: [`examples/client.py`](../../examples/client.py)
+> Source: [`samples/core/benchmark_evaluation.py`](../../samples/core/benchmark_evaluation.py)
 
 ```python
 from layerlens import Stratix
@@ -49,7 +49,7 @@ else:
 
 ### Minimal Sync Example
 
-> Source: [`examples/client_simple.py`](../../examples/client_simple.py)
+> Source: [`samples/core/benchmark_evaluation.py`](../../samples/core/benchmark_evaluation.py)
 
 ```python
 from layerlens import Stratix
@@ -70,7 +70,7 @@ evaluation = client.evaluations.create(
 
 ### Using Async Client
 
-> Source: [`examples/async_client_simple.py`](../../examples/async_client_simple.py)
+> Source: [`samples/core/async_workflow.py`](../../samples/core/async_workflow.py)
 
 ```python
 import asyncio
@@ -106,7 +106,7 @@ if __name__ == "__main__":
 
 ## Sorting and Filtering Evaluations
 
-> Source: [`examples/evaluation_sorting.py`](../../examples/evaluation_sorting.py)
+> Source: [`samples/core/evaluation_filtering.py`](../../samples/core/evaluation_filtering.py)
 
 ```python
 import asyncio
@@ -163,7 +163,7 @@ if __name__ == "__main__":
 
 ## Comparing Evaluations
 
-> Source: [`examples/compare_evaluations.py`](../../examples/compare_evaluations.py)
+> Source: [`samples/core/compare_evaluations.py`](../../samples/core/compare_evaluations.py)
 
 ```python
 from layerlens import PublicClient
@@ -200,7 +200,7 @@ comparison = client.comparisons.compare(
 
 ## Running Multiple Evaluations in Parallel
 
-> Source: [`examples/async_run_evaluations.py`](../../examples/async_run_evaluations.py)
+> Source: [`samples/core/async_results.py`](../../samples/core/async_results.py)
 
 ```python
 import asyncio
@@ -253,7 +253,7 @@ if __name__ == "__main__":
 
 ### Paginated Results
 
-> Source: [`examples/paginated_results.py`](../../examples/paginated_results.py)
+> Source: [`samples/core/paginated_results.py`](../../samples/core/paginated_results.py)
 
 ```python
 import asyncio
@@ -298,7 +298,7 @@ if __name__ == "__main__":
 
 ### All Results Without Pagination
 
-> Source: [`examples/all_results_no_pagination.py`](../../examples/all_results_no_pagination.py)
+> Source: [`samples/core/paginated_results.py`](../../samples/core/paginated_results.py)
 
 ```python
 import asyncio
@@ -326,7 +326,7 @@ if __name__ == "__main__":
 
 ### Fetch Results for Multiple Evaluations Concurrently
 
-> Source: [`examples/fetch_results_async.py`](../../examples/fetch_results_async.py)
+> Source: [`samples/core/async_results.py`](../../samples/core/async_results.py)
 
 ```python
 import asyncio
