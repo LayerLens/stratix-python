@@ -1,10 +1,10 @@
-"""End-to-end tests for ALL 54 SDK sample demos.
+"""End-to-end tests for ALL 58 SDK sample demos.
 
 Tests every sample in six modes:
-1. TestAllSamplesWithMockedSDK -- mocked Stratix client (all 54)
-2. TestAllSamplesLiveAPI -- real API via subprocess (all 54, @pytest.mark.live)
+1. TestAllSamplesWithMockedSDK -- mocked Stratix client (all 58)
+2. TestAllSamplesLiveAPI -- real API via subprocess (all 58, @pytest.mark.live)
 3. TestOpenClawOfflineMode -- --no-sdk flag (11 OpenClaw demos)
-4. TestWithoutAPIKey -- graceful failure without credentials (all 54)
+4. TestWithoutAPIKey -- graceful failure without credentials (all 58)
 5. TestMissingDependencies -- optional-dep fallback (integration, openclaw, copilotkit)
 6. TestSampleCompleteness -- verify test lists match disk
 """
@@ -28,18 +28,20 @@ import pytest
 SAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 
-# ---- Sample file lists (all 54) ----
+# ---- Sample file lists (all 58) ----
 
 CORE_SAMPLES = [
     "async_results",
     "async_workflow",
     "basic_trace",
+    "benchmark_evaluation",
     "compare_evaluations",
     "create_judge",
     "custom_benchmark",
     "custom_model",
     "evaluation_filtering",
     "evaluation_pipeline",
+    "integration_management",
     "judge_creation_and_test",
     "judge_optimization",
     "model_benchmark_management",
@@ -80,6 +82,8 @@ MODALITY_SAMPLES = [
 
 INTEGRATION_SAMPLES = [
     "anthropic_traced",
+    "langchain_instrumented",
+    "openai_instrumented",
     "openai_traced",
 ]
 
@@ -161,6 +165,10 @@ ALL_SAMPLE_PATHS = (
 
 # Async core samples that need AsyncStratix mocking
 _ASYNC_CORE_SAMPLES = {"async_results", "async_workflow"}
+
+# Samples that require external provider SDKs (openai, langchain, etc.)
+# with no simulated fallback -- cannot run in fully mocked mode.
+_EXTERNAL_SDK_SAMPLES = {"langchain_instrumented", "openai_instrumented"}
 
 # Samples that need special argv or patches
 _SPECIAL_ARGV: dict[tuple[str, str], list[str]] = {
@@ -256,6 +264,12 @@ def mock_stratix():
     te_eval_obj.id = "te-test-001"
     te_eval_obj.status = MagicMock(value="completed")
     client.trace_evaluations.get.return_value = te_eval_obj
+
+    te_list_resp = MagicMock()
+    te_list_resp.count = 1
+    te_list_resp.total = 1
+    te_list_resp.evaluations = [trace_eval]
+    client.trace_evaluations.get_many.return_value = te_list_resp
 
     # --- trace evaluation results ---
     te_result = MagicMock()
@@ -445,6 +459,25 @@ def mock_stratix():
         optimization_runs=[opt_run]
     )
     client.judge_optimizations.apply.return_value = MagicMock()
+
+    # --- integrations ---
+    integration_obj = MagicMock()
+    integration_obj.id = "int-001"
+    integration_obj.name = "Test Integration"
+    integration_obj.type = "webhook"
+    integration_obj.status = "active"
+    integration_obj.created_at = "2026-01-01"
+    integration_obj.config = {"url": "https://example.com/webhook"}
+    integrations_resp = MagicMock()
+    integrations_resp.integrations = [integration_obj]
+    integrations_resp.count = 1
+    integrations_resp.total_count = 1
+    client.integrations.get_many.return_value = integrations_resp
+    client.integrations.get.return_value = integration_obj
+    test_result = MagicMock()
+    test_result.success = True
+    test_result.message = "Connection successful"
+    client.integrations.test.return_value = test_result
 
     return client
 
@@ -825,6 +858,7 @@ _LOGGER_ONLY_SAMPLES = {
     "create_judge",
     "judge_creation_and_test",
     "judge_optimization",
+    "benchmark_evaluation",
     "model_benchmark_management",
     "trace_evaluation",
     # pre_commit_hook exits early (no staged files) with logger-only output
@@ -1003,21 +1037,228 @@ def _verify_sample_behavior(
         assert mock_client.judges.create.called, (
             "trace_evaluation never created a judge"
         )
+        assert mock_client.models.get.called, (
+            "trace_evaluation never fetched models"
+        )
+        assert mock_client.trace_evaluations.estimate_cost.called, (
+            "trace_evaluation never estimated cost"
+        )
         assert mock_client.trace_evaluations.create.called, (
             "trace_evaluation never created a trace evaluation"
         )
+        assert mock_client.trace_evaluations.get_many.called, (
+            "trace_evaluation never listed trace evaluations"
+        )
+        assert mock_client.judges.delete.called, (
+            "trace_evaluation never cleaned up judge"
+        )
+        assert mock_client.traces.delete.called, (
+            "trace_evaluation never cleaned up traces"
+        )
 
     if name == "evaluation_pipeline":
+        assert mock_client.judges.get_many.called, (
+            "evaluation_pipeline never listed judges"
+        )
+        assert mock_client.traces.get_many.called, (
+            "evaluation_pipeline never listed traces"
+        )
         assert mock_client.trace_evaluations.create.called, (
             "evaluation_pipeline never created a trace evaluation"
         )
 
     if name == "judge_creation_and_test":
-        assert mock_client.judges.create.called or mock_client.judges.get.called, (
-            "judge_creation_and_test never interacted with judges"
+        assert mock_client.judges.create.called, (
+            "judge_creation_and_test never created a judge"
+        )
+        assert mock_client.judges.get.called, (
+            "judge_creation_and_test never verified judge"
+        )
+        assert mock_client.traces.get_many.called, (
+            "judge_creation_and_test never listed traces"
         )
         assert mock_client.trace_evaluations.create.called, (
             "judge_creation_and_test never created a trace evaluation"
+        )
+
+    if name == "benchmark_evaluation":
+        assert mock_client.models.get.called, (
+            "benchmark_evaluation never fetched models"
+        )
+        assert mock_client.benchmarks.get.called, (
+            "benchmark_evaluation never fetched benchmarks"
+        )
+        assert mock_client.evaluations.create.called, (
+            "benchmark_evaluation never created an evaluation"
+        )
+        assert mock_client.evaluations.wait_for_completion.called, (
+            "benchmark_evaluation never waited for completion"
+        )
+        assert mock_client.results.get.called, (
+            "benchmark_evaluation never fetched results page"
+        )
+        assert mock_client.results.get_all.called, (
+            "benchmark_evaluation never fetched all results"
+        )
+
+    if name == "integration_management":
+        assert mock_client.integrations.get_many.called, (
+            "integration_management never listed integrations"
+        )
+        assert mock_client.integrations.get.called, (
+            "integration_management never fetched a single integration"
+        )
+        assert mock_client.integrations.test.called, (
+            "integration_management never tested an integration"
+        )
+
+    # -- Cowork sample-specific assertions --
+    if name == "code_review":
+        assert mock_client.judges.create.called, (
+            "code_review never created judges"
+        )
+        assert mock_client.traces.upload.called, (
+            "code_review never uploaded traces"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "code_review never created trace evaluations"
+        )
+        assert mock_client.judges.delete.called, (
+            "code_review never cleaned up judges"
+        )
+
+    if name == "pair_programming":
+        assert mock_client.judges.create.called, (
+            "pair_programming never created a judge"
+        )
+        assert mock_client.traces.upload.called, (
+            "pair_programming never uploaded traces"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "pair_programming never created trace evaluations"
+        )
+        assert mock_client.judges.update.called, (
+            "pair_programming never refined the judge"
+        )
+        assert mock_client.judges.get.called, (
+            "pair_programming never fetched final judge details"
+        )
+        assert mock_client.judges.delete.called, (
+            "pair_programming never cleaned up judge"
+        )
+
+    if name == "rag_assessment":
+        assert mock_client.judges.create.called, (
+            "rag_assessment never created judges"
+        )
+        assert mock_client.traces.upload.called, (
+            "rag_assessment never uploaded traces"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "rag_assessment never created trace evaluations"
+        )
+        assert mock_client.judges.delete.called, (
+            "rag_assessment never cleaned up judges"
+        )
+
+    if name == "multi_agent_eval":
+        assert mock_client.judges.create.called, (
+            "multi_agent_eval never created judges"
+        )
+        assert mock_client.traces.upload.called, (
+            "multi_agent_eval never uploaded traces"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "multi_agent_eval never created trace evaluations"
+        )
+        assert mock_client.judges.delete.called, (
+            "multi_agent_eval never cleaned up judges"
+        )
+
+    if name == "incident_response":
+        assert mock_client.judges.create.called, (
+            "incident_response never created judges"
+        )
+        assert mock_client.traces.get_many.called, (
+            "incident_response never fetched recent traces"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "incident_response never created trace evaluations"
+        )
+        assert mock_client.judges.delete.called, (
+            "incident_response never cleaned up judges"
+        )
+
+    # -- Modalities sample-specific assertions --
+    if name == "text_evaluation":
+        assert mock_client.judges.create.called, (
+            "text_evaluation never created judges"
+        )
+        assert mock_client.traces.upload.called, (
+            "text_evaluation never uploaded traces"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "text_evaluation never created trace evaluations"
+        )
+        assert mock_client.judges.delete.called, (
+            "text_evaluation never cleaned up judges"
+        )
+
+    if name == "brand_evaluation":
+        assert mock_client.judges.create.called, (
+            "brand_evaluation never created judges"
+        )
+        assert mock_client.traces.upload.called, (
+            "brand_evaluation never uploaded traces"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "brand_evaluation never created trace evaluations"
+        )
+        assert mock_client.judges.delete.called, (
+            "brand_evaluation never cleaned up judges"
+        )
+
+    if name == "document_evaluation":
+        assert mock_client.judges.create.called, (
+            "document_evaluation never created judges"
+        )
+        assert mock_client.traces.upload.called, (
+            "document_evaluation never uploaded traces"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "document_evaluation never created trace evaluations"
+        )
+        assert mock_client.judges.delete.called, (
+            "document_evaluation never cleaned up judges"
+        )
+
+    # -- Integrations sample-specific assertions --
+    if name == "openai_traced":
+        assert mock_client.judges.get_many.called, (
+            "openai_traced never checked existing judges"
+        )
+        assert mock_client.judges.create.called, (
+            "openai_traced never created judges"
+        )
+        assert mock_client.traces.upload.called, (
+            "openai_traced never uploaded a trace"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "openai_traced never created trace evaluations"
+        )
+
+    if name == "anthropic_traced":
+        assert mock_client.judges.get_many.called, (
+            "anthropic_traced never checked existing judges"
+        )
+        assert mock_client.judges.create.called, (
+            "anthropic_traced never created judges"
+        )
+        assert mock_client.traces.upload.called, (
+            "anthropic_traced never uploaded a trace"
+        )
+        assert mock_client.trace_evaluations.create.called, (
+            "anthropic_traced never created trace evaluations"
         )
 
     # -- OpenClaw direct demos --
@@ -1082,7 +1323,7 @@ def _verify_async_sample_behavior(
 
 
 class TestAllSamplesWithMockedSDK:
-    """Test every single sample (all 54) with a fully mocked Stratix client."""
+    """Test every single sample (all 58) with a fully mocked Stratix client."""
 
     # Samples importable directly (no relative imports / blocking stdin)
     _DIRECT_IMPORT_SAMPLES = [
@@ -1090,6 +1331,7 @@ class TestAllSamplesWithMockedSDK:
         for cat, name in ALL_MOCKED_SAMPLES
         if cat not in ("mcp", "copilotkit/agents")
         and name not in _ASYNC_CORE_SAMPLES
+        and name not in _EXTERNAL_SDK_SAMPLES
         # OpenClaw runner demos use relative imports -- tested via subprocess below
         and not (cat == "openclaw" and name in set(OPENCLAW_RUNNER_DEMOS))
     ]
@@ -1495,7 +1737,7 @@ class TestOpenClawOfflineMode:
 
 
 # ===========================================================================
-# Test Class 4: Without API Key (all 54)
+# Test Class 4: Without API Key (all 58)
 # ===========================================================================
 
 
@@ -1890,9 +2132,9 @@ class TestSampleCompleteness:
         assert os.path.isfile(script), f"Missing: {script}"
 
     def test_all_54_samples_covered(self):
-        """Verify ALL_SAMPLE_PATHS contains exactly 54 entries."""
-        assert len(ALL_SAMPLE_PATHS) == 54, (
-            f"Expected 54 samples, got {len(ALL_SAMPLE_PATHS)}.\n"
+        """Verify ALL_SAMPLE_PATHS contains exactly 58 entries."""
+        assert len(ALL_SAMPLE_PATHS) == 58, (
+            f"Expected 58 samples, got {len(ALL_SAMPLE_PATHS)}.\n"
             f"Paths: {ALL_SAMPLE_PATHS}"
         )
 
@@ -1906,8 +2148,8 @@ class TestSampleCompleteness:
         assert not missing, f"Sample files not found: {missing}"
 
     def test_mocked_samples_cover_all(self):
-        """ALL_MOCKED_SAMPLES should produce exactly 54 entries."""
-        assert len(ALL_MOCKED_SAMPLES) == 54, (
-            f"Expected 54 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\n"
+        """ALL_MOCKED_SAMPLES should produce exactly 58 entries."""
+        assert len(ALL_MOCKED_SAMPLES) == 58, (
+            f"Expected 58 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\n"
             f"Entries: {ALL_MOCKED_SAMPLES}"
         )
