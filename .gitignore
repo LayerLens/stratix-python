@@ -20,3 +20,4 @@ Brewfile.lock.json
 
 .DS_Store
 .coveragedocs/review/
+marc-only/
