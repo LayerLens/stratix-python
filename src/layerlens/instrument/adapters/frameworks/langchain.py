@@ -18,6 +18,8 @@ except ImportError:
 
 
 class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
+    _adapter_name: str = "langchain"
+
     def __init__(self, client: Any) -> None:
         BaseCallbackHandler.__init__(self)
         FrameworkTracer.__init__(self, client)

@@ -7,6 +7,8 @@ from .langchain import LangChainCallbackHandler
 
 
 class LangGraphCallbackHandler(LangChainCallbackHandler):
+    _adapter_name: str = "langgraph"
+
     def on_chain_start(
         self,
         serialized: Optional[Dict[str, Any]],
