@@ -43,7 +43,7 @@ class TestOpenAIProvider:
         openai_client.chat.completions.create = Mock(return_value=_openai_response())
 
         provider = OpenAIProvider()
-        provider.connect_client(openai_client)
+        provider.connect(openai_client)
 
         @trace(mock_client)
         def my_agent():
@@ -68,7 +68,7 @@ class TestOpenAIProvider:
         openai_client.chat.completions.create = Mock(return_value=_openai_response())
 
         provider = OpenAIProvider()
-        provider.connect_client(openai_client)
+        provider.connect(openai_client)
 
         result = openai_client.chat.completions.create(model="gpt-4", messages=[])
         assert result.choices[0].message.content == "Hello!"
@@ -80,7 +80,7 @@ class TestOpenAIProvider:
         original = openai_client.chat.completions.create
 
         provider = OpenAIProvider()
-        provider.connect_client(openai_client)
+        provider.connect(openai_client)
         assert openai_client.chat.completions.create is not original
 
         provider.disconnect()
@@ -104,7 +104,7 @@ class TestAnthropicProvider:
         anthropic_client.messages.create = Mock(return_value=_anthropic_response())
 
         provider = AnthropicProvider()
-        provider.connect_client(anthropic_client)
+        provider.connect(anthropic_client)
 
         @trace(mock_client)
         def my_agent():
@@ -132,7 +132,7 @@ class TestAnthropicProvider:
         original = anthropic_client.messages.create
 
         provider = AnthropicProvider()
-        provider.connect_client(anthropic_client)
+        provider.connect(anthropic_client)
         provider.disconnect()
         assert anthropic_client.messages.create is original
 
@@ -145,13 +145,12 @@ class TestLiteLLMProvider:
         sys.modules["litellm"] = self.mock_litellm
 
     def teardown_method(self):
+        from layerlens.instrument.adapters.providers.litellm import uninstrument_litellm
+
+        uninstrument_litellm()
         for key in list(sys.modules.keys()):
             if key.startswith("litellm"):
                 del sys.modules[key]
-        from layerlens.instrument.adapters.providers import litellm as litellm_adapter
-
-        litellm_adapter._original_completion = None
-        litellm_adapter._original_acompletion = None
 
     def test_instrument_creates_span(self, mock_client, capture_trace):
         from layerlens.instrument.adapters.providers.litellm import instrument_litellm
@@ -201,7 +200,7 @@ class TestProviderErrorHandling:
         openai_client.chat.completions.create = Mock(side_effect=RuntimeError("API error"))
 
         provider = OpenAIProvider()
-        provider.connect_client(openai_client)
+        provider.connect(openai_client)
 
         @trace(mock_client)
         def my_agent():

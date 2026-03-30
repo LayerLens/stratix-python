@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
+from .._base import AdapterInfo, BaseAdapter
 from ._base_provider import fail_llm_span, create_llm_span, finish_llm_span
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -21,25 +22,25 @@ _CAPTURE_PARAMS = frozenset(
 )
 
 
-class OpenAIProvider:
+class OpenAIProvider(BaseAdapter):
     def __init__(self) -> None:
         self._client: Any = None
         self._originals: Dict[str, Any] = {}
 
-    def connect_client(self, client: Any) -> Any:
-        self._client = client
+    def connect(self, target: Any = None, **kwargs: Any) -> Any:  # noqa: ARG002
+        self._client = target
 
-        if hasattr(client, "chat") and hasattr(client.chat, "completions"):
-            orig = client.chat.completions.create
+        if hasattr(target, "chat") and hasattr(target.chat, "completions"):
+            orig = target.chat.completions.create
             self._originals["chat.completions.create"] = orig
-            client.chat.completions.create = self._wrap_sync(orig)
+            target.chat.completions.create = self._wrap_sync(orig)
 
-            if hasattr(client.chat.completions, "acreate"):
-                async_orig = client.chat.completions.acreate
+            if hasattr(target.chat.completions, "acreate"):
+                async_orig = target.chat.completions.acreate
                 self._originals["chat.completions.acreate"] = async_orig
-                client.chat.completions.acreate = self._wrap_async(async_orig)
+                target.chat.completions.acreate = self._wrap_async(async_orig)
 
-        return client
+        return target
 
     def disconnect(self) -> None:
         if self._client is None:
@@ -55,6 +56,13 @@ class OpenAIProvider:
                 log.warning("Could not restore %s", key)
         self._client = None
         self._originals.clear()
+
+    def adapter_info(self) -> AdapterInfo:
+        return AdapterInfo(
+            name="openai",
+            adapter_type="provider",
+            connected=self._client is not None,
+        )
 
     def _wrap_sync(self, original: Any) -> Any:
         def wrapped(*args: Any, **kwargs: Any) -> Any:
@@ -119,20 +127,20 @@ def _extract_response_meta(response: Any) -> Dict[str, Any]:
 
 # --- Convenience API ---
 
-_provider_instance: Optional[OpenAIProvider] = None
-
 
 def instrument_openai(client: Any) -> OpenAIProvider:
-    global _provider_instance
-    if _provider_instance is not None:
-        _provider_instance.disconnect()
-    _provider_instance = OpenAIProvider()
-    _provider_instance.connect_client(client)
-    return _provider_instance
+    from .._registry import get, register
+
+    existing = get("openai")
+    if existing is not None:
+        existing.disconnect()
+    provider = OpenAIProvider()
+    provider.connect(client)
+    register("openai", provider)
+    return provider
 
 
 def uninstrument_openai() -> None:
-    global _provider_instance
-    if _provider_instance is not None:
-        _provider_instance.disconnect()
-        _provider_instance = None
+    from .._registry import unregister
+
+    unregister("openai")
