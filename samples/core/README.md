@@ -36,6 +36,7 @@ Expected output: a trace ID, judge ID, and evaluation summary printed to the con
 | `compare_evaluations.py` | Teams comparing prompt or model variants | Compare scored results across multiple evaluation runs to identify the best-performing configuration. |
 | `async_workflow.py` | High-throughput pipelines | Asynchronous SDK usage for non-blocking trace uploads and evaluation submissions. |
 | `model_benchmark_management.py` | Platform teams cataloging models | Register models and benchmarks, then query benchmark results for reporting. |
+| `integration_management.py` | Teams managing LayerLens integrations | List, inspect, and test configured integrations using the `client.integrations` API. |
 | `custom_model.py` | Teams using private or fine-tuned models | Register and manage custom model definitions within the LayerLens model catalog. |
 | `custom_benchmark.py` | Teams defining proprietary test suites | Create and run custom benchmarks tailored to your application's specific quality criteria. |
 | `trace_investigation.py` | On-call engineers debugging production issues | Investigate traces for errors, high latency, and anomalous token usage patterns. |

@@ -113,16 +113,18 @@ Embed evaluation quality gates into your build and deployment pipelines so regre
 
 ---
 
-### LLM Provider Integrations -- `integrations/` (2 samples)
+### LLM Provider Integrations -- `integrations/` (4 samples)
 
-Trace and evaluate outputs from major LLM providers with minimal instrumentation.
+Trace and evaluate outputs from major LLM providers -- both manual trace upload and auto-instrumentation.
 
-**What you will learn:** How to wrap provider API calls with LayerLens tracing so every completion and conversation is automatically captured and scored.
+**What you will learn:** How to capture provider API calls with LayerLens tracing using two approaches: manual trace upload for full control, and auto-instrumentation via `layerlens.instrument` for zero-code observability.
 
 | Sample | Scenario |
 |--------|----------|
-| `openai_traced.py` | Trace an OpenAI completion and evaluate it with a judge in a single pass |
-| `anthropic_traced.py` | Capture multi-turn Claude conversations with full tracing and evaluation |
+| `openai_traced.py` | Trace an OpenAI completion and evaluate it with a judge (manual trace upload) |
+| `anthropic_traced.py` | Capture multi-turn Claude conversations with tracing and evaluation (manual trace upload) |
+| `openai_instrumented.py` | Auto-instrument OpenAI with `instrument_openai()`, `@trace`, and `span()` for zero-code span capture |
+| `langchain_instrumented.py` | Auto-capture LangChain LCEL chain execution with `LangChainCallbackHandler` |
 
 ---
 
