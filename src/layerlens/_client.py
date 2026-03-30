@@ -45,6 +45,7 @@ class Stratix(BaseClient):
         api_key: str | None = None,
         base_url: str | httpx.URL | None = None,
         timeout: Union[float, httpx.Timeout, None] = DEFAULT_TIMEOUT,
+        max_retries: int = 2,
         use_bearer_auth: bool = False,
     ) -> None:
         """Construct a new synchronous Stratix client instance.
@@ -73,6 +74,7 @@ class Stratix(BaseClient):
         super().__init__(
             base_url=base_url,
             timeout=timeout,
+            max_retries=max_retries,
         )
 
         organization = self._get_organization()
@@ -270,6 +272,7 @@ class AsyncStratix(BaseAsyncClient):
         api_key: str | None = None,
         base_url: str | httpx.URL | None = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+        max_retries: int = 2,
         use_bearer_auth: bool = False,
     ) -> None:
         """Construct a new asynchronous Stratix client instance.
@@ -295,7 +298,7 @@ class AsyncStratix(BaseAsyncClient):
         if use_bearer_auth:
             base_url = str(base_url).rstrip("/") + DIRTY_ROUTER_PREFIX
 
-        super().__init__(base_url=base_url, timeout=timeout)
+        super().__init__(base_url=base_url, timeout=timeout, max_retries=max_retries)
 
         organization = self._get_organization()
         if organization is None:
