@@ -93,10 +93,9 @@ def main() -> None:
             answer = SIMULATED_ANSWERS.get(query["id"], "No answer available.")
             print(f'[RAGRunner] Query: "{query["text"]}"')
 
-            # Simple retrieval simulation
+            # Retrieval by ID (no similarity scoring -- scores come from judge evaluation below)
             retrieved_docs = [d for d in KNOWLEDGE_BASE if d["id"] in query["expected_doc_ids"]]
-            scores_str = ", ".join("0.92" for _ in retrieved_docs)
-            print(f"[RAGRunner] Retrieved {len(retrieved_docs)} documents (scores: {scores_str})")
+            print(f"[RAGRunner] Retrieved {len(retrieved_docs)} document(s)")
 
             trace_result = upload_trace_dict(client,
                 input_text=query["text"],
