@@ -91,9 +91,7 @@ class TestTraceEvaluations:
         assert te._get is mock_client.get_cast
         assert te._post is mock_client.post_cast
 
-    def test_create_trace_evaluation_success(
-        self, trace_evals_resource, sample_trace_eval_data
-    ):
+    def test_create_trace_evaluation_success(self, trace_evals_resource, sample_trace_eval_data):
         """create method returns TraceEvaluation on success."""
         trace_evals_resource._post.return_value = sample_trace_eval_data
 
@@ -105,9 +103,7 @@ class TestTraceEvaluations:
         assert result.judge_id == "judge-789"
         assert result.status == TraceEvaluationStatus.SUCCESS
 
-    def test_create_trace_evaluation_request_parameters(
-        self, trace_evals_resource, sample_trace_eval_data
-    ):
+    def test_create_trace_evaluation_request_parameters(self, trace_evals_resource, sample_trace_eval_data):
         """create method makes correct API request."""
         trace_evals_resource._post.return_value = sample_trace_eval_data
 
@@ -128,9 +124,7 @@ class TestTraceEvaluations:
 
         assert result is None
 
-    def test_create_trace_evaluation_with_judge_snapshot(
-        self, trace_evals_resource, sample_trace_eval_data
-    ):
+    def test_create_trace_evaluation_with_judge_snapshot(self, trace_evals_resource, sample_trace_eval_data):
         """create method handles judge snapshot data."""
         trace_evals_resource._post.return_value = sample_trace_eval_data
 
@@ -141,9 +135,7 @@ class TestTraceEvaluations:
         assert result.judge_snapshot.version == 1
         assert result.judge_snapshot.evaluation_goal == "Evaluate output quality"
 
-    def test_get_trace_evaluation_success(
-        self, trace_evals_resource, sample_trace_eval_data
-    ):
+    def test_get_trace_evaluation_success(self, trace_evals_resource, sample_trace_eval_data):
         """get method returns TraceEvaluation on success."""
         trace_evals_resource._get.return_value = sample_trace_eval_data
 
@@ -152,9 +144,7 @@ class TestTraceEvaluations:
         assert isinstance(result, TraceEvaluation)
         assert result.id == "te-123"
 
-    def test_get_trace_evaluation_request_parameters(
-        self, trace_evals_resource, sample_trace_eval_data
-    ):
+    def test_get_trace_evaluation_request_parameters(self, trace_evals_resource, sample_trace_eval_data):
         """get method makes correct API request."""
         trace_evals_resource._get.return_value = sample_trace_eval_data
 
@@ -174,9 +164,7 @@ class TestTraceEvaluations:
 
         assert result is None
 
-    def test_get_many_trace_evaluations_success(
-        self, trace_evals_resource, sample_trace_eval_data
-    ):
+    def test_get_many_trace_evaluations_success(self, trace_evals_resource, sample_trace_eval_data):
         """get_many returns TraceEvaluationsResponse on success."""
         trace_evals_resource._get.return_value = {
             "trace_evaluations": [sample_trace_eval_data],
@@ -262,9 +250,7 @@ class TestTraceEvaluations:
         assert result.model == "claude-sonnet-4-20250514"
         assert result.latency_ms == 2500
 
-    def test_get_results_request_parameters(
-        self, trace_evals_resource, sample_result_data
-    ):
+    def test_get_results_request_parameters(self, trace_evals_resource, sample_result_data):
         """get_results makes correct API request."""
         trace_evals_resource._get.return_value = sample_result_data
 
@@ -337,9 +323,7 @@ class TestTraceEvaluations:
         """estimate_cost returns None when response is invalid."""
         trace_evals_resource._post.return_value = None
 
-        result = trace_evals_resource.estimate_cost(
-            trace_ids=["t1"], judge_id="judge-789"
-        )
+        result = trace_evals_resource.estimate_cost(trace_ids=["t1"], judge_id="judge-789")
 
         assert result is None
 
@@ -387,9 +371,7 @@ class TestTraceEvaluationsErrorHandling:
         mock_response.status_code = 401
         mock_response.headers = {}
 
-        trace_evals_resource._get.side_effect = AuthenticationError(
-            "Unauthorized", response=mock_response, body=None
-        )
+        trace_evals_resource._get.side_effect = AuthenticationError("Unauthorized", response=mock_response, body=None)
 
         with pytest.raises(AuthenticationError):
             trace_evals_resource.get("te-123")
@@ -432,10 +414,7 @@ class TestTraceEvaluationsURLConstruction:
 
     def test_base_url_construction(self, trace_evals_resource):
         """Base URL uses correct organization and project IDs."""
-        assert (
-            trace_evals_resource._base_url()
-            == "/organizations/custom-org/projects/custom-proj/trace-evaluations"
-        )
+        assert trace_evals_resource._base_url() == "/organizations/custom-org/projects/custom-proj/trace-evaluations"
 
     def test_get_url_includes_evaluation_id(self, trace_evals_resource):
         """Get URL includes evaluation ID."""
@@ -444,10 +423,7 @@ class TestTraceEvaluationsURLConstruction:
         trace_evals_resource.get("te-abc")
 
         call_args = trace_evals_resource._get.call_args
-        assert (
-            call_args[0][0]
-            == "/organizations/custom-org/projects/custom-proj/trace-evaluations/te-abc"
-        )
+        assert call_args[0][0] == "/organizations/custom-org/projects/custom-proj/trace-evaluations/te-abc"
 
     def test_results_url_includes_evaluation_id(self, trace_evals_resource):
         """Results URL includes evaluation ID."""
@@ -456,10 +432,7 @@ class TestTraceEvaluationsURLConstruction:
         trace_evals_resource.get_results("te-abc")
 
         call_args = trace_evals_resource._get.call_args
-        assert (
-            call_args[0][0]
-            == "/organizations/custom-org/projects/custom-proj/trace-evaluations/te-abc/results"
-        )
+        assert call_args[0][0] == "/organizations/custom-org/projects/custom-proj/trace-evaluations/te-abc/results"
 
     def test_estimate_url(self, trace_evals_resource):
         """Estimate URL is constructed correctly."""
@@ -468,10 +441,7 @@ class TestTraceEvaluationsURLConstruction:
         trace_evals_resource.estimate_cost(trace_ids=["t1"], judge_id="j1")
 
         call_args = trace_evals_resource._post.call_args
-        assert (
-            call_args[0][0]
-            == "/organizations/custom-org/projects/custom-proj/trace-evaluations/estimate"
-        )
+        assert call_args[0][0] == "/organizations/custom-org/projects/custom-proj/trace-evaluations/estimate"
 
 
 class TestGetResultsNotFoundHandling:
@@ -497,9 +467,7 @@ class TestGetResultsNotFoundHandling:
         mock_response = Mock()
         mock_response.status_code = 404
         mock_response.headers = {}
-        trace_evals_resource._get.side_effect = NotFoundError(
-            "Not found", response=mock_response, body=None
-        )
+        trace_evals_resource._get.side_effect = NotFoundError("Not found", response=mock_response, body=None)
 
         result = trace_evals_resource.get_results("te-pending")
 
@@ -545,9 +513,7 @@ class TestWaitForCompletion:
         }
 
     @patch("layerlens.resources.trace_evaluations.trace_evaluations.time.sleep")
-    def test_wait_returns_results_on_success(
-        self, mock_sleep, trace_evals_resource, sample_result_data
-    ):
+    def test_wait_returns_results_on_success(self, mock_sleep, trace_evals_resource, sample_result_data):
         """wait_for_completion returns results when evaluation succeeds."""
         pending = {
             "id": "te-123",
@@ -591,9 +557,7 @@ class TestWaitForCompletion:
 
         trace_evals_resource._get.side_effect = [
             failure,  # first poll → failure
-            NotFoundError(
-                "Not found", response=mock_response, body=None
-            ),  # get_results → 404
+            NotFoundError("Not found", response=mock_response, body=None),  # get_results → 404
         ]
 
         result = trace_evals_resource.wait_for_completion("te-123")
@@ -623,9 +587,7 @@ class TestWaitForCompletion:
             trace_evals_resource.wait_for_completion("te-123", timeout_seconds=300)
 
     @patch("layerlens.resources.trace_evaluations.trace_evaluations.time.sleep")
-    def test_wait_polls_through_in_progress(
-        self, mock_sleep, trace_evals_resource, sample_result_data
-    ):
+    def test_wait_polls_through_in_progress(self, mock_sleep, trace_evals_resource, sample_result_data):
         """wait_for_completion polls through pending and in_progress states."""
         pending = {
             "id": "te-123",
@@ -659,9 +621,7 @@ class TestWaitForCompletion:
         assert mock_sleep.call_count == 2
 
     @patch("layerlens.resources.trace_evaluations.trace_evaluations.time.sleep")
-    def test_wait_no_timeout_when_none(
-        self, _mock_sleep, trace_evals_resource, sample_result_data
-    ):
+    def test_wait_no_timeout_when_none(self, _mock_sleep, trace_evals_resource, sample_result_data):
         """wait_for_completion runs indefinitely when timeout_seconds=None."""
         success = {
             "id": "te-123",
@@ -675,8 +635,6 @@ class TestWaitForCompletion:
             sample_result_data,
         ]
 
-        result = trace_evals_resource.wait_for_completion(
-            "te-123", timeout_seconds=None
-        )
+        result = trace_evals_resource.wait_for_completion("te-123", timeout_seconds=None)
 
         assert isinstance(result, TraceEvaluationResultsResponse)
