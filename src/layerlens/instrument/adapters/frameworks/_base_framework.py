@@ -1,25 +1,29 @@
 from __future__ import annotations
 
+import uuid
 from uuid import UUID
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from .._base import AdapterInfo, BaseAdapter
-from ..._types import SpanData
-from ..._upload import upload_trace
+from ..._capture_config import CaptureConfig
+from ..._collector import TraceCollector
 
 
 class FrameworkTracer(BaseAdapter):
-    """Base class for framework adapters that manage their own span tree.
+    """Base class for framework adapters that manage their own collector.
 
-    Provides run_id-based span tracking, parent-child linking, and
-    automatic trace upload when the root span finishes.
+    Framework adapters (LangChain, LangGraph, etc.) receive callbacks
+    from the framework rather than wrapping SDK methods. They maintain
+    their own TraceCollector and map framework run_ids to span_ids.
     """
 
     _adapter_name: str = "framework"
 
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         self._client: Any = None
-        self._spans: Dict[str, SpanData] = {}
+        self._config = capture_config or CaptureConfig.standard()
+        self._collector: Optional[TraceCollector] = None
+        self._span_ids: Dict[str, str] = {}
         self._root_run_id: Optional[str] = None
         self.connect(client)
 
@@ -28,8 +32,9 @@ class FrameworkTracer(BaseAdapter):
         return target
 
     def disconnect(self) -> None:
-        self._spans.clear()
+        self._span_ids.clear()
         self._root_run_id = None
+        self._collector = None
 
     def adapter_info(self) -> AdapterInfo:
         return AdapterInfo(
@@ -38,57 +43,37 @@ class FrameworkTracer(BaseAdapter):
             connected=self._client is not None,
         )
 
-    def _get_or_create_span(
-        self,
-        run_id: UUID,
-        parent_run_id: Optional[UUID],
-        name: str,
-        kind: str,
-        input: Any = None,
-    ) -> SpanData:
+    def _ensure_collector(self) -> TraceCollector:
+        if self._collector is None:
+            self._collector = TraceCollector(self._client, self._config)
+        return self._collector
+
+    def _get_or_create_span_id(
+        self, run_id: UUID, parent_run_id: Optional[UUID] = None
+    ) -> Tuple[str, Optional[str]]:
         rid = str(run_id)
-        if rid in self._spans:
-            return self._spans[rid]
-
-        parent_span: Optional[SpanData] = None
-        if parent_run_id is not None:
-            parent_span = self._spans.get(str(parent_run_id))
-
-        s = SpanData(
-            name=name,
-            kind=kind,
-            parent_id=parent_span.span_id if parent_span else None,
-            input=input,
-        )
-        self._spans[rid] = s
-
-        if parent_span is not None:
-            parent_span.children.append(s)
-
+        if rid not in self._span_ids:
+            self._span_ids[rid] = uuid.uuid4().hex[:16]
+        span_id = self._span_ids[rid]
+        parent_span_id = self._span_ids.get(str(parent_run_id)) if parent_run_id else None
         if self._root_run_id is None:
             self._root_run_id = rid
+        return span_id, parent_span_id
 
-        return s
+    def _emit(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+    ) -> None:
+        collector = self._ensure_collector()
+        span_id, parent_span_id = self._get_or_create_span_id(run_id, parent_run_id)
+        collector.emit(event_type, payload, span_id=span_id, parent_span_id=parent_span_id)
 
-    def _finish_span(self, run_id: UUID, output: Any = None, error: Optional[str] = None) -> None:
-        rid = str(run_id)
-        s = self._spans.get(rid)
-        if s is None:
-            return
-        s.output = output
-        s.finish(error=error)
-
-        if rid == self._root_run_id:
-            self._flush()
-
-    def _flush(self) -> None:
-        if self._root_run_id is None:
-            return
-        root = self._spans.get(self._root_run_id)
-        if root is None:
-            return
-
-        upload_trace(self._client, root.to_dict())
-
-        self._spans.clear()
-        self._root_run_id = None
+    def _maybe_flush(self, run_id: UUID) -> None:
+        if str(run_id) == self._root_run_id and self._collector is not None:
+            self._collector.flush()
+            self._span_ids.clear()
+            self._root_run_id = None
+            self._collector = None

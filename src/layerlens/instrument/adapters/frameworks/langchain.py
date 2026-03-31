@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from uuid import UUID
-from typing import Any, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 from ._base_framework import FrameworkTracer
+
+if TYPE_CHECKING:
+    from ..._capture_config import CaptureConfig
 
 try:
     from langchain_core.callbacks import BaseCallbackHandler  # pyright: ignore[reportAssignmentType]
@@ -20,9 +23,9 @@ except ImportError:
 class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
     _adapter_name: str = "langchain"
 
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         BaseCallbackHandler.__init__(self)
-        FrameworkTracer.__init__(self, client)
+        FrameworkTracer.__init__(self, client, capture_config=capture_config)
 
     # -- Chain --
 
@@ -37,7 +40,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
     ) -> None:
         serialized = serialized or {}
         name = serialized.get("name") or serialized.get("id", ["unknown"])[-1]
-        self._get_or_create_span(run_id, parent_run_id, name=name, kind="chain", input=inputs)
+        self._emit("agent.input", {"name": name, "input": inputs}, run_id, parent_run_id)
 
     def on_chain_end(
         self,
@@ -47,7 +50,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._finish_span(run_id, output=outputs)
+        self._emit("agent.output", {"output": outputs, "status": "ok"}, run_id)
+        self._maybe_flush(run_id)
 
     def on_chain_error(
         self,
@@ -57,7 +61,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._finish_span(run_id, error=str(error))
+        self._emit("agent.error", {"error": str(error), "status": "error"}, run_id)
+        self._maybe_flush(run_id)
 
     # -- LLM --
 
@@ -72,7 +77,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
     ) -> None:
         serialized = serialized or {}
         name = serialized.get("name") or serialized.get("id", ["unknown"])[-1]
-        self._get_or_create_span(run_id, parent_run_id, name=name, kind="llm", input=prompts)
+        self._emit("model.invoke", {"name": name, "messages": prompts}, run_id, parent_run_id)
 
     def on_chat_model_start(
         self,
@@ -85,8 +90,12 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
     ) -> None:
         serialized = serialized or {}
         name = serialized.get("name") or serialized.get("id", ["unknown"])[-1]
-        input_data = [[_serialize_lc_message(m) for m in batch] for batch in messages]
-        self._get_or_create_span(run_id, parent_run_id, name=name, kind="llm", input=input_data)
+        self._emit(
+            "model.invoke",
+            {"name": name, "messages": [[_serialize_lc_message(m) for m in batch] for batch in messages]},
+            run_id,
+            parent_run_id,
+        )
 
     def on_llm_end(
         self,
@@ -104,19 +113,25 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         except (AttributeError, IndexError):
             pass
 
-        s = self._spans.get(str(run_id))
-        if s is not None:
-            try:
-                llm_output = response.llm_output
-                if llm_output:
-                    if "token_usage" in llm_output:
-                        s.metadata["usage"] = llm_output["token_usage"]
-                    if "model_name" in llm_output:
-                        s.metadata["model"] = llm_output["model_name"]
-            except AttributeError:
-                pass
+        try:
+            llm_output = response.llm_output or {}
+        except AttributeError:
+            llm_output = {}
 
-        self._finish_span(run_id, output=output)
+        model_name = llm_output.get("model_name")
+        if model_name or output:
+            self._emit(
+                "model.invoke",
+                {"model": model_name, "output_message": output},
+                run_id,
+                parent_run_id,
+            )
+
+        usage = llm_output.get("token_usage", {})
+        if usage:
+            self._emit("cost.record", usage, run_id, parent_run_id)
+
+        self._maybe_flush(run_id)
 
     def on_llm_error(
         self,
@@ -126,7 +141,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._finish_span(run_id, error=str(error))
+        self._emit("agent.error", {"error": str(error), "status": "error"}, run_id)
+        self._maybe_flush(run_id)
 
     # -- Tool --
 
@@ -140,7 +156,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         **kwargs: Any,
     ) -> None:
         name = (serialized or {}).get("name", "tool")
-        self._get_or_create_span(run_id, parent_run_id, name=name, kind="tool", input=input_str)
+        self._emit("tool.call", {"name": name, "input": input_str}, run_id, parent_run_id)
 
     def on_tool_end(
         self,
@@ -150,7 +166,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._finish_span(run_id, output=output)
+        self._emit("tool.result", {"output": output}, run_id)
+        self._maybe_flush(run_id)
 
     def on_tool_error(
         self,
@@ -160,7 +177,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._finish_span(run_id, error=str(error))
+        self._emit("agent.error", {"error": str(error), "status": "error"}, run_id)
+        self._maybe_flush(run_id)
 
     # -- Retriever --
 
@@ -174,7 +192,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         **kwargs: Any,
     ) -> None:
         name = (serialized or {}).get("name", "retriever")
-        self._get_or_create_span(run_id, parent_run_id, name=name, kind="retriever", input=query)
+        self._emit("tool.call", {"name": name, "input": query}, run_id, parent_run_id)
 
     def on_retriever_end(
         self,
@@ -185,7 +203,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         **kwargs: Any,
     ) -> None:
         output = [_serialize_lc_document(d) for d in documents]
-        self._finish_span(run_id, output=output)
+        self._emit("tool.result", {"output": output}, run_id)
+        self._maybe_flush(run_id)
 
     def on_retriever_error(
         self,
@@ -195,7 +214,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkTracer):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._finish_span(run_id, error=str(error))
+        self._emit("agent.error", {"error": str(error), "status": "error"}, run_id)
+        self._maybe_flush(run_id)
 
     # -- Text (required by base) --
 

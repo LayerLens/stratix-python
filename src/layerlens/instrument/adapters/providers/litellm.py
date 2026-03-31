@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from .._base import AdapterInfo, BaseAdapter
 from .openai import _extract_output, _extract_response_meta
-from ._base_provider import fail_llm_span, create_llm_span, finish_llm_span
+from ._base_provider import emit_llm_events, emit_llm_error
+from ..._context import _current_collector
 
 _CAPTURE_PARAMS = frozenset(
     {
@@ -38,16 +40,21 @@ class LiteLLMProvider(BaseAdapter):
             orig_sync = self._original_completion
 
             def patched_completion(*args: Any, **kwargs: Any) -> Any:
-                span, token = create_llm_span("litellm.completion", kwargs, _CAPTURE_PARAMS)
-                if span is None:
+                if _current_collector.get() is None:
                     return orig_sync(*args, **kwargs)
+                start = time.time()
                 try:
                     response = orig_sync(*args, **kwargs)
-                    finish_llm_span(span, token, response, _extract_output, _extract_response_meta)
-                    return response
                 except Exception as exc:
-                    fail_llm_span(span, token, exc)
+                    latency_ms = (time.time() - start) * 1000
+                    emit_llm_error("litellm.completion", exc, latency_ms)
                     raise
+                latency_ms = (time.time() - start) * 1000
+                emit_llm_events(
+                    "litellm.completion", kwargs, response,
+                    _extract_output, _extract_response_meta, _CAPTURE_PARAMS, latency_ms,
+                )
+                return response
 
             litellm.completion = patched_completion
 
@@ -56,16 +63,21 @@ class LiteLLMProvider(BaseAdapter):
             orig_async = self._original_acompletion
 
             async def patched_acompletion(*args: Any, **kwargs: Any) -> Any:
-                span, token = create_llm_span("litellm.acompletion", kwargs, _CAPTURE_PARAMS)
-                if span is None:
+                if _current_collector.get() is None:
                     return await orig_async(*args, **kwargs)
+                start = time.time()
                 try:
                     response = await orig_async(*args, **kwargs)
-                    finish_llm_span(span, token, response, _extract_output, _extract_response_meta)
-                    return response
                 except Exception as exc:
-                    fail_llm_span(span, token, exc)
+                    latency_ms = (time.time() - start) * 1000
+                    emit_llm_error("litellm.acompletion", exc, latency_ms)
                     raise
+                latency_ms = (time.time() - start) * 1000
+                emit_llm_events(
+                    "litellm.acompletion", kwargs, response,
+                    _extract_output, _extract_response_meta, _CAPTURE_PARAMS, latency_ms,
+                )
+                return response
 
             litellm.acompletion = patched_acompletion
 

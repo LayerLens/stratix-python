@@ -5,7 +5,7 @@ import json
 import asyncio
 import logging
 import tempfile
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -18,14 +18,7 @@ def _write_trace_file(payload: Dict[str, Any]) -> str:
     return path
 
 
-def upload_trace(
-    client: Any,
-    trace_data: Dict[str, Any],
-    attestation: Optional[Dict[str, Any]] = None,
-) -> None:
-    payload = trace_data
-    if attestation:
-        payload = {**trace_data, "attestation": attestation}
+def upload_trace(client: Any, payload: Dict[str, Any]) -> None:
     path = _write_trace_file(payload)
     try:
         client.traces.upload(path)
@@ -36,14 +29,7 @@ def upload_trace(
             log.debug("Failed to remove temp trace file: %s", path)
 
 
-async def async_upload_trace(
-    client: Any,
-    trace_data: Dict[str, Any],
-    attestation: Optional[Dict[str, Any]] = None,
-) -> None:
-    payload = trace_data
-    if attestation:
-        payload = {**trace_data, "attestation": attestation}
+async def async_upload_trace(client: Any, payload: Dict[str, Any]) -> None:
     path = await asyncio.to_thread(_write_trace_file, payload)
     try:
         await client.traces.upload(path)

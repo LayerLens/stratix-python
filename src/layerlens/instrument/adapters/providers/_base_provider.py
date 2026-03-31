@@ -1,56 +1,79 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple, Callable, Optional
+import uuid
+from typing import Any, Dict, Callable
 
-from ..._types import SpanData
-from ..._context import _current_span, _current_recorder
+from ..._context import _current_collector, _current_span_id
 
 
-def create_llm_span(
+def emit_llm_events(
     name: str,
     kwargs: Dict[str, Any],
-    capture_params: frozenset[str],
-) -> Tuple[Optional[SpanData], Any]:
-    recorder = _current_recorder.get()
-    parent = _current_span.get()
-
-    if recorder is None or parent is None:
-        return None, None
-
-    meta = {k: kwargs[k] for k in capture_params if k in kwargs}
-
-    s = SpanData(
-        name=name,
-        kind="llm",
-        parent_id=parent.span_id,
-        input=_extract_messages(kwargs),
-        metadata=meta,
-    )
-    parent.children.append(s)
-    token = _current_span.set(s)
-    return s, token
-
-
-def finish_llm_span(
-    span: SpanData,
-    token: Any,
     response: Any,
     extract_output: Callable[[Any], Any],
     extract_meta: Callable[[Any], Dict[str, Any]],
+    capture_params: frozenset[str],
+    latency_ms: float,
 ) -> None:
-    try:
-        span.output = extract_output(response)
-        span.metadata.update(extract_meta(response))
-        span.finish()
-    finally:
-        _current_span.reset(token)
+    """Emit model.invoke + cost.record events for an LLM call.
+
+    Builds the full payload -- the collector handles CaptureConfig gating
+    (L3 suppresses model.invoke entirely, capture_content strips messages).
+    """
+    collector = _current_collector.get()
+    if collector is None:
+        return
+
+    parent_span_id = _current_span_id.get()
+    span_id = uuid.uuid4().hex[:16]
+    response_meta = extract_meta(response)
+
+    collector.emit(
+        "model.invoke",
+        {
+            "name": name,
+            "latency_ms": latency_ms,
+            "parameters": {k: kwargs[k] for k in capture_params if k in kwargs},
+            "messages": _extract_messages(kwargs),
+            "output_message": extract_output(response),
+            **response_meta,
+        },
+        span_id=span_id,
+        parent_span_id=parent_span_id,
+    )
+
+    usage = response_meta.get("usage", {})
+    if usage:
+        collector.emit(
+            "cost.record",
+            {
+                "provider": name.split(".")[0],
+                "model": response_meta.get("response_model", kwargs.get("model")),
+                **usage,
+            },
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+        )
 
 
-def fail_llm_span(span: SpanData, token: Any, error: Exception) -> None:
-    try:
-        span.finish(error=str(error))
-    finally:
-        _current_span.reset(token)
+def emit_llm_error(
+    name: str,
+    error: Exception,
+    latency_ms: float,
+) -> None:
+    """Emit agent.error event for a failed LLM call."""
+    collector = _current_collector.get()
+    parent_span_id = _current_span_id.get()
+    if collector is None:
+        return
+
+    span_id = uuid.uuid4().hex[:16]
+    collector.emit(
+        "agent.error",
+        {"name": name, "error": str(error), "latency_ms": latency_ms},
+        span_id=span_id,
+        parent_span_id=parent_span_id,
+    )
 
 
 def _extract_messages(kwargs: Dict[str, Any]) -> Any:

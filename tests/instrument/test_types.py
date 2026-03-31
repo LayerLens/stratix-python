@@ -1,58 +1,36 @@
 from __future__ import annotations
 
-import time
+from layerlens.instrument._span import span
+from layerlens.instrument._context import _current_span_id, _parent_span_id, _current_span_name
 
-from layerlens.instrument._types import SpanData
 
+class TestSpan:
+    def test_yields_string_span_id(self):
+        with span("test") as span_id:
+            assert isinstance(span_id, str)
+            assert len(span_id) == 16
 
-class TestSpanData:
-    def test_defaults(self):
-        s = SpanData(name="test")
-        assert s.name == "test"
-        assert len(s.span_id) == 16
-        assert s.parent_id is None
-        assert s.status == "ok"
-        assert s.kind == "internal"
-        assert s.input is None
-        assert s.output is None
-        assert s.error is None
-        assert s.metadata == {}
-        assert s.children == []
-        assert s.end_time is None
-        assert s.start_time <= time.time()
+    def test_sets_current_span_id(self):
+        with span("test") as span_id:
+            assert _current_span_id.get() == span_id
 
-    def test_finish_ok(self):
-        s = SpanData(name="test")
-        s.finish()
-        assert s.end_time is not None
-        assert s.status == "ok"
-        assert s.error is None
+    def test_sets_parent_span_id(self):
+        _current_span_id.set("parent123")
+        try:
+            with span("test") as span_id:
+                assert _parent_span_id.get() == "parent123"
+                assert _current_span_id.get() == span_id
+        finally:
+            _current_span_id.set(None)
 
-    def test_finish_error(self):
-        s = SpanData(name="test")
-        s.finish(error="something broke")
-        assert s.end_time is not None
-        assert s.status == "error"
-        assert s.error == "something broke"
+    def test_stores_span_name(self):
+        with span("retrieval"):
+            assert _current_span_name.get() == "retrieval"
 
-    def test_to_dict(self):
-        parent = SpanData(name="parent")
-        child = SpanData(name="child", parent_id=parent.span_id)
-        parent.children.append(child)
-
-        d = parent.to_dict()
-        assert d["name"] == "parent"
-        assert d["parent_id"] is None
-        assert len(d["children"]) == 1
-        assert d["children"][0]["name"] == "child"
-        assert d["children"][0]["parent_id"] == parent.span_id
-
-    def test_to_dict_nested(self):
-        root = SpanData(name="root")
-        child1 = SpanData(name="c1", parent_id=root.span_id)
-        child2 = SpanData(name="c2", parent_id=child1.span_id)
-        root.children.append(child1)
-        child1.children.append(child2)
-
-        d = root.to_dict()
-        assert d["children"][0]["children"][0]["name"] == "c2"
+    def test_restores_context_after(self):
+        original_span = _current_span_id.get()
+        original_name = _current_span_name.get()
+        with span("test"):
+            pass
+        assert _current_span_id.get() == original_span
+        assert _current_span_name.get() == original_name

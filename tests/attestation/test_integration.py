@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from unittest.mock import Mock
 
-from layerlens.instrument import span, trace
+from layerlens.instrument import span, emit, trace
 from layerlens.attestation import verify_chain, detect_tampering
 from layerlens.attestation._envelope import HashScope, AttestationEnvelope
 
@@ -42,23 +42,23 @@ class TestTraceAttestation:
         assert att["schema_version"] == "1.0"
 
     def test_trace_with_child_spans(self):
-        """Attestation chain should include all spans in the tree."""
+        """Attestation chain should include events from all spans."""
         client, uploaded = _make_client()
 
         @trace(client)
         def my_agent(query: str):
-            with span("step-1", kind="tool") as s:
-                s.output = "result-1"
-            with span("step-2", kind="llm") as s:
-                s.output = "result-2"
+            with span("step-1"):
+                emit("tool.call", {"name": "search", "input": "q"})
+            with span("step-2"):
+                emit("model.invoke", {"name": "gpt-4"})
             return "done"
 
         my_agent("test")
 
         att = uploaded["data"][0]["attestation"]
         chain_events = att["chain"]["events"]
-        # Root span + 2 child spans = 3 events in the chain
-        assert len(chain_events) == 3
+        # agent.input + tool.call + model.invoke + agent.output = 4 events
+        assert len(chain_events) == 4
 
     def test_chain_events_are_linked(self):
         """Verify the chain in the uploaded payload is valid."""
@@ -66,16 +66,15 @@ class TestTraceAttestation:
 
         @trace(client)
         def my_agent(query: str):
-            with span("step-1") as s:
-                s.output = "r1"
-            with span("step-2") as s:
-                s.output = "r2"
+            with span("step-1"):
+                emit("tool.call", {"name": "search", "input": "q"})
+            with span("step-2"):
+                emit("tool.result", {"output": "result"})
             return "done"
 
         my_agent("test")
 
         chain_events = uploaded["data"][0]["attestation"]["chain"]["events"]
-        # Reconstruct envelopes and verify chain integrity
         envelopes = [
             AttestationEnvelope(
                 hash=e["hash"],
@@ -93,8 +92,8 @@ class TestTraceAttestation:
 
         @trace(client)
         def failing_agent():
-            with span("step-1") as s:
-                s.output = "ok"
+            with span("step-1"):
+                emit("tool.call", {"name": "search", "input": "q"})
             raise ValueError("boom")
 
         try:
@@ -106,19 +105,20 @@ class TestTraceAttestation:
         assert "attestation" in payload
         assert payload["attestation"]["root_hash"].startswith("sha256:")
 
-    def test_modifying_output_breaks_chain(self):
-        """Changing what the agent said must invalidate the attestation."""
+    def test_modifying_event_breaks_chain(self):
+        """Changing an event payload must invalidate the attestation."""
         client, uploaded = _make_client()
 
         @trace(client)
         def my_agent(query: str):
-            with span("llm-call", kind="llm") as s:
-                s.output = "the real answer"
+            with span("llm-call"):
+                emit("model.invoke", {"name": "gpt-4", "output_message": "the real answer"})
             return "done"
 
         my_agent("test")
 
-        att = uploaded["data"][0]["attestation"]
+        payload = uploaded["data"][0]
+        att = payload["attestation"]
         envelopes = [
             AttestationEnvelope(
                 hash=e["hash"],
@@ -128,21 +128,17 @@ class TestTraceAttestation:
             for e in att["chain"]["events"]
         ]
 
-        # Build the original span dicts that were hashed (root + child)
-        payload = uploaded["data"][0]
-        original_spans = []
-        for s in [payload] + payload.get("children", []):
-            d = {k: v for k, v in s.items() if k not in ("children", "attestation")}
-            original_spans.append(d)
+        # The events that were hashed
+        original_events = payload["events"]
 
         # Verify clean data passes
-        clean = detect_tampering(envelopes, original_spans)
+        clean = detect_tampering(envelopes, original_events)
         assert not clean.tampered
 
-        # Tamper: change the LLM output
-        tampered_spans = [dict(d) for d in original_spans]
-        tampered_spans[1] = {**tampered_spans[1], "output": "a forged answer"}
+        # Tamper: change the model output in the second event
+        tampered_events = [dict(e) for e in original_events]
+        tampered_events[1] = {**tampered_events[1], "payload": {"name": "gpt-4", "output_message": "a forged answer"}}
 
-        tampered = detect_tampering(envelopes, tampered_spans)
+        tampered = detect_tampering(envelopes, tampered_events)
         assert tampered.tampered
         assert 1 in tampered.modified_indices
