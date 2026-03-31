@@ -5,6 +5,7 @@ import types
 from unittest.mock import Mock
 
 from layerlens.instrument import trace
+from .conftest import find_events, find_event
 
 
 def _openai_response():
@@ -36,7 +37,7 @@ def _anthropic_response():
 
 
 class TestOpenAIProvider:
-    def test_instrument_creates_span(self, mock_client, capture_trace):
+    def test_instrument_emits_events(self, mock_client, capture_trace):
         from layerlens.instrument.adapters.providers.openai import OpenAIProvider
 
         openai_client = Mock()
@@ -54,12 +55,16 @@ class TestOpenAIProvider:
             )
 
         my_agent()
-        llm = capture_trace["trace"][0]["children"][0]
-        assert llm["kind"] == "llm"
-        assert llm["name"] == "openai.chat.completions.create"
-        assert llm["metadata"]["model"] == "gpt-4"
-        assert llm["metadata"]["usage"]["total_tokens"] == 15
-        assert llm["output"]["content"] == "Hello!"
+        events = capture_trace["events"]
+        model_invoke = find_event(events, "model.invoke")
+        assert model_invoke["payload"]["name"] == "openai.chat.completions.create"
+        assert model_invoke["payload"]["parameters"]["model"] == "gpt-4"
+        assert model_invoke["payload"]["usage"]["total_tokens"] == 15
+        assert model_invoke["payload"]["output_message"]["content"] == "Hello!"
+
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["provider"] == "openai"
+        assert cost["payload"]["total_tokens"] == 15
 
     def test_passthrough_without_trace(self):
         from layerlens.instrument.adapters.providers.openai import OpenAIProvider
@@ -97,7 +102,7 @@ class TestOpenAIProvider:
 
 
 class TestAnthropicProvider:
-    def test_instrument_creates_span(self, mock_client, capture_trace):
+    def test_instrument_emits_events(self, mock_client, capture_trace):
         from layerlens.instrument.adapters.providers.anthropic import AnthropicProvider
 
         anthropic_client = Mock()
@@ -117,13 +122,12 @@ class TestAnthropicProvider:
             )
 
         my_agent()
-        llm = capture_trace["trace"][0]["children"][0]
-        assert llm["kind"] == "llm"
-        assert llm["name"] == "anthropic.messages.create"
-        assert llm["output"]["text"] == "I'm Claude!"
-        assert llm["metadata"]["usage"]["input_tokens"] == 20
-        assert llm["metadata"]["response_model"] == "claude-3-opus"
-        assert llm["metadata"]["stop_reason"] == "end_turn"
+        events = capture_trace["events"]
+        model_invoke = find_event(events, "model.invoke")
+        assert model_invoke["payload"]["output_message"]["text"] == "I'm Claude!"
+        assert model_invoke["payload"]["usage"]["input_tokens"] == 20
+        assert model_invoke["payload"]["response_model"] == "claude-3-opus"
+        assert model_invoke["payload"]["stop_reason"] == "end_turn"
 
     def test_disconnect_restores(self):
         from layerlens.instrument.adapters.providers.anthropic import AnthropicProvider
@@ -152,7 +156,7 @@ class TestLiteLLMProvider:
             if key.startswith("litellm"):
                 del sys.modules[key]
 
-    def test_instrument_creates_span(self, mock_client, capture_trace):
+    def test_instrument_emits_events(self, mock_client, capture_trace):
         from layerlens.instrument.adapters.providers.litellm import instrument_litellm
 
         instrument_litellm()
@@ -168,10 +172,10 @@ class TestLiteLLMProvider:
             )
 
         my_agent()
-        llm = capture_trace["trace"][0]["children"][0]
-        assert llm["kind"] == "llm"
-        assert llm["name"] == "litellm.completion"
-        assert llm["metadata"]["model"] == "gpt-4"
+        events = capture_trace["events"]
+        model_invoke = find_event(events, "model.invoke")
+        assert model_invoke["payload"]["name"] == "litellm.completion"
+        assert model_invoke["payload"]["parameters"]["model"] == "gpt-4"
 
     def test_passthrough_without_trace(self):
         from layerlens.instrument.adapters.providers.litellm import instrument_litellm
@@ -193,7 +197,7 @@ class TestLiteLLMProvider:
 
 
 class TestProviderErrorHandling:
-    def test_span_captures_error(self, mock_client, capture_trace):
+    def test_error_emits_event(self, mock_client, capture_trace):
         from layerlens.instrument.adapters.providers.openai import OpenAIProvider
 
         openai_client = Mock()
@@ -211,6 +215,6 @@ class TestProviderErrorHandling:
             return "recovered"
 
         my_agent()
-        llm = capture_trace["trace"][0]["children"][0]
-        assert llm["status"] == "error"
-        assert llm["error"] == "API error"
+        events = capture_trace["events"]
+        error = find_event(events, "agent.error")
+        assert error["payload"]["error"] == "API error"

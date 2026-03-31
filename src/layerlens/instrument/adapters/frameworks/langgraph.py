@@ -38,4 +38,4 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
             if node_name:
                 name = node_name
 
-        self._get_or_create_span(run_id, parent_run_id, name=name, kind="chain", input=inputs)
+        self._emit("agent.input", {"name": name, "input": inputs}, run_id, parent_run_id)

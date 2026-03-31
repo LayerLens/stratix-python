@@ -1,43 +1,25 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Generator
+import uuid
+from typing import Generator
 from contextlib import contextmanager
 
-from ._types import SpanData
-from ._context import _current_span, _current_recorder
+from ._context import _push_span, _pop_span
 
 
 @contextmanager
-def span(
-    name: str,
-    *,
-    kind: str = "internal",
-    input: Any = None,
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Generator[SpanData, None, None]:
-    recorder = _current_recorder.get()
-    parent = _current_span.get()
+def span(name: str) -> Generator[str, None, None]:
+    """Create a child span for grouping events.
 
-    if recorder is None or parent is None:
-        yield SpanData(name=name, kind=kind, input=input, metadata=metadata or {})
-        return
+    Pushes a new span_id onto the context stack. Any events emitted
+    inside the block will have this span_id, with the outer span as
+    parent_span_id.
 
-    s = SpanData(
-        name=name,
-        kind=kind,
-        parent_id=parent.span_id,
-        input=input,
-        metadata=metadata or {},
-    )
-    parent.children.append(s)
-
-    token = _current_span.set(s)
+    Yields the span_id string.
+    """
+    new_span_id = uuid.uuid4().hex[:16]
+    tokens = _push_span(new_span_id, name)
     try:
-        yield s
-    except Exception as exc:
-        s.finish(error=str(exc))
-        raise
-    else:
-        s.finish()
+        yield new_span_id
     finally:
-        _current_span.reset(token)
+        _pop_span(tokens)

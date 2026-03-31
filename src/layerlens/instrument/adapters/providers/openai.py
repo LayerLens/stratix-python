@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import time
 import logging
 from typing import Any, Dict
 
 from .._base import AdapterInfo, BaseAdapter
-from ._base_provider import fail_llm_span, create_llm_span, finish_llm_span
+from ._base_provider import emit_llm_events, emit_llm_error
+from ..._context import _current_collector
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -66,31 +68,41 @@ class OpenAIProvider(BaseAdapter):
 
     def _wrap_sync(self, original: Any) -> Any:
         def wrapped(*args: Any, **kwargs: Any) -> Any:
-            span, token = create_llm_span("openai.chat.completions.create", kwargs, _CAPTURE_PARAMS)
-            if span is None:
+            if _current_collector.get() is None:
                 return original(*args, **kwargs)
+            start = time.time()
             try:
                 response = original(*args, **kwargs)
-                finish_llm_span(span, token, response, _extract_output, _extract_response_meta)
-                return response
             except Exception as exc:
-                fail_llm_span(span, token, exc)
+                latency_ms = (time.time() - start) * 1000
+                emit_llm_error("openai.chat.completions.create", exc, latency_ms)
                 raise
+            latency_ms = (time.time() - start) * 1000
+            emit_llm_events(
+                "openai.chat.completions.create", kwargs, response,
+                _extract_output, _extract_response_meta, _CAPTURE_PARAMS, latency_ms,
+            )
+            return response
 
         return wrapped
 
     def _wrap_async(self, original: Any) -> Any:
         async def wrapped(*args: Any, **kwargs: Any) -> Any:
-            span, token = create_llm_span("openai.chat.completions.create", kwargs, _CAPTURE_PARAMS)
-            if span is None:
+            if _current_collector.get() is None:
                 return await original(*args, **kwargs)
+            start = time.time()
             try:
                 response = await original(*args, **kwargs)
-                finish_llm_span(span, token, response, _extract_output, _extract_response_meta)
-                return response
             except Exception as exc:
-                fail_llm_span(span, token, exc)
+                latency_ms = (time.time() - start) * 1000
+                emit_llm_error("openai.chat.completions.create", exc, latency_ms)
                 raise
+            latency_ms = (time.time() - start) * 1000
+            emit_llm_events(
+                "openai.chat.completions.create", kwargs, response,
+                _extract_output, _extract_response_meta, _CAPTURE_PARAMS, latency_ms,
+            )
+            return response
 
         return wrapped
 
