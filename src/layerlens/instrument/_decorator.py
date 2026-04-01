@@ -29,7 +29,7 @@ def trace(
                 root_span_id = uuid.uuid4().hex[:16]
 
                 col_token = _current_collector.set(collector)
-                span_tokens = _push_span(root_span_id, span_name)
+                span_snapshot = _push_span(root_span_id, span_name)
                 try:
                     collector.emit(
                         "agent.input",
@@ -58,7 +58,7 @@ def trace(
                     await collector.async_flush()
                     raise
                 finally:
-                    _pop_span(span_tokens)
+                    _pop_span(span_snapshot)
                     _current_collector.reset(col_token)
 
             return async_wrapper
@@ -71,7 +71,7 @@ def trace(
                 root_span_id = uuid.uuid4().hex[:16]
 
                 col_token = _current_collector.set(collector)
-                span_tokens = _push_span(root_span_id, span_name)
+                span_snapshot = _push_span(root_span_id, span_name)
                 try:
                     collector.emit(
                         "agent.input",
@@ -100,7 +100,7 @@ def trace(
                     collector.flush()
                     raise
                 finally:
-                    _pop_span(span_tokens)
+                    _pop_span(span_snapshot)
                     _current_collector.reset(col_token)
 
             return sync_wrapper

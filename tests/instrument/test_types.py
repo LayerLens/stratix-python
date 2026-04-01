@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from layerlens.instrument._span import span
-from layerlens.instrument._context import _current_span_id, _parent_span_id, _current_span_name
+from layerlens.instrument._context import _parent_span_id, _current_span_id, _current_span_name
 
 
 class TestSpan:
