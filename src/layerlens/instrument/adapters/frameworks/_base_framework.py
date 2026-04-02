@@ -1,12 +1,4 @@
-"""Unified base class for all framework adapters.
-
-Framework adapters hook into a framework's callback / event / tracing
-system and emit LayerLens events.  They share a common lifecycle:
-
-  1. Lazy-init a :class:`TraceCollector` on first event.
-  2. Emit events through a thread-safe helper.
-  3. Flush the collector when a logical trace ends (root span completes,
-     agent run finishes, disconnect, etc.).
+"""Base class for framework adapters.
 
 Subclasses MUST set ``name`` and implement ``connect()``.
 Subclasses SHOULD call ``super().disconnect()`` after unhooking.
@@ -14,12 +6,17 @@ Subclasses SHOULD call ``super().disconnect()`` after unhooking.
 from __future__ import annotations
 
 import uuid
+import logging
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Generator, Optional
+from contextlib import contextmanager
 
 from .._base import AdapterInfo, BaseAdapter
 from ..._collector import TraceCollector
 from ..._capture_config import CaptureConfig
+from ..._context import _current_collector, _current_span_id, _push_span, _pop_span
+
+log = logging.getLogger(__name__)
 
 
 class FrameworkAdapter(BaseAdapter):
@@ -34,16 +31,27 @@ class FrameworkAdapter(BaseAdapter):
         self._connected = False
         self._collector: Optional[TraceCollector] = None
         self._root_span_id: Optional[str] = None
+        self._using_shared_collector = False
         # Optional run_id → span_id mapping for callback-style frameworks
         self._span_ids: Dict[str, str] = {}
+        # Subclasses populate during connect() for adapter_info() metadata
+        self._metadata: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Collector lifecycle
     # ------------------------------------------------------------------
 
     def _ensure_collector(self) -> TraceCollector:
-        """Lazily create a collector and root span ID."""
+        """Return the shared collector from ContextVars, or create a private one."""
+        shared = _current_collector.get()
+        if shared is not None:
+            self._using_shared_collector = True
+            if self._root_span_id is None:
+                self._root_span_id = _current_span_id.get()
+            return shared
+
         if self._collector is None:
+            self._using_shared_collector = False
             self._collector = TraceCollector(self._client, self._config)
             self._root_span_id = uuid.uuid4().hex[:16]
         return self._collector
@@ -51,6 +59,55 @@ class FrameworkAdapter(BaseAdapter):
     @staticmethod
     def _new_span_id() -> str:
         return uuid.uuid4().hex[:16]
+
+    # ------------------------------------------------------------------
+    # Callback scope — bridges framework callbacks to ContextVars
+    # ------------------------------------------------------------------
+
+    @contextmanager
+    def _callback_scope(
+        self,
+        span_name: Optional[str] = None,
+    ) -> Generator[str, None, None]:
+        """Push collector + new span into ContextVars; yields the span_id."""
+        collector = self._ensure_collector()
+        span_id = self._new_span_id()
+
+        # Only set the collector ContextVar if no shared one exists already
+        needs_collector_push = _current_collector.get() is None
+        col_token = None
+        if needs_collector_push:
+            col_token = _current_collector.set(collector)
+
+        snapshot = _push_span(span_id, span_name)
+        try:
+            yield span_id
+        finally:
+            _pop_span(snapshot)
+            if col_token is not None:
+                _current_collector.reset(col_token)
+
+    def _traced_call(
+        self,
+        original: Any,
+        *args: Any,
+        _span_name: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Call *original* inside a _callback_scope so providers see this collector."""
+        with self._callback_scope(_span_name):
+            return original(*args, **kwargs)
+
+    async def _async_traced_call(
+        self,
+        original: Any,
+        *args: Any,
+        _span_name: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Async version of _traced_call."""
+        with self._callback_scope(_span_name):
+            return await original(*args, **kwargs)
 
     # ------------------------------------------------------------------
     # Event emission (thread-safe)
@@ -79,12 +136,7 @@ class FrameworkAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     def _span_id_for(self, run_id: Any, parent_run_id: Any = None) -> tuple[str, Optional[str]]:
-        """Map a framework run_id to a span_id, creating one if needed.
-
-        Returns ``(span_id, parent_span_id)``.  Useful for frameworks
-        (LangChain, CrewAI, OpenAI Agents) that assign their own run
-        identifiers to each step.
-        """
+        """Map a framework run_id to a (span_id, parent_span_id) pair."""
         rid = str(run_id)
         if rid not in self._span_ids:
             self._span_ids[rid] = self._new_span_id()
@@ -97,13 +149,15 @@ class FrameworkAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     def _flush_collector(self) -> None:
-        """Flush the current collector and reset state."""
+        """Flush private collector (no-op for shared collectors)."""
         with self._lock:
             collector = self._collector
+            is_shared = self._using_shared_collector
             self._collector = None
             self._root_span_id = None
+            self._using_shared_collector = False
             self._span_ids.clear()
-        if collector is not None:
+        if collector is not None and not is_shared:
             collector.flush()
 
     # ------------------------------------------------------------------
@@ -111,27 +165,20 @@ class FrameworkAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     def connect(self, target: Any = None, **kwargs: Any) -> Any:
-        """Mark the adapter as connected.
-
-        Callback-style adapters (LangChain, LangGraph) are passed directly
-        to the framework, so ``connect()`` just flips the flag.  Adapters
-        that need registration (CrewAI, LlamaIndex, etc.) should override.
-        """
+        """Mark as connected. Subclasses override for framework registration."""
         self._connected = True
         return target
 
     def disconnect(self) -> None:
-        """Flush remaining events and mark as disconnected.
-
-        Subclasses should unhook from the framework first, then call
-        ``super().disconnect()``.
-        """
+        """Flush remaining events and mark as disconnected."""
         self._flush_collector()
         self._connected = False
+        self._metadata.clear()
 
     def adapter_info(self) -> AdapterInfo:
         return AdapterInfo(
             name=self.name,
             adapter_type="framework",
             connected=self._connected,
+            metadata=self._metadata,
         )
