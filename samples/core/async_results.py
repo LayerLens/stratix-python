@@ -27,25 +27,22 @@ Usage
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 import time
+import asyncio
 
-from layerlens import AsyncStratix, Stratix
+from layerlens import Stratix, AsyncStratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from _helpers import create_judge
-
 
 # ---------------------------------------------------------------------------
 # 1. Concurrent result fetching
 # ---------------------------------------------------------------------------
 
 
-async def fetch_evaluation_results(
-    client: AsyncStratix, evaluation_id: str
-) -> tuple[str, list | None]:
+async def fetch_evaluation_results(client: AsyncStratix, evaluation_id: str) -> tuple[str, list | None]:
     """Fetch results for a single evaluation."""
     try:
         print(f"  Fetching evaluation {evaluation_id}...")
@@ -77,10 +74,7 @@ async def demo_concurrent_fetch(client: AsyncStratix) -> None:
     tasks = [fetch_evaluation_results(client, eid) for eid in evaluation_ids]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    successful = sum(
-        1 for r in results
-        if not isinstance(r, Exception) and r[1] is not None
-    )
+    successful = sum(1 for r in results if not isinstance(r, Exception) and r[1] is not None)
     print(f"Successfully fetched results for {successful}/{len(evaluation_ids)} evaluations")
 
 
@@ -130,13 +124,12 @@ async def demo_concurrent_evaluations(client: AsyncStratix) -> None:
     target_benchmark = benchmarks[0]
     num_evaluations = 3
 
-    print(f"Running {num_evaluations} evaluations in parallel "
-          f"(model={target_model.name}, benchmark={target_benchmark.name})...")
+    print(
+        f"Running {num_evaluations} evaluations in parallel "
+        f"(model={target_model.name}, benchmark={target_benchmark.name})..."
+    )
 
-    tasks = [
-        create_and_run_evaluation(client, target_model, target_benchmark, i + 1)
-        for i in range(num_evaluations)
-    ]
+    tasks = [create_and_run_evaluation(client, target_model, target_benchmark, i + 1) for i in range(num_evaluations)]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Summary
@@ -154,8 +147,7 @@ async def demo_concurrent_evaluations(client: AsyncStratix) -> None:
             else:
                 print(f"  Evaluation #{eval_num} ({eval_id}): FAILED")
 
-    print(f"Overall: {successful}/{num_evaluations} evaluations succeeded, "
-          f"{total_results} total results")
+    print(f"Overall: {successful}/{num_evaluations} evaluations succeeded, {total_results} total results")
 
 
 # ---------------------------------------------------------------------------
@@ -177,9 +169,7 @@ async def demo_judge_and_traces(client: AsyncStratix) -> None:
 
     try:
         # Upload traces
-        traces_file = os.path.join(
-            os.path.dirname(__file__), "..", "data", "traces", "example_traces.jsonl"
-        )
+        traces_file = os.path.join(os.path.dirname(__file__), "..", "data", "traces", "example_traces.jsonl")
         if not os.path.exists(traces_file):
             print(f"Trace file not found at {traces_file}, skipping trace upload.")
             return
@@ -203,10 +193,7 @@ async def demo_judge_and_traces(client: AsyncStratix) -> None:
             print("Estimated cost: unavailable")
 
         # Run evaluations concurrently
-        tasks = [
-            client.trace_evaluations.create(trace_id=tid, judge_id=judge.id)
-            for tid in trace_ids
-        ]
+        tasks = [client.trace_evaluations.create(trace_id=tid, judge_id=judge.id) for tid in trace_ids]
         evaluations = await asyncio.gather(*tasks)
 
         for evaluation in evaluations:
@@ -224,12 +211,9 @@ async def demo_judge_and_traces(client: AsyncStratix) -> None:
             for _ in range(30):
                 await asyncio.sleep(delay)
                 try:
-                    resp = await asyncio.to_thread(
-                        sync_client_for_poll.trace_evaluations.get_results, evaluation.id
-                    )
-                    if resp and resp.results:
-                        for result in resp.results:
-                            print(f"  Score: {result.score}, Passed: {result.passed}")
+                    resp = await asyncio.to_thread(sync_client_for_poll.trace_evaluations.get_results, evaluation.id)
+                    if resp and resp.score is not None:
+                        print(f"  Score: {resp.score}, Passed: {resp.passed}")
                         found = True
                         break
                 except Exception:

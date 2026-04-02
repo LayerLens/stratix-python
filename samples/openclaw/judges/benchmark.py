@@ -8,11 +8,11 @@ rubric, or exact_match scoring methods.
 
 from __future__ import annotations
 
-import hashlib
-import logging
+import re
 import math
 import random
-import re
+import hashlib
+import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -61,10 +61,15 @@ class BenchmarkJudge:
         self._method_scores[method].append(aggregate)
         rationale = self._build_rationale(scores, aggregate, verdict, method, task_id)
         return {
-            "trace_id": trace_id, "task_id": task_id, "model_id": model_id,
-            "scoring_method": method, "scores": scores,
-            "aggregate_score": round(aggregate, 2), "verdict": verdict,
-            "rationale": rationale, "weight": weight,
+            "trace_id": trace_id,
+            "task_id": task_id,
+            "model_id": model_id,
+            "scoring_method": method,
+            "scores": scores,
+            "aggregate_score": round(aggregate, 2),
+            "verdict": verdict,
+            "rationale": rationale,
+            "weight": weight,
         }
 
     def get_method_stats(self) -> dict[str, dict[str, Any]]:
@@ -76,8 +81,13 @@ class BenchmarkJudge:
             n = len(scores)
             mean = sum(scores) / n
             variance = sum((s - mean) ** 2 for s in scores) / n
-            stats[method] = {"count": n, "mean": round(mean, 3), "std_dev": round(math.sqrt(variance), 3),
-                             "min": round(min(scores), 3), "max": round(max(scores), 3)}
+            stats[method] = {
+                "count": n,
+                "mean": round(mean, 3),
+                "std_dev": round(math.sqrt(variance), 3),
+                "min": round(min(scores), 3),
+                "max": round(max(scores), 3),
+            }
         return stats
 
     def _classify_verdict(self, score: float, **context: Any) -> str:
@@ -101,7 +111,9 @@ class BenchmarkJudge:
         score = max(0.0, min(10.0, raw_score + noise))
         return {"semantic_similarity": round(score, 2)}
 
-    def _score_rubric(self, output: str, golden: str, custom_criteria: dict[str, dict[str, Any]] | None = None) -> dict[str, float]:
+    def _score_rubric(
+        self, output: str, golden: str, custom_criteria: dict[str, dict[str, Any]] | None = None
+    ) -> dict[str, float]:
         criteria = custom_criteria or RUBRIC_CRITERIA
         out_tokens = set(self._normalize_tokens(output))
         gold_tokens = set(self._normalize_tokens(golden))
@@ -118,7 +130,7 @@ class BenchmarkJudge:
                 if len(output.split()) < len(golden.split()) * 0.3:
                     base -= 2.0
             elif criterion_name == "formatting":
-                if output and output[0].isupper() and output.rstrip().endswith('.'):
+                if output and output[0].isupper() and output.rstrip().endswith("."):
                     noise += 1.0
             scores[criterion_name] = round(max(0.0, min(10.0, base + noise)), 2)
         return scores
@@ -143,23 +155,69 @@ class BenchmarkJudge:
         return 0.0
 
     def _normalize_tokens(self, text: str) -> list[str]:
-        stopwords = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-                     "have", "has", "had", "do", "does", "did", "will", "would", "could",
-                     "should", "may", "might", "shall", "can", "to", "of", "in", "for",
-                     "on", "with", "at", "by", "from", "it", "its", "this", "that",
-                     "and", "or", "but", "not", "no"}
-        tokens = re.findall(r'\w+', text.lower())
+        stopwords = {
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "may",
+            "might",
+            "shall",
+            "can",
+            "to",
+            "of",
+            "in",
+            "for",
+            "on",
+            "with",
+            "at",
+            "by",
+            "from",
+            "it",
+            "its",
+            "this",
+            "that",
+            "and",
+            "or",
+            "but",
+            "not",
+            "no",
+        }
+        tokens = re.findall(r"\w+", text.lower())
         return [t for t in tokens if t not in stopwords and len(t) > 1]
 
-    def _build_rationale(self, scores: dict[str, float], aggregate: float, verdict: str, method: str, task_id: str) -> str:
+    def _build_rationale(
+        self, scores: dict[str, float], aggregate: float, verdict: str, method: str, task_id: str
+    ) -> str:
         parts = [f"Task: {task_id}.", f"Scoring method: {method}.", f"Aggregate: {aggregate:.2f}/10."]
         if method == "rubric":
             weakest = min(scores, key=scores.get)  # type: ignore[arg-type]
             strongest = max(scores, key=scores.get)  # type: ignore[arg-type]
-            parts.append(f"Strongest criterion: {strongest} ({scores[strongest]:.1f}), weakest: {weakest} ({scores[weakest]:.1f}).")
+            parts.append(
+                f"Strongest criterion: {strongest} ({scores[strongest]:.1f}), weakest: {weakest} ({scores[weakest]:.1f})."
+            )
         elif method == "exact_match":
             matched = scores.get("exact_match", 0.0) >= 10.0
             parts.append("Exact match: YES." if matched else "Exact match: NO.")
-        parts.append("Output meets benchmark quality bar." if verdict == "PASS"
-                     else "Output does not meet benchmark threshold. Review for regressions.")
+        parts.append(
+            "Output meets benchmark quality bar."
+            if verdict == "PASS"
+            else "Output does not meet benchmark threshold. Review for regressions."
+        )
         return " ".join(parts)

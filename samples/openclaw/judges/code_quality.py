@@ -16,11 +16,27 @@ from typing import Any, Literal
 logger = logging.getLogger(__name__)
 
 CODE_DIMENSIONS: dict[str, dict[str, Any]] = {
-    "correctness": {"description": "Produces correct results for the given specification", "weight": 0.30, "max_score": 10.0},
+    "correctness": {
+        "description": "Produces correct results for the given specification",
+        "weight": 0.30,
+        "max_score": 10.0,
+    },
     "clarity": {"description": "Readable, well-structured, and maintainable code", "weight": 0.15, "max_score": 10.0},
-    "security": {"description": "Free of vulnerabilities, injections, and unsafe operations", "weight": 0.25, "max_score": 10.0},
-    "test_coverage": {"description": "Edge cases, error paths, and core logic adequately tested", "weight": 0.15, "max_score": 10.0},
-    "spec_adherence": {"description": "Implementation matches every requirement in the specification", "weight": 0.15, "max_score": 10.0},
+    "security": {
+        "description": "Free of vulnerabilities, injections, and unsafe operations",
+        "weight": 0.25,
+        "max_score": 10.0,
+    },
+    "test_coverage": {
+        "description": "Edge cases, error paths, and core logic adequately tested",
+        "weight": 0.15,
+        "max_score": 10.0,
+    },
+    "spec_adherence": {
+        "description": "Implementation matches every requirement in the specification",
+        "weight": 0.15,
+        "max_score": 10.0,
+    },
 }
 
 DEFAULT_GATE_THRESHOLD: float = 7.5
@@ -54,7 +70,9 @@ SUGGESTION_TEMPLATES: dict[str, list[str]] = {
 }
 
 
-def _classify_verdict(score: float, gate_threshold: float = DEFAULT_GATE_THRESHOLD, **context: Any) -> tuple[Literal["PASS", "FAIL"], str]:
+def _classify_verdict(
+    score: float, gate_threshold: float = DEFAULT_GATE_THRESHOLD, **context: Any
+) -> tuple[Literal["PASS", "FAIL"], str]:
     if score >= gate_threshold:
         return "PASS", "LOW"
     else:
@@ -86,7 +104,12 @@ class CodeQualityJudge:
     pass_threshold: float = DEFAULT_GATE_THRESHOLD
     fail_severity: str = "HIGH"
 
-    def __init__(self, judge_id: str = "judge_code_quality", gate_threshold: float | None = None, weights: dict[str, float] | None = None) -> None:
+    def __init__(
+        self,
+        judge_id: str = "judge_code_quality",
+        gate_threshold: float | None = None,
+        weights: dict[str, float] | None = None,
+    ) -> None:
         self.judge_id = judge_id
         self._gate_threshold = gate_threshold or DEFAULT_GATE_THRESHOLD
         self._weights = dict(CODE_DIMENSIONS)
@@ -106,23 +129,36 @@ class CodeQualityJudge:
         best_dim = max(scores, key=scores.get)  # type: ignore[arg-type]
         worst_dim = min(scores, key=scores.get)  # type: ignore[arg-type]
         if verdict == "PASS":
-            rationale = (f"Code PASSED the quality gate (iteration {iteration}). "
-                         f"Aggregate: {aggregate:.1f} / gate: {self._gate_threshold:.1f}. "
-                         f"Strongest: {best_dim} ({scores[best_dim]:.1f}). "
-                         f"{len(suggestions)} minor suggestion(s).")
+            rationale = (
+                f"Code PASSED the quality gate (iteration {iteration}). "
+                f"Aggregate: {aggregate:.1f} / gate: {self._gate_threshold:.1f}. "
+                f"Strongest: {best_dim} ({scores[best_dim]:.1f}). "
+                f"{len(suggestions)} minor suggestion(s)."
+            )
         else:
             gap = self._gate_threshold - aggregate
-            rationale = (f"Code FAILED the quality gate (iteration {iteration}). "
-                         f"Aggregate: {aggregate:.1f} / gate: {self._gate_threshold:.1f} (gap: {gap:.1f}). "
-                         f"Weakest: {worst_dim} ({scores[worst_dim]:.1f}). "
-                         f"{len(suggestions)} suggestion(s) for improvement.")
+            rationale = (
+                f"Code FAILED the quality gate (iteration {iteration}). "
+                f"Aggregate: {aggregate:.1f} / gate: {self._gate_threshold:.1f} (gap: {gap:.1f}). "
+                f"Weakest: {worst_dim} ({scores[worst_dim]:.1f}). "
+                f"{len(suggestions)} suggestion(s) for improvement."
+            )
         return {
-            "trace_id": trace_id, "judge_id": self.judge_id, "dimension": self.dimension,
-            "scores": scores, "aggregate_score": aggregate, "verdict": verdict,
-            "severity": severity, "suggestions": suggestions, "rationale": rationale,
-            "gate_threshold": self._gate_threshold, "iteration": iteration,
-            "metadata": {"dimensions_evaluated": list(self._weights.keys()),
-                         "weights": {d: v["weight"] for d, v in self._weights.items()}},
+            "trace_id": trace_id,
+            "judge_id": self.judge_id,
+            "dimension": self.dimension,
+            "scores": scores,
+            "aggregate_score": aggregate,
+            "verdict": verdict,
+            "severity": severity,
+            "suggestions": suggestions,
+            "rationale": rationale,
+            "gate_threshold": self._gate_threshold,
+            "iteration": iteration,
+            "metadata": {
+                "dimensions_evaluated": list(self._weights.keys()),
+                "weights": {d: v["weight"] for d, v in self._weights.items()},
+            },
         }
 
     def get_suggestions(self, scores: dict[str, float], suggestion_threshold: float = 7.0) -> list[str]:

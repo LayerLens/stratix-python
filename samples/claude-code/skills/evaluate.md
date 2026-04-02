@@ -41,8 +41,8 @@ response = client.trace_evaluations.get_many(
 
 # Get evaluation results
 results = client.trace_evaluations.get_results("trace_eval_id")
-# Returns TraceEvaluationResultsResponse with .results list
-# Each result has .score, .outcome
+# Returns TraceEvaluationResultsResponse (extends TraceEvaluationResult)
+# Has .score, .passed, .reasoning, .steps, .latency_ms, .total_cost directly
 ```
 
 ## SDK Reference: Model Evaluations

@@ -16,16 +16,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+from dataclasses import field, dataclass
 
-from pydantic import BaseModel, Field
-
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from pydantic import Field, BaseModel
 from langgraph.graph import END, StateGraph
 
 # CopilotKit helpers
-from copilotkit.langchain import copilotkit_emit_message, copilotkit_emit_state
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from layerlens import Stratix
 
@@ -161,7 +159,9 @@ def _extract_events(trace_data: Dict[str, Any]) -> List[TraceEvent]:
                 timestamp=raw.get("timestamp", raw.get("start_time")),
                 duration_ms=_safe_float(raw.get("duration_ms", raw.get("duration"))),
                 status=raw.get("status", raw.get("status_code")),
-                error=raw.get("error", raw.get("exception", {}).get("message") if isinstance(raw.get("exception"), dict) else None),
+                error=raw.get(
+                    "error", raw.get("exception", {}).get("message") if isinstance(raw.get("exception"), dict) else None
+                ),
                 tokens_in=_safe_int(raw.get("tokens_in", raw.get("prompt_tokens", raw.get("input_tokens")))),
                 tokens_out=_safe_int(raw.get("tokens_out", raw.get("completion_tokens", raw.get("output_tokens")))),
                 model=raw.get("model", raw.get("model_id")),
@@ -371,8 +371,7 @@ async def fetch_trace_node(state: InvestigatorState) -> Dict[str, Any]:
         return {
             "step": "error",
             "error": "No trace ID provided.",
-            "messages": state.messages
-            + [AIMessage(content="Please provide a trace ID to investigate.")],
+            "messages": state.messages + [AIMessage(content="Please provide a trace ID to investigate.")],
         }
 
     data = await asyncio.to_thread(_get_trace, trace_id)

@@ -16,15 +16,14 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any
-
-import os
 
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Test cases: pairs of prompts and responses with expected quality
@@ -61,10 +60,7 @@ TEST_CASES: list[dict[str, Any]] = [
     {
         "label": "Poor: incorrect information",
         "input": "Explain the difference between a list and a tuple in Python.",
-        "output": (
-            "Lists and tuples are the same thing in Python. They both use "
-            "square brackets and are mutable."
-        ),
+        "output": ("Lists and tuples are the same thing in Python. They both use square brackets and are mutable."),
         "expected_quality": "low",
     },
 ]
@@ -108,13 +104,15 @@ def run_test_suite(
         if eval_results:
             score = eval_results[0].score
 
-        results.append({
-            "label": case["label"],
-            "trace_id": tid,
-            "expected_quality": case["expected_quality"],
-            "score": score,
-            "detail": eval_results,
-        })
+        results.append(
+            {
+                "label": case["label"],
+                "trace_id": tid,
+                "expected_quality": case["expected_quality"],
+                "score": score,
+                "detail": eval_results,
+            }
+        )
 
     return results
 
@@ -191,12 +189,10 @@ def main() -> None:
             results = run_test_suite(client, judge_id, round_num)
 
             for r in results:
-                marker = "PASS" if (
-                    (r["score"] >= QUALITY_THRESHOLD) == (r["expected_quality"] == "high")
-                ) else "MISS"
+                marker = "PASS" if ((r["score"] >= QUALITY_THRESHOLD) == (r["expected_quality"] == "high")) else "MISS"
                 print(
                     f'[RubricTester]   {marker} "{r["label"]}" '
-                    f'score={r["score"]:.2f} (expected={r["expected_quality"]})'
+                    f"score={r['score']:.2f} (expected={r['expected_quality']})"
                 )
 
             is_aligned, alignment_rate = check_alignment(results)

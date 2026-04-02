@@ -19,18 +19,17 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
-import logging
 import uuid
+import logging
+import argparse
 from typing import Any
 
 from ._runner import DemoRunner, _print_scores
-from .judges.comparative import ComparativeJudge
-from .lib.notifier import Notifier
 from .lib.schemas import (
-    EvalSubject, EvaluatorConfig, ModelOutput,
-    AgentEvalRequest, AgentEvalResponse,
+    ModelOutput,
 )
+from .lib.notifier import Notifier
+from .judges.comparative import ComparativeJudge
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +85,14 @@ class CageMatchRunner(DemoRunner):
                 token_count=len(execution["output"].split()),
             )
             model_outputs.append(output)
-            entries.append({
-                "trace_id": str(uuid.uuid4()),
-                "output": execution["output"],
-                "model_id": model_id,
-                "task": task,
-            })
+            entries.append(
+                {
+                    "trace_id": str(uuid.uuid4()),
+                    "output": execution["output"],
+                    "model_id": model_id,
+                    "task": task,
+                }
+            )
             logger.info("  %s: %d tokens, %d ms", model_id, output.token_count, output.latency_ms)
 
         ranked_results = judge.evaluate_batch(entries)
@@ -107,8 +108,15 @@ class CageMatchRunner(DemoRunner):
                 print(f"  #{rank} ({medal}) -- {result['model_id']}")
                 _print_scores(result["scores"], result["aggregate_score"], verdict=result["verdict"])
 
-        leaderboard = [{"model_id": r["model_id"], "aggregate_score": r["aggregate_score"],
-                         "verdict": r["verdict"], "rank": r["rank"]} for r in ranked_results]
+        leaderboard = [
+            {
+                "model_id": r["model_id"],
+                "aggregate_score": r["aggregate_score"],
+                "verdict": r["verdict"],
+                "rank": r["rank"],
+            }
+            for r in ranked_results
+        ]
         notifier.publish_leaderboard(title="Cage Match: Final Rankings", entries=leaderboard)
 
         # SDK trace upload and real evaluation
@@ -121,15 +129,21 @@ class CageMatchRunner(DemoRunner):
         try:
             for entry in entries:
                 trace_id = self.upload_trace(
-                    input_text=task, output_text=entry["output"],
-                    metadata={"demo": self.demo_id, "model_id": entry["model_id"], "source": "openclaw"})
+                    input_text=task,
+                    output_text=entry["output"],
+                    metadata={"demo": self.demo_id, "model_id": entry["model_id"], "source": "openclaw"},
+                )
                 if trace_id:
                     logger.info("Trace uploaded for %s: %s", entry["model_id"], trace_id)
                     sdk_result = self.evaluate_trace(trace_id, sdk_judge_id)
                     if sdk_result:
                         sdk_results.append({"model_id": entry["model_id"], **sdk_result})
-                        logger.info("SDK evaluation for %s: score=%.2f passed=%s",
-                                    entry["model_id"], sdk_result["score"], sdk_result["passed"])
+                        logger.info(
+                            "SDK evaluation for %s: score=%.2f passed=%s",
+                            entry["model_id"],
+                            sdk_result["score"],
+                            sdk_result["passed"],
+                        )
 
             if sdk_results and not self.args.json:
                 print(f"\n{'=' * 60}")
@@ -139,7 +153,9 @@ class CageMatchRunner(DemoRunner):
                     status = "PASS" if sr["passed"] else "FAIL"
                     print(f"  {sr['model_id']:<30} score={sr['score']:>5.2f}  [{status}]")
                     if sr.get("reasoning"):
-                        print(f"    Reasoning: {sr['reasoning'][:100]}{'...' if len(str(sr.get('reasoning', ''))) > 100 else ''}")
+                        print(
+                            f"    Reasoning: {sr['reasoning'][:100]}{'...' if len(str(sr.get('reasoning', ''))) > 100 else ''}"
+                        )
                 print(f"{'=' * 60}\n")
         finally:
             if sdk_judge_id and self.client:
@@ -148,10 +164,15 @@ class CageMatchRunner(DemoRunner):
                 except Exception:
                     pass
 
-        return {"run_id": run_id, "task": task, "models": models,
-                "ranked_results": ranked_results, "leaderboard": leaderboard,
-                "winner": winner["model_id"] if winner else None,
-                "sdk_results": sdk_results}
+        return {
+            "run_id": run_id,
+            "task": task,
+            "models": models,
+            "ranked_results": ranked_results,
+            "leaderboard": leaderboard,
+            "winner": winner["model_id"] if winner else None,
+            "sdk_results": sdk_results,
+        }
 
 
 def main() -> None:

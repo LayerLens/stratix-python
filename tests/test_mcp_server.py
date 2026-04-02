@@ -4,11 +4,11 @@ Tests every tool handler, the dispatch logic, error handling, asyncio.to_thread
 wrapping, and the tool catalogue. Uses mocked SDK responses throughout.
 """
 
-import asyncio
-import json
 import os
 import sys
-from unittest.mock import MagicMock, patch, AsyncMock
+import json
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -69,14 +69,13 @@ def mock_client():
     client.trace_evaluations.create.return_value = te_obj
     client.trace_evaluations.get.return_value = te_obj
 
-    te_result = MagicMock()
-    te_result.score = 0.92
-    te_result.passed = True
-    te_result.reasoning = "Response is safe and accurate."
-    te_result.latency_ms = 1200
-    te_result.total_cost = 0.003
+    # TraceEvaluationResultsResponse is a single result (extends TraceEvaluationResult)
     te_results_resp = MagicMock()
-    te_results_resp.results = [te_result]
+    te_results_resp.score = 0.92
+    te_results_resp.passed = True
+    te_results_resp.reasoning = "Response is safe and accurate."
+    te_results_resp.latency_ms = 1200
+    te_results_resp.total_cost = 0.003
     client.trace_evaluations.get_results.return_value = te_results_resp
 
     # -- public models (for create_judge helper) --
@@ -114,12 +113,15 @@ def mcp_module(mock_client):
     mock_mcp_types.TextContent = FakeTextContent
     mock_mcp_types.Tool = FakeTool
 
-    with patch.dict("sys.modules", {
-        "mcp": MagicMock(),
-        "mcp.server": mock_mcp_server,
-        "mcp.server.stdio": mock_mcp_stdio,
-        "mcp.types": mock_mcp_types,
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "mcp": MagicMock(),
+            "mcp.server": mock_mcp_server,
+            "mcp.server.stdio": mock_mcp_stdio,
+            "mcp.types": mock_mcp_types,
+        },
+    ):
         with patch.dict("os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}):
             with patch("layerlens.Stratix", return_value=mock_client):
                 # Force reimport
@@ -128,6 +130,7 @@ def mcp_module(mock_client):
                     del sys.modules[mod_name]
 
                 import importlib.util
+
                 spec = importlib.util.spec_from_file_location(
                     mod_name,
                     os.path.join(MCP_DIR, "layerlens_server.py"),
@@ -182,16 +185,12 @@ class TestHandleListTraces:
         assert "trace-001" in text
         assert "test.jsonl" in text
         assert "2 evaluation(s)" in text
-        client.traces.get_many.assert_called_once_with(
-            page_size=10, sort_by="created_at", sort_order="desc"
-        )
+        client.traces.get_many.assert_called_once_with(page_size=10, sort_by="created_at", sort_order="desc")
 
     def test_default_limit(self, mcp_module):
         mod, client, _ = mcp_module
         asyncio.run(mod._handle_list_traces(client, {}))
-        client.traces.get_many.assert_called_once_with(
-            page_size=20, sort_by="created_at", sort_order="desc"
-        )
+        client.traces.get_many.assert_called_once_with(page_size=20, sort_by="created_at", sort_order="desc")
 
     def test_no_traces(self, mcp_module):
         mod, client, _ = mcp_module
@@ -233,24 +232,18 @@ class TestHandleRunEvaluation:
 
     def test_creates_evaluation(self, mcp_module):
         mod, client, _ = mcp_module
-        result = asyncio.run(mod._handle_run_evaluation(
-            client, {"trace_id": "trace-001", "judge_id": "judge-001"}
-        ))
+        result = asyncio.run(mod._handle_run_evaluation(client, {"trace_id": "trace-001", "judge_id": "judge-001"}))
         text = result[0].text
         assert "Evaluation created" in text
         assert "te-001" in text
         assert "trace-001" in text
         assert "judge-001" in text
-        client.trace_evaluations.create.assert_called_once_with(
-            trace_id="trace-001", judge_id="judge-001"
-        )
+        client.trace_evaluations.create.assert_called_once_with(trace_id="trace-001", judge_id="judge-001")
 
     def test_evaluation_creation_fails(self, mcp_module):
         mod, client, _ = mcp_module
         client.trace_evaluations.create.return_value = None
-        result = asyncio.run(mod._handle_run_evaluation(
-            client, {"trace_id": "t", "judge_id": "j"}
-        ))
+        result = asyncio.run(mod._handle_run_evaluation(client, {"trace_id": "t", "judge_id": "j"}))
         assert "Failed" in result[0].text
 
 
@@ -259,9 +252,7 @@ class TestHandleGetEvaluation:
 
     def test_returns_status_and_results(self, mcp_module):
         mod, client, _ = mcp_module
-        result = asyncio.run(mod._handle_get_evaluation(
-            client, {"evaluation_id": "te-001"}
-        ))
+        result = asyncio.run(mod._handle_get_evaluation(client, {"evaluation_id": "te-001"}))
         text = result[0].text
         assert "te-001" in text
         assert "0.92" in text
@@ -274,9 +265,7 @@ class TestHandleGetEvaluation:
     def test_evaluation_not_found(self, mcp_module):
         mod, client, _ = mcp_module
         client.trace_evaluations.get.return_value = None
-        result = asyncio.run(mod._handle_get_evaluation(
-            client, {"evaluation_id": "bad-id"}
-        ))
+        result = asyncio.run(mod._handle_get_evaluation(client, {"evaluation_id": "bad-id"}))
         assert "not found" in result[0].text
 
     def test_pending_evaluation_no_results(self, mcp_module):
@@ -285,9 +274,7 @@ class TestHandleGetEvaluation:
         pending_te.id = "te-002"
         pending_te.status = MagicMock(value="pending")
         client.trace_evaluations.get.return_value = pending_te
-        result = asyncio.run(mod._handle_get_evaluation(
-            client, {"evaluation_id": "te-002"}
-        ))
+        result = asyncio.run(mod._handle_get_evaluation(client, {"evaluation_id": "te-002"}))
         text = result[0].text
         assert "te-002" in text
         # Should NOT contain result scores (evaluation is pending)
@@ -300,9 +287,7 @@ class TestHandleCreateJudge:
 
     def test_creates_judge(self, mcp_module):
         mod, client, _ = mcp_module
-        result = asyncio.run(mod._handle_create_judge(
-            client, {"name": "Test Judge", "goal": "Evaluate test quality."}
-        ))
+        result = asyncio.run(mod._handle_create_judge(client, {"name": "Test Judge", "goal": "Evaluate test quality."}))
         text = result[0].text
         assert "Judge created" in text
         assert "judge-001" in text
@@ -315,9 +300,7 @@ class TestHandleCreateJudge:
         client.judges.get_many.return_value = MagicMock(judges=[])
         # _create_judge_helper will try create, get None, and won't find existing
         # This should trigger the "Failed" path or an error
-        result = asyncio.run(mod._handle_create_judge(
-            client, {"name": "Bad Judge", "goal": "Will fail."}
-        ))
+        result = asyncio.run(mod._handle_create_judge(client, {"name": "Bad Judge", "goal": "Will fail."}))
         # Either "Failed" or an error message
         assert len(result) == 1
 
@@ -375,7 +358,6 @@ class TestDispatchAndErrors:
     def test_sdk_error_returns_error_message(self, mcp_module):
         """SDK exceptions should be caught and returned as error text."""
         mod, client, _ = mcp_module
-        from layerlens._exceptions import NotFoundError as NFE
 
         client.traces.get.side_effect = Exception("Connection refused")
         # Call the handler directly -- the dispatch wrapper catches exceptions
@@ -438,18 +420,14 @@ class TestAsyncWrapping:
         mod, client, _ = mcp_module
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
             mock_to_thread.return_value = client.trace_evaluations.create.return_value
-            asyncio.run(mod._handle_run_evaluation(
-                client, {"trace_id": "t1", "judge_id": "j1"}
-            ))
+            asyncio.run(mod._handle_run_evaluation(client, {"trace_id": "t1", "judge_id": "j1"}))
             mock_to_thread.assert_called_once()
 
     def test_create_judge_uses_to_thread(self, mcp_module):
         mod, client, _ = mcp_module
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
             mock_to_thread.return_value = client.judges.create.return_value
-            asyncio.run(mod._handle_create_judge(
-                client, {"name": "J", "goal": "Test goal for judge."}
-            ))
+            asyncio.run(mod._handle_create_judge(client, {"name": "J", "goal": "Test goal for judge."}))
             mock_to_thread.assert_called_once()
 
     def test_list_judges_uses_to_thread(self, mcp_module):

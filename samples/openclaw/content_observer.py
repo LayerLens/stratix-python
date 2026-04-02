@@ -22,14 +22,14 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
-import logging
 import uuid
+import logging
+import argparse
 from typing import Any
 
-from ._runner import DemoRunner, _print_scores
-from .judges.population_quality import PopulationQualityJudge
+from ._runner import DemoRunner
 from .lib.sampler import StratifiedSampler
+from .judges.population_quality import PopulationQualityJudge
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +75,19 @@ class ContentObserverRunner(DemoRunner):
             if execution["output"] != post.content:  # Real OpenClaw response
                 post.content = execution["output"]
 
-        eval_items = [{"trace_id": p.post_id, "output": p.content,
-                        "context": {"community": p.community, "karma_tier": p.karma_tier,
-                                    "agent_id": p.agent_id, "topic": p.topic}}
-                       for p in posts]
+        eval_items = [
+            {
+                "trace_id": p.post_id,
+                "output": p.content,
+                "context": {
+                    "community": p.community,
+                    "karma_tier": p.karma_tier,
+                    "agent_id": p.agent_id,
+                    "topic": p.topic,
+                },
+            }
+            for p in posts
+        ]
 
         results = judge.evaluate_batch(eval_items)
         report = self._build_report(posts, results, communities, judge)
@@ -100,9 +109,14 @@ class ContentObserverRunner(DemoRunner):
             trace_id = self.upload_trace(
                 input_text=f"Content feed post from {post.community} (karma: {post.karma_tier})",
                 output_text=post.content,
-                metadata={"demo": self.demo_id, "community": post.community,
-                           "karma_tier": post.karma_tier, "post_id": post.post_id,
-                           "source": "openclaw"})
+                metadata={
+                    "demo": self.demo_id,
+                    "community": post.community,
+                    "karma_tier": post.karma_tier,
+                    "post_id": post.post_id,
+                    "source": "openclaw",
+                },
+            )
             if trace_id:
                 logger.info("Trace uploaded for post %s: %s", post.post_id, trace_id)
                 sdk_result = self.evaluate_trace(trace_id, sdk_judge_id)
@@ -115,10 +129,21 @@ class ContentObserverRunner(DemoRunner):
                 status = "PASS" if sr["passed"] else "FAIL"
                 print(f"    {sr['post_id']:<14} {sr['community']:<12} score={sr['score']:>5.2f}  [{status}]")
 
-        return {"run_id": run_id, "communities": communities, "batch_size": batch_size,
-                "sdk_results": sdk_results, **report}
+        return {
+            "run_id": run_id,
+            "communities": communities,
+            "batch_size": batch_size,
+            "sdk_results": sdk_results,
+            **report,
+        }
 
-    def _build_report(self, posts: list, results: list[dict[str, Any]], communities: list[str], judge: PopulationQualityJudge | None = None) -> dict[str, Any]:
+    def _build_report(
+        self,
+        posts: list,
+        results: list[dict[str, Any]],
+        communities: list[str],
+        judge: PopulationQualityJudge | None = None,
+    ) -> dict[str, Any]:
         total = len(results)
         pass_count = sum(1 for r in results if r["verdict"] == "PASS")
         pass_rate = (pass_count / total * 100) if total else 0.0
@@ -133,10 +158,14 @@ class ContentObserverRunner(DemoRunner):
             community_stats[c]["total_score"] += result["aggregate_score"]
             if result["verdict"] == "PASS":
                 community_stats[c]["pass_count"] += 1
-        community_breakdown = {c: {"count": s["count"],
-                                     "avg_score": round(s["total_score"] / s["count"], 2) if s["count"] else 0.0,
-                                     "pass_rate": round(s["pass_count"] / s["count"] * 100, 1) if s["count"] else 0.0}
-                                for c, s in community_stats.items()}
+        community_breakdown = {
+            c: {
+                "count": s["count"],
+                "avg_score": round(s["total_score"] / s["count"], 2) if s["count"] else 0.0,
+                "pass_rate": round(s["pass_count"] / s["count"] * 100, 1) if s["count"] else 0.0,
+            }
+            for c, s in community_stats.items()
+        }
 
         tier_stats: dict[str, dict[str, Any]] = {}
         for post, result in zip(posts, results):
@@ -147,10 +176,14 @@ class ContentObserverRunner(DemoRunner):
             tier_stats[t]["total_score"] += result["aggregate_score"]
             if result["verdict"] == "PASS":
                 tier_stats[t]["pass_count"] += 1
-        tier_breakdown = {t: {"count": s["count"],
-                                "avg_score": round(s["total_score"] / s["count"], 2) if s["count"] else 0.0,
-                                "pass_rate": round(s["pass_count"] / s["count"] * 100, 1) if s["count"] else 0.0}
-                           for t, s in tier_stats.items()}
+        tier_breakdown = {
+            t: {
+                "count": s["count"],
+                "avg_score": round(s["total_score"] / s["count"], 2) if s["count"] else 0.0,
+                "pass_rate": round(s["pass_count"] / s["count"] * 100, 1) if s["count"] else 0.0,
+            }
+            for t, s in tier_stats.items()
+        }
 
         dim_totals: dict[str, float] = {}
         for r in results:
@@ -158,16 +191,28 @@ class ContentObserverRunner(DemoRunner):
                 dim_totals[dim] = dim_totals.get(dim, 0.0) + score
         dim_averages = {dim: round(ts / total, 2) for dim, ts in dim_totals.items()} if total else {}
 
-        flagged = [{"post_id": p.post_id, "community": p.community, "karma_tier": p.karma_tier,
-                     "score": r["aggregate_score"], "rationale": r["rationale"]}
-                    for p, r in zip(posts, results) if r["verdict"] == "FAIL"]
+        flagged = [
+            {
+                "post_id": p.post_id,
+                "community": p.community,
+                "karma_tier": p.karma_tier,
+                "score": r["aggregate_score"],
+                "rationale": r["rationale"],
+            }
+            for p, r in zip(posts, results)
+            if r["verdict"] == "FAIL"
+        ]
 
         return {
-            "total_posts": total, "pass_count": pass_count,
-            "fail_count": total - pass_count, "pass_rate": round(pass_rate, 1),
+            "total_posts": total,
+            "pass_count": pass_count,
+            "fail_count": total - pass_count,
+            "pass_rate": round(pass_rate, 1),
             "mean_score": round(mean_score, 2),
-            "community_breakdown": community_breakdown, "tier_breakdown": tier_breakdown,
-            "dimension_averages": dim_averages, "flagged_posts": flagged,
+            "community_breakdown": community_breakdown,
+            "tier_breakdown": tier_breakdown,
+            "dimension_averages": dim_averages,
+            "flagged_posts": flagged,
             "population_stats": judge.get_population_stats() if judge else {},
         }
 
@@ -183,13 +228,17 @@ class ContentObserverRunner(DemoRunner):
         print(f"{'-' * 60}")
         print("  Per-Community Breakdown:")
         for comm, stats in sorted(report["community_breakdown"].items()):
-            print(f"    {comm:<14} {stats['count']:>3} posts  avg={stats['avg_score']:.2f}  pass={stats['pass_rate']:.1f}%")
+            print(
+                f"    {comm:<14} {stats['count']:>3} posts  avg={stats['avg_score']:.2f}  pass={stats['pass_rate']:.1f}%"
+            )
         print(f"{'-' * 60}")
         print("  Per-Karma-Tier Breakdown:")
         for tier in ["low", "standard", "high"]:
             if tier in report["tier_breakdown"]:
                 stats = report["tier_breakdown"][tier]
-                print(f"    {tier:<14} {stats['count']:>3} posts  avg={stats['avg_score']:.2f}  pass={stats['pass_rate']:.1f}%")
+                print(
+                    f"    {tier:<14} {stats['count']:>3} posts  avg={stats['avg_score']:.2f}  pass={stats['pass_rate']:.1f}%"
+                )
         print(f"{'-' * 60}")
         if report["dimension_averages"]:
             print("  Dimension Averages:")
@@ -201,7 +250,9 @@ class ContentObserverRunner(DemoRunner):
         if flagged:
             print(f"\n  Flagged Posts ({len(flagged)} FAIL):")
             for fp in flagged[:10]:
-                print(f"    {fp['post_id']:<14} {fp['community']:<12} tier={fp['karma_tier']:<10} score={fp['score']:.2f}")
+                print(
+                    f"    {fp['post_id']:<14} {fp['community']:<12} tier={fp['karma_tier']:<10} score={fp['score']:.2f}"
+                )
             if len(flagged) > 10:
                 print(f"    ... and {len(flagged) - 10} more")
             print()

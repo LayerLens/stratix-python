@@ -35,10 +35,10 @@ Usage
 
 from __future__ import annotations
 
-import argparse
-import logging
 import os
 import sys
+import logging
+import argparse
 
 from layerlens import Stratix
 
@@ -120,9 +120,7 @@ def main() -> None:
 
     judges_response = client.judges.get_many()
     if not judges_response or not judges_response.judges:
-        logger.error(
-            "No judges found. Create one first (see create_judge.py)."
-        )
+        logger.error("No judges found. Create one first (see create_judge.py).")
         sys.exit(1)
 
     logger.info(
@@ -163,9 +161,7 @@ def main() -> None:
     )
 
     if not traces_response or not traces_response.traces:
-        logger.error(
-            "No traces found. Upload some first (see basic_trace.py)."
-        )
+        logger.error("No traces found. Upload some first (see basic_trace.py).")
         sys.exit(1)
 
     logger.info(
@@ -246,10 +242,7 @@ def main() -> None:
     print(f"  Judge version:      {getattr(judge, 'version', 'N/A')}")
     print(f"  Trace ID:           {trace.id}")
     print(f"  Evaluation ID:      {trace_eval.id}")
-    print(
-        f"  Evaluation status:  "
-        f"{getattr(trace_eval, 'status', 'unknown')}"
-    )
+    print(f"  Evaluation status:  {getattr(trace_eval, 'status', 'unknown')}")
     print("-" * 70)
 
     if eval_results:
@@ -257,14 +250,10 @@ def main() -> None:
         print()
         for i, result in enumerate(eval_results, 1):
             score = result.score
-            score_str = (
-                f"{score:.2f}" if isinstance(score, (int, float)) else "N/A"
-            )
+            score_str = f"{score:.2f}" if isinstance(score, (int, float)) else "N/A"
             passed = result.passed
             reasoning = result.reasoning or ""
-            reasoning_preview = (
-                reasoning[:100] + "..." if reasoning else "N/A"
-            )
+            reasoning_preview = reasoning[:100] + "..." if reasoning else "N/A"
 
             print(f"  [{i}] Score:     {score_str}")
             print(f"      Passed:    {passed}")
@@ -272,9 +261,7 @@ def main() -> None:
             print()
     else:
         print("  No results available yet.")
-        print(
-            f"  Re-run with --trace-id and check evaluation {trace_eval.id}"
-        )
+        print(f"  Re-run with --trace-id and check evaluation {trace_eval.id}")
         print()
 
     print("=" * 70)

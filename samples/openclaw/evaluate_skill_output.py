@@ -31,7 +31,7 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import poll_evaluation_results, upload_trace_dict, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Test prompts that exercise the "web_search" skill
@@ -118,11 +118,13 @@ def _execute_prompts() -> list[dict[str, Any]]:
             start = time.monotonic()
             result = agent.execute(prompt)
             duration_ms = round((time.monotonic() - start) * 1000)
-            executions.append({
-                "task": prompt,
-                "result": str(result),
-                "duration_ms": duration_ms,
-            })
+            executions.append(
+                {
+                    "task": prompt,
+                    "result": str(result),
+                    "duration_ms": duration_ms,
+                }
+            )
         return executions
     except ImportError:
         print("(openclaw not installed -- using simulated execution data)")
@@ -142,8 +144,7 @@ JUDGE_DEFINITIONS = [
     ),
     (
         "Accuracy",
-        "Evaluate whether the response is factually accurate, with correct "
-        "data, valid URLs, and no fabricated claims.",
+        "Evaluate whether the response is factually accurate, with correct data, valid URLs, and no fabricated claims.",
     ),
     (
         "Helpfulness",
@@ -217,15 +218,14 @@ def main() -> None:
 
     # --- 5. Evaluate each trace with each judge ---
     # results_matrix[judge_label] = list of (passed, score) per trace
-    results_matrix: dict[str, list[tuple[bool | None, float | None]]] = {
-        label: [] for _, label in judge_pairs
-    }
+    results_matrix: dict[str, list[tuple[bool | None, float | None]]] = {label: [] for _, label in judge_pairs}
 
     for t_idx, trace_id in enumerate(trace_ids):
         print(f"Evaluating trace {t_idx + 1}/{len(trace_ids)}...")
         for judge_id, label in judge_pairs:
             evaluation = client.trace_evaluations.create(
-                trace_id=trace_id, judge_id=judge_id,
+                trace_id=trace_id,
+                judge_id=judge_id,
             )
             results = poll_evaluation_results(client, evaluation.id)
             if results:
@@ -250,10 +250,7 @@ def main() -> None:
         rate = f"{passed}/{evaluated}" if evaluated else "N/A"
         print(f"{label:<16} {rate:>10} {avg_score:>10.2f} {evaluated:>10}")
 
-    overall_entries = [
-        (p, s) for label_entries in results_matrix.values()
-        for p, s in label_entries if p is not None
-    ]
+    overall_entries = [(p, s) for label_entries in results_matrix.values() for p, s in label_entries if p is not None]
     overall_passed = sum(1 for p, _ in overall_entries if p is True)
     overall_total = len(overall_entries)
     overall_rate = (overall_passed / overall_total * 100) if overall_total else 0

@@ -31,7 +31,7 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import poll_evaluation_results, upload_trace_dict, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Models to compare
@@ -74,7 +74,7 @@ SIMULATED_OUTPUTS: dict[str, list[dict[str, Any]]] = {
         {
             "result": (
                 "```python\nimport re\n\ndef is_valid_email(email: str) -> bool:\n"
-                '    pattern = r\'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$\'\n'
+                "    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$'\n"
                 "    return bool(re.match(pattern, email))\n```\n\n"
                 "This validates the general structure. For production use, consider "
                 "the `email-validator` library which handles edge cases per RFC 5322."
@@ -204,22 +204,18 @@ def _execute_tasks_for_model(model: str) -> list[dict[str, Any]]:
             start = time.monotonic()
             result = agent.execute(task)
             duration_ms = round((time.monotonic() - start) * 1000)
-            results.append({
-                "task": task,
-                "result": str(result),
-                "duration_ms": duration_ms,
-            })
+            results.append(
+                {
+                    "task": task,
+                    "result": str(result),
+                    "duration_ms": duration_ms,
+                }
+            )
         return results
     except ImportError:
-        return [
-            {"task": TASKS[i], **SIMULATED_OUTPUTS[model][i]}
-            for i in range(len(TASKS))
-        ]
+        return [{"task": TASKS[i], **SIMULATED_OUTPUTS[model][i]} for i in range(len(TASKS))]
     except Exception:
-        return [
-            {"task": TASKS[i], **SIMULATED_OUTPUTS[model][i]}
-            for i in range(len(TASKS))
-        ]
+        return [{"task": TASKS[i], **SIMULATED_OUTPUTS[model][i]} for i in range(len(TASKS))]
 
 
 # Judge definitions
@@ -235,8 +231,7 @@ JUDGE_DEFINITIONS = [
     ),
     (
         "Completeness",
-        "Evaluate whether the response thoroughly addresses the question "
-        "without omitting important aspects.",
+        "Evaluate whether the response thoroughly addresses the question without omitting important aspects.",
     ),
 ]
 
@@ -317,21 +312,16 @@ def main() -> None:
 
     # --- 4. Evaluate all traces ---
     # scores[model][judge_label] = list of scores
-    scores: dict[str, dict[str, list[float]]] = {
-        model: {label: [] for _, label in judge_pairs}
-        for model in MODELS
-    }
-    pass_counts: dict[str, dict[str, int]] = {
-        model: {label: 0 for _, label in judge_pairs}
-        for model in MODELS
-    }
+    scores: dict[str, dict[str, list[float]]] = {model: {label: [] for _, label in judge_pairs} for model in MODELS}
+    pass_counts: dict[str, dict[str, int]] = {model: {label: 0 for _, label in judge_pairs} for model in MODELS}
 
     for model in MODELS:
         print(f"Evaluating {model}...")
         for trace_id in model_traces[model]:
             for judge_id, label in judge_pairs:
                 evaluation = client.trace_evaluations.create(
-                    trace_id=trace_id, judge_id=judge_id,
+                    trace_id=trace_id,
+                    judge_id=judge_id,
                 )
                 results = poll_evaluation_results(client, evaluation.id)
                 if results:
@@ -373,8 +363,7 @@ def main() -> None:
     # Winner
     if model_averages:
         best_model = max(model_averages, key=model_averages.get)  # type: ignore[arg-type]
-        print(f"\nBest overall: \033[92m{best_model}\033[0m "
-              f"(avg score: {model_averages[best_model]:.2f})")
+        print(f"\nBest overall: \033[92m{best_model}\033[0m (avg score: {model_averages[best_model]:.2f})")
 
     print("\nDone.")
 

@@ -41,10 +41,10 @@ Usage
 
 from __future__ import annotations
 
-import logging
 import os
-import subprocess
 import sys
+import logging
+import subprocess
 
 from layerlens import Stratix
 

@@ -29,9 +29,9 @@ Usage
 
 from __future__ import annotations
 
-import argparse
-import logging
 import sys
+import logging
+import argparse
 
 from layerlens import Stratix
 
@@ -148,10 +148,8 @@ def main() -> None:
             model_id_2=model_id_2,
         )
         if comparison:
-            logger.info("Model 1: %d/%d correct",
-                        comparison.correct_count_1, comparison.total_results_1)
-            logger.info("Model 2: %d/%d correct",
-                        comparison.correct_count_2, comparison.total_results_2)
+            logger.info("Model 1: %d/%d correct", comparison.correct_count_1, comparison.total_results_1)
+            logger.info("Model 2: %d/%d correct", comparison.correct_count_2, comparison.total_results_2)
             logger.info("Total compared: %s", comparison.total_count)
     except Exception as exc:
         logger.info("compare_models() not available or IDs invalid: %s", exc)
@@ -171,8 +169,7 @@ def main() -> None:
             outcome_filter="reference_fails",
         )
         if comparison:
-            logger.info("Cases where model 1 fails but model 2 succeeds: %s",
-                        comparison.total_count)
+            logger.info("Cases where model 1 fails but model 2 succeeds: %s", comparison.total_count)
     except Exception as exc:
         logger.info("outcome_filter not available: %s", exc)
 

@@ -20,16 +20,16 @@ Usage
 
 from __future__ import annotations
 
-import asyncio
-import json
 import os
 import sys
+import json
+import asyncio
 import threading
 from typing import Any, Optional
 
+from mcp.types import Tool, TextContent
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
 
 from layerlens import Stratix, StratixError, NotFoundError
 
@@ -97,8 +97,7 @@ def create_server() -> Server:
             Tool(
                 name="list_traces",
                 description=(
-                    "List traces stored in LayerLens. Returns the most "
-                    "recent traces with optional pagination."
+                    "List traces stored in LayerLens. Returns the most recent traces with optional pagination."
                 ),
                 inputSchema={
                     "type": "object",
@@ -233,9 +232,7 @@ def create_server() -> Server:
 
 async def _handle_list_traces(client: Stratix, arguments: dict) -> list[TextContent]:
     limit = arguments.get("limit", 20)
-    resp = await asyncio.to_thread(
-        client.traces.get_many, page_size=limit, sort_by="created_at", sort_order="desc"
-    )
+    resp = await asyncio.to_thread(client.traces.get_many, page_size=limit, sort_by="created_at", sort_order="desc")
     if resp is None:
         return [TextContent(type="text", text="No traces found.")]
 
@@ -259,21 +256,21 @@ async def _handle_get_trace(client: Stratix, arguments: dict) -> list[TextConten
 async def _handle_run_evaluation(client: Stratix, arguments: dict) -> list[TextContent]:
     trace_id: str = arguments["trace_id"]
     judge_id: str = arguments["judge_id"]
-    evaluation = await asyncio.to_thread(
-        client.trace_evaluations.create, trace_id=trace_id, judge_id=judge_id
-    )
+    evaluation = await asyncio.to_thread(client.trace_evaluations.create, trace_id=trace_id, judge_id=judge_id)
     if evaluation is None:
         return [TextContent(type="text", text="Failed to create evaluation.")]
-    return [TextContent(
-        type="text",
-        text=(
-            f"Evaluation created.\n"
-            f"  ID:      {evaluation.id}\n"
-            f"  Status:  {evaluation.status}\n"
-            f"  Trace:   {trace_id}\n"
-            f"  Judge:   {judge_id}"
-        ),
-    )]
+    return [
+        TextContent(
+            type="text",
+            text=(
+                f"Evaluation created.\n"
+                f"  ID:      {evaluation.id}\n"
+                f"  Status:  {evaluation.status}\n"
+                f"  Trace:   {trace_id}\n"
+                f"  Judge:   {judge_id}"
+            ),
+        )
+    ]
 
 
 async def _handle_get_evaluation(client: Stratix, arguments: dict) -> list[TextContent]:
@@ -288,17 +285,21 @@ async def _handle_get_evaluation(client: Stratix, arguments: dict) -> list[TextC
     ]
 
     # If the evaluation finished, fetch and append results.
-    if hasattr(evaluation.status, "value") and evaluation.status.value == "success" or str(evaluation.status) == "success":
+    if (
+        hasattr(evaluation.status, "value")
+        and evaluation.status.value == "success"
+        or str(evaluation.status) == "success"
+    ):
         results_resp = await asyncio.to_thread(client.trace_evaluations.get_results, id=eid)
-        if results_resp and results_resp.results:
-            for r in results_resp.results:
-                parts.append("")
-                parts.append(f"  Result:")
-                parts.append(f"    Score:     {r.score}")
-                parts.append(f"    Passed:    {r.passed}")
-                parts.append(f"    Reasoning: {r.reasoning}")
-                parts.append(f"    Latency:   {r.latency_ms} ms")
-                parts.append(f"    Cost:      {r.total_cost}")
+        if results_resp and results_resp.score is not None:
+            r = results_resp
+            parts.append("")
+            parts.append(f"  Result:")
+            parts.append(f"    Score:     {r.score}")
+            parts.append(f"    Passed:    {r.passed}")
+            parts.append(f"    Reasoning: {r.reasoning}")
+            parts.append(f"    Latency:   {r.latency_ms} ms")
+            parts.append(f"    Cost:      {r.total_cost}")
 
     return [TextContent(type="text", text="\n".join(parts))]
 
@@ -309,14 +310,12 @@ async def _handle_create_judge(client: Stratix, arguments: dict) -> list[TextCon
     judge = await asyncio.to_thread(_create_judge_helper, client, name=name, evaluation_goal=goal)
     if judge is None:
         return [TextContent(type="text", text="Failed to create judge.")]
-    return [TextContent(
-        type="text",
-        text=(
-            f"Judge created.\n"
-            f"  ID:      {judge.id}\n"
-            f"  Name:    {judge.name}"
-        ),
-    )]
+    return [
+        TextContent(
+            type="text",
+            text=(f"Judge created.\n  ID:      {judge.id}\n  Name:    {judge.name}"),
+        )
+    ]
 
 
 async def _handle_list_judges(client: Stratix, arguments: dict) -> list[TextContent]:

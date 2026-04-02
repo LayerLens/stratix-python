@@ -21,14 +21,18 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 RESEARCH_QUERIES: list[dict[str, Any]] = [
     {
         "id": "research-001",
         "query": "What are the requirements for enforceability of non-compete agreements in California?",
         "response": "Under California Business and Professions Code Section 16600, non-compete agreements are generally void and unenforceable in California. The only recognized exceptions are in the context of sale of a business (Section 16601), dissolution of a partnership (Section 16602), or dissolution of an LLC (Section 16602.5).",
-        "citations": ["Cal. Bus. & Prof. Code 16600", "Cal. Bus. & Prof. Code 16601", "Edwards v. Arthur Andersen LLP (2008) 44 Cal.4th 937"],
+        "citations": [
+            "Cal. Bus. & Prof. Code 16600",
+            "Cal. Bus. & Prof. Code 16601",
+            "Edwards v. Arthur Andersen LLP (2008) 44 Cal.4th 937",
+        ],
     },
     {
         "id": "research-002",
@@ -70,12 +74,17 @@ def main() -> None:
             evaluation_goal="Evaluate whether the legal reasoning is logically sound, well-structured, and correctly applies legal principles.",
         ),
     }
-    judge_labels = {"citation_accuracy": "Citations", "jurisdictional_correctness": "Jurisdiction", "reasoning_quality": "Reasoning"}
+    judge_labels = {
+        "citation_accuracy": "Citations",
+        "jurisdictional_correctness": "Jurisdiction",
+        "reasoning_quality": "Reasoning",
+    }
     judge_ids = [j.id for j in judges.values()]
 
     try:
         for query in RESEARCH_QUERIES:
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=query["query"],
                 output_text=query["response"],
                 metadata={"citations": query["citations"]},

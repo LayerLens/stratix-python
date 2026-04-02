@@ -21,7 +21,7 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Sample patient cases
@@ -95,7 +95,8 @@ def main() -> None:
         print(f"Evaluating {len(PATIENT_CASES)} patient cases...\n")
 
         for case in PATIENT_CASES:
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=case["presentation"],
                 output_text=f"Differential: {', '.join(case['differential'])}. Triage: {case['triage_level']}",
                 metadata={

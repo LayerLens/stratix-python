@@ -21,7 +21,7 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 CITIZEN_INQUIRIES: list[dict[str, Any]] = [
     {
@@ -83,7 +83,8 @@ def main() -> None:
         print(f"Evaluating {len(CITIZEN_INQUIRIES)} citizen interactions...\n")
 
         for inquiry in CITIZEN_INQUIRIES:
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=inquiry["inquiry"],
                 output_text=inquiry["response"],
                 metadata={"program": inquiry["program"]},

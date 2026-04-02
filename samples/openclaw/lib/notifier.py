@@ -11,7 +11,6 @@ it logs messages to stdout with channel-style formatting.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 

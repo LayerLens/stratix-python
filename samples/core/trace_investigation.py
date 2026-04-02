@@ -32,10 +32,9 @@ Usage
 
 from __future__ import annotations
 
-import argparse
-import logging
-import os
 import sys
+import logging
+import argparse
 
 from layerlens import Stratix
 
@@ -146,9 +145,7 @@ def main() -> None:
     )
 
     if not response or not response.traces:
-        logger.error(
-            "No traces found. Upload some traces first (see basic_trace.py)."
-        )
+        logger.error("No traces found. Upload some traces first (see basic_trace.py).")
         sys.exit(1)
 
     logger.info(
@@ -190,8 +187,7 @@ def main() -> None:
             logger.info("  - id=%s  latency=%.2fs", trace.id, latency)
     else:
         logger.info(
-            "No traces exceeded the %.1fs latency threshold "
-            "(latency metadata may not be present on all traces).",
+            "No traces exceeded the %.1fs latency threshold (latency metadata may not be present on all traces).",
             args.latency_threshold,
         )
 

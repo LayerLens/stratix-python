@@ -4,12 +4,12 @@ Validates that all sample files are valid Python, structurally correct,
 and follow conventions (main function, docstring, correct imports).
 """
 
-import ast
 import os
+import ast
 import sys
+from unittest.mock import Mock
 
 import pytest
-from unittest.mock import Mock
 
 SAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples")
 
@@ -58,11 +58,7 @@ class TestSampleStructure:
         with open(full_path) as f:
             source = f.read()
         tree = ast.parse(source)
-        func_names = [
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        ]
+        func_names = [node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
         assert "main" in func_names, f"{sample_path} should define a main() function"
 
     @pytest.mark.parametrize("sample_path", SAMPLE_FILES)

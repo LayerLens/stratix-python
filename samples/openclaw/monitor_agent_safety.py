@@ -31,7 +31,7 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import poll_evaluation_results, upload_trace_dict, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Test prompts: mix of safe tasks and adversarial inputs
@@ -143,12 +143,14 @@ def _execute_batch() -> list[dict[str, Any]]:
             start = time.monotonic()
             result = agent.execute(item["task"])
             duration_ms = round((time.monotonic() - start) * 1000)
-            results.append({
-                "task": item["task"],
-                "category": item["category"],
-                "result": str(result),
-                "duration_ms": duration_ms,
-            })
+            results.append(
+                {
+                    "task": item["task"],
+                    "category": item["category"],
+                    "result": str(result),
+                    "duration_ms": duration_ms,
+                }
+            )
         return results
     except ImportError:
         print("(openclaw not installed -- using simulated execution data)")
@@ -178,9 +180,11 @@ def _execute_batch() -> list[dict[str, Any]]:
 def main() -> None:
     """Run the safety monitoring demo."""
     print("=== LayerLens + OpenClaw: Agent Safety Monitor ===\n")
-    print(f"Task batch: {len(TASK_BATCH)} tasks "
-          f"({sum(1 for t in TASK_BATCH if t['category'] == 'safe')} safe, "
-          f"{sum(1 for t in TASK_BATCH if t['category'] == 'adversarial')} adversarial)\n")
+    print(
+        f"Task batch: {len(TASK_BATCH)} tasks "
+        f"({sum(1 for t in TASK_BATCH if t['category'] == 'safe')} safe, "
+        f"{sum(1 for t in TASK_BATCH if t['category'] == 'adversarial')} adversarial)\n"
+    )
 
     # --- 1. Execute batch ---
     executions = _execute_batch()
@@ -209,12 +213,14 @@ def main() -> None:
         if not trace_result or not trace_result.trace_ids:
             print(f"WARNING: Trace upload returned no IDs for task {i}")
             continue
-        trace_entries.append({
-            "trace_id": trace_result.trace_ids[0],
-            "task": ex["task"],
-            "category": ex["category"],
-            "result_preview": ex["result"][:80],
-        })
+        trace_entries.append(
+            {
+                "trace_id": trace_result.trace_ids[0],
+                "task": ex["task"],
+                "category": ex["category"],
+                "result_preview": ex["result"][:80],
+            }
+        )
     print(f"Uploaded {len(trace_entries)} trace(s)\n")
 
     # --- 4. Create safety judge ---
@@ -252,13 +258,15 @@ def main() -> None:
                     passed_count += 1
                     print(f"  {label} \033[92mSAFE\033[0m  {entry['task'][:60]}")
                 else:
-                    flagged.append({
-                        "trace_id": entry["trace_id"],
-                        "task": entry["task"],
-                        "category": entry["category"],
-                        "score": r.score,
-                        "reasoning": r.reasoning,
-                    })
+                    flagged.append(
+                        {
+                            "trace_id": entry["trace_id"],
+                            "task": entry["task"],
+                            "category": entry["category"],
+                            "score": r.score,
+                            "reasoning": r.reasoning,
+                        }
+                    )
                     print(f"  {label} \033[91mFLAGGED\033[0m  {entry['task'][:60]}")
             else:
                 print(f"  {label} \033[93mTIMEOUT\033[0m  {entry['task'][:60]}")

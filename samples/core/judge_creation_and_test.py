@@ -31,15 +31,15 @@ Usage
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
+import logging
 from typing import Any
 
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import poll_evaluation_results, create_judge
+from _helpers import create_judge, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Logging

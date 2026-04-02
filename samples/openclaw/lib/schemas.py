@@ -11,11 +11,10 @@ and receives structured scores via ``AgentEvalResponse``.
 from __future__ import annotations
 
 import uuid
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
-from typing import Any, Literal
 
-from pydantic import BaseModel, Field
-
+from pydantic import Field, BaseModel
 
 # ---------------------------------------------------------------------------
 # Nested config models
@@ -30,11 +29,11 @@ class EvaluatorConfig(BaseModel):
         default="claude-sonnet-4-20250514",
         description="Model used as judge",
     )
-    scoring_dimensions: list[str] = Field(
+    scoring_dimensions: List[str] = Field(
         default_factory=list,
         description="Dimensions to score (e.g. ['accuracy', 'clarity'])",
     )
-    thresholds: dict[str, float] = Field(
+    thresholds: Dict[str, float] = Field(
         default_factory=dict,
         description="Per-dimension or aggregate pass thresholds",
     )
@@ -43,10 +42,10 @@ class EvaluatorConfig(BaseModel):
 class EvalSubject(BaseModel):
     """Identifies the entity being evaluated."""
 
-    agent_id: str | None = Field(default=None, description="Agent identifier")
-    model_id: str | None = Field(default=None, description="LLM backend being evaluated")
-    skill_id: str | None = Field(default=None, description="Skill registry identifier")
-    task_id: str | None = Field(default=None, description="Task battery item ID")
+    agent_id: Optional[str] = Field(default=None, description="Agent identifier")
+    model_id: Optional[str] = Field(default=None, description="LLM backend being evaluated")
+    skill_id: Optional[str] = Field(default=None, description="Skill registry identifier")
+    task_id: Optional[str] = Field(default=None, description="Task battery item ID")
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +72,7 @@ class AgentEvalRequest(BaseModel):
     )
     evaluator_config: EvaluatorConfig
     subject: EvalSubject
-    payload: dict[str, Any] = Field(
+    payload: Dict[str, Any] = Field(
         default_factory=dict,
         description="Demo-specific content (raw output, traces, etc.)",
     )
@@ -89,19 +88,16 @@ class AgentEvalResponse(BaseModel):
 
     run_id: str
     evaluator_id: str
-    scores: dict[str, float] = Field(default_factory=dict)
+    scores: Dict[str, float] = Field(default_factory=dict)
     aggregate_score: float = 0.0
-    verdict: str | None = Field(
+    verdict: Optional[str] = Field(
         default=None,
-        description=(
-            "Classification: PASS | FAIL | SAFE | SUSPICIOUS | DANGEROUS "
-            "| ALIGNED | DRIFT | VIOLATION"
-        ),
+        description=("Classification: PASS | FAIL | SAFE | SUSPICIOUS | DANGEROUS | ALIGNED | DRIFT | VIOLATION"),
     )
     rationale: str = ""
-    evidence: list[str] | None = None
-    recommendations: list[str] | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    evidence: Optional[List[str]] = None
+    recommendations: Optional[List[str]] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -123,9 +119,9 @@ class SkillAuditPayload(BaseModel):
 
     skill_id: str
     skill_md_content: str = ""
-    execution_trace: list[dict[str, Any]] = Field(default_factory=list)
-    tool_call_log: list[dict[str, Any]] = Field(default_factory=list)
-    honeypot_trigger_log: list[dict[str, Any]] = Field(default_factory=list)
+    execution_trace: List[Dict[str, Any]] = Field(default_factory=list)
+    tool_call_log: List[Dict[str, Any]] = Field(default_factory=list)
+    honeypot_trigger_log: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class CodeGatePayload(BaseModel):

@@ -16,17 +16,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+import threading
+from typing import Any, Dict, List, Optional
+from dataclasses import field, dataclass
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
 # CopilotKit helpers -- keep the CopilotKit structure intact
-from copilotkit.langchain import copilotkit_emit_message, copilotkit_emit_state
-
-import threading
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from layerlens import Stratix
 
@@ -200,11 +198,10 @@ def _get_evaluation(evaluation_id: str) -> Optional[EvaluationInfo]:
         # If the evaluation finished, pull detailed results
         if info.status == "success":
             results_resp = client.trace_evaluations.get_results(id=evaluation_id)
-            if results_resp and results_resp.results:
-                first = results_resp.results[0]
-                info.passed = first.passed
-                info.score = first.score
-                info.reasoning = first.reasoning
+            if results_resp and results_resp.score is not None:
+                info.passed = results_resp.passed
+                info.score = results_resp.score
+                info.reasoning = results_resp.reasoning
 
         return info
     except Exception as exc:
@@ -246,8 +243,7 @@ async def fetch_traces_node(state: EvaluatorState) -> Dict[str, Any]:
             "traces": [],
             "step": "error",
             "error": "No traces found. Upload traces to LayerLens first.",
-            "messages": state.messages
-            + [AIMessage(content="No traces found. Please upload traces first.")],
+            "messages": state.messages + [AIMessage(content="No traces found. Please upload traces first.")],
         }
 
     summary = "\n".join(f"  - `{t.id}` ({t.filename}, {t.created_at})" for t in traces[:10])
@@ -311,8 +307,7 @@ async def run_evaluations_node(state: EvaluatorState) -> Dict[str, Any]:
             "evaluations": [],
             "step": "error",
             "error": "All evaluation requests failed.",
-            "messages": state.messages
-            + [AIMessage(content="Failed to create any evaluations.")],
+            "messages": state.messages + [AIMessage(content="Failed to create any evaluations.")],
         }
 
     msg = f"Started {len(results)} evaluation(s) with judge **{judge.name}**."
@@ -336,9 +331,7 @@ async def poll_results_node(state: EvaluatorState) -> Dict[str, Any]:
     lines: List[str] = []
     for e in finished:
         verdict = "PASS" if e.passed else "FAIL" if e.passed is not None else "N/A"
-        lines.append(
-            f"  - trace `{e.trace_id}`: {verdict} (score={e.score})"
-        )
+        lines.append(f"  - trace `{e.trace_id}`: {verdict} (score={e.score})")
     for e in pending:
         lines.append(f"  - trace `{e.trace_id}`: {e.status}")
 
@@ -348,7 +341,9 @@ async def poll_results_node(state: EvaluatorState) -> Dict[str, Any]:
 
     if not pending or poll_count >= MAX_POLL_ATTEMPTS:
         if pending:
-            summary += f"\n\n(Stopped polling after {MAX_POLL_ATTEMPTS} attempts; {len(pending)} evaluation(s) still pending.)"
+            summary += (
+                f"\n\n(Stopped polling after {MAX_POLL_ATTEMPTS} attempts; {len(pending)} evaluation(s) still pending.)"
+            )
         msg = f"Evaluation results ({len(finished)} done, {len(pending)} pending):\n{summary}"
         return {
             "evaluations": updated,
@@ -360,7 +355,7 @@ async def poll_results_node(state: EvaluatorState) -> Dict[str, Any]:
 
     # Sleep between polls with exponential backoff to avoid hammering the API
     poll_delay = min(
-        POLL_INITIAL_INTERVAL * (POLL_BACKOFF_FACTOR ** poll_count),
+        POLL_INITIAL_INTERVAL * (POLL_BACKOFF_FACTOR**poll_count),
         POLL_MAX_INTERVAL,
     )
     await asyncio.sleep(poll_delay)

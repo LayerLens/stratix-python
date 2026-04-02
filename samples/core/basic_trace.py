@@ -31,12 +31,12 @@ Usage
 
 from __future__ import annotations
 
-import argparse
-import logging
 import os
 import sys
-import tempfile
 import json
+import logging
+import argparse
+import tempfile
 
 from layerlens import Stratix
 

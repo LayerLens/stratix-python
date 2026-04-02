@@ -9,14 +9,14 @@ demo purposes.
 
 from __future__ import annotations
 
+import uuid
+import random
 import hashlib
 import logging
-import random
-import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Dict
+from datetime import datetime, timezone, timedelta
 
-from pydantic import BaseModel, Field
+from pydantic import Field, BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class ContentFeedPost(BaseModel):
     topic: str = ""
     word_count: int = 0
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 _COMMUNITY_TOPICS: dict[str, list[str]] = {
@@ -81,7 +81,9 @@ _COMMUNITY_TOPICS: dict[str, list[str]] = {
 
 _KARMA_RESPONSE_QUALITY: dict[str, dict[str, Any]] = {
     "low": {
-        "min_words": 20, "max_words": 80, "coherence_modifier": -1.5,
+        "min_words": 20,
+        "max_words": 80,
+        "coherence_modifier": -1.5,
         "patterns": [
             "yeah i think {topic} is interesting. idk though lol",
             "not sure about this but {topic}. anyway good post",
@@ -90,44 +92,58 @@ _KARMA_RESPONSE_QUALITY: dict[str, dict[str, Any]] = {
         ],
     },
     "standard": {
-        "min_words": 60, "max_words": 200, "coherence_modifier": 0.0,
+        "min_words": 60,
+        "max_words": 200,
+        "coherence_modifier": 0.0,
         "patterns": [
-            ("I've been thinking about {topic}. In my experience, there are a few important "
-             "factors to consider. First, the technical implications are significant. Second, "
-             "the community impact shouldn't be underestimated. I'd love to hear other perspectives on this."),
-            ("Great topic. {topic} is something I deal with daily. The key challenge is "
-             "balancing quality with speed. I've found that iterative approaches work best -- "
-             "start simple, measure, and improve. However, this requires discipline and good tooling."),
-            ("This is worth discussing. {topic} has been evolving rapidly over the past year. "
-             "The evidence suggests that conventional approaches are becoming less effective. "
-             "We need to rethink our assumptions and consider alternative frameworks."),
+            (
+                "I've been thinking about {topic}. In my experience, there are a few important "
+                "factors to consider. First, the technical implications are significant. Second, "
+                "the community impact shouldn't be underestimated. I'd love to hear other perspectives on this."
+            ),
+            (
+                "Great topic. {topic} is something I deal with daily. The key challenge is "
+                "balancing quality with speed. I've found that iterative approaches work best -- "
+                "start simple, measure, and improve. However, this requires discipline and good tooling."
+            ),
+            (
+                "This is worth discussing. {topic} has been evolving rapidly over the past year. "
+                "The evidence suggests that conventional approaches are becoming less effective. "
+                "We need to rethink our assumptions and consider alternative frameworks."
+            ),
         ],
     },
     "high": {
-        "min_words": 150, "max_words": 400, "coherence_modifier": 1.5,
+        "min_words": 150,
+        "max_words": 400,
+        "coherence_modifier": 1.5,
         "patterns": [
-            ("I've spent considerable time researching {topic}, and I want to share a nuanced "
-             "perspective. The conventional wisdom holds that the primary bottleneck is computational, "
-             "but my analysis suggests it's actually an architectural issue. Evidence from "
-             "peer-reviewed studies indicates that rethinking the fundamental approach yields "
-             "3-5x better results than simply scaling the existing paradigm. Specifically, "
-             "there are three underexplored dimensions: first, the interaction between latency "
-             "and throughput at scale creates non-linear degradation patterns. Second, the "
-             "assumption of homogeneous workloads breaks down in production. Third, monitoring "
-             "and observability gaps mean we're often optimizing the wrong bottleneck. My hypothesis "
-             "is that a systematic, measurement-driven approach to {topic} would reveal opportunities "
-             "that pure engineering intuition misses. I'd be interested in counterarguments."),
-            ("Challenging the assumption that {topic} is well-understood. After reviewing the "
-             "latest research and my own experiments, I believe we're approaching this from the "
-             "wrong angle. The data suggests a counterintuitive relationship between the variables "
-             "most practitioners focus on. Published studies show that the correlation between "
-             "effort and outcome follows a logarithmic curve, not linear. This has profound "
-             "implications for resource allocation. Furthermore, a novel approach I've been "
-             "testing combines elements from adjacent fields to create a more robust framework. "
-             "Early results are promising: 40% improvement in key metrics with less computational "
-             "overhead. The key insight is that domain-specific optimization outperforms generic "
-             "solutions, but only when guided by careful measurement. I've open-sourced my "
-             "benchmark suite for reproducibility."),
+            (
+                "I've spent considerable time researching {topic}, and I want to share a nuanced "
+                "perspective. The conventional wisdom holds that the primary bottleneck is computational, "
+                "but my analysis suggests it's actually an architectural issue. Evidence from "
+                "peer-reviewed studies indicates that rethinking the fundamental approach yields "
+                "3-5x better results than simply scaling the existing paradigm. Specifically, "
+                "there are three underexplored dimensions: first, the interaction between latency "
+                "and throughput at scale creates non-linear degradation patterns. Second, the "
+                "assumption of homogeneous workloads breaks down in production. Third, monitoring "
+                "and observability gaps mean we're often optimizing the wrong bottleneck. My hypothesis "
+                "is that a systematic, measurement-driven approach to {topic} would reveal opportunities "
+                "that pure engineering intuition misses. I'd be interested in counterarguments."
+            ),
+            (
+                "Challenging the assumption that {topic} is well-understood. After reviewing the "
+                "latest research and my own experiments, I believe we're approaching this from the "
+                "wrong angle. The data suggests a counterintuitive relationship between the variables "
+                "most practitioners focus on. Published studies show that the correlation between "
+                "effort and outcome follows a logarithmic curve, not linear. This has profound "
+                "implications for resource allocation. Furthermore, a novel approach I've been "
+                "testing combines elements from adjacent fields to create a more robust framework. "
+                "Early results are promising: 40% improvement in key metrics with less computational "
+                "overhead. The key insight is that domain-specific optimization outperforms generic "
+                "solutions, but only when guided by careful measurement. I've open-sourced my "
+                "benchmark suite for reproducibility."
+            ),
         ],
     },
 }
@@ -184,10 +200,16 @@ class StratifiedSampler:
         seed_str = f"{community}-{karma_tier}-{index}"
         agent_hash = hashlib.md5(seed_str.encode()).hexdigest()[:8]
         return ContentFeedPost(
-            agent_id=f"agent-{agent_hash}", community=community, karma_tier=karma_tier,
-            recency_bucket=recency, content=content, topic=topic,
-            word_count=len(content.split()), timestamp=timestamp,
-            metadata={"synthetic": True, "sampler_version": "1.0.0"})
+            agent_id=f"agent-{agent_hash}",
+            community=community,
+            karma_tier=karma_tier,
+            recency_bucket=recency,
+            content=content,
+            topic=topic,
+            word_count=len(content.split()),
+            timestamp=timestamp,
+            metadata={"synthetic": True, "sampler_version": "1.0.0"},
+        )
 
     def _pick_karma_tier(self) -> str:
         tiers = list(self.DEFAULT_KARMA_DISTRIBUTION.keys())

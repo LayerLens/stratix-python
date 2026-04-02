@@ -8,27 +8,80 @@ reasoning_coherence, factual_plausibility, task_focus, originality.
 
 from __future__ import annotations
 
+import re
+import random
 import hashlib
 import logging
-import random
-import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_REASONING_SIGNALS = ["therefore", "because", "consequently", "this implies", "it follows that",
-                      "given that", "as a result", "hence", "thus", "for this reason",
-                      "building on", "in contrast", "however", "on the other hand", "evidence suggests"]
-_INCOHERENCE_SIGNALS = ["anyway", "but whatever", "i guess", "idk", "lol", "random thought",
-                        "off topic", "not sure if related", "tangent:", "side note:"]
-_FACTUAL_CLAIM_SIGNALS = ["studies show", "research indicates", "according to", "data suggests",
-                          "statistically", "peer-reviewed", "published in", "in a 20", "x% of", "percent of"]
-_GENERIC_MARKERS = ["as we all know", "it goes without saying", "needless to say", "it is well known",
-                    "common knowledge", "everyone knows", "obviously", "of course", "the key takeaway",
-                    "in conclusion", "to summarize"]
-_NOVELTY_MARKERS = ["i haven't seen this discussed", "a less obvious angle", "counterintuitively",
-                    "what's often overlooked", "a novel approach", "rethinking", "challenging the assumption",
-                    "an underexplored", "my hypothesis", "original research"]
+_REASONING_SIGNALS = [
+    "therefore",
+    "because",
+    "consequently",
+    "this implies",
+    "it follows that",
+    "given that",
+    "as a result",
+    "hence",
+    "thus",
+    "for this reason",
+    "building on",
+    "in contrast",
+    "however",
+    "on the other hand",
+    "evidence suggests",
+]
+_INCOHERENCE_SIGNALS = [
+    "anyway",
+    "but whatever",
+    "i guess",
+    "idk",
+    "lol",
+    "random thought",
+    "off topic",
+    "not sure if related",
+    "tangent:",
+    "side note:",
+]
+_FACTUAL_CLAIM_SIGNALS = [
+    "studies show",
+    "research indicates",
+    "according to",
+    "data suggests",
+    "statistically",
+    "peer-reviewed",
+    "published in",
+    "in a 20",
+    "x% of",
+    "percent of",
+]
+_GENERIC_MARKERS = [
+    "as we all know",
+    "it goes without saying",
+    "needless to say",
+    "it is well known",
+    "common knowledge",
+    "everyone knows",
+    "obviously",
+    "of course",
+    "the key takeaway",
+    "in conclusion",
+    "to summarize",
+]
+_NOVELTY_MARKERS = [
+    "i haven't seen this discussed",
+    "a less obvious angle",
+    "counterintuitively",
+    "what's often overlooked",
+    "a novel approach",
+    "rethinking",
+    "challenging the assumption",
+    "an underexplored",
+    "my hypothesis",
+    "original research",
+]
 
 
 class PopulationQualityJudge:
@@ -43,8 +96,10 @@ class PopulationQualityJudge:
     pass_threshold: float = 6.0
     fail_severity: str = "warning"
     DIMENSIONS: dict[str, float] = {
-        "reasoning_coherence": 0.30, "factual_plausibility": 0.25,
-        "task_focus": 0.25, "originality": 0.20,
+        "reasoning_coherence": 0.30,
+        "factual_plausibility": 0.25,
+        "task_focus": 0.25,
+        "originality": 0.20,
     }
     COMMUNITY_MODIFIERS: dict[str, dict[str, float]] = {
         "coding": {"reasoning_coherence": 1.1, "task_focus": 1.1},
@@ -76,9 +131,14 @@ class PopulationQualityJudge:
         self._update_stats(scores)
         rationale = self._build_rationale(scores, aggregate, verdict, community, karma_tier)
         return {
-            "trace_id": trace_id, "scores": scores, "aggregate_score": aggregate,
-            "verdict": verdict, "rationale": rationale, "community": community,
-            "karma_tier": karma_tier, "population_stats": self.get_population_stats(),
+            "trace_id": trace_id,
+            "scores": scores,
+            "aggregate_score": aggregate,
+            "verdict": verdict,
+            "rationale": rationale,
+            "community": community,
+            "karma_tier": karma_tier,
+            "population_stats": self.get_population_stats(),
         }
 
     def evaluate_batch(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -130,8 +190,8 @@ class PopulationQualityJudge:
         rng = random.Random(seed)
         base = rng.uniform(5.5, 9.0)
         if topic:
-            topic_words = set(w.lower() for w in re.findall(r'\w+', topic) if len(w) > 3)
-            output_words = set(w.lower() for w in re.findall(r'\w+', output) if len(w) > 3)
+            topic_words = set(w.lower() for w in re.findall(r"\w+", topic) if len(w) > 3)
+            output_words = set(w.lower() for w in re.findall(r"\w+", output) if len(w) > 3)
             if topic_words:
                 overlap = len(topic_words & output_words) / len(topic_words)
                 if overlap > 0.5:
@@ -155,14 +215,22 @@ class PopulationQualityJudge:
         for dim, score in scores.items():
             self._dimension_sums[dim] = self._dimension_sums.get(dim, 0.0) + score
 
-    def _build_rationale(self, scores: dict[str, float], aggregate: float, verdict: str, community: str, karma_tier: str) -> str:
+    def _build_rationale(
+        self, scores: dict[str, float], aggregate: float, verdict: str, community: str, karma_tier: str
+    ) -> str:
         strongest = max(scores, key=scores.get)  # type: ignore[arg-type]
         weakest = min(scores, key=scores.get)  # type: ignore[arg-type]
-        parts = [f"Community: {community}, Karma tier: {karma_tier}.", f"Aggregate score: {aggregate:.2f}/10.",
-                 f"Strongest: {strongest} ({scores[strongest]:.1f}), weakest: {weakest} ({scores[weakest]:.1f})."]
+        parts = [
+            f"Community: {community}, Karma tier: {karma_tier}.",
+            f"Aggregate score: {aggregate:.2f}/10.",
+            f"Strongest: {strongest} ({scores[strongest]:.1f}), weakest: {weakest} ({scores[weakest]:.1f}).",
+        ]
         if verdict == "FAIL":
-            parts.append("Overall quality below community threshold." if scores[weakest] >= 4.0
-                        else f"Critical weakness in {weakest}. Content may require review or remediation.")
+            parts.append(
+                "Overall quality below community threshold."
+                if scores[weakest] >= 4.0
+                else f"Critical weakness in {weakest}. Content may require review or remediation."
+            )
         else:
             parts.append("Content meets community quality standards.")
         return " ".join(parts)

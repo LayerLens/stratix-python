@@ -9,11 +9,15 @@ Prerequisites:
     export LAYERLENS_STRATIX_API_KEY="your-api-key"
 """
 
-import json, os, sys, tempfile
+import os
+import sys
+import json
+import tempfile
+
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import poll_evaluation_results, create_judge
+from _helpers import create_judge, poll_evaluation_results
 
 
 def main() -> None:

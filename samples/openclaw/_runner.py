@@ -4,27 +4,29 @@ Provides a DemoRunner base class with OpenClaw SDK support, allowing demos
 to execute tasks via real OpenClaw agents and evaluate results through
 LayerLens judges.
 """
+
 from __future__ import annotations
 
-import argparse
-import asyncio
-import json
-import logging
 import os
 import sys
-import tempfile
+import json
 import time
+import asyncio
+import logging
+import argparse
+import tempfile
 from abc import ABC, abstractmethod
 from typing import Any
 
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import poll_evaluation_results, get_default_model_id
+from _helpers import get_default_model_id, poll_evaluation_results
 
 # Optional OpenClaw SDK import
 try:
     from openclaw import OpenClawClient  # type: ignore[import-untyped]
+
     _OPENCLAW_AVAILABLE = True
 except ImportError:
     _OPENCLAW_AVAILABLE = False
@@ -82,7 +84,8 @@ class DemoRunner(ABC):
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
         parser.add_argument(
-            "--verbose", "-v",
+            "--verbose",
+            "-v",
             action="store_true",
             help="Enable debug logging.",
         )
@@ -170,8 +173,9 @@ class DemoRunner(ABC):
                 self.logger.warning("OpenClaw execution failed (%s). Using simulated data.", exc)
 
         # Simulated fallback
-        import hashlib
         import random
+        import hashlib
+
         seed = int(hashlib.sha256(f"{model}:{task}".encode()).hexdigest()[:8], 16)
         rng = random.Random(seed)
         return {

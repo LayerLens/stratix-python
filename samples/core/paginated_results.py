@@ -96,8 +96,7 @@ def main() -> None:
             print(f"Total results: {total_count:,}")
             print(f"Total pages: {total_pages}")
 
-        print(f"Page {page}: Retrieved {len(results_data.results)} results "
-              f"(running total: {len(all_results):,})")
+        print(f"Page {page}: Retrieved {len(results_data.results)} results (running total: {len(all_results):,})")
 
         # Check if we have reached the last page
         if page >= results_data.pagination.total_pages:
@@ -133,8 +132,9 @@ def main() -> None:
             page_size=10,
         )
         if results_data and results_data.results:
-            print(f"get_by_id returned {len(results_data.results)} results "
-                  f"(total: {results_data.pagination.total_count})")
+            print(
+                f"get_by_id returned {len(results_data.results)} results (total: {results_data.pagination.total_count})"
+            )
         else:
             print("get_by_id returned no results")
     except Exception as exc:

@@ -15,31 +15,51 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any
-
-import os
 
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Simulated knowledge base and queries
 # ---------------------------------------------------------------------------
 
 KNOWLEDGE_BASE: list[dict[str, Any]] = [
-    {"id": "doc_001", "title": "Refund Policy", "content": "Full refunds are available within 30 days of purchase. After 30 days, store credit is issued."},
-    {"id": "doc_002", "title": "Pricing Plans", "content": "We offer Free ($0), Pro ($29/mo), and Enterprise (custom) tiers. Annual billing saves 20%."},
-    {"id": "doc_003", "title": "API Rate Limits", "content": "Free: 100 req/min. Pro: 1000 req/min. Enterprise: unlimited. Rate limit headers included."},
-    {"id": "doc_004", "title": "Data Retention", "content": "Traces are retained for 90 days on Pro, 365 days on Enterprise. Free tier: 7 days."},
+    {
+        "id": "doc_001",
+        "title": "Refund Policy",
+        "content": "Full refunds are available within 30 days of purchase. After 30 days, store credit is issued.",
+    },
+    {
+        "id": "doc_002",
+        "title": "Pricing Plans",
+        "content": "We offer Free ($0), Pro ($29/mo), and Enterprise (custom) tiers. Annual billing saves 20%.",
+    },
+    {
+        "id": "doc_003",
+        "title": "API Rate Limits",
+        "content": "Free: 100 req/min. Pro: 1000 req/min. Enterprise: unlimited. Rate limit headers included.",
+    },
+    {
+        "id": "doc_004",
+        "title": "Data Retention",
+        "content": "Traces are retained for 90 days on Pro, 365 days on Enterprise. Free tier: 7 days.",
+    },
 ]
 
 QUERIES: list[dict[str, Any]] = [
     {"id": "q_001", "text": "What is your refund policy?", "category": "billing", "expected_doc_ids": ["doc_001"]},
     {"id": "q_002", "text": "How much does the Pro plan cost?", "category": "pricing", "expected_doc_ids": ["doc_002"]},
-    {"id": "q_003", "text": "What are the API rate limits for enterprise?", "category": "technical", "expected_doc_ids": ["doc_003"]},
+    {
+        "id": "q_003",
+        "text": "What are the API rate limits for enterprise?",
+        "category": "technical",
+        "expected_doc_ids": ["doc_003"],
+    },
 ]
 
 # Simulated RAG answers
@@ -97,7 +117,8 @@ def main() -> None:
             retrieved_docs = [d for d in KNOWLEDGE_BASE if d["id"] in query["expected_doc_ids"]]
             print(f"[RAGRunner] Retrieved {len(retrieved_docs)} document(s)")
 
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=query["text"],
                 output_text=answer,
                 metadata={
@@ -109,13 +130,15 @@ def main() -> None:
             )
             trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else f"trc_rag_{query['id']}"
 
-            rag_results.append({
-                "query_id": query["id"],
-                "query_text": query["text"],
-                "trace_id": trace_id,
-                "answer": answer,
-                "retrieved_docs": retrieved_docs,
-            })
+            rag_results.append(
+                {
+                    "query_id": query["id"],
+                    "query_text": query["text"],
+                    "trace_id": trace_id,
+                    "answer": answer,
+                    "retrieved_docs": retrieved_docs,
+                }
+            )
             print(f"[RAGRunner] Trace {trace_id} created.\n")
 
         # Phase 2: Quality Judge evaluates

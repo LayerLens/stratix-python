@@ -14,16 +14,16 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import os
 import sys
+import json
 import time
 from typing import Any
 
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Sample data

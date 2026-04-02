@@ -21,18 +21,40 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 TRADING_SCENARIOS: list[dict[str, Any]] = [
     {
         "id": "trade-001",
-        "client_profile": {"risk_tolerance": "conservative", "investment_horizon": "5_years", "annual_income": 75000, "net_worth": 200000},
-        "recommendation": {"asset": "High-yield corporate bonds ETF", "allocation_percent": 15, "risk_level": "moderate", "rationale": "Provides income with moderate credit risk.", "disclosures": ["Past performance not indicative of future results"]},
+        "client_profile": {
+            "risk_tolerance": "conservative",
+            "investment_horizon": "5_years",
+            "annual_income": 75000,
+            "net_worth": 200000,
+        },
+        "recommendation": {
+            "asset": "High-yield corporate bonds ETF",
+            "allocation_percent": 15,
+            "risk_level": "moderate",
+            "rationale": "Provides income with moderate credit risk.",
+            "disclosures": ["Past performance not indicative of future results"],
+        },
     },
     {
         "id": "trade-002",
-        "client_profile": {"risk_tolerance": "conservative", "investment_horizon": "2_years", "annual_income": 45000, "net_worth": 50000},
-        "recommendation": {"asset": "Leveraged crypto ETF (3x)", "allocation_percent": 40, "risk_level": "very_high", "rationale": "High growth potential. This could double your money quickly.", "disclosures": []},
+        "client_profile": {
+            "risk_tolerance": "conservative",
+            "investment_horizon": "2_years",
+            "annual_income": 45000,
+            "net_worth": 50000,
+        },
+        "recommendation": {
+            "asset": "Leveraged crypto ETF (3x)",
+            "allocation_percent": 40,
+            "risk_level": "very_high",
+            "rationale": "High growth potential. This could double your money quickly.",
+            "disclosures": [],
+        },
     },
 ]
 
@@ -76,7 +98,8 @@ def main() -> None:
             rec = scenario["recommendation"]
             profile = scenario["client_profile"]
 
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=str(profile),
                 output_text=str(rec),
                 metadata={"client_profile": profile, "recommendation": rec},

@@ -22,7 +22,7 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Simulated OpenAI completion (used when OPENAI_API_KEY is not set)
@@ -136,7 +136,8 @@ def main() -> None:
         print(f"\nERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    trace_result = upload_trace_dict(client,
+    trace_result = upload_trace_dict(
+        client,
         input_text=meta["prompt"],
         output_text=meta["response"],
         metadata={

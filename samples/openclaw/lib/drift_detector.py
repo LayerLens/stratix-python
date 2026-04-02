@@ -15,12 +15,12 @@ Drift types:
 
 from __future__ import annotations
 
-import logging
 import math
-from collections import defaultdict
+import logging
 from typing import Any
+from collections import defaultdict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -124,12 +124,8 @@ class DriftDetector:
         self.min_observations = min_observations
         self.latency_sigma_threshold = latency_sigma_threshold or sigma_threshold
 
-        self._score_stats: dict[tuple[str, str], _RollingStats] = defaultdict(
-            lambda: _RollingStats(window_size)
-        )
-        self._latency_stats: dict[tuple[str, str], _RollingStats] = defaultdict(
-            lambda: _RollingStats(window_size)
-        )
+        self._score_stats: dict[tuple[str, str], _RollingStats] = defaultdict(lambda: _RollingStats(window_size))
+        self._latency_stats: dict[tuple[str, str], _RollingStats] = defaultdict(lambda: _RollingStats(window_size))
         self._alerts: list[DriftAlert] = []
 
     def record_and_check(
@@ -145,8 +141,11 @@ class DriftDetector:
         score_stats = self._score_stats[key]
         if score_stats.count >= self.min_observations:
             alert = self._check_drift(
-                model_id=model_id, task_id=task_id, value=score,
-                stats=score_stats, metric_type="score",
+                model_id=model_id,
+                task_id=task_id,
+                value=score,
+                stats=score_stats,
+                metric_type="score",
                 sigma_threshold=self.sigma_threshold,
             )
             if alert:
@@ -158,8 +157,10 @@ class DriftDetector:
             latency_stats = self._latency_stats[key]
             if latency_stats.count >= self.min_observations:
                 alert = self._check_drift(
-                    model_id=model_id, task_id=task_id,
-                    value=float(latency_ms), stats=latency_stats,
+                    model_id=model_id,
+                    task_id=task_id,
+                    value=float(latency_ms),
+                    stats=latency_stats,
                     metric_type="latency",
                     sigma_threshold=self.latency_sigma_threshold,
                 )
@@ -175,10 +176,13 @@ class DriftDetector:
         score_s = self._score_stats[key]
         latency_s = self._latency_stats[key]
         return BaselineSnapshot(
-            model_id=model_id, task_id=task_id,
-            score_mean=round(score_s.mean, 3), score_std=round(score_s.std, 3),
+            model_id=model_id,
+            task_id=task_id,
+            score_mean=round(score_s.mean, 3),
+            score_std=round(score_s.std, 3),
             score_count=score_s.count,
-            latency_mean=round(latency_s.mean, 1), latency_std=round(latency_s.std, 1),
+            latency_mean=round(latency_s.mean, 1),
+            latency_std=round(latency_s.std, 1),
             latency_count=latency_s.count,
         )
 
@@ -199,8 +203,13 @@ class DriftDetector:
         return len(self._alerts)
 
     def _check_drift(
-        self, model_id: str, task_id: str, value: float,
-        stats: _RollingStats, metric_type: str, sigma_threshold: float,
+        self,
+        model_id: str,
+        task_id: str,
+        value: float,
+        stats: _RollingStats,
+        metric_type: str,
+        sigma_threshold: float,
     ) -> DriftAlert | None:
         mean = stats.mean
         std = stats.std
@@ -235,9 +244,15 @@ class DriftDetector:
         logger.warning(message)
 
         return DriftAlert(
-            model_id=model_id, task_id=task_id, drift_type=drift_type,
-            severity=severity, current_value=round(value, 3),
-            baseline_mean=round(mean, 3), baseline_std=round(std, 3),
-            delta=round(delta, 3), sigma_distance=round(sigma_distance, 2),
-            window_size=stats.count, message=message,
+            model_id=model_id,
+            task_id=task_id,
+            drift_type=drift_type,
+            severity=severity,
+            current_value=round(value, 3),
+            baseline_mean=round(mean, 3),
+            baseline_std=round(std, 3),
+            delta=round(delta, 3),
+            sigma_distance=round(sigma_distance, 2),
+            window_size=stats.count,
+            message=message,
         )

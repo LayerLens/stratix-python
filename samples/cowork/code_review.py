@@ -16,15 +16,14 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any
-
-import os
 
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Simulated code snippets and their outputs
@@ -34,22 +33,18 @@ CODE_SAMPLES: list[dict[str, Any]] = [
     {
         "description": "SQL query builder",
         "input": (
-            "Write a Python function that builds a SQL query from user input "
-            "to search a products table by name."
+            "Write a Python function that builds a SQL query from user input to search a products table by name."
         ),
         "output": (
             "def search_products(user_input: str) -> str:\n"
-            '    query = f"SELECT * FROM products WHERE name LIKE \'%{user_input}%\'"\n'
+            "    query = f\"SELECT * FROM products WHERE name LIKE '%{user_input}%'\"\n"
             "    return query\n"
         ),
         "language": "python",
     },
     {
         "description": "Password hashing utility",
-        "input": (
-            "Write a function that hashes a password for storage "
-            "using a secure algorithm."
-        ),
+        "input": ("Write a function that hashes a password for storage using a secure algorithm."),
         "output": (
             "import hashlib\n"
             "import secrets\n\n"
@@ -64,10 +59,7 @@ CODE_SAMPLES: list[dict[str, Any]] = [
     },
     {
         "description": "REST API endpoint",
-        "input": (
-            "Write a FastAPI endpoint that returns a user profile by ID, "
-            "including proper error handling."
-        ),
+        "input": ("Write a FastAPI endpoint that returns a user profile by ID, including proper error handling."),
         "output": (
             "from fastapi import FastAPI, HTTPException\n\n"
             "app = FastAPI()\n\n"
@@ -152,10 +144,12 @@ def main() -> None:
                 },
             )
             tid = trace_result.trace_ids[0] if trace_result.trace_ids else "unknown"
-            trace_map.append({
-                "trace_id": tid,
-                "description": sample["description"],
-            })
+            trace_map.append(
+                {
+                    "trace_id": tid,
+                    "description": sample["description"],
+                }
+            )
             print(f"[Instrumentor] Trace {tid} created.")
 
         # ------------------------------------------------------------------
@@ -185,12 +179,14 @@ def main() -> None:
                 print(f"[Reviewer]   {label:12s} {status} ({score:.2f})")
 
             avg_score = sum(scores.values()) / len(scores) if scores else 0.0
-            review_results.append({
-                "trace_id": tid,
-                "description": desc,
-                "scores": scores,
-                "average": avg_score,
-            })
+            review_results.append(
+                {
+                    "trace_id": tid,
+                    "description": desc,
+                    "scores": scores,
+                    "average": avg_score,
+                }
+            )
             print()
 
         # ------------------------------------------------------------------
@@ -202,12 +198,8 @@ def main() -> None:
 
         total_avg = 0.0
         for result in review_results:
-            quality = (
-                "HIGH" if result["average"] >= 0.7
-                else "MEDIUM" if result["average"] >= 0.4
-                else "LOW"
-            )
-            print(f'  {result["description"]:30s}  avg={result["average"]:.2f}  quality={quality}')
+            quality = "HIGH" if result["average"] >= 0.7 else "MEDIUM" if result["average"] >= 0.4 else "LOW"
+            print(f"  {result['description']:30s}  avg={result['average']:.2f}  quality={quality}")
             total_avg += result["average"]
 
         overall = total_avg / len(review_results) if review_results else 0.0

@@ -16,10 +16,26 @@ from typing import Any, Literal
 logger = logging.getLogger(__name__)
 
 DIMENSIONS: dict[str, dict[str, Any]] = {
-    "task_completion": {"description": "Degree to which the model fully addresses every aspect of the task", "weight": 0.30, "max_score": 10.0},
-    "reasoning_clarity": {"description": "Transparency, logical coherence, and step-by-step reasoning quality", "weight": 0.25, "max_score": 10.0},
-    "conciseness": {"description": "Absence of unnecessary padding, repetition, or filler content", "weight": 0.20, "max_score": 10.0},
-    "instruction_following": {"description": "Strict adherence to all explicit constraints and formatting rules", "weight": 0.25, "max_score": 10.0},
+    "task_completion": {
+        "description": "Degree to which the model fully addresses every aspect of the task",
+        "weight": 0.30,
+        "max_score": 10.0,
+    },
+    "reasoning_clarity": {
+        "description": "Transparency, logical coherence, and step-by-step reasoning quality",
+        "weight": 0.25,
+        "max_score": 10.0,
+    },
+    "conciseness": {
+        "description": "Absence of unnecessary padding, repetition, or filler content",
+        "weight": 0.20,
+        "max_score": 10.0,
+    },
+    "instruction_following": {
+        "description": "Strict adherence to all explicit constraints and formatting rules",
+        "weight": 0.25,
+        "max_score": 10.0,
+    },
 }
 
 DEFAULT_PASS_THRESHOLD: float = 7.0
@@ -64,7 +80,8 @@ class ComparativeJudge:
     fail_severity: str = "HIGH"
 
     def __init__(
-        self, judge_id: str = "judge_comparative",
+        self,
+        judge_id: str = "judge_comparative",
         weights: dict[str, float] | None = None,
         pass_threshold: float | None = None,
         uncertain_threshold: float | None = None,
@@ -85,24 +102,36 @@ class ComparativeJudge:
         model_id = context.get("model_id", "unknown")
         scores = _deterministic_scores(model_id, task)
         aggregate = self._compute_aggregate(scores)
-        verdict, severity = _classify_verdict(aggregate, pass_threshold=self.pass_threshold, uncertain_threshold=self.uncertain_threshold)
+        verdict, severity = _classify_verdict(
+            aggregate, pass_threshold=self.pass_threshold, uncertain_threshold=self.uncertain_threshold
+        )
         best_dim = max(scores, key=scores.get)  # type: ignore[arg-type]
         worst_dim = min(scores, key=scores.get)  # type: ignore[arg-type]
-        rationale = (f"{model_id} scored {aggregate:.1f}/10 overall. "
-                     f"Strongest dimension: {best_dim} ({scores[best_dim]:.1f}). "
-                     f"Weakest dimension: {worst_dim} ({scores[worst_dim]:.1f}).")
+        rationale = (
+            f"{model_id} scored {aggregate:.1f}/10 overall. "
+            f"Strongest dimension: {best_dim} ({scores[best_dim]:.1f}). "
+            f"Weakest dimension: {worst_dim} ({scores[worst_dim]:.1f})."
+        )
         return {
-            "trace_id": trace_id, "judge_id": self.judge_id, "model_id": model_id,
-            "dimension": self.dimension, "scores": scores, "aggregate_score": aggregate,
-            "verdict": verdict, "severity": severity, "rationale": rationale,
+            "trace_id": trace_id,
+            "judge_id": self.judge_id,
+            "model_id": model_id,
+            "dimension": self.dimension,
+            "scores": scores,
+            "aggregate_score": aggregate,
+            "verdict": verdict,
+            "severity": severity,
+            "rationale": rationale,
         }
 
     def evaluate_batch(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         results = []
         for entry in entries:
             result = self.evaluate(
-                trace_id=entry["trace_id"], output=entry["output"],
-                context={"task": entry["task"], "model_id": entry["model_id"]})
+                trace_id=entry["trace_id"],
+                output=entry["output"],
+                context={"task": entry["task"], "model_id": entry["model_id"]},
+            )
             results.append(result)
         return self.rank(results)
 

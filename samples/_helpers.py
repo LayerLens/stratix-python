@@ -6,11 +6,11 @@ individual sample files focused on demonstrating SDK features.
 
 from __future__ import annotations
 
-import json
-import logging
 import os
-import tempfile
+import json
 import time
+import logging
+import tempfile
 from typing import Any, List, Optional
 
 from layerlens import Stratix
@@ -96,9 +96,7 @@ def get_default_model_id(client: Stratix) -> str:
     except Exception:
         pass
 
-    raise RuntimeError(
-        "No models available. Add a model to your project or check API connectivity."
-    )
+    raise RuntimeError("No models available. Add a model to your project or check API connectivity.")
 
 
 def create_judge(
@@ -176,9 +174,9 @@ def poll_evaluation_results(
     for attempt in range(1, max_attempts + 1):
         try:
             resp = client.trace_evaluations.get_results(evaluation_id)
-            if resp and resp.results:
-                return resp.results
-            # Empty results -- evaluation accepted but execution still in progress
+            if resp and resp.score is not None:
+                return [resp]
+            # None or missing score -- evaluation accepted but execution still in progress
         except Exception:
             # 404 NotFoundError is expected while the results row hasn't been
             # created yet. Other transient errors (429, 502) are also retryable.

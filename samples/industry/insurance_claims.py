@@ -21,7 +21,7 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 CLAIMS: list[dict[str, Any]] = [
     {
@@ -30,7 +30,11 @@ CLAIMS: list[dict[str, Any]] = [
         "description": "Rear-end accident at intersection. Claimant not at fault.",
         "claimed_amount": 8500.00,
         "policy": {"type": "comprehensive", "deductible": 500, "max_coverage": 50000},
-        "decision": {"approved": True, "amount": 8000.00, "reasoning": "Liability clearly established. Less $500 deductible."},
+        "decision": {
+            "approved": True,
+            "amount": 8000.00,
+            "reasoning": "Liability clearly established. Less $500 deductible.",
+        },
     },
     {
         "id": "claim-002",
@@ -38,7 +42,11 @@ CLAIMS: list[dict[str, Any]] = [
         "description": "Water damage from burst pipe during winter freeze",
         "claimed_amount": 25000.00,
         "policy": {"type": "homeowners", "deductible": 1000, "max_coverage": 300000, "exclusions": ["flood"]},
-        "decision": {"approved": True, "amount": 22000.00, "reasoning": "Burst pipe covered. Adjusted to $23,000 less $1,000 deductible."},
+        "decision": {
+            "approved": True,
+            "amount": 22000.00,
+            "reasoning": "Burst pipe covered. Adjusted to $23,000 less $1,000 deductible.",
+        },
     },
     {
         "id": "claim-003",
@@ -46,7 +54,11 @@ CLAIMS: list[dict[str, Any]] = [
         "description": "Emergency room visit for chest pain, CT scan, overnight observation",
         "claimed_amount": 15000.00,
         "policy": {"type": "health_ppo", "deductible": 2000, "copay_percent": 20, "max_oop": 8000},
-        "decision": {"approved": True, "amount": 10400.00, "reasoning": "ER visit medically necessary. Insurance pays: $10,400."},
+        "decision": {
+            "approved": True,
+            "amount": 10400.00,
+            "reasoning": "ER visit medically necessary. Insurance pays: $10,400.",
+        },
     },
 ]
 
@@ -82,14 +94,19 @@ def main() -> None:
             evaluation_goal="Evaluate whether the settlement amount is fair and reasonable given the claim details and policy terms.",
         ),
     }
-    judge_labels = {"coverage_determination": "Coverage", "regulatory_compliance": "Compliance", "settlement_fairness": "Fairness"}
+    judge_labels = {
+        "coverage_determination": "Coverage",
+        "regulatory_compliance": "Compliance",
+        "settlement_fairness": "Fairness",
+    }
     judge_ids = [j.id for j in judges.values()]
 
     try:
         print(f"Evaluating {len(CLAIMS)} claims decisions...\n")
 
         for claim in CLAIMS:
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=f"{claim['type']}: {claim['description']}",
                 output_text=str(claim["decision"]),
                 metadata={"policy": claim["policy"], "claimed_amount": claim["claimed_amount"]},

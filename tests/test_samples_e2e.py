@@ -11,17 +11,17 @@ Tests every sample in six modes:
 
 from __future__ import annotations
 
-import asyncio
-import importlib
-import importlib.util
 import io
-import json
 import os
-import subprocess
 import sys
+import json
+import asyncio
 import tempfile
+import importlib
+import subprocess
+import importlib.util
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -272,15 +272,21 @@ def mock_stratix():
     client.trace_evaluations.get_many.return_value = te_list_resp
 
     # --- trace evaluation results ---
-    te_result = MagicMock()
-    te_result.id = "ter-001"
-    te_result.score = 0.85
-    te_result.passed = True
-    te_result.reasoning = "The response is accurate and complete."
-    te_result.latency_ms = 1500
-    te_result.total_cost = 0.003
+    # TraceEvaluationResultsResponse extends TraceEvaluationResult directly,
+    # so the response IS a single result with score/passed/reasoning at top level.
     te_results_resp = MagicMock()
-    te_results_resp.results = [te_result]
+    te_results_resp.id = "ter-001"
+    te_results_resp.score = 0.85
+    te_results_resp.passed = True
+    te_results_resp.reasoning = "The response is accurate and complete."
+    te_results_resp.latency_ms = 1500
+    te_results_resp.total_cost = 0.003
+    te_results_resp.steps = []
+    te_results_resp.model = "test-model"
+    te_results_resp.turns = 1
+    te_results_resp.prompt_tokens = 100
+    te_results_resp.completion_tokens = 50
+    te_results_resp.created_at = "2026-01-01"
     client.trace_evaluations.get_results.return_value = te_results_resp
 
     # --- cost estimate ---
@@ -317,9 +323,7 @@ def mock_stratix():
     evals_resp.evaluations = [evaluation, evaluation2]
     evals_resp.count = 2
     evals_resp.total_count = 2
-    evals_resp.pagination = MagicMock(
-        total_count=2, total_pages=1, current_page=1, page_size=10
-    )
+    evals_resp.pagination = MagicMock(total_count=2, total_pages=1, current_page=1, page_size=10)
     client.evaluations.get_many.return_value = evals_resp
     client.evaluations.wait_for_completion.return_value = evaluation
 
@@ -335,9 +339,7 @@ def mock_stratix():
     results_resp.results = [result]
     results_resp.evaluation_id = "eval-test-001"
     results_resp.metrics = MagicMock(total_count=1)
-    results_resp.pagination = MagicMock(
-        total_count=1, total_pages=1, current_page=1, page_size=10
-    )
+    results_resp.pagination = MagicMock(total_count=1, total_pages=1, current_page=1, page_size=10)
     client.results.get.return_value = results_resp
     client.results.get_by_id.return_value = results_resp
     client.results.get_all.return_value = [result]
@@ -364,12 +366,8 @@ def mock_stratix():
     client.benchmarks.get_by_id.return_value = benchmark
     client.benchmarks.get_by_key.return_value = benchmark
     client.benchmarks.add.return_value = True
-    client.benchmarks.create_custom.return_value = MagicMock(
-        benchmark_id="bench-custom-001"
-    )
-    client.benchmarks.create_smart.return_value = MagicMock(
-        benchmark_id="bench-smart-001"
-    )
+    client.benchmarks.create_custom.return_value = MagicMock(benchmark_id="bench-custom-001")
+    client.benchmarks.create_smart.return_value = MagicMock(benchmark_id="bench-smart-001")
 
     # --- public client ---
     public = MagicMock()
@@ -455,9 +453,7 @@ def mock_stratix():
     client.judge_optimizations.estimate.return_value = MagicMock(estimated_cost=0.10)
     client.judge_optimizations.create.return_value = MagicMock(id="opt-001")
     client.judge_optimizations.get.return_value = opt_run
-    client.judge_optimizations.get_many.return_value = MagicMock(
-        optimization_runs=[opt_run]
-    )
+    client.judge_optimizations.get_many.return_value = MagicMock(optimization_runs=[opt_run])
     client.judge_optimizations.apply.return_value = MagicMock()
 
     # --- integrations ---
@@ -526,16 +522,13 @@ def mock_async_stratix(mock_stratix):
     trace_eval.status = MagicMock(value="success")
     client.trace_evaluations.create.return_value = trace_eval
 
-    te_result = MagicMock()
-    te_result.score = 0.85
-    te_result.passed = True
-    te_result.reasoning = "The response is accurate and complete."
+    # TraceEvaluationResultsResponse is a single result, not a wrapper
     te_results_resp = MagicMock()
-    te_results_resp.results = [te_result]
+    te_results_resp.score = 0.85
+    te_results_resp.passed = True
+    te_results_resp.reasoning = "The response is accurate and complete."
     client.trace_evaluations.get_results.return_value = te_results_resp
-    client.trace_evaluations.estimate_cost.return_value = MagicMock(
-        estimated_cost=0.05
-    )
+    client.trace_evaluations.estimate_cost.return_value = MagicMock(estimated_cost=0.05)
 
     # --- evaluations (async) ---
     evaluation = MagicMock()
@@ -580,12 +573,8 @@ def mock_async_stratix(mock_stratix):
     client.benchmarks.get.return_value = [benchmark]
     client.benchmarks.get_by_id.return_value = benchmark
     client.benchmarks.add.return_value = True
-    client.benchmarks.create_custom.return_value = MagicMock(
-        benchmark_id="bench-custom-001"
-    )
-    client.benchmarks.create_smart.return_value = MagicMock(
-        benchmark_id="bench-smart-001"
-    )
+    client.benchmarks.create_custom.return_value = MagicMock(benchmark_id="bench-custom-001")
+    client.benchmarks.create_smart.return_value = MagicMock(benchmark_id="bench-smart-001")
 
     # --- public (async) ---
     public = MagicMock()
@@ -889,21 +878,14 @@ def _verify_sample_behavior(
 
     # -- Samples that use print() should produce stdout output --
     if name not in _LOGGER_ONLY_SAMPLES:
-        assert len(captured_output.strip()) > 0, (
-            f"{sample_id} produced no output"
-        )
+        assert len(captured_output.strip()) > 0, f"{sample_id} produced no output"
 
     # -- Category-level assertions --
     # Industry, cowork, modalities, and integrations samples all follow the
     # pattern: create judges, upload traces, run trace evaluations.
     if category in ("industry", "cowork", "modalities", "integrations"):
-        assert mock_client.judges.create.called, (
-            f"{sample_id} never created a judge (via create_judge helper)"
-        )
-        assert (
-            mock_client.traces.upload.called
-            or mock_client.trace_evaluations.create.called
-        ), (
+        assert mock_client.judges.create.called, f"{sample_id} never created a judge (via create_judge helper)"
+        assert mock_client.traces.upload.called or mock_client.trace_evaluations.create.called, (
             f"{sample_id} never uploaded a trace or created a trace evaluation"
         )
 
@@ -911,98 +893,53 @@ def _verify_sample_behavior(
     # (no staged files with the default subprocess mock) so we only
     # assert SDK interaction for quality_gate.
     if name == "quality_gate":
-        assert mock_client.traces.get_many.called, (
-            "quality_gate never fetched traces"
-        )
-        assert mock_client.judges.get_many.called, (
-            "quality_gate never fetched judges"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "quality_gate never created a trace evaluation"
-        )
+        assert mock_client.traces.get_many.called, "quality_gate never fetched traces"
+        assert mock_client.judges.get_many.called, "quality_gate never fetched judges"
+        assert mock_client.trace_evaluations.create.called, "quality_gate never created a trace evaluation"
 
     # -- Core sample-specific assertions --
     if name == "quickstart":
-        assert mock_client.traces.upload.called, (
-            "quickstart never uploaded a trace"
-        )
-        assert mock_client.judges.create.called, (
-            "quickstart never created a judge"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "quickstart never created a trace evaluation"
-        )
+        assert mock_client.traces.upload.called, "quickstart never uploaded a trace"
+        assert mock_client.judges.create.called, "quickstart never created a judge"
+        assert mock_client.trace_evaluations.create.called, "quickstart never created a trace evaluation"
 
     if name == "basic_trace":
-        assert mock_client.traces.upload.called, (
-            "basic_trace never uploaded a trace"
-        )
-        assert mock_client.traces.get_many.called, (
-            "basic_trace never listed traces"
-        )
-        assert mock_client.traces.get.called, (
-            "basic_trace never got a trace by ID"
-        )
+        assert mock_client.traces.upload.called, "basic_trace never uploaded a trace"
+        assert mock_client.traces.get_many.called, "basic_trace never listed traces"
+        assert mock_client.traces.get.called, "basic_trace never got a trace by ID"
 
     if name == "create_judge":
-        assert mock_client.judges.create.called, (
-            "create_judge never created a judge"
-        )
-        assert mock_client.judges.get.called, (
-            "create_judge never fetched a judge"
-        )
-        assert mock_client.judges.get_many.called, (
-            "create_judge never listed judges"
-        )
+        assert mock_client.judges.create.called, "create_judge never created a judge"
+        assert mock_client.judges.get.called, "create_judge never fetched a judge"
+        assert mock_client.judges.get_many.called, "create_judge never listed judges"
 
     if name == "run_evaluation":
-        assert mock_client.models.get.called, (
-            "run_evaluation never fetched models"
-        )
-        assert mock_client.benchmarks.get.called, (
-            "run_evaluation never fetched benchmarks"
-        )
-        assert mock_client.evaluations.create.called, (
-            "run_evaluation never created an evaluation"
-        )
+        assert mock_client.models.get.called, "run_evaluation never fetched models"
+        assert mock_client.benchmarks.get.called, "run_evaluation never fetched benchmarks"
+        assert mock_client.evaluations.create.called, "run_evaluation never created an evaluation"
 
     if name == "judge_optimization":
-        assert mock_client.judge_optimizations.estimate.called, (
-            "judge_optimization never estimated cost"
-        )
-        assert mock_client.judge_optimizations.create.called, (
-            "judge_optimization never created an optimization run"
-        )
+        assert mock_client.judge_optimizations.estimate.called, "judge_optimization never estimated cost"
+        assert mock_client.judge_optimizations.create.called, "judge_optimization never created an optimization run"
 
     if name == "compare_evaluations":
-        assert mock_client.evaluations.get_many.called, (
-            "compare_evaluations never fetched evaluations"
-        )
-        assert mock_client.public.comparisons.compare.called, (
-            "compare_evaluations never called comparisons API"
-        )
+        assert mock_client.evaluations.get_many.called, "compare_evaluations never fetched evaluations"
+        assert mock_client.public.comparisons.compare.called, "compare_evaluations never called comparisons API"
 
     if name == "public_catalog":
         # public_catalog uses PublicClient which is mock_client.public
         # (aliased via the PublicClient mock).  The mock_client itself
         # receives calls because PublicClient(...) returns mock_client.public.
-        assert mock_client.public.models.get.called, (
-            "public_catalog never queried public models"
-        )
-        assert mock_client.public.benchmarks.get.called, (
-            "public_catalog never queried public benchmarks"
-        )
+        assert mock_client.public.models.get.called, "public_catalog never queried public models"
+        assert mock_client.public.benchmarks.get.called, "public_catalog never queried public benchmarks"
 
     if name == "custom_model":
-        assert mock_client.models.create_custom.called, (
-            "custom_model never created a custom model"
-        )
+        assert mock_client.models.create_custom.called, "custom_model never created a custom model"
 
     if name == "custom_benchmark":
-        assert (
-            mock_client.benchmarks.create_custom.called
-            or mock_client.benchmarks.create_smart.called
-        ), "custom_benchmark never created a benchmark"
+        assert mock_client.benchmarks.create_custom.called or mock_client.benchmarks.create_smart.called, (
+            "custom_benchmark never created a benchmark"
+        )
 
     if name == "paginated_results":
         assert mock_client.results.get.called or mock_client.results.get_all.called, (
@@ -1010,256 +947,114 @@ def _verify_sample_behavior(
         )
 
     if name == "evaluation_filtering":
-        assert mock_client.evaluations.get_many.called, (
-            "evaluation_filtering never filtered evaluations"
-        )
+        assert mock_client.evaluations.get_many.called, "evaluation_filtering never filtered evaluations"
 
     if name == "trace_investigation":
-        assert mock_client.traces.get_many.called, (
-            "trace_investigation never listed traces"
-        )
-        assert mock_client.traces.get.called, (
-            "trace_investigation never inspected a trace"
-        )
+        assert mock_client.traces.get_many.called, "trace_investigation never listed traces"
+        assert mock_client.traces.get.called, "trace_investigation never inspected a trace"
 
     if name == "model_benchmark_management":
-        assert mock_client.models.get.called, (
-            "model_benchmark_management never fetched models"
-        )
-        assert mock_client.benchmarks.get.called, (
-            "model_benchmark_management never fetched benchmarks"
-        )
+        assert mock_client.models.get.called, "model_benchmark_management never fetched models"
+        assert mock_client.benchmarks.get.called, "model_benchmark_management never fetched benchmarks"
 
     if name == "trace_evaluation":
-        assert mock_client.traces.upload.called, (
-            "trace_evaluation never uploaded a trace"
-        )
-        assert mock_client.judges.create.called, (
-            "trace_evaluation never created a judge"
-        )
-        assert mock_client.models.get.called, (
-            "trace_evaluation never fetched models"
-        )
-        assert mock_client.trace_evaluations.estimate_cost.called, (
-            "trace_evaluation never estimated cost"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "trace_evaluation never created a trace evaluation"
-        )
-        assert mock_client.trace_evaluations.get_many.called, (
-            "trace_evaluation never listed trace evaluations"
-        )
-        assert mock_client.judges.delete.called, (
-            "trace_evaluation never cleaned up judge"
-        )
-        assert mock_client.traces.delete.called, (
-            "trace_evaluation never cleaned up traces"
-        )
+        assert mock_client.traces.upload.called, "trace_evaluation never uploaded a trace"
+        assert mock_client.judges.create.called, "trace_evaluation never created a judge"
+        assert mock_client.models.get.called, "trace_evaluation never fetched models"
+        assert mock_client.trace_evaluations.estimate_cost.called, "trace_evaluation never estimated cost"
+        assert mock_client.trace_evaluations.create.called, "trace_evaluation never created a trace evaluation"
+        assert mock_client.trace_evaluations.get_many.called, "trace_evaluation never listed trace evaluations"
+        assert mock_client.judges.delete.called, "trace_evaluation never cleaned up judge"
+        assert mock_client.traces.delete.called, "trace_evaluation never cleaned up traces"
 
     if name == "evaluation_pipeline":
-        assert mock_client.judges.get_many.called, (
-            "evaluation_pipeline never listed judges"
-        )
-        assert mock_client.traces.get_many.called, (
-            "evaluation_pipeline never listed traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "evaluation_pipeline never created a trace evaluation"
-        )
+        assert mock_client.judges.get_many.called, "evaluation_pipeline never listed judges"
+        assert mock_client.traces.get_many.called, "evaluation_pipeline never listed traces"
+        assert mock_client.trace_evaluations.create.called, "evaluation_pipeline never created a trace evaluation"
 
     if name == "judge_creation_and_test":
-        assert mock_client.judges.create.called, (
-            "judge_creation_and_test never created a judge"
-        )
-        assert mock_client.judges.get.called, (
-            "judge_creation_and_test never verified judge"
-        )
-        assert mock_client.traces.get_many.called, (
-            "judge_creation_and_test never listed traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "judge_creation_and_test never created a trace evaluation"
-        )
+        assert mock_client.judges.create.called, "judge_creation_and_test never created a judge"
+        assert mock_client.judges.get.called, "judge_creation_and_test never verified judge"
+        assert mock_client.traces.get_many.called, "judge_creation_and_test never listed traces"
+        assert mock_client.trace_evaluations.create.called, "judge_creation_and_test never created a trace evaluation"
 
     if name == "benchmark_evaluation":
-        assert mock_client.models.get.called, (
-            "benchmark_evaluation never fetched models"
-        )
-        assert mock_client.benchmarks.get.called, (
-            "benchmark_evaluation never fetched benchmarks"
-        )
-        assert mock_client.evaluations.create.called, (
-            "benchmark_evaluation never created an evaluation"
-        )
-        assert mock_client.evaluations.wait_for_completion.called, (
-            "benchmark_evaluation never waited for completion"
-        )
-        assert mock_client.results.get.called, (
-            "benchmark_evaluation never fetched results page"
-        )
-        assert mock_client.results.get_all.called, (
-            "benchmark_evaluation never fetched all results"
-        )
+        assert mock_client.models.get.called, "benchmark_evaluation never fetched models"
+        assert mock_client.benchmarks.get.called, "benchmark_evaluation never fetched benchmarks"
+        assert mock_client.evaluations.create.called, "benchmark_evaluation never created an evaluation"
+        assert mock_client.evaluations.wait_for_completion.called, "benchmark_evaluation never waited for completion"
+        assert mock_client.results.get.called, "benchmark_evaluation never fetched results page"
+        assert mock_client.results.get_all.called, "benchmark_evaluation never fetched all results"
 
     if name == "integration_management":
-        assert mock_client.integrations.get_many.called, (
-            "integration_management never listed integrations"
-        )
-        assert mock_client.integrations.get.called, (
-            "integration_management never fetched a single integration"
-        )
-        assert mock_client.integrations.test.called, (
-            "integration_management never tested an integration"
-        )
+        assert mock_client.integrations.get_many.called, "integration_management never listed integrations"
+        assert mock_client.integrations.get.called, "integration_management never fetched a single integration"
+        assert mock_client.integrations.test.called, "integration_management never tested an integration"
 
     # -- Cowork sample-specific assertions --
     if name == "code_review":
-        assert mock_client.judges.create.called, (
-            "code_review never created judges"
-        )
-        assert mock_client.traces.upload.called, (
-            "code_review never uploaded traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "code_review never created trace evaluations"
-        )
-        assert mock_client.judges.delete.called, (
-            "code_review never cleaned up judges"
-        )
+        assert mock_client.judges.create.called, "code_review never created judges"
+        assert mock_client.traces.upload.called, "code_review never uploaded traces"
+        assert mock_client.trace_evaluations.create.called, "code_review never created trace evaluations"
+        assert mock_client.judges.delete.called, "code_review never cleaned up judges"
 
     if name == "pair_programming":
-        assert mock_client.judges.create.called, (
-            "pair_programming never created a judge"
-        )
-        assert mock_client.traces.upload.called, (
-            "pair_programming never uploaded traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "pair_programming never created trace evaluations"
-        )
-        assert mock_client.judges.update.called, (
-            "pair_programming never refined the judge"
-        )
-        assert mock_client.judges.get.called, (
-            "pair_programming never fetched final judge details"
-        )
-        assert mock_client.judges.delete.called, (
-            "pair_programming never cleaned up judge"
-        )
+        assert mock_client.judges.create.called, "pair_programming never created a judge"
+        assert mock_client.traces.upload.called, "pair_programming never uploaded traces"
+        assert mock_client.trace_evaluations.create.called, "pair_programming never created trace evaluations"
+        assert mock_client.judges.update.called, "pair_programming never refined the judge"
+        assert mock_client.judges.get.called, "pair_programming never fetched final judge details"
+        assert mock_client.judges.delete.called, "pair_programming never cleaned up judge"
 
     if name == "rag_assessment":
-        assert mock_client.judges.create.called, (
-            "rag_assessment never created judges"
-        )
-        assert mock_client.traces.upload.called, (
-            "rag_assessment never uploaded traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "rag_assessment never created trace evaluations"
-        )
-        assert mock_client.judges.delete.called, (
-            "rag_assessment never cleaned up judges"
-        )
+        assert mock_client.judges.create.called, "rag_assessment never created judges"
+        assert mock_client.traces.upload.called, "rag_assessment never uploaded traces"
+        assert mock_client.trace_evaluations.create.called, "rag_assessment never created trace evaluations"
+        assert mock_client.judges.delete.called, "rag_assessment never cleaned up judges"
 
     if name == "multi_agent_eval":
-        assert mock_client.judges.create.called, (
-            "multi_agent_eval never created judges"
-        )
-        assert mock_client.traces.upload.called, (
-            "multi_agent_eval never uploaded traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "multi_agent_eval never created trace evaluations"
-        )
-        assert mock_client.judges.delete.called, (
-            "multi_agent_eval never cleaned up judges"
-        )
+        assert mock_client.judges.create.called, "multi_agent_eval never created judges"
+        assert mock_client.traces.upload.called, "multi_agent_eval never uploaded traces"
+        assert mock_client.trace_evaluations.create.called, "multi_agent_eval never created trace evaluations"
+        assert mock_client.judges.delete.called, "multi_agent_eval never cleaned up judges"
 
     if name == "incident_response":
-        assert mock_client.judges.create.called, (
-            "incident_response never created judges"
-        )
-        assert mock_client.traces.get_many.called, (
-            "incident_response never fetched recent traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "incident_response never created trace evaluations"
-        )
-        assert mock_client.judges.delete.called, (
-            "incident_response never cleaned up judges"
-        )
+        assert mock_client.judges.create.called, "incident_response never created judges"
+        assert mock_client.traces.get_many.called, "incident_response never fetched recent traces"
+        assert mock_client.trace_evaluations.create.called, "incident_response never created trace evaluations"
+        assert mock_client.judges.delete.called, "incident_response never cleaned up judges"
 
     # -- Modalities sample-specific assertions --
     if name == "text_evaluation":
-        assert mock_client.judges.create.called, (
-            "text_evaluation never created judges"
-        )
-        assert mock_client.traces.upload.called, (
-            "text_evaluation never uploaded traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "text_evaluation never created trace evaluations"
-        )
-        assert mock_client.judges.delete.called, (
-            "text_evaluation never cleaned up judges"
-        )
+        assert mock_client.judges.create.called, "text_evaluation never created judges"
+        assert mock_client.traces.upload.called, "text_evaluation never uploaded traces"
+        assert mock_client.trace_evaluations.create.called, "text_evaluation never created trace evaluations"
+        assert mock_client.judges.delete.called, "text_evaluation never cleaned up judges"
 
     if name == "brand_evaluation":
-        assert mock_client.judges.create.called, (
-            "brand_evaluation never created judges"
-        )
-        assert mock_client.traces.upload.called, (
-            "brand_evaluation never uploaded traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "brand_evaluation never created trace evaluations"
-        )
-        assert mock_client.judges.delete.called, (
-            "brand_evaluation never cleaned up judges"
-        )
+        assert mock_client.judges.create.called, "brand_evaluation never created judges"
+        assert mock_client.traces.upload.called, "brand_evaluation never uploaded traces"
+        assert mock_client.trace_evaluations.create.called, "brand_evaluation never created trace evaluations"
+        assert mock_client.judges.delete.called, "brand_evaluation never cleaned up judges"
 
     if name == "document_evaluation":
-        assert mock_client.judges.create.called, (
-            "document_evaluation never created judges"
-        )
-        assert mock_client.traces.upload.called, (
-            "document_evaluation never uploaded traces"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "document_evaluation never created trace evaluations"
-        )
-        assert mock_client.judges.delete.called, (
-            "document_evaluation never cleaned up judges"
-        )
+        assert mock_client.judges.create.called, "document_evaluation never created judges"
+        assert mock_client.traces.upload.called, "document_evaluation never uploaded traces"
+        assert mock_client.trace_evaluations.create.called, "document_evaluation never created trace evaluations"
+        assert mock_client.judges.delete.called, "document_evaluation never cleaned up judges"
 
     # -- Integrations sample-specific assertions --
     if name == "openai_traced":
-        assert mock_client.judges.get_many.called, (
-            "openai_traced never checked existing judges"
-        )
-        assert mock_client.judges.create.called, (
-            "openai_traced never created judges"
-        )
-        assert mock_client.traces.upload.called, (
-            "openai_traced never uploaded a trace"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "openai_traced never created trace evaluations"
-        )
+        assert mock_client.judges.get_many.called, "openai_traced never checked existing judges"
+        assert mock_client.judges.create.called, "openai_traced never created judges"
+        assert mock_client.traces.upload.called, "openai_traced never uploaded a trace"
+        assert mock_client.trace_evaluations.create.called, "openai_traced never created trace evaluations"
 
     if name == "anthropic_traced":
-        assert mock_client.judges.get_many.called, (
-            "anthropic_traced never checked existing judges"
-        )
-        assert mock_client.judges.create.called, (
-            "anthropic_traced never created judges"
-        )
-        assert mock_client.traces.upload.called, (
-            "anthropic_traced never uploaded a trace"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "anthropic_traced never created trace evaluations"
-        )
+        assert mock_client.judges.get_many.called, "anthropic_traced never checked existing judges"
+        assert mock_client.judges.create.called, "anthropic_traced never created judges"
+        assert mock_client.traces.upload.called, "anthropic_traced never uploaded a trace"
+        assert mock_client.trace_evaluations.create.called, "anthropic_traced never created trace evaluations"
 
     # -- OpenClaw direct demos --
     if category == "openclaw" and name in (
@@ -1274,12 +1069,8 @@ def _verify_sample_behavior(
 
     # -- OpenClaw skill evaluate script --
     if name == "evaluate" and "openclaw" in category:
-        assert mock_client.judges.create.called, (
-            "openclaw evaluate script never created a judge"
-        )
-        assert mock_client.trace_evaluations.create.called, (
-            "openclaw evaluate script never created a trace evaluation"
-        )
+        assert mock_client.judges.create.called, "openclaw evaluate script never created a judge"
+        assert mock_client.trace_evaluations.create.called, "openclaw evaluate script never created a trace evaluation"
 
 
 def _verify_async_sample_behavior(
@@ -1296,25 +1087,15 @@ def _verify_async_sample_behavior(
     """
     # async_results uses print(); async_workflow uses logger only
     if name not in ("async_workflow",):
-        assert len(captured_output.strip()) > 0, (
-            f"core/{name} produced no output"
-        )
+        assert len(captured_output.strip()) > 0, f"core/{name} produced no output"
 
     if name == "async_results":
-        assert mock_async_client.evaluations.get_many.called, (
-            "async_results never fetched evaluations"
-        )
+        assert mock_async_client.evaluations.get_many.called, "async_results never fetched evaluations"
 
     if name == "async_workflow":
-        assert mock_async_client.models.get.called, (
-            "async_workflow never fetched models"
-        )
-        assert mock_async_client.benchmarks.get.called, (
-            "async_workflow never fetched benchmarks"
-        )
-        assert mock_async_client.evaluations.create.called, (
-            "async_workflow never created an evaluation"
-        )
+        assert mock_async_client.models.get.called, "async_workflow never fetched models"
+        assert mock_async_client.benchmarks.get.called, "async_workflow never fetched benchmarks"
+        assert mock_async_client.evaluations.create.called, "async_workflow never created an evaluation"
 
 
 # ===========================================================================
@@ -1388,9 +1169,7 @@ class TestAllSamplesWithMockedSDK:
         )
 
     @pytest.mark.parametrize("name", sorted(_ASYNC_CORE_SAMPLES))
-    def test_async_sample_mocked(
-        self, name, mock_stratix, mock_async_stratix, capsys
-    ):
+    def test_async_sample_mocked(self, name, mock_stratix, mock_async_stratix, capsys):
         """Every async sample runs to completion with mocked SDK."""
         output = _import_and_run_async(
             f"core/{name}.py",
@@ -1407,9 +1186,7 @@ class TestAllSamplesWithMockedSDK:
             sys.path.insert(0, sample_dir)
 
         try:
-            spec = importlib.util.spec_from_file_location(
-                "mcp_server_test", full_path
-            )
+            spec = importlib.util.spec_from_file_location("mcp_server_test", full_path)
             mod = importlib.util.module_from_spec(spec)
 
             # Mock mcp package imports that may not be installed
@@ -1419,9 +1196,7 @@ class TestAllSamplesWithMockedSDK:
             mock_mcp_types.TextContent = MagicMock
             mock_mcp_types.Tool = MagicMock
 
-            with patch.dict(
-                "os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}
-            ):
+            with patch.dict("os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}):
                 with patch.dict(
                     "sys.modules",
                     {
@@ -1431,16 +1206,10 @@ class TestAllSamplesWithMockedSDK:
                         "mcp.types": mock_mcp_types,
                     },
                 ):
-                    with patch(
-                        "layerlens.Stratix", MagicMock(return_value=mock_stratix)
-                    ):
+                    with patch("layerlens.Stratix", MagicMock(return_value=mock_stratix)):
                         spec.loader.exec_module(mod)
-                        assert hasattr(mod, "create_server"), (
-                            "MCP server should expose create_server()"
-                        )
-                        assert hasattr(mod, "main"), (
-                            "MCP server should expose main()"
-                        )
+                        assert hasattr(mod, "create_server"), "MCP server should expose create_server()"
+                        assert hasattr(mod, "main"), "MCP server should expose main()"
         finally:
             if sample_dir in sys.path:
                 sys.path.remove(sample_dir)
@@ -1451,9 +1220,7 @@ class TestAllSamplesWithMockedSDK:
 
         These agents require langchain/langgraph/copilotkit; we mock those.
         """
-        full_path = os.path.join(
-            SAMPLES_DIR, "copilotkit", "agents", f"{name}.py"
-        )
+        full_path = os.path.join(SAMPLES_DIR, "copilotkit", "agents", f"{name}.py")
         sample_dir = os.path.dirname(full_path)
         if sample_dir not in sys.path:
             sys.path.insert(0, sample_dir)
@@ -1480,13 +1247,9 @@ class TestAllSamplesWithMockedSDK:
 
             with patch.dict("os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}):
                 with patch.dict("sys.modules", mock_modules):
-                    with patch(
-                        "layerlens.Stratix", MagicMock(return_value=mock_stratix)
-                    ):
+                    with patch("layerlens.Stratix", MagicMock(return_value=mock_stratix)):
                         spec.loader.exec_module(mod)
-                        assert hasattr(mod, "main"), (
-                            f"CopilotKit agent {name} should have main()"
-                        )
+                        assert hasattr(mod, "main"), f"CopilotKit agent {name} should have main()"
                         # main() just prints usage -- call it
                         mod.main()
         finally:
@@ -1551,10 +1314,7 @@ class TestAllSamplesLiveAPI:
             result = _run_live(full_path, args=args, timeout=30)
             if result.returncode != 0 and "No module named" in result.stderr:
                 pytest.skip("copilotkit/langgraph not installed")
-            assert result.returncode == 0, (
-                f"CopilotKit agent failed: {sample_path}\n"
-                f"stderr: {result.stderr[:500]}"
-            )
+            assert result.returncode == 0, f"CopilotKit agent failed: {sample_path}\nstderr: {result.stderr[:500]}"
             return
 
         # OpenClaw demos: run with default args (built-in demo data)
@@ -1570,19 +1330,14 @@ class TestAllSamplesLiveAPI:
                     or "LAYERLENS" in result.stderr
                     or "ModuleNotFoundError" in result.stderr
                     or "ImportError" in result.stderr
-                ), (
-                    f"Unexpected failure: {sample_path}\n"
-                    f"stderr: {result.stderr[:500]}"
-                )
+                ), f"Unexpected failure: {sample_path}\nstderr: {result.stderr[:500]}"
             return
 
         # Pre-commit hook: run in the repo dir (it needs git context)
         if "pre_commit_hook" in sample_path:
             result = _run_live(full_path, args=args, timeout=30)
             # May fail (no staged files) but should not crash
-            assert result.returncode in (0, 1), (
-                f"pre_commit_hook crashed: stderr={result.stderr[:500]}"
-            )
+            assert result.returncode in (0, 1), f"pre_commit_hook crashed: stderr={result.stderr[:500]}"
             return
 
         # Evaluations are async: creation returns immediately but LLM judge
@@ -1594,26 +1349,22 @@ class TestAllSamplesLiveAPI:
             # SUCCESS: verify the sample actually produced meaningful output.
             # A sample that exits 0 but prints nothing is broken.
             combined = result.stdout + result.stderr
-            assert len(combined.strip()) > 0, (
-                f"EMPTY OUTPUT: {sample_path} exited 0 but produced no output"
-            )
+            assert len(combined.strip()) > 0, f"EMPTY OUTPUT: {sample_path} exited 0 but produced no output"
             # Verify evidence of real API interaction in output.
             # Samples that connect to the API will log HTTP requests or print
             # trace IDs, judge names, scores, etc.
             api_evidence = [
-                "HTTP Request",     # httpx request logging
-                "trace",            # trace IDs or trace references
-                "judge",            # judge creation or references
-                "evaluation",       # evaluation creation or results
-                "score",            # evaluation scores
-                "pass",             # pass/fail verdicts
-                "Connected",        # client init confirmation
-                "Uploaded",         # trace upload confirmation
-                "Created",          # resource creation confirmation
+                "HTTP Request",  # httpx request logging
+                "trace",  # trace IDs or trace references
+                "judge",  # judge creation or references
+                "evaluation",  # evaluation creation or results
+                "score",  # evaluation scores
+                "pass",  # pass/fail verdicts
+                "Connected",  # client init confirmation
+                "Uploaded",  # trace upload confirmation
+                "Created",  # resource creation confirmation
             ]
-            has_evidence = any(
-                term.lower() in combined.lower() for term in api_evidence
-            )
+            has_evidence = any(term.lower() in combined.lower() for term in api_evidence)
             assert has_evidence, (
                 f"NO API EVIDENCE: {sample_path} exited 0 but output contains "
                 f"no trace of API interaction.\n"
@@ -1646,9 +1397,7 @@ class TestAllSamplesLiveAPI:
             ]
             is_api_limit = any(term in stderr for term in known_api_limits)
             assert is_api_limit, (
-                f"UNEXPECTED FAILURE: {sample_path}\n"
-                f"stdout: {result.stdout[:300]}\n"
-                f"stderr: {stderr[:500]}"
+                f"UNEXPECTED FAILURE: {sample_path}\nstdout: {result.stdout[:300]}\nstderr: {stderr[:500]}"
             )
 
 
@@ -1692,17 +1441,14 @@ class TestOpenClawOfflineMode:
         """DemoRunner demos should run in verbose --no-sdk mode without error."""
         result = _run_openclaw_demo(demo, extra_args=["--no-sdk", "--verbose"])
         assert result.returncode == 0, (
-            f"OpenClaw demo {demo} failed in verbose offline mode.\n"
-            f"stderr: {result.stderr[:500]}"
+            f"OpenClaw demo {demo} failed in verbose offline mode.\nstderr: {result.stderr[:500]}"
         )
 
     @pytest.mark.parametrize("demo", OPENCLAW_DIRECT_DEMOS)
     def test_direct_without_key(self, demo):
         """Direct Stratix OpenClaw demos should fail gracefully without API key."""
         result = _run_openclaw_demo(demo)
-        assert result.returncode != 0, (
-            f"Expected {demo} to fail without API key but it exited 0"
-        )
+        assert result.returncode != 0, f"Expected {demo} to fail without API key but it exited 0"
 
     def test_skill_script_without_key(self):
         """OpenClaw skill evaluate.py should fail gracefully without API key."""
@@ -1731,9 +1477,7 @@ class TestOpenClawOfflineMode:
             env=env,
             cwd=PROJECT_ROOT,
         )
-        assert result.returncode != 0, (
-            "evaluate.py should fail without API key"
-        )
+        assert result.returncode != 0, "evaluate.py should fail without API key"
 
 
 # ===========================================================================
@@ -1747,7 +1491,7 @@ class TestWithoutAPIKey:
     # Samples that may legitimately exit 0 without an API key
     _MAY_SUCCEED_WITHOUT_KEY = {
         "cicd/pre_commit_hook.py",  # Exits 0 when no staged files
-        "core/public_catalog.py",   # Uses PublicClient (no key needed)
+        "core/public_catalog.py",  # Uses PublicClient (no key needed)
     }
 
     @pytest.mark.parametrize(
@@ -1758,11 +1502,7 @@ class TestWithoutAPIKey:
             # Exclude MCP (blocks on stdin) and CopilotKit (they just print)
             if "mcp/" not in p and "copilotkit/" not in p
         ],
-        ids=[
-            p
-            for p in ALL_SAMPLE_PATHS
-            if "mcp/" not in p and "copilotkit/" not in p
-        ],
+        ids=[p for p in ALL_SAMPLE_PATHS if "mcp/" not in p and "copilotkit/" not in p],
     )
     def test_no_api_key(self, sample_path):
         """Samples should exit non-zero without API key (or succeed for offline-capable ones)."""
@@ -1795,8 +1535,7 @@ class TestWithoutAPIKey:
         else:
             # Should exit non-zero (can't init Stratix) -- graceful failure
             assert result.returncode != 0, (
-                f"Expected {sample_path} to fail without API key but it exited 0.\n"
-                f"stdout: {result.stdout[:300]}"
+                f"Expected {sample_path} to fail without API key but it exited 0.\nstdout: {result.stdout[:300]}"
             )
 
     @pytest.mark.parametrize("demo", OPENCLAW_RUNNER_DEMOS)
@@ -1804,16 +1543,13 @@ class TestWithoutAPIKey:
         """OpenClaw DemoRunner demos should work in --no-sdk mode without API key."""
         result = _run_openclaw_demo(demo, extra_args=["--no-sdk", "--json"])
         assert result.returncode == 0, (
-            f"OpenClaw demo {demo} should work offline without API key.\n"
-            f"stderr: {result.stderr[:500]}"
+            f"OpenClaw demo {demo} should work offline without API key.\nstderr: {result.stderr[:500]}"
         )
 
     @pytest.mark.parametrize("name", COPILOTKIT_SAMPLES)
     def test_copilotkit_no_key(self, name):
         """CopilotKit agents should print usage even without API key."""
-        full_path = os.path.join(
-            SAMPLES_DIR, "copilotkit", "agents", f"{name}.py"
-        )
+        full_path = os.path.join(SAMPLES_DIR, "copilotkit", "agents", f"{name}.py")
         env = dict(os.environ)
         env.pop("LAYERLENS_STRATIX_API_KEY", None)
         env.pop("LAYERLENS_ATLAS_API_KEY", None)
@@ -1829,10 +1565,7 @@ class TestWithoutAPIKey:
         # These just print usage at __main__ -- should succeed or fail gracefully
         # (may fail if langchain etc. not installed, which is fine)
         # We just verify no unhandled crash
-        assert result.returncode in (0, 1), (
-            f"CopilotKit {name} crashed without API key.\n"
-            f"stderr: {result.stderr[:500]}"
-        )
+        assert result.returncode in (0, 1), f"CopilotKit {name} crashed without API key.\nstderr: {result.stderr[:500]}"
 
 
 # ===========================================================================
@@ -1868,9 +1601,7 @@ class TestMissingDependencies:
                 "os.environ",
                 {"LAYERLENS_STRATIX_API_KEY": "test-key", "ANTHROPIC_API_KEY": ""},
             ):
-                _import_and_run_sync(
-                    "integrations/anthropic_traced.py", mock_stratix
-                )
+                _import_and_run_sync("integrations/anthropic_traced.py", mock_stratix)
         finally:
             if original is not None:
                 sys.modules["anthropic"] = original
@@ -1882,8 +1613,7 @@ class TestMissingDependencies:
         for demo in OPENCLAW_RUNNER_DEMOS:
             result = _run_openclaw_demo(demo, extra_args=["--no-sdk", "--json"])
             assert result.returncode == 0, (
-                f"OpenClaw demo {demo} should work without openclaw package.\n"
-                f"stderr: {result.stderr[:500]}"
+                f"OpenClaw demo {demo} should work without openclaw package.\nstderr: {result.stderr[:500]}"
             )
 
     def test_integration_with_missing_openai_env(self, mock_stratix):
@@ -1900,16 +1630,12 @@ class TestMissingDependencies:
             "os.environ",
             {"LAYERLENS_STRATIX_API_KEY": "test-key", "ANTHROPIC_API_KEY": ""},
         ):
-            _import_and_run_sync(
-                "integrations/anthropic_traced.py", mock_stratix
-            )
+            _import_and_run_sync("integrations/anthropic_traced.py", mock_stratix)
 
     @pytest.mark.parametrize("name", COPILOTKIT_SAMPLES)
     def test_copilotkit_without_langchain(self, name, mock_stratix):
         """CopilotKit agents should be importable with mocked langchain/copilotkit."""
-        full_path = os.path.join(
-            SAMPLES_DIR, "copilotkit", "agents", f"{name}.py"
-        )
+        full_path = os.path.join(SAMPLES_DIR, "copilotkit", "agents", f"{name}.py")
         sample_dir = os.path.dirname(full_path)
         if sample_dir not in sys.path:
             sys.path.insert(0, sample_dir)
@@ -1931,9 +1657,7 @@ class TestMissingDependencies:
                 "pydantic": MagicMock(),
             }
 
-            with patch.dict(
-                "os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}
-            ):
+            with patch.dict("os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}):
                 with patch.dict("sys.modules", mock_modules):
                     with patch(
                         "layerlens.Stratix",
@@ -1955,18 +1679,14 @@ class TestMissingDependencies:
             sys.path.insert(0, sample_dir)
 
         try:
-            spec = importlib.util.spec_from_file_location(
-                "mcp_dep_test", full_path
-            )
+            spec = importlib.util.spec_from_file_location("mcp_dep_test", full_path)
             mod = importlib.util.module_from_spec(spec)
 
             mock_mcp_types = MagicMock()
             mock_mcp_types.TextContent = MagicMock
             mock_mcp_types.Tool = MagicMock
 
-            with patch.dict(
-                "os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}
-            ):
+            with patch.dict("os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}):
                 with patch.dict(
                     "sys.modules",
                     {
@@ -2017,10 +1737,7 @@ class TestSampleCompleteness:
             if f.endswith(".py") and not f.startswith("_") and f != "README.md"
         }
         expected = set(CORE_SAMPLES)
-        assert actual == expected, (
-            f"Missing from CORE_SAMPLES: {actual - expected}; "
-            f"Extra: {expected - actual}"
-        )
+        assert actual == expected, f"Missing from CORE_SAMPLES: {actual - expected}; Extra: {expected - actual}"
 
     def test_industry_samples_complete(self):
         """All industry sample files should be listed in INDUSTRY_SAMPLES."""
@@ -2030,9 +1747,7 @@ class TestSampleCompleteness:
             if f.endswith(".py") and not f.startswith("_") and f != "README.md"
         }
         expected = set(INDUSTRY_SAMPLES)
-        assert actual == expected, (
-            f"Missing: {actual - expected}; Extra: {expected - actual}"
-        )
+        assert actual == expected, f"Missing: {actual - expected}; Extra: {expected - actual}"
 
     def test_cowork_samples_complete(self):
         """All cowork sample files should be listed in COWORK_SAMPLES."""
@@ -2042,9 +1757,7 @@ class TestSampleCompleteness:
             if f.endswith(".py") and not f.startswith("_") and f != "README.md"
         }
         expected = set(COWORK_SAMPLES)
-        assert actual == expected, (
-            f"Missing: {actual - expected}; Extra: {expected - actual}"
-        )
+        assert actual == expected, f"Missing: {actual - expected}; Extra: {expected - actual}"
 
     def test_modality_samples_complete(self):
         """All modality sample files should be listed in MODALITY_SAMPLES."""
@@ -2054,9 +1767,7 @@ class TestSampleCompleteness:
             if f.endswith(".py") and not f.startswith("_") and f != "README.md"
         }
         expected = set(MODALITY_SAMPLES)
-        assert actual == expected, (
-            f"Missing: {actual - expected}; Extra: {expected - actual}"
-        )
+        assert actual == expected, f"Missing: {actual - expected}; Extra: {expected - actual}"
 
     def test_openclaw_demos_complete(self):
         """All OpenClaw demo files should be listed in OPENCLAW_DEMOS."""
@@ -2066,9 +1777,7 @@ class TestSampleCompleteness:
             if f.endswith(".py") and not f.startswith("_") and f != "README.md"
         }
         expected = set(OPENCLAW_DEMOS)
-        assert actual == expected, (
-            f"Missing: {actual - expected}; Extra: {expected - actual}"
-        )
+        assert actual == expected, f"Missing: {actual - expected}; Extra: {expected - actual}"
 
     def test_integration_samples_complete(self):
         """All integration sample files should be listed in INTEGRATION_SAMPLES."""
@@ -2078,9 +1787,7 @@ class TestSampleCompleteness:
             if f.endswith(".py") and not f.startswith("_") and f != "README.md"
         }
         expected = set(INTEGRATION_SAMPLES)
-        assert actual == expected, (
-            f"Missing: {actual - expected}; Extra: {expected - actual}"
-        )
+        assert actual == expected, f"Missing: {actual - expected}; Extra: {expected - actual}"
 
     def test_cicd_samples_complete(self):
         """All CI/CD sample files should be listed in CICD_SAMPLES."""
@@ -2090,23 +1797,17 @@ class TestSampleCompleteness:
             if f.endswith(".py") and not f.startswith("_") and f != "README.md"
         }
         expected = set(CICD_SAMPLES)
-        assert actual == expected, (
-            f"Missing: {actual - expected}; Extra: {expected - actual}"
-        )
+        assert actual == expected, f"Missing: {actual - expected}; Extra: {expected - actual}"
 
     def test_copilotkit_agents_complete(self):
         """All CopilotKit agent files should be listed in COPILOTKIT_SAMPLES."""
         actual = {
             os.path.splitext(f)[0]
-            for f in os.listdir(
-                os.path.join(SAMPLES_DIR, "copilotkit", "agents")
-            )
+            for f in os.listdir(os.path.join(SAMPLES_DIR, "copilotkit", "agents"))
             if f.endswith(".py") and not f.startswith("_") and f != "README.md"
         }
         expected = set(COPILOTKIT_SAMPLES)
-        assert actual == expected, (
-            f"Missing: {actual - expected}; Extra: {expected - actual}"
-        )
+        assert actual == expected, f"Missing: {actual - expected}; Extra: {expected - actual}"
 
     def test_mcp_samples_complete(self):
         """All MCP sample files should be listed in MCP_SAMPLES."""
@@ -2116,9 +1817,7 @@ class TestSampleCompleteness:
             if f.endswith(".py") and not f.startswith("_") and f != "README.md"
         }
         expected = set(MCP_SAMPLES)
-        assert actual == expected, (
-            f"Missing: {actual - expected}; Extra: {expected - actual}"
-        )
+        assert actual == expected, f"Missing: {actual - expected}; Extra: {expected - actual}"
 
     def test_openclaw_skill_script_exists(self):
         """The OpenClaw skill evaluate.py script should exist."""
@@ -2134,8 +1833,7 @@ class TestSampleCompleteness:
     def test_all_54_samples_covered(self):
         """Verify ALL_SAMPLE_PATHS contains exactly 58 entries."""
         assert len(ALL_SAMPLE_PATHS) == 58, (
-            f"Expected 58 samples, got {len(ALL_SAMPLE_PATHS)}.\n"
-            f"Paths: {ALL_SAMPLE_PATHS}"
+            f"Expected 58 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
         )
 
     def test_all_sample_paths_exist(self):
@@ -2150,6 +1848,5 @@ class TestSampleCompleteness:
     def test_mocked_samples_cover_all(self):
         """ALL_MOCKED_SAMPLES should produce exactly 58 entries."""
         assert len(ALL_MOCKED_SAMPLES) == 58, (
-            f"Expected 58 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\n"
-            f"Entries: {ALL_MOCKED_SAMPLES}"
+            f"Expected 58 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
         )

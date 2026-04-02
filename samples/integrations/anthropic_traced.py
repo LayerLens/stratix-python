@@ -22,7 +22,7 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Simulated Claude conversation (used when ANTHROPIC_API_KEY is not set)
@@ -105,12 +105,14 @@ def _get_anthropic_messages() -> tuple[str, list[dict[str, Any]]]:
             latency_ms = (time.monotonic() - start) * 1000
             response_text = response.content[0].text if response.content else ""
             tokens_used = (response.usage.input_tokens or 0) + (response.usage.output_tokens or 0)
-            messages_out.append({
-                "prompt": prompt,
-                "response": response_text,
-                "tokens_used": tokens_used,
-                "latency_ms": round(latency_ms),
-            })
+            messages_out.append(
+                {
+                    "prompt": prompt,
+                    "response": response_text,
+                    "tokens_used": tokens_used,
+                    "latency_ms": round(latency_ms),
+                }
+            )
 
         return model, messages_out
     except ImportError:
@@ -171,7 +173,8 @@ def main() -> None:
     combined_input = "\n".join(m["prompt"] for m in messages)
     combined_output = "\n\n".join(m["response"] for m in messages)
 
-    trace_result = upload_trace_dict(client,
+    trace_result = upload_trace_dict(
+        client,
         input_text=combined_input,
         output_text=combined_output,
         metadata={

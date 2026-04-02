@@ -20,20 +20,24 @@ Prerequisites:
 
 from __future__ import annotations
 
-import argparse
-import json
 import os
 import sys
+import json
+import argparse
 import tempfile
 from typing import Any, Optional
 
 try:
     from layerlens import Stratix
 except ImportError:
-    print(json.dumps({
-        "error": "layerlens package not installed. Run: pip install layerlens --index-url https://sdk.layerlens.ai/package",
-        "success": False,
-    }))
+    print(
+        json.dumps(
+            {
+                "error": "layerlens package not installed. Run: pip install layerlens --index-url https://sdk.layerlens.ai/package",
+                "success": False,
+            }
+        )
+    )
     sys.exit(1)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -59,17 +63,20 @@ def _parse_args() -> argparse.Namespace:
         description="Upload a trace and evaluate it with LayerLens.",
     )
     parser.add_argument(
-        "--input", "-i",
+        "--input",
+        "-i",
         dest="input_text",
         help="The input/prompt text for the trace.",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         dest="output_text",
         help="The output/response text for the trace.",
     )
     parser.add_argument(
-        "--goal", "-g",
+        "--goal",
+        "-g",
         dest="evaluation_goal",
         default="Evaluate whether the response is accurate, helpful, and safe.",
         help="The evaluation goal for the judge.",
@@ -154,20 +161,28 @@ def main() -> None:
         extra_metadata = metadata_raw
 
     if not input_text or not output_text:
-        print(json.dumps({
-            "error": "Both --input and --output are required.",
-            "success": False,
-        }))
+        print(
+            json.dumps(
+                {
+                    "error": "Both --input and --output are required.",
+                    "success": False,
+                }
+            )
+        )
         sys.exit(1)
 
     # Initialize client
     try:
         client = Stratix()
     except Exception as exc:
-        print(json.dumps({
-            "error": f"Failed to initialize LayerLens client: {exc}",
-            "success": False,
-        }))
+        print(
+            json.dumps(
+                {
+                    "error": f"Failed to initialize LayerLens client: {exc}",
+                    "success": False,
+                }
+            )
+        )
         sys.exit(1)
 
     # Upload trace
@@ -177,10 +192,14 @@ def main() -> None:
             metadata.update(extra_metadata)
         trace_id = _upload_trace(client, input_text, output_text, metadata)
     except Exception as exc:
-        print(json.dumps({
-            "error": f"Failed to upload trace: {exc}",
-            "success": False,
-        }))
+        print(
+            json.dumps(
+                {
+                    "error": f"Failed to upload trace: {exc}",
+                    "success": False,
+                }
+            )
+        )
         sys.exit(1)
 
     # Create judge
@@ -191,11 +210,15 @@ def main() -> None:
             evaluation_goal=evaluation_goal,
         )
     except Exception as exc:
-        print(json.dumps({
-            "error": f"Failed to create judge: {exc}",
-            "trace_id": trace_id,
-            "success": False,
-        }))
+        print(
+            json.dumps(
+                {
+                    "error": f"Failed to create judge: {exc}",
+                    "trace_id": trace_id,
+                    "success": False,
+                }
+            )
+        )
         sys.exit(1)
 
     # Run evaluation
@@ -205,12 +228,16 @@ def main() -> None:
             judge_id=judge.id,
         )
     except Exception as exc:
-        print(json.dumps({
-            "error": f"Failed to create evaluation: {exc}",
-            "trace_id": trace_id,
-            "judge_id": judge.id,
-            "success": False,
-        }))
+        print(
+            json.dumps(
+                {
+                    "error": f"Failed to create evaluation: {exc}",
+                    "trace_id": trace_id,
+                    "judge_id": judge.id,
+                    "success": False,
+                }
+            )
+        )
         sys.exit(1)
 
     # Poll for results

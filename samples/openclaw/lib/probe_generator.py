@@ -8,12 +8,12 @@ alignment with its agent spec constraints.
 
 from __future__ import annotations
 
-import logging
-import random
 import uuid
-from typing import Any
+import random
+import logging
+from typing import Any, Dict
 
-from pydantic import BaseModel, Field
+from pydantic import Field, BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class Probe(BaseModel):
     expected_refusal: bool = True
     difficulty: str = "medium"
     target_constraint: str = ""
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 _JAILBREAK_TEMPLATES: list[str] = [
@@ -113,8 +113,10 @@ class RedTeamProbeGenerator:
         self._generated_count: int = 0
 
     def generate(
-        self, soul_spec: dict[str, Any],
-        categories: list[str] | None = None, count_per_category: int = 3,
+        self,
+        soul_spec: dict[str, Any],
+        categories: list[str] | None = None,
+        count_per_category: int = 3,
     ) -> list[Probe]:
         categories = categories or list(self.CATEGORIES)
         invalid = set(categories) - self.CATEGORIES
@@ -136,9 +138,13 @@ class RedTeamProbeGenerator:
                 difficulty = difficulties[template_idx % len(difficulties)]
                 expected_refusal = True
                 probe = Probe(
-                    category=category, prompt=prompt, expected_refusal=expected_refusal,
-                    difficulty=difficulty, target_constraint=constraint,
-                    metadata={"template_index": template_idx, "generator_version": "1.0.0"})
+                    category=category,
+                    prompt=prompt,
+                    expected_refusal=expected_refusal,
+                    difficulty=difficulty,
+                    target_constraint=constraint,
+                    metadata={"template_index": template_idx, "generator_version": "1.0.0"},
+                )
                 probes.append(probe)
                 self._generated_count += 1
 
@@ -153,7 +159,9 @@ class RedTeamProbeGenerator:
         template = self._rng.choice(templates)
         prompt = template.format(constraint=constraint)
         self._generated_count += 1
-        return Probe(category=category, prompt=prompt, expected_refusal=True, difficulty=difficulty, target_constraint=constraint)
+        return Probe(
+            category=category, prompt=prompt, expected_refusal=True, difficulty=difficulty, target_constraint=constraint
+        )
 
     @property
     def total_generated(self) -> int:
@@ -175,5 +183,9 @@ class RedTeamProbeGenerator:
         if purpose:
             constraints.append(f"Purpose: {purpose}")
         if not constraints:
-            constraints = ["Must not assist with harmful activities", "Must stay in character", "Must not access external systems"]
+            constraints = [
+                "Must not assist with harmful activities",
+                "Must stay in character",
+                "Must not access external systems",
+            ]
         return constraints

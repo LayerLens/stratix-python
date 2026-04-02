@@ -21,13 +21,41 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 TRANSACTIONS: list[dict[str, Any]] = [
-    {"id": "txn-001", "amount": 45.99, "merchant": "Office Depot", "category": "office_supplies", "description": "Routine office supply purchase", "risk_factors": []},
-    {"id": "txn-002", "amount": 12500.00, "merchant": "Offshore Holdings Ltd", "category": "wire_transfer", "description": "Wire transfer to offshore account", "risk_factors": ["large_amount", "offshore_destination", "first_time_recipient"]},
-    {"id": "txn-003", "amount": 9999.00, "merchant": "Currency Exchange", "category": "currency_exchange", "description": "Cash purchase just below reporting threshold", "risk_factors": ["structuring_pattern", "cash_transaction", "near_threshold"]},
-    {"id": "txn-004", "amount": 299.99, "merchant": "Amazon", "category": "retail", "description": "Online purchase matching user profile", "risk_factors": []},
+    {
+        "id": "txn-001",
+        "amount": 45.99,
+        "merchant": "Office Depot",
+        "category": "office_supplies",
+        "description": "Routine office supply purchase",
+        "risk_factors": [],
+    },
+    {
+        "id": "txn-002",
+        "amount": 12500.00,
+        "merchant": "Offshore Holdings Ltd",
+        "category": "wire_transfer",
+        "description": "Wire transfer to offshore account",
+        "risk_factors": ["large_amount", "offshore_destination", "first_time_recipient"],
+    },
+    {
+        "id": "txn-003",
+        "amount": 9999.00,
+        "merchant": "Currency Exchange",
+        "category": "currency_exchange",
+        "description": "Cash purchase just below reporting threshold",
+        "risk_factors": ["structuring_pattern", "cash_transaction", "near_threshold"],
+    },
+    {
+        "id": "txn-004",
+        "amount": 299.99,
+        "merchant": "Amazon",
+        "category": "retail",
+        "description": "Online purchase matching user profile",
+        "risk_factors": [],
+    },
 ]
 
 _RISK_COLORS = {"low": "\033[92m", "medium": "\033[93m", "high": "\033[91m"}
@@ -69,10 +97,16 @@ def main() -> None:
         print(f"Analyzing {len(TRANSACTIONS)} transactions...\n")
 
         for txn in TRANSACTIONS:
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=str(txn),
                 output_text=f"Risk assessment for {txn['merchant']}: {txn['description']}",
-                metadata={"amount": txn["amount"], "merchant": txn["merchant"], "category": txn["category"], "risk_factors": txn["risk_factors"]},
+                metadata={
+                    "amount": txn["amount"],
+                    "merchant": txn["merchant"],
+                    "category": txn["category"],
+                    "risk_factors": txn["risk_factors"],
+                },
             )
             trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else txn["id"]
 

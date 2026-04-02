@@ -50,7 +50,7 @@ def main() -> None:
     #   - snake_case: "submitted_at", "average_duration" (Python SDK convention)
     # Both are shown below so you can use whichever works with your version.
     response = client.evaluations.get_many(
-        sort_by="submittedAt",       # camelCase variant
+        sort_by="submittedAt",  # camelCase variant
         order="desc",
         page_size=5,
     )
@@ -75,7 +75,7 @@ def main() -> None:
 
     # ── Sort by average duration (fastest first) ──────────────────────
     response = client.evaluations.get_many(
-        sort_by="averageDuration",   # camelCase variant; snake_case: "average_duration"
+        sort_by="averageDuration",  # camelCase variant; snake_case: "average_duration"
         order="asc",
         page_size=5,
     )

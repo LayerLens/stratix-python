@@ -33,18 +33,18 @@ Usage
 
 from __future__ import annotations
 
-import argparse
-import json
-import logging
 import os
 import sys
-import tempfile
+import json
 import time
+import logging
+import argparse
+import tempfile
 
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import poll_evaluation_results, create_judge
+from _helpers import create_judge, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -157,8 +157,7 @@ def main() -> None:
         if not trace_eval:
             logger.error("Failed to create trace evaluation")
             sys.exit(1)
-        logger.info("Trace evaluation created: %s (status=%s)",
-                     trace_eval.id, getattr(trace_eval, "status", "unknown"))
+        logger.info("Trace evaluation created: %s (status=%s)", trace_eval.id, getattr(trace_eval, "status", "unknown"))
 
         # --- Step 5: Poll and fetch results ---
         logger.info("Step 5: Fetch results")
@@ -167,10 +166,7 @@ def main() -> None:
         if eval_results:
             logger.info("Got %d result(s)", len(eval_results))
             for r in eval_results:
-                logger.info("  Score: %s  Passed: %s  Reasoning: %s",
-                            r.score,
-                            r.passed,
-                            (r.reasoning or "")[:80])
+                logger.info("  Score: %s  Passed: %s  Reasoning: %s", r.score, r.passed, (r.reasoning or "")[:80])
         else:
             logger.info("No results yet (evaluation may still be processing)")
 
@@ -183,8 +179,7 @@ def main() -> None:
                 logger.info("  Reasoning: %s", (result.reasoning or "")[:80])
                 if result.steps:
                     for step in result.steps:
-                        logger.info("    Tool: %s, Result: %s",
-                                    step.tool, (step.result or "")[:80])
+                        logger.info("    Tool: %s, Result: %s", step.tool, (step.result or "")[:80])
                 else:
                     logger.info("  No steps in result")
             else:

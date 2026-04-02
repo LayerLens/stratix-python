@@ -21,14 +21,32 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 CONTRACTS: list[dict[str, Any]] = [
     {
         "id": "contract-001",
         "title": "SaaS Agreement (Acme Corp / Widget Inc)",
-        "clauses_identified": ["term_and_termination", "payment_terms", "data_protection", "liability_limitation", "confidentiality", "intellectual_property", "indemnification", "force_majeure"],
-        "clauses_expected": ["term_and_termination", "payment_terms", "data_protection", "liability_limitation", "confidentiality", "intellectual_property", "indemnification", "force_majeure"],
+        "clauses_identified": [
+            "term_and_termination",
+            "payment_terms",
+            "data_protection",
+            "liability_limitation",
+            "confidentiality",
+            "intellectual_property",
+            "indemnification",
+            "force_majeure",
+        ],
+        "clauses_expected": [
+            "term_and_termination",
+            "payment_terms",
+            "data_protection",
+            "liability_limitation",
+            "confidentiality",
+            "intellectual_property",
+            "indemnification",
+            "force_majeure",
+        ],
         "risk_flags": [
             {"clause": "liability_limitation", "risk": "high", "note": "Unlimited liability for data breaches"},
             {"clause": "term_and_termination", "risk": "high", "note": "Auto-renewal with 180-day notice period"},
@@ -39,7 +57,14 @@ CONTRACTS: list[dict[str, Any]] = [
         "id": "contract-002",
         "title": "NDA (Bilateral)",
         "clauses_identified": ["definition_of_confidential", "obligations", "exclusions", "term", "remedies"],
-        "clauses_expected": ["definition_of_confidential", "obligations", "exclusions", "term", "remedies", "return_of_materials"],
+        "clauses_expected": [
+            "definition_of_confidential",
+            "obligations",
+            "exclusions",
+            "term",
+            "remedies",
+            "return_of_materials",
+        ],
         "risk_flags": [{"clause": "term", "risk": "medium", "note": "Perpetual NDA with no sunset clause"}],
         "analysis_output": "NDA review identifies 5 of 6 expected clauses. Missing return of materials clause. Term is perpetual.",
     },
@@ -77,17 +102,26 @@ def main() -> None:
             evaluation_goal="Evaluate whether the contract review properly handles confidential information and identifies confidentiality-related issues.",
         ),
     }
-    judge_labels = {"clause_detection": "Clause Detection", "risk_assessment": "Risk Assessment", "confidentiality": "Confidentiality"}
+    judge_labels = {
+        "clause_detection": "Clause Detection",
+        "risk_assessment": "Risk Assessment",
+        "confidentiality": "Confidentiality",
+    }
     judge_ids = [j.id for j in judges.values()]
 
     try:
         print(f"Reviewing {len(CONTRACTS)} contracts...\n")
 
         for contract in CONTRACTS:
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=f"Review contract: {contract['title']}",
                 output_text=contract["analysis_output"],
-                metadata={"clauses_identified": contract["clauses_identified"], "clauses_expected": contract["clauses_expected"], "risk_flags": contract["risk_flags"]},
+                metadata={
+                    "clauses_identified": contract["clauses_identified"],
+                    "clauses_expected": contract["clauses_expected"],
+                    "risk_flags": contract["risk_flags"],
+                },
             )
             trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else contract["id"]
 

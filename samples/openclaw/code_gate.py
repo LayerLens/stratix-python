@@ -19,15 +19,15 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
-import logging
 import sys
 import uuid
+import logging
+import argparse
 from typing import Any
 
 from ._runner import DemoRunner, _print_scores
-from .judges.code_quality import CodeQualityJudge
 from .lib.code_pipeline import CodePipeline
+from .judges.code_quality import CodeQualityJudge
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,9 @@ class CodeGateRunner(DemoRunner):
         parser = super().build_parser()
         parser.add_argument("--task", default=DEFAULT_TASK, help="Task specification for code generation.")
         parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help="Gate threshold (default: 7.5).")
-        parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS, help="Max pipeline iterations (default: 3).")
+        parser.add_argument(
+            "--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS, help="Max pipeline iterations (default: 3)."
+        )
         return parser
 
     async def run(self) -> dict[str, Any]:
@@ -90,8 +92,8 @@ class CodeGateRunner(DemoRunner):
         trace_id = self.upload_trace(
             input_text=task,
             output_text=final_eval.get("rationale", ""),
-            metadata={"demo": self.demo_id, "verdict": pipeline_result["final_verdict"],
-                       "source": "openclaw"})
+            metadata={"demo": self.demo_id, "verdict": pipeline_result["final_verdict"], "source": "openclaw"},
+        )
         if trace_id:
             logger.info("Trace uploaded: %s", trace_id)
 
@@ -116,7 +118,9 @@ class CodeGateRunner(DemoRunner):
             print(f"{'=' * 60}\n")
 
         return {
-            "run_id": run_id, "task": task, "gate_threshold": threshold,
+            "run_id": run_id,
+            "task": task,
+            "gate_threshold": threshold,
             "max_iterations": max_iterations,
             "total_iterations": pipeline_result["total_iterations"],
             "final_verdict": pipeline_result["final_verdict"],

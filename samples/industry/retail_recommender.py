@@ -21,7 +21,7 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 CUSTOMER_PROFILES: list[dict[str, Any]] = [
     {
@@ -85,17 +85,27 @@ def main() -> None:
             evaluation_goal="Evaluate whether the recommended products fit within the customer's budget range.",
         ),
     }
-    judge_labels = {"relevance": "Relevance", "product_safety": "Safety", "demographic_bias": "Bias", "price_fit": "Price Fit"}
+    judge_labels = {
+        "relevance": "Relevance",
+        "product_safety": "Safety",
+        "demographic_bias": "Bias",
+        "price_fit": "Price Fit",
+    }
     judge_ids = [j.id for j in judges.values()]
 
     try:
         print(f"Evaluating recommendations for {len(CUSTOMER_PROFILES)} customer profiles...\n")
 
         for profile in CUSTOMER_PROFILES:
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=profile["query"],
                 output_text=str(profile["recommendations"]),
-                metadata={"customer_description": profile["description"], "budget_range": profile["budget_range"], "recommendations": profile["recommendations"]},
+                metadata={
+                    "customer_description": profile["description"],
+                    "budget_range": profile["budget_range"],
+                    "recommendations": profile["recommendations"],
+                },
             )
             trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else profile["id"]
 

@@ -145,7 +145,7 @@ def main() -> None:
                 count = getattr(data, "count", len(getattr(data, "prompts", [])))
                 print(f"\nSearch results (truth contains 'the'): {count} matches")
                 for p in getattr(data, "prompts", [])[:3]:
-                    truth_preview = (p.truth[:60] if p.truth else "N/A")
+                    truth_preview = p.truth[:60] if p.truth else "N/A"
                     print(f"  [{p.id}] truth: {truth_preview}")
         except Exception as exc:
             print(f"\nget_prompts search/sort not available: {exc}")

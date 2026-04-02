@@ -35,10 +35,10 @@ Usage
 
 from __future__ import annotations
 
-import argparse
-import logging
 import os
 import sys
+import logging
+import argparse
 
 from layerlens import Stratix
 
@@ -174,12 +174,14 @@ def main() -> None:
         results = poll_evaluation_results(client, eval_id)
         if results:
             for r in results:
-                results_detail.append({
-                    "eval_id": eval_id,
-                    "score": r.score,
-                    "passed": r.passed,
-                    "reasoning": r.reasoning,
-                })
+                results_detail.append(
+                    {
+                        "eval_id": eval_id,
+                        "score": r.score,
+                        "passed": r.passed,
+                        "reasoning": r.reasoning,
+                    }
+                )
                 if r.passed:
                     passed += 1
                 else:

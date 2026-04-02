@@ -21,26 +21,41 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 APPLICATIONS: list[dict[str, Any]] = [
     {
         "id": "uw-001",
         "applicant": {"age": 35, "location": "suburban", "credit_score": 780, "claims_history": 0},
         "coverage_type": "auto",
-        "risk_assessment": {"risk_class": "preferred", "risk_score": 0.15, "premium": 1200.00, "factors": ["excellent_credit", "no_claims", "low_risk_area"]},
+        "risk_assessment": {
+            "risk_class": "preferred",
+            "risk_score": 0.15,
+            "premium": 1200.00,
+            "factors": ["excellent_credit", "no_claims", "low_risk_area"],
+        },
     },
     {
         "id": "uw-002",
         "applicant": {"age": 22, "location": "urban", "credit_score": 650, "claims_history": 2},
         "coverage_type": "auto",
-        "risk_assessment": {"risk_class": "standard", "risk_score": 0.55, "premium": 2800.00, "factors": ["young_driver", "prior_claims", "urban_area"]},
+        "risk_assessment": {
+            "risk_class": "standard",
+            "risk_score": 0.55,
+            "premium": 2800.00,
+            "factors": ["young_driver", "prior_claims", "urban_area"],
+        },
     },
     {
         "id": "uw-003",
         "applicant": {"age": 45, "location": "rural", "credit_score": 720, "claims_history": 1},
         "coverage_type": "homeowners",
-        "risk_assessment": {"risk_class": "standard", "risk_score": 0.35, "premium": 1800.00, "factors": ["good_credit", "single_claim", "rural_weather_risk"]},
+        "risk_assessment": {
+            "risk_class": "standard",
+            "risk_score": 0.35,
+            "premium": 1800.00,
+            "factors": ["good_credit", "single_claim", "rural_weather_risk"],
+        },
     },
 ]
 
@@ -84,15 +99,20 @@ def main() -> None:
             assessment = app["risk_assessment"]
             applicant = app["applicant"]
 
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=str(applicant),
                 output_text=str(assessment),
                 metadata={"coverage_type": app["coverage_type"], "applicant": applicant, "risk_assessment": assessment},
             )
             trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else app["id"]
 
-            print(f"Application: {app['coverage_type']} - Age {applicant['age']}, Credit {applicant['credit_score']}, Claims {applicant['claims_history']}")
-            print(f"  Assessment: {assessment['risk_class']} (score={assessment['risk_score']:.2f}, premium=${assessment['premium']:,.2f})")
+            print(
+                f"Application: {app['coverage_type']} - Age {applicant['age']}, Credit {applicant['credit_score']}, Claims {applicant['claims_history']}"
+            )
+            print(
+                f"  Assessment: {assessment['risk_class']} (score={assessment['risk_score']:.2f}, premium=${assessment['premium']:,.2f})"
+            )
 
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]

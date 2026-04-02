@@ -32,9 +32,9 @@ Usage
 
 from __future__ import annotations
 
-import argparse
-import logging
 import sys
+import logging
+import argparse
 from typing import Any
 
 from layerlens import Stratix
@@ -191,7 +191,11 @@ def main() -> None:
         logger.info("  Page 1 of results (%s total):", total)
         for r in results_page.results:
             score = getattr(r, "score", "N/A")
-            prompt_preview = (r.prompt[:60] + "...") if hasattr(r, "prompt") and r.prompt and len(r.prompt) > 60 else getattr(r, "prompt", "")
+            prompt_preview = (
+                (r.prompt[:60] + "...")
+                if hasattr(r, "prompt") and r.prompt and len(r.prompt) > 60
+                else getattr(r, "prompt", "")
+            )
             logger.info("    score=%.4f  prompt=%s", score if isinstance(score, (int, float)) else 0, prompt_preview)
     else:
         logger.info("  No results returned.")

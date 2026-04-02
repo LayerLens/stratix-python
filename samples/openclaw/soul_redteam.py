@@ -20,18 +20,18 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
+import uuid
+import random
 import hashlib
 import logging
-import random
-import uuid
+import argparse
 from typing import Any
 
 from ._runner import DemoRunner, _print_scores
-from .judges.alignment_fidelity import AlignmentFidelityJudge
 from .lib.notifier import Notifier
+from .lib.soul_parser import SoulSpec, SoulFileParser, get_default_soul_spec
 from .lib.probe_generator import Probe, RedTeamProbeGenerator
-from .lib.soul_parser import SoulFileParser, SoulSpec, get_default_soul_spec
+from .judges.alignment_fidelity import AlignmentFidelityJudge
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,14 @@ def _simulate_model_response(model_id: str, probe: Probe, soul_spec: SoulSpec) -
     seed_str = f"{model_id}:{probe.probe_id}:{probe.category}"
     seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
     rng = random.Random(seed)
-    model_alignment = {"claude-sonnet-4-20250514": 0.85, "gpt-4o": 0.80, "gpt-4o-mini": 0.70,
-                       "gemini-3.1-pro": 0.75, "llama-3.3-70b": 0.65, "mixtral-8x22b": 0.60}
+    model_alignment = {
+        "claude-sonnet-4-20250514": 0.85,
+        "gpt-4o": 0.80,
+        "gpt-4o-mini": 0.70,
+        "gemini-3.1-pro": 0.75,
+        "llama-3.3-70b": 0.65,
+        "mixtral-8x22b": 0.60,
+    }
     alignment_score = model_alignment.get(model_id, 0.70)
     should_refuse = rng.random() < alignment_score
 
@@ -78,8 +84,11 @@ class SoulRedTeamRunner(DemoRunner):
         parser = super().build_parser()
         parser.add_argument("--soul-file", default="", help="Path to a soul.md file (OpenClaw agent spec).")
         parser.add_argument("--models", default="claude-sonnet-4-20250514,gpt-4o", help="Comma-separated model IDs.")
-        parser.add_argument("--categories", default="jailbreak,persona_drift,prompt_injection,scope_expansion,refusal_bypass,cross_turn_consistency",
-                            help="Comma-separated probe categories (default: all 6).")
+        parser.add_argument(
+            "--categories",
+            default="jailbreak,persona_drift,prompt_injection,scope_expansion,refusal_bypass,cross_turn_consistency",
+            help="Comma-separated probe categories (default: all 6).",
+        )
         parser.add_argument("--probes-per-category", type=int, default=3, help="Probes per category (default: 3).")
         parser.add_argument("--alert-on-violation", action="store_true", help="Send notifications on VIOLATION.")
         parser.add_argument("--alert-channel", default="stdout://", help="Notification channel URI.")
@@ -100,8 +109,9 @@ class SoulRedTeamRunner(DemoRunner):
         categories = [c.strip() for c in self.args.categories.split(",")]
 
         generator = RedTeamProbeGenerator(seed=42)
-        probes = generator.generate(soul_spec=soul_spec.to_dict(), categories=categories,
-                                     count_per_category=self.args.probes_per_category)
+        probes = generator.generate(
+            soul_spec=soul_spec.to_dict(), categories=categories, count_per_category=self.args.probes_per_category
+        )
         print(f"  Generated probes: {len(probes)}")
         print(f"  Models under test: {', '.join(models)}")
 
@@ -125,15 +135,19 @@ class SoulRedTeamRunner(DemoRunner):
             trace_id = self.upload_trace(
                 input_text=f"Soul red-team: {soul_spec.agent_name} -- {model_id}",
                 output_text=f"Aligned: {report['aligned_rate']}%, Violations: {report['violation_rate']}%",
-                metadata={"demo": self.demo_id, "model_id": model_id,
-                           "models": models, "source": "openclaw"})
+                metadata={"demo": self.demo_id, "model_id": model_id, "models": models, "source": "openclaw"},
+            )
             if trace_id:
                 logger.info("Trace uploaded for %s: %s", model_id, trace_id)
                 sdk_result = self.evaluate_trace(trace_id, sdk_judge_id)
                 sdk_results[model_id] = sdk_result
                 if sdk_result:
-                    logger.info("SDK evaluation for %s: score=%.2f passed=%s",
-                                model_id, sdk_result["score"], sdk_result["passed"])
+                    logger.info(
+                        "SDK evaluation for %s: score=%.2f passed=%s",
+                        model_id,
+                        sdk_result["score"],
+                        sdk_result["passed"],
+                    )
 
         if sdk_results and not self.args.json:
             has_any = any(v is not None for v in sdk_results.values())
@@ -144,15 +158,23 @@ class SoulRedTeamRunner(DemoRunner):
                         status = "PASS" if sr["passed"] else "FAIL"
                         print(f"    {mid:<30} score={sr['score']:>5.2f}  [{status}]")
                         if sr.get("reasoning"):
-                            print(f"      Reasoning: {sr['reasoning'][:120]}{'...' if len(str(sr.get('reasoning', ''))) > 120 else ''}")
+                            print(
+                                f"      Reasoning: {sr['reasoning'][:120]}{'...' if len(str(sr.get('reasoning', ''))) > 120 else ''}"
+                            )
 
-        return {"demo_id": self.demo_id, "soul_spec": soul_spec.agent_name,
-                "models": models, "categories": categories,
-                "probes_generated": len(probes), "model_reports": model_reports,
-                "sdk_results": sdk_results}
+        return {
+            "demo_id": self.demo_id,
+            "soul_spec": soul_spec.agent_name,
+            "models": models,
+            "categories": categories,
+            "probes_generated": len(probes),
+            "model_reports": model_reports,
+            "sdk_results": sdk_results,
+        }
 
-    def _evaluate_model(self, model_id: str, probes: list[Probe],
-                         soul_spec: SoulSpec, notifier: Notifier) -> dict[str, Any]:
+    def _evaluate_model(
+        self, model_id: str, probes: list[Probe], soul_spec: SoulSpec, notifier: Notifier
+    ) -> dict[str, Any]:
         print(f"\n{'=' * 60}")
         print(f"  Model: {model_id}")
         print(f"{'=' * 60}")
@@ -174,25 +196,39 @@ class SoulRedTeamRunner(DemoRunner):
                 response = _simulate_model_response(model_id, probe, soul_spec)
 
             result = judge.evaluate(
-                trace_id=str(uuid.uuid4()), output=response,
-                context={"soul_spec": soul_spec.raw_content, "probe_category": probe.category,
-                         "model_id": model_id, "probe_text": probe.prompt,
-                         "expected_refusal": probe.expected_refusal})
+                trace_id=str(uuid.uuid4()),
+                output=response,
+                context={
+                    "soul_spec": soul_spec.raw_content,
+                    "probe_category": probe.category,
+                    "model_id": model_id,
+                    "probe_text": probe.prompt,
+                    "expected_refusal": probe.expected_refusal,
+                },
+            )
 
             verdict = result["verdict"]
             verdict_counts[verdict] = verdict_counts.get(verdict, 0) + 1
-            probe_results.append({
-                "probe_id": probe.probe_id, "category": probe.category,
-                "difficulty": probe.difficulty, "verdict": verdict,
-                "aggregate_score": result["aggregate_score"],
-                "refusal_detected": result["refusal_detected"]})
+            probe_results.append(
+                {
+                    "probe_id": probe.probe_id,
+                    "category": probe.category,
+                    "difficulty": probe.difficulty,
+                    "verdict": verdict,
+                    "aggregate_score": result["aggregate_score"],
+                    "refusal_detected": result["refusal_detected"],
+                }
+            )
 
             icon = {"ALIGNED": "[OK]", "DRIFT": "[!!]", "VIOLATION": "[XX]"}.get(verdict, "[??]")
             print(f"  {icon} {probe.category:<25} score={result['aggregate_score']:>5.2f}  verdict={verdict}")
 
             if verdict == "VIOLATION" and self.args.alert_on_violation:
-                notifier.publish_alert(severity="critical", title=f"Alignment Violation: {model_id}",
-                                       detail=f"Category: {probe.category}, Score: {result['aggregate_score']:.2f}")
+                notifier.publish_alert(
+                    severity="critical",
+                    title=f"Alignment Violation: {model_id}",
+                    detail=f"Category: {probe.category}, Score: {result['aggregate_score']:.2f}",
+                )
 
         total = len(probes)
         aligned_pct = (verdict_counts["ALIGNED"] / total * 100) if total else 0
@@ -200,9 +236,11 @@ class SoulRedTeamRunner(DemoRunner):
 
         print(f"\n  --- {model_id} Summary ---")
         print(f"  Total probes: {total}")
-        print(f"  ALIGNED: {verdict_counts['ALIGNED']} ({aligned_pct:.0f}%)  "
-              f"DRIFT: {verdict_counts['DRIFT']}  "
-              f"VIOLATION: {verdict_counts['VIOLATION']} ({violation_pct:.0f}%)")
+        print(
+            f"  ALIGNED: {verdict_counts['ALIGNED']} ({aligned_pct:.0f}%)  "
+            f"DRIFT: {verdict_counts['DRIFT']}  "
+            f"VIOLATION: {verdict_counts['VIOLATION']} ({violation_pct:.0f}%)"
+        )
 
         refusal_stats = judge.get_refusal_stats()
         print(f"\n  Refusal rates by category:")
@@ -220,15 +258,25 @@ class SoulRedTeamRunner(DemoRunner):
             for cat in avg_scores:
                 avg_scores[cat] /= cat_counts[cat]
             overall_avg = sum(pr["aggregate_score"] for pr in probe_results) / len(probe_results)
-            _print_scores(avg_scores, overall_avg,
-                         verdict="VIOLATION" if verdict_counts["VIOLATION"] > 0
-                                 else "DRIFT" if verdict_counts["DRIFT"] > 0 else "ALIGNED")
+            _print_scores(
+                avg_scores,
+                overall_avg,
+                verdict="VIOLATION"
+                if verdict_counts["VIOLATION"] > 0
+                else "DRIFT"
+                if verdict_counts["DRIFT"] > 0
+                else "ALIGNED",
+            )
 
-        return {"model_id": model_id, "total_probes": total,
-                "verdict_distribution": verdict_counts,
-                "aligned_rate": round(aligned_pct, 1),
-                "violation_rate": round(violation_pct, 1),
-                "refusal_stats": refusal_stats, "probe_results": probe_results}
+        return {
+            "model_id": model_id,
+            "total_probes": total,
+            "verdict_distribution": verdict_counts,
+            "aligned_rate": round(aligned_pct, 1),
+            "violation_rate": round(violation_pct, 1),
+            "refusal_stats": refusal_stats,
+            "probe_results": probe_results,
+        }
 
     def _print_summary(self, model_reports: dict[str, Any], soul_spec: SoulSpec) -> None:
         print(f"\n{'=' * 60}")

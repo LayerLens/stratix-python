@@ -8,12 +8,12 @@ Parses an agent spec file (e.g. ``agent_spec.md``) into a structured
 
 from __future__ import annotations
 
-import logging
 import os
 import re
-from typing import Any
+import logging
+from typing import Any, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import Field, BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,9 @@ class SoulSpec(BaseModel):
     agent_name: str = Field(default="Unknown Agent")
     purpose: str = Field(default="")
     persona: str = Field(default="")
-    ethical_constraints: list[str] = Field(default_factory=list)
-    tool_boundaries: list[str] = Field(default_factory=list)
-    extra_sections: dict[str, str] = Field(default_factory=dict)
+    ethical_constraints: List[str] = Field(default_factory=list)
+    tool_boundaries: List[str] = Field(default_factory=list)
+    extra_sections: Dict[str, str] = Field(default_factory=dict)
     raw_content: str = Field(default="")
     source_path: str = Field(default="")
 
@@ -34,28 +34,46 @@ class SoulSpec(BaseModel):
         return len(self.ethical_constraints) + len(self.tool_boundaries)
 
     def summary(self) -> str:
-        return (f"{self.agent_name}: {len(self.ethical_constraints)} ethical constraints, "
-                f"{len(self.tool_boundaries)} tool boundaries")
+        return (
+            f"{self.agent_name}: {len(self.ethical_constraints)} ethical constraints, "
+            f"{len(self.tool_boundaries)} tool boundaries"
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "agent_name": self.agent_name, "purpose": self.purpose,
-            "persona": self.persona, "ethical_constraints": self.ethical_constraints,
+            "agent_name": self.agent_name,
+            "purpose": self.purpose,
+            "persona": self.persona,
+            "ethical_constraints": self.ethical_constraints,
             "tool_boundaries": self.tool_boundaries,
         }
 
 
 _SECTION_ALIASES: dict[str, str] = {
-    "purpose": "purpose", "mission": "purpose", "objective": "purpose", "goal": "purpose",
-    "persona": "persona", "personality": "persona", "character": "persona",
-    "tone": "persona", "voice": "persona", "style": "persona",
-    "ethical constraints": "ethical_constraints", "ethics": "ethical_constraints",
-    "constraints": "ethical_constraints", "rules": "ethical_constraints",
-    "boundaries": "ethical_constraints", "safety": "ethical_constraints",
-    "guardrails": "ethical_constraints", "restrictions": "ethical_constraints",
-    "tool boundaries": "tool_boundaries", "tools": "tool_boundaries",
-    "capabilities": "tool_boundaries", "tool access": "tool_boundaries",
-    "tool restrictions": "tool_boundaries", "tool permissions": "tool_boundaries",
+    "purpose": "purpose",
+    "mission": "purpose",
+    "objective": "purpose",
+    "goal": "purpose",
+    "persona": "persona",
+    "personality": "persona",
+    "character": "persona",
+    "tone": "persona",
+    "voice": "persona",
+    "style": "persona",
+    "ethical constraints": "ethical_constraints",
+    "ethics": "ethical_constraints",
+    "constraints": "ethical_constraints",
+    "rules": "ethical_constraints",
+    "boundaries": "ethical_constraints",
+    "safety": "ethical_constraints",
+    "guardrails": "ethical_constraints",
+    "restrictions": "ethical_constraints",
+    "tool boundaries": "tool_boundaries",
+    "tools": "tool_boundaries",
+    "capabilities": "tool_boundaries",
+    "tool access": "tool_boundaries",
+    "tool restrictions": "tool_boundaries",
+    "tool permissions": "tool_boundaries",
     "allowed tools": "tool_boundaries",
 }
 
@@ -97,7 +115,7 @@ class SoulFileParser:
         return spec
 
     def _extract_agent_name(self, content: str) -> str:
-        match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
+        match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
         if match:
             return match.group(1).strip()
         for line in content.splitlines():
@@ -108,7 +126,7 @@ class SoulFileParser:
 
     def _split_sections(self, content: str) -> dict[str, str]:
         sections: dict[str, str] = {}
-        pattern = re.compile(r'^##\s+(.+)$', re.MULTILINE)
+        pattern = re.compile(r"^##\s+(.+)$", re.MULTILINE)
         matches = list(pattern.finditer(content))
         if not matches:
             return sections
@@ -120,7 +138,7 @@ class SoulFileParser:
         return sections
 
     def _normalize_heading(self, heading: str) -> str:
-        clean = re.sub(r'[*_`]', '', heading).strip().lower()
+        clean = re.sub(r"[*_`]", "", heading).strip().lower()
         if clean in _SECTION_ALIASES:
             return _SECTION_ALIASES[clean]
         for alias, canonical in _SECTION_ALIASES.items():
@@ -132,9 +150,9 @@ class SoulFileParser:
         lines: list[str] = []
         for line in body.splitlines():
             stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith("#"):
                 continue
-            if re.match(r'^[-*]\s+', stripped) or re.match(r'^\d+\.\s+', stripped):
+            if re.match(r"^[-*]\s+", stripped) or re.match(r"^\d+\.\s+", stripped):
                 continue
             lines.append(stripped)
         return " ".join(lines)
@@ -144,19 +162,19 @@ class SoulFileParser:
         current_item: str | None = None
         for line in body.splitlines():
             stripped = line.strip()
-            bullet_match = re.match(r'^[-*]\s+(.+)$', stripped)
+            bullet_match = re.match(r"^[-*]\s+(.+)$", stripped)
             if bullet_match:
                 if current_item is not None:
                     items.append(current_item.strip())
                 current_item = bullet_match.group(1)
                 continue
-            num_match = re.match(r'^\d+\.\s+(.+)$', stripped)
+            num_match = re.match(r"^\d+\.\s+(.+)$", stripped)
             if num_match:
                 if current_item is not None:
                     items.append(current_item.strip())
                 current_item = num_match.group(1)
                 continue
-            if current_item is not None and stripped and line.startswith(('  ', '\t')):
+            if current_item is not None and stripped and line.startswith(("  ", "\t")):
                 current_item += " " + stripped
                 continue
             if current_item is not None:

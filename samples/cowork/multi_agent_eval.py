@@ -15,15 +15,14 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any
-
-import os
 
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import upload_trace_dict, poll_evaluation_results, create_judge
+from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 
 # ---------------------------------------------------------------------------
 # Sample prompts and simulated generations
@@ -93,7 +92,8 @@ def main() -> None:
         trace_ids: list[str] = []
         for gen in SAMPLE_GENERATIONS:
             print(f'[Generator] Prompt: "{gen["prompt"][:50]}..."')
-            trace_result = upload_trace_dict(client,
+            trace_result = upload_trace_dict(
+                client,
                 input_text=gen["prompt"],
                 output_text=gen["response"],
                 metadata={"model": gen["model"], "channel": "co-work-multi-agent-eval"},
