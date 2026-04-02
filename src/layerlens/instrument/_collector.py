@@ -44,13 +44,7 @@ class TraceCollector:
         if not self._config.is_layer_enabled(event_type):
             return
 
-        # Strip LLM message content when capture_content is off
-        if not self._config.capture_content and event_type == "model.invoke":
-            payload = {
-                k: v
-                for k, v in payload.items()
-                if k not in ("messages", "output_message")
-            }
+        payload = self._config.redact_payload(event_type, payload)
 
         self._sequence += 1
         event: Dict[str, Any] = {
@@ -66,11 +60,8 @@ class TraceCollector:
         self._chain.add_event(event)
         self._events.append(event)
 
-    def flush(self) -> None:
-        """Build attestation and upload the trace."""
-        if not self._events:
-            return
-
+    def _build_trace_payload(self) -> Dict[str, Any]:
+        """Build the attestation envelope and trace payload."""
         try:
             trial = self._chain.finalize()
             attestation: Dict[str, Any] = {
@@ -82,34 +73,21 @@ class TraceCollector:
             log.warning("Failed to build attestation chain", exc_info=True)
             attestation = {"attestation_error": str(exc)}
 
-        payload = {
+        return {
             "trace_id": self._trace_id,
             "events": self._events,
             "capture_config": self._config.to_dict(),
             "attestation": attestation,
         }
-        upload_trace(self._client, payload)
+
+    def flush(self) -> None:
+        """Build attestation and upload the trace."""
+        if not self._events:
+            return
+        upload_trace(self._client, self._build_trace_payload())
 
     async def async_flush(self) -> None:
         """Async version of flush."""
         if not self._events:
             return
-
-        try:
-            trial = self._chain.finalize()
-            attestation: Dict[str, Any] = {
-                "chain": self._chain.to_dict(),
-                "root_hash": trial.hash,
-                "schema_version": "1.0",
-            }
-        except Exception as exc:
-            log.warning("Failed to build attestation chain", exc_info=True)
-            attestation = {"attestation_error": str(exc)}
-
-        payload = {
-            "trace_id": self._trace_id,
-            "events": self._events,
-            "capture_config": self._config.to_dict(),
-            "attestation": attestation,
-        }
-        await async_upload_trace(self._client, payload)
+        await async_upload_trace(self._client, self._build_trace_payload())

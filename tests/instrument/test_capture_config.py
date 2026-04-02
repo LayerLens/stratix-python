@@ -5,9 +5,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from layerlens.instrument import trace, CaptureConfig
-from .conftest import find_events, find_event
+from layerlens.instrument import CaptureConfig, trace
 
+from .conftest import find_event, find_events
 
 # ---------------------------------------------------------------------------
 # CaptureConfig unit tests

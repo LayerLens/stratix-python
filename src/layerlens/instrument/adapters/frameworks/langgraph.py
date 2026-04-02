@@ -7,7 +7,7 @@ from .langchain import LangChainCallbackHandler
 
 
 class LangGraphCallbackHandler(LangChainCallbackHandler):
-    _adapter_name: str = "langgraph"
+    name = "langgraph"
 
     def on_chain_start(
         self,
@@ -38,4 +38,4 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
             if node_name:
                 name = node_name
 
-        self._emit("agent.input", {"name": name, "input": inputs}, run_id, parent_run_id)
+        self._emit_for_run("agent.input", {"name": name, "input": inputs}, run_id, parent_run_id)

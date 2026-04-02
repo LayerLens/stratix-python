@@ -18,8 +18,8 @@ def span(name: str) -> Generator[str, None, None]:
     Yields the span_id string.
     """
     new_span_id = uuid.uuid4().hex[:16]
-    tokens = _push_span(new_span_id, name)
+    snapshot = _push_span(new_span_id, name)
     try:
         yield new_span_id
     finally:
-        _pop_span(tokens)
+        _pop_span(snapshot)

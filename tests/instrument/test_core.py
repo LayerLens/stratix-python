@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 
-from layerlens.instrument import span, emit, trace
-from layerlens.instrument._context import _current_collector, _current_span_id
-from .conftest import find_events, find_event
+from layerlens.instrument import emit, span, trace
+from layerlens.instrument._context import _current_span_id, _current_collector
+
+from .conftest import find_event
 
 
 class TestTraceDecorator:

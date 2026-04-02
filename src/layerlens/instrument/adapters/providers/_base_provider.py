@@ -1,96 +1,101 @@
 from __future__ import annotations
 
-import uuid
-from typing import Any, Dict, Callable
+import abc
+import time
+import logging
+from typing import Any, Dict
 
-from ..._context import _current_collector, _current_span_id
+from .._base import AdapterInfo, BaseAdapter
+from ._emit_helpers import emit_llm_events, emit_llm_error
+from ..._context import _current_collector
+
+log: logging.Logger = logging.getLogger(__name__)
 
 
-def emit_llm_events(
-    name: str,
-    kwargs: Dict[str, Any],
-    response: Any,
-    extract_output: Callable[[Any], Any],
-    extract_meta: Callable[[Any], Dict[str, Any]],
-    capture_params: frozenset[str],
-    latency_ms: float,
-) -> None:
-    """Emit model.invoke + cost.record events for an LLM call.
+class MonkeyPatchProvider(BaseAdapter):
+    """Base for providers that monkey-patch SDK client or module methods."""
 
-    Builds the full payload -- the collector handles CaptureConfig gating
-    (L3 suppresses model.invoke entirely, capture_content strips messages).
-    """
-    collector = _current_collector.get()
-    if collector is None:
-        return
+    name: str
+    capture_params: frozenset[str]
 
-    parent_span_id = _current_span_id.get()
-    span_id = uuid.uuid4().hex[:16]
-    response_meta = extract_meta(response)
+    def __init__(self) -> None:
+        self._client: Any = None
+        self._originals: Dict[str, Any] = {}
 
-    collector.emit(
-        "model.invoke",
-        {
-            "name": name,
-            "latency_ms": latency_ms,
-            "parameters": {k: kwargs[k] for k in capture_params if k in kwargs},
-            "messages": _extract_messages(kwargs),
-            "output_message": extract_output(response),
-            **response_meta,
-        },
-        span_id=span_id,
-        parent_span_id=parent_span_id,
-    )
+    @staticmethod
+    @abc.abstractmethod
+    def extract_output(response: Any) -> Any: ...
 
-    usage = response_meta.get("usage", {})
-    if usage:
-        collector.emit(
-            "cost.record",
-            {
-                "provider": name.split(".")[0],
-                "model": response_meta.get("response_model", kwargs.get("model")),
-                **usage,
-            },
-            span_id=span_id,
-            parent_span_id=parent_span_id,
+    @staticmethod
+    @abc.abstractmethod
+    def extract_meta(response: Any) -> Dict[str, Any]: ...
+
+    def _wrap_sync(self, event_name: str, original: Any) -> Any:
+        extract_output = self.extract_output
+        extract_meta = self.extract_meta
+        capture_params = self.capture_params
+
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            if _current_collector.get() is None:
+                return original(*args, **kwargs)
+            start = time.time()
+            try:
+                response = original(*args, **kwargs)
+            except Exception as exc:
+                latency_ms = (time.time() - start) * 1000
+                emit_llm_error(event_name, exc, latency_ms)
+                raise
+            latency_ms = (time.time() - start) * 1000
+            emit_llm_events(
+                event_name, kwargs, response,
+                extract_output, extract_meta, capture_params, latency_ms,
+            )
+            return response
+
+        return wrapped
+
+    def _wrap_async(self, event_name: str, original: Any) -> Any:
+        extract_output = self.extract_output
+        extract_meta = self.extract_meta
+        capture_params = self.capture_params
+
+        async def wrapped(*args: Any, **kwargs: Any) -> Any:
+            if _current_collector.get() is None:
+                return await original(*args, **kwargs)
+            start = time.time()
+            try:
+                response = await original(*args, **kwargs)
+            except Exception as exc:
+                latency_ms = (time.time() - start) * 1000
+                emit_llm_error(event_name, exc, latency_ms)
+                raise
+            latency_ms = (time.time() - start) * 1000
+            emit_llm_events(
+                event_name, kwargs, response,
+                extract_output, extract_meta, capture_params, latency_ms,
+            )
+            return response
+
+        return wrapped
+
+    def disconnect(self) -> None:
+        if self._client is None:
+            return
+        for key, orig in self._originals.items():
+            try:
+                parts = key.split(".")
+                obj = self._client
+                for part in parts[:-1]:
+                    obj = getattr(obj, part)
+                setattr(obj, parts[-1], orig)
+            except Exception:
+                log.warning("Could not restore %s", key)
+        self._client = None
+        self._originals.clear()
+
+    def adapter_info(self) -> AdapterInfo:
+        return AdapterInfo(
+            name=self.name,
+            adapter_type="provider",
+            connected=self._client is not None,
         )
-
-
-def emit_llm_error(
-    name: str,
-    error: Exception,
-    latency_ms: float,
-) -> None:
-    """Emit agent.error event for a failed LLM call."""
-    collector = _current_collector.get()
-    parent_span_id = _current_span_id.get()
-    if collector is None:
-        return
-
-    span_id = uuid.uuid4().hex[:16]
-    collector.emit(
-        "agent.error",
-        {"name": name, "error": str(error), "latency_ms": latency_ms},
-        span_id=span_id,
-        parent_span_id=parent_span_id,
-    )
-
-
-def _extract_messages(kwargs: Dict[str, Any]) -> Any:
-    messages = kwargs.get("messages")
-    if messages is not None:
-        return [_serialize_message(m) for m in messages]
-    for key in ("prompt", "contents", "input"):
-        val = kwargs.get(key)
-        if val is not None:
-            return val
-    return None
-
-
-def _serialize_message(msg: Any) -> Any:
-    if isinstance(msg, dict):
-        return msg
-    try:
-        return {"role": msg.role, "content": msg.content}
-    except AttributeError:
-        return str(msg)
