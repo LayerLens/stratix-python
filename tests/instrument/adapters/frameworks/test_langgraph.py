@@ -52,7 +52,7 @@ class TestInheritedBehavior:
 
         events = uploaded["events"]
         assert len(find_events(events, "model.invoke")) >= 1
-        assert find_event(events, "cost.record")["payload"]["total_tokens"] == 10
+        assert find_event(events, "cost.record")["payload"]["tokens_total"] == 10
 
     def test_tool_events_inherited(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
