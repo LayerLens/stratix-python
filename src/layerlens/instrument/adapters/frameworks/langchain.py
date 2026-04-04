@@ -1,12 +1,27 @@
 from __future__ import annotations
 
+import functools
 from uuid import UUID
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from ._base_framework import FrameworkAdapter
+from ..._capture_config import CaptureConfig
 
-if TYPE_CHECKING:
-    from ..._capture_config import CaptureConfig
+
+def _auto_flush(fn):  # type: ignore[type-arg]
+    """Decorator: after the callback returns, flush if this was the outermost run."""
+    @functools.wraps(fn)
+    def wrapper(self, *args, run_id, **kwargs):  # type: ignore[no-untyped-def]
+        fn(self, *args, run_id=run_id, **kwargs)
+        run = self._get_run()
+        if run is not None:
+            if str(run_id) == run.data.get("root_run_id"):
+                self._end_run()
+        elif str(run_id) == self._root_run_id and self._collector is not None:
+            self._flush_collector()
+            self._root_run_id = None
+    return wrapper
+
 
 try:
     from langchain_core.callbacks import BaseCallbackHandler  # pyright: ignore[reportAssignmentType]
@@ -26,28 +41,14 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         BaseCallbackHandler.__init__(self)
         FrameworkAdapter.__init__(self, client, capture_config=capture_config)
-        self._root_run_id: Optional[str] = None
+        # Pending LLM runs: run_id -> {name, messages, parent_run_id}
+        self._pending_llm: Dict[str, Dict[str, Any]] = {}
+        # Context tokens for span propagation: run_id -> token from _push_context
+        self._run_contexts: Dict[str, Any] = {}
 
-    def _emit_for_run(
-        self,
-        event_type: str,
-        payload: Dict[str, Any],
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-    ) -> None:
-        """Emit an event, mapping framework run_ids to span_ids."""
-        span_id, parent_span_id = self._span_id_for(run_id, parent_run_id)
-        rid = str(run_id)
-        if self._root_run_id is None:
-            self._root_run_id = rid
-        self._emit(event_type, payload, span_id=span_id, parent_span_id=parent_span_id)
-
-    def _maybe_flush(self, run_id: UUID) -> None:
-        if str(run_id) == self._root_run_id and self._collector is not None:
-            self._flush_collector()
-            self._root_run_id = None
-
-    # -- Chain --
+    # ------------------------------------------------------------------
+    # Chain callbacks
+    # ------------------------------------------------------------------
 
     def on_chain_start(
         self,
@@ -58,10 +59,16 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
+        if parent_run_id is None:
+            run = self._begin_run()
+            run.data["root_run_id"] = str(run_id)
         serialized = serialized or {}
         name = serialized.get("name") or serialized.get("id", ["unknown"])[-1]
-        self._emit_for_run("agent.input", {"name": name, "input": inputs}, run_id, parent_run_id)
+        payload = self._payload(name=name)
+        self._set_if_capturing(payload, "input", inputs)
+        self._emit("agent.input", payload, run_id=run_id, parent_run_id=parent_run_id)
 
+    @_auto_flush
     def on_chain_end(
         self,
         outputs: Dict[str, Any],
@@ -70,9 +77,11 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit_for_run("agent.output", {"output": outputs, "status": "ok"}, run_id)
-        self._maybe_flush(run_id)
+        payload = self._payload(status="ok")
+        self._set_if_capturing(payload, "output", outputs)
+        self._emit("agent.output", payload, run_id=run_id)
 
+    @_auto_flush
     def on_chain_error(
         self,
         error: BaseException,
@@ -81,10 +90,11 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit_for_run("agent.error", {"error": str(error), "status": "error"}, run_id)
-        self._maybe_flush(run_id)
+        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id)
 
-    # -- LLM --
+    # ------------------------------------------------------------------
+    # LLM callbacks — merged into single model.invoke on end
+    # ------------------------------------------------------------------
 
     def on_llm_start(
         self,
@@ -97,7 +107,15 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     ) -> None:
         serialized = serialized or {}
         name = serialized.get("name") or serialized.get("id", ["unknown"])[-1]
-        self._emit_for_run("model.invoke", {"name": name, "messages": prompts}, run_id, parent_run_id)
+        self._start_timer(str(run_id))
+        pending: Dict[str, Any] = {
+            "name": name,
+            "parent_run_id": parent_run_id,
+        }
+        self._set_if_capturing(pending, "messages", prompts)
+        self._pending_llm[str(run_id)] = pending
+        span_id, _ = self._span_id_for(run_id)
+        self._run_contexts[str(run_id)] = self._push_context(span_id)
 
     def on_chat_model_start(
         self,
@@ -110,13 +128,20 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     ) -> None:
         serialized = serialized or {}
         name = serialized.get("name") or serialized.get("id", ["unknown"])[-1]
-        self._emit_for_run(
-            "model.invoke",
-            {"name": name, "messages": [[_serialize_lc_message(m) for m in batch] for batch in messages]},
-            run_id,
-            parent_run_id,
+        self._start_timer(str(run_id))
+        pending: Dict[str, Any] = {
+            "name": name,
+            "parent_run_id": parent_run_id,
+        }
+        self._set_if_capturing(
+            pending, "messages",
+            [[_serialize_lc_message(m) for m in batch] for batch in messages],
         )
+        self._pending_llm[str(run_id)] = pending
+        span_id, _ = self._span_id_for(run_id)
+        self._run_contexts[str(run_id)] = self._push_context(span_id)
 
+    @_auto_flush
     def on_llm_end(
         self,
         response: Any,
@@ -125,6 +150,10 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
+        self._pop_context(self._run_contexts.pop(str(run_id), None))
+        pending = self._pending_llm.pop(str(run_id), {})
+
+        # Extract response data
         output = None
         try:
             generations = response.generations
@@ -139,20 +168,40 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
             llm_output = {}
 
         model_name = llm_output.get("model_name")
-        if model_name or output:
-            self._emit_for_run(
-                "model.invoke",
-                {"model": model_name, "output_message": output},
-                run_id,
-                parent_run_id,
-            )
 
-        usage = llm_output.get("token_usage", {})
-        if usage:
-            self._emit_for_run("cost.record", usage, run_id, parent_run_id)
+        # Build single merged model.invoke event
+        payload = self._payload()
+        if pending.get("name"):
+            payload["name"] = pending["name"]
+        if model_name:
+            payload["model"] = model_name
+        self._set_if_capturing(payload, "messages", pending.get("messages"))
+        self._set_if_capturing(payload, "output_message", output)
 
-        self._maybe_flush(run_id)
+        # Latency
+        latency_ms = self._stop_timer(str(run_id))
+        if latency_ms is not None:
+            payload["latency_ms"] = latency_ms
 
+        # Tokens
+        usage = llm_output.get("token_usage") or llm_output.get("usage_metadata")
+        tokens = self._normalize_tokens(usage)
+        payload.update(tokens)
+
+        self._emit(
+            "model.invoke", payload,
+            run_id=run_id, parent_run_id=pending.get("parent_run_id"),
+        )
+
+        # Separate cost.record if we have token data
+        if tokens:
+            cost_payload = self._payload()
+            if model_name:
+                cost_payload["model"] = model_name
+            cost_payload.update(tokens)
+            self._emit("cost.record", cost_payload, run_id=run_id, parent_run_id=pending.get("parent_run_id"))
+
+    @_auto_flush
     def on_llm_error(
         self,
         error: BaseException,
@@ -161,10 +210,22 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit_for_run("agent.error", {"error": str(error), "status": "error"}, run_id)
-        self._maybe_flush(run_id)
+        self._pop_context(self._run_contexts.pop(str(run_id), None))
+        pending = self._pending_llm.pop(str(run_id), {})
 
-    # -- Tool --
+        payload = self._payload(error=str(error))
+        if pending.get("name"):
+            payload["name"] = pending["name"]
+        latency_ms = self._stop_timer(str(run_id))
+        if latency_ms is not None:
+            payload["latency_ms"] = latency_ms
+        self._emit("model.invoke", payload, run_id=run_id, parent_run_id=pending.get("parent_run_id"))
+
+        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id)
+
+    # ------------------------------------------------------------------
+    # Tool callbacks
+    # ------------------------------------------------------------------
 
     def on_tool_start(
         self,
@@ -176,8 +237,11 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         **kwargs: Any,
     ) -> None:
         name = (serialized or {}).get("name", "tool")
-        self._emit_for_run("tool.call", {"name": name, "input": input_str}, run_id, parent_run_id)
+        payload = self._payload(name=name)
+        self._set_if_capturing(payload, "input", input_str)
+        self._emit("tool.call", payload, run_id=run_id, parent_run_id=parent_run_id)
 
+    @_auto_flush
     def on_tool_end(
         self,
         output: str,
@@ -186,9 +250,11 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit_for_run("tool.result", {"output": output}, run_id)
-        self._maybe_flush(run_id)
+        payload = self._payload()
+        self._set_if_capturing(payload, "output", output)
+        self._emit("tool.result", payload, run_id=run_id)
 
+    @_auto_flush
     def on_tool_error(
         self,
         error: BaseException,
@@ -197,10 +263,11 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit_for_run("agent.error", {"error": str(error), "status": "error"}, run_id)
-        self._maybe_flush(run_id)
+        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id)
 
-    # -- Retriever --
+    # ------------------------------------------------------------------
+    # Retriever callbacks
+    # ------------------------------------------------------------------
 
     def on_retriever_start(
         self,
@@ -212,8 +279,11 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         **kwargs: Any,
     ) -> None:
         name = (serialized or {}).get("name", "retriever")
-        self._emit_for_run("tool.call", {"name": name, "input": query}, run_id, parent_run_id)
+        payload = self._payload(name=name)
+        self._set_if_capturing(payload, "input", query)
+        self._emit("tool.call", payload, run_id=run_id, parent_run_id=parent_run_id)
 
+    @_auto_flush
     def on_retriever_end(
         self,
         documents: Sequence[Any],
@@ -222,10 +292,14 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        output = [_serialize_lc_document(d) for d in documents]
-        self._emit_for_run("tool.result", {"output": output}, run_id)
-        self._maybe_flush(run_id)
+        payload = self._payload()
+        self._set_if_capturing(
+            payload, "output",
+            [_serialize_lc_document(d) for d in documents],
+        )
+        self._emit("tool.result", payload, run_id=run_id)
 
+    @_auto_flush
     def on_retriever_error(
         self,
         error: BaseException,
@@ -234,10 +308,42 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit_for_run("agent.error", {"error": str(error), "status": "error"}, run_id)
-        self._maybe_flush(run_id)
+        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id)
 
-    # -- Text (required by base) --
+    # ------------------------------------------------------------------
+    # Agent callbacks
+    # ------------------------------------------------------------------
+
+    def on_agent_action(
+        self,
+        action: Any,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        payload = self._payload(tool=getattr(action, "tool", "unknown"))
+        self._set_if_capturing(payload, "tool_input", getattr(action, "tool_input", None))
+        self._set_if_capturing(payload, "log", getattr(action, "log", None) or None)
+        self._emit("agent.input", payload, run_id=run_id, parent_run_id=parent_run_id)
+
+    @_auto_flush
+    def on_agent_finish(
+        self,
+        finish: Any,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        payload = self._payload(status="ok")
+        self._set_if_capturing(payload, "output", getattr(finish, "return_values", None))
+        self._set_if_capturing(payload, "log", getattr(finish, "log", None) or None)
+        self._emit("agent.output", payload, run_id=run_id, parent_run_id=parent_run_id)
+
+    # ------------------------------------------------------------------
+    # No-ops (required by base)
+    # ------------------------------------------------------------------
 
     def on_text(self, text: str, **kwargs: Any) -> None:
         pass

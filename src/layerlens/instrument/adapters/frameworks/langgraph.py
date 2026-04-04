@@ -19,6 +19,9 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
         tags: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> None:
+        if parent_run_id is None:
+            run = self._begin_run()
+            run.data["root_run_id"] = str(run_id)
         serialized = serialized or {}
         name = serialized.get("name") or serialized.get("id", ["unknown"])[-1]
 
@@ -38,4 +41,6 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
             if node_name:
                 name = node_name
 
-        self._emit_for_run("agent.input", {"name": name, "input": inputs}, run_id, parent_run_id)
+        payload = self._payload(name=name)
+        self._set_if_capturing(payload, "input", inputs)
+        self._emit("agent.input", payload, run_id=run_id, parent_run_id=parent_run_id)
