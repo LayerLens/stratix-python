@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import time
 import logging
 from typing import Any, Dict, Optional
 
-from .._base_framework import FrameworkAdapter
-from .._utils import safe_serialize
-from ...._capture_config import CaptureConfig
+from ._base_framework import FrameworkAdapter
+from ._utils import safe_serialize
+from ..._collector import TraceCollector
+from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
 
@@ -18,15 +20,15 @@ except (ImportError, TypeError):
 class CrewAIAdapter(FrameworkAdapter):
     """CrewAI adapter using the typed event bus API (crewai >= 1.0).
 
-    Subscribes to CrewAI's event bus to capture crew lifecycle, agent
-    execution, LLM calls, tool usage, flows, and MCP tool events as
-    flat layerlens events.
+    CrewAI's event bus dispatches handlers across threads, so this
+    adapter manages its own collector and span state on the instance
+    rather than using ContextVar-based RunState.
 
     Usage::
 
         adapter = CrewAIAdapter(client)
         adapter.connect()
-        crew.kickoff()  # events flow automatically via event bus
+        crew.kickoff()
         adapter.disconnect()
     """
 
@@ -35,17 +37,15 @@ class CrewAIAdapter(FrameworkAdapter):
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)
         self._registered_handlers: list = []
-
-        # Span tracking: crew/flow → task → agent → leaf hierarchy
+        self._collector: Optional[TraceCollector] = None
         self._crew_span_id: Optional[str] = None
-        self._task_span_ids: Dict[str, str] = {}  # task name → span_id
+        self._task_span_ids: Dict[str, str] = {}
         self._current_task_span_id: Optional[str] = None
-        self._agent_span_ids: Dict[str, str] = {}  # agent_role → span_id
+        self._agent_span_ids: Dict[str, str] = {}
         self._current_agent_span_id: Optional[str] = None
-        # tool.call span IDs keyed by tool_name+id for pairing start/end
         self._tool_span_ids: Dict[str, str] = {}
+        self._timers: Dict[str, int] = {}
 
-    # Event name → handler method name; resolved to real classes at subscribe time.
     _EVENT_MAP = [
         ("CrewKickoffStartedEvent",          "_on_crew_started"),
         ("CrewKickoffCompletedEvent",        "_on_crew_completed"),
@@ -68,6 +68,10 @@ class CrewAIAdapter(FrameworkAdapter):
         ("MCPToolExecutionFailedEvent",     "_on_mcp_tool_failed"),
     ]
 
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
     def _on_connect(self, target: Any = None, **kwargs: Any) -> None:
         self._check_dependency(_BaseEventListener is not None)
         self._subscribe()
@@ -75,14 +79,9 @@ class CrewAIAdapter(FrameworkAdapter):
     def _on_disconnect(self) -> None:
         self._unsubscribe()
         self._registered_handlers.clear()
-        self._reset_spans()
-
-    # ------------------------------------------------------------------
-    # Event bus wiring
-    # ------------------------------------------------------------------
+        self._end_trace()
 
     def _subscribe(self) -> None:
-        """Register all event handlers on the CrewAI bus."""
         import crewai.events as ev  # pyright: ignore[reportMissingImports]
 
         for event_name, method_name in self._EVENT_MAP:
@@ -99,7 +98,6 @@ class CrewAIAdapter(FrameworkAdapter):
             self._registered_handlers.append((event_cls, _handler))
 
     def _unsubscribe(self) -> None:
-        """Remove all previously registered handlers from the CrewAI bus."""
         try:
             from crewai.events import crewai_event_bus  # pyright: ignore[reportMissingImports]
         except ImportError:
@@ -111,7 +109,56 @@ class CrewAIAdapter(FrameworkAdapter):
                 log.debug("layerlens: could not unregister %s handler", event_cls.__name__, exc_info=True)
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Collector + state management
+    # ------------------------------------------------------------------
+
+    def _fire(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        span_id: Optional[str] = None,
+        parent_span_id: Optional[str] = None,
+        span_name: Optional[str] = None,
+    ) -> None:
+        """Emit directly to the instance collector."""
+        c = self._collector
+        if c is None:
+            return
+        c.emit(
+            event_type, payload,
+            span_id=span_id or self._new_span_id(),
+            parent_span_id=parent_span_id,
+            span_name=span_name,
+        )
+
+    def _leaf_parent(self) -> Optional[str]:
+        return self._current_agent_span_id or self._current_task_span_id or self._crew_span_id
+
+    def _tick(self, key: str) -> None:
+        self._timers[key] = time.time_ns()
+
+    def _tock(self, key: str) -> Optional[float]:
+        start = self._timers.pop(key, 0)
+        if not start:
+            return None
+        return (time.time_ns() - start) / 1_000_000
+
+    def _end_trace(self) -> None:
+        with self._lock:
+            collector = self._collector
+            self._collector = None
+            self._crew_span_id = None
+            self._task_span_ids.clear()
+            self._current_task_span_id = None
+            self._agent_span_ids.clear()
+            self._current_agent_span_id = None
+            self._tool_span_ids.clear()
+            self._timers.clear()
+        if collector is not None:
+            collector.flush()
+
+    # ------------------------------------------------------------------
+    # Helpers
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -120,7 +167,6 @@ class CrewAIAdapter(FrameworkAdapter):
 
     @staticmethod
     def _get_task_name(event: Any) -> str:
-        """Extract task name from a CrewAI event."""
         name = getattr(event, "task_name", None)
         if name:
             return str(name)
@@ -130,31 +176,10 @@ class CrewAIAdapter(FrameworkAdapter):
         return ""
 
     @staticmethod
-    def _tool_event_key(event: Any) -> str:
-        """Build a key to correlate ToolUsageStarted with ToolUsageFinished."""
+    def _tool_key(event: Any) -> str:
         tool_name = getattr(event, "tool_name", None) or ""
         agent_key = getattr(event, "agent_key", None) or ""
         return f"{tool_name}:{agent_key}"
-
-    def _leaf_parent_span_id(self) -> Optional[str]:
-        """Return the innermost active parent span for leaf events (LLM, tool)."""
-        with self._lock:
-            return self._current_agent_span_id or self._current_task_span_id or self._crew_span_id
-
-    def _reset_spans(self) -> None:
-        """Clear all span tracking state."""
-        with self._lock:
-            self._crew_span_id = None
-            self._task_span_ids.clear()
-            self._current_task_span_id = None
-            self._agent_span_ids.clear()
-            self._current_agent_span_id = None
-            self._tool_span_ids.clear()
-
-    def _end_trace(self) -> None:
-        """Reset spans and flush — called when a crew/flow run completes."""
-        self._reset_spans()
-        self._flush_collector()
 
     # ------------------------------------------------------------------
     # Crew lifecycle
@@ -163,16 +188,18 @@ class CrewAIAdapter(FrameworkAdapter):
     def _on_crew_started(self, source: Any, event: Any) -> None:
         span_id = self._new_span_id()
         with self._lock:
+            self._collector = TraceCollector(self._client, self._config)
             self._crew_span_id = span_id
-        self._start_timer("crew")
+        self._tick("crew")
         crew_name = getattr(event, "crew_name", None) or self._get_name(source)
         payload = self._payload(crew_name=crew_name)
         self._set_if_capturing(payload, "input", safe_serialize(getattr(event, "inputs", None)))
-        self._emit("agent.input", payload, span_id=span_id, parent_span_id=None, span_name=crew_name)
+        self._fire("agent.input", payload, span_id=span_id, parent_span_id=None, span_name=crew_name)
 
     def _on_crew_completed(self, source: Any, event: Any) -> None:
-        latency_ms = self._stop_timer("crew")
+        latency_ms = self._tock("crew")
         crew_name = getattr(event, "crew_name", None) or self._get_name(source)
+        span_id = self._crew_span_id or self._new_span_id()
         payload = self._payload(crew_name=crew_name)
         if latency_ms is not None:
             payload["duration_ns"] = int(latency_ms * 1_000_000)
@@ -180,29 +207,16 @@ class CrewAIAdapter(FrameworkAdapter):
         total_tokens = getattr(event, "total_tokens", None)
         if total_tokens is not None:
             payload["tokens_total"] = total_tokens
-        self._emit(
-            "agent.output", payload,
-            span_id=self._crew_span_id or self._new_span_id(),
-            parent_span_id=None, span_name=crew_name,
-        )
+        self._fire("agent.output", payload, span_id=span_id, parent_span_id=None, span_name=crew_name)
         if total_tokens:
-            self._emit(
-                "cost.record",
-                self._payload(tokens_total=total_tokens),
-                span_id=self._crew_span_id or self._new_span_id(),
-                parent_span_id=None,
-            )
+            self._fire("cost.record", self._payload(tokens_total=total_tokens), span_id=span_id, parent_span_id=None)
         self._end_trace()
 
     def _on_crew_failed(self, source: Any, event: Any) -> None:
         error = str(getattr(event, "error", "unknown error"))
         crew_name = getattr(event, "crew_name", None) or self._get_name(source)
-        self._emit(
-            "agent.error",
-            self._payload(crew_name=crew_name, error=error),
-            span_id=self._crew_span_id or self._new_span_id(),
-            parent_span_id=None, span_name=crew_name,
-        )
+        span_id = self._crew_span_id or self._new_span_id()
+        self._fire("agent.error", self._payload(crew_name=crew_name, error=error), span_id=span_id, parent_span_id=None, span_name=crew_name)
         self._end_trace()
 
     # ------------------------------------------------------------------
@@ -224,11 +238,7 @@ class CrewAIAdapter(FrameworkAdapter):
             context = getattr(event, "context", None)
             if context:
                 payload["context"] = str(context)[:500]
-        self._emit(
-            "agent.input", payload,
-            span_id=span_id, parent_span_id=parent,
-            span_name=f"task:{task_name[:60]}",
-        )
+        self._fire("agent.input", payload, span_id=span_id, parent_span_id=parent, span_name=f"task:{task_name[:60]}")
 
     def _on_task_completed(self, source: Any, event: Any) -> None:
         task_name = self._get_task_name(event)
@@ -237,39 +247,27 @@ class CrewAIAdapter(FrameworkAdapter):
             parent = self._crew_span_id
         payload = self._payload(task_name=task_name)
         self._set_if_capturing(payload, "output", safe_serialize(getattr(event, "output", None)))
-        self._emit(
-            "agent.output", payload,
-            span_id=span_id, parent_span_id=parent,
-            span_name=f"task:{task_name[:60]}",
-        )
+        self._fire("agent.output", payload, span_id=span_id, parent_span_id=parent, span_name=f"task:{task_name[:60]}")
 
     def _on_task_failed(self, source: Any, event: Any) -> None:
         task_name = self._get_task_name(event)
         with self._lock:
             span_id = self._task_span_ids.pop(task_name, self._current_task_span_id or self._new_span_id())
             parent = self._crew_span_id
-        error = str(getattr(event, "error", "unknown error"))
-        self._emit(
-            "agent.error",
-            self._payload(task_name=task_name, error=error),
-            span_id=span_id, parent_span_id=parent,
-        )
+        self._fire("agent.error", self._payload(task_name=task_name, error=str(getattr(event, "error", "unknown error"))), span_id=span_id, parent_span_id=parent)
 
     # ------------------------------------------------------------------
-    # Agent execution lifecycle
+    # Agent execution
     # ------------------------------------------------------------------
 
     def _on_agent_execution_started(self, source: Any, event: Any) -> None:
         agent = getattr(event, "agent", None)
-        agent_role = getattr(event, "agent_role", None) or (
-            getattr(agent, "role", None) if agent else None
-        ) or "unknown"
+        agent_role = getattr(event, "agent_role", None) or (getattr(agent, "role", None) if agent else None) or "unknown"
         span_id = self._new_span_id()
         with self._lock:
             self._agent_span_ids[agent_role] = span_id
             self._current_agent_span_id = span_id
             parent = self._current_task_span_id or self._crew_span_id
-
         payload = self._payload(agent_role=agent_role)
         tools = getattr(event, "tools", None)
         if tools:
@@ -278,49 +276,30 @@ class CrewAIAdapter(FrameworkAdapter):
             task_prompt = getattr(event, "task_prompt", None)
             if task_prompt:
                 payload["task_prompt"] = str(task_prompt)[:500]
-        self._emit(
-            "agent.input", payload,
-            span_id=span_id, parent_span_id=parent,
-            span_name=f"agent:{agent_role[:60]}",
-        )
+        self._fire("agent.input", payload, span_id=span_id, parent_span_id=parent, span_name=f"agent:{agent_role[:60]}")
 
     def _on_agent_execution_completed(self, source: Any, event: Any) -> None:
         agent = getattr(event, "agent", None)
-        agent_role = getattr(event, "agent_role", None) or (
-            getattr(agent, "role", None) if agent else None
-        ) or "unknown"
+        agent_role = getattr(event, "agent_role", None) or (getattr(agent, "role", None) if agent else None) or "unknown"
         with self._lock:
             span_id = self._agent_span_ids.pop(agent_role, self._current_agent_span_id or self._new_span_id())
             parent = self._current_task_span_id or self._crew_span_id
             if self._current_agent_span_id == span_id:
                 self._current_agent_span_id = None
-
         payload = self._payload(agent_role=agent_role, status="ok")
         self._set_if_capturing(payload, "output", safe_serialize(getattr(event, "output", None)))
-        self._emit(
-            "agent.output", payload,
-            span_id=span_id, parent_span_id=parent,
-            span_name=f"agent:{agent_role[:60]}",
-        )
+        self._fire("agent.output", payload, span_id=span_id, parent_span_id=parent, span_name=f"agent:{agent_role[:60]}")
 
     def _on_agent_execution_error(self, source: Any, event: Any) -> None:
         agent = getattr(event, "agent", None)
-        agent_role = getattr(event, "agent_role", None) or (
-            getattr(agent, "role", None) if agent else None
-        ) or "unknown"
+        agent_role = getattr(event, "agent_role", None) or (getattr(agent, "role", None) if agent else None) or "unknown"
         error = str(getattr(event, "error", "unknown error"))
         with self._lock:
             span_id = self._agent_span_ids.pop(agent_role, self._current_agent_span_id or self._new_span_id())
             parent = self._current_task_span_id or self._crew_span_id
             if self._current_agent_span_id == span_id:
                 self._current_agent_span_id = None
-
-        self._emit(
-            "agent.error",
-            self._payload(agent_role=agent_role, error=error),
-            span_id=span_id, parent_span_id=parent,
-            span_name=f"agent:{agent_role[:60]}",
-        )
+        self._fire("agent.error", self._payload(agent_role=agent_role, error=error), span_id=span_id, parent_span_id=parent, span_name=f"agent:{agent_role[:60]}")
 
     # ------------------------------------------------------------------
     # LLM calls
@@ -329,12 +308,11 @@ class CrewAIAdapter(FrameworkAdapter):
     def _on_llm_started(self, source: Any, event: Any) -> None:
         call_id = getattr(event, "call_id", None)
         if call_id:
-            self._start_timer(f"llm:{call_id}")
+            self._tick(f"llm:{call_id}")
 
     def _on_llm_completed(self, source: Any, event: Any) -> None:
         model = getattr(event, "model", None)
         response = getattr(event, "response", None)
-        # Unwrap .usage from the response before normalizing
         usage = getattr(response, "usage", None) if response and not isinstance(response, dict) else (
             response.get("usage") if isinstance(response, dict) else None
         )
@@ -344,19 +322,15 @@ class CrewAIAdapter(FrameworkAdapter):
             payload["model"] = model
         call_id = getattr(event, "call_id", None)
         if call_id:
-            latency_ms = self._stop_timer(f"llm:{call_id}")
+            latency_ms = self._tock(f"llm:{call_id}")
             if latency_ms is not None:
                 payload["latency_ms"] = latency_ms
         payload.update(tokens)
-        parent = self._leaf_parent_span_id()
+        parent = self._leaf_parent()
         span_id = self._new_span_id()
-        self._emit("model.invoke", payload, span_id=span_id, parent_span_id=parent)
+        self._fire("model.invoke", payload, span_id=span_id, parent_span_id=parent)
         if tokens:
-            self._emit(
-                "cost.record",
-                self._payload(model=model, **tokens),
-                span_id=span_id, parent_span_id=parent,
-            )
+            self._fire("cost.record", self._payload(model=model, **tokens), span_id=span_id, parent_span_id=parent)
 
     def _on_llm_failed(self, source: Any, event: Any) -> None:
         error = str(getattr(event, "error", "unknown error"))
@@ -364,35 +338,31 @@ class CrewAIAdapter(FrameworkAdapter):
         payload = self._payload(error=error)
         if model:
             payload["model"] = model
-        parent = self._leaf_parent_span_id()
-        self._emit("agent.error", payload, parent_span_id=parent)
+        self._fire("agent.error", payload, parent_span_id=self._leaf_parent())
 
     # ------------------------------------------------------------------
-    # Tool usage — split into tool.call (start) and tool.result (end)
+    # Tool usage
     # ------------------------------------------------------------------
 
     def _on_tool_started(self, source: Any, event: Any) -> None:
         tool_name = getattr(event, "tool_name", None) or "unknown"
         span_id = self._new_span_id()
-        tool_key = self._tool_event_key(event)
+        key = self._tool_key(event)
         with self._lock:
-            self._tool_span_ids[tool_key] = span_id
+            self._tool_span_ids[key] = span_id
         payload = self._payload(tool_name=tool_name)
         self._set_if_capturing(payload, "input", safe_serialize(getattr(event, "tool_args", None)))
-        parent = self._leaf_parent_span_id()
-        self._emit("tool.call", payload, span_id=span_id, parent_span_id=parent)
+        self._fire("tool.call", payload, span_id=span_id, parent_span_id=self._leaf_parent())
 
     def _on_tool_finished(self, source: Any, event: Any) -> None:
         tool_name = getattr(event, "tool_name", None) or "unknown"
-        tool_key = self._tool_event_key(event)
+        key = self._tool_key(event)
         with self._lock:
-            span_id = self._tool_span_ids.pop(tool_key, None)
+            span_id = self._tool_span_ids.pop(key, None)
         if span_id is None:
             span_id = self._new_span_id()
-
         payload = self._payload(tool_name=tool_name)
         self._set_if_capturing(payload, "output", safe_serialize(getattr(event, "output", None)))
-        # Compute latency from started_at/finished_at
         started_at = getattr(event, "started_at", None)
         finished_at = getattr(event, "finished_at", None)
         if started_at is not None and finished_at is not None:
@@ -400,24 +370,17 @@ class CrewAIAdapter(FrameworkAdapter):
                 payload["latency_ms"] = (finished_at - started_at).total_seconds() * 1000
             except Exception:
                 pass
-        from_cache = getattr(event, "from_cache", None)
-        if from_cache:
+        if getattr(event, "from_cache", None):
             payload["from_cache"] = True
-        parent = self._leaf_parent_span_id()
-        self._emit("tool.result", payload, span_id=span_id, parent_span_id=parent)
+        self._fire("tool.result", payload, span_id=span_id, parent_span_id=self._leaf_parent())
 
     def _on_tool_error(self, source: Any, event: Any) -> None:
         tool_name = getattr(event, "tool_name", None) or "unknown"
         error = str(getattr(event, "error", "unknown error"))
-        tool_key = self._tool_event_key(event)
+        key = self._tool_key(event)
         with self._lock:
-            self._tool_span_ids.pop(tool_key, None)
-        parent = self._leaf_parent_span_id()
-        self._emit(
-            "agent.error",
-            self._payload(tool_name=tool_name, error=error),
-            parent_span_id=parent,
-        )
+            self._tool_span_ids.pop(key, None)
+        self._fire("agent.error", self._payload(tool_name=tool_name, error=error), parent_span_id=self._leaf_parent())
 
     # ------------------------------------------------------------------
     # Flow events
@@ -426,25 +389,23 @@ class CrewAIAdapter(FrameworkAdapter):
     def _on_flow_started(self, source: Any, event: Any) -> None:
         span_id = self._new_span_id()
         with self._lock:
+            self._collector = TraceCollector(self._client, self._config)
             self._crew_span_id = span_id
-        self._start_timer("crew")
+        self._tick("crew")
         flow_name = getattr(event, "flow_name", None) or self._get_name(source)
         payload = self._payload(flow_name=flow_name)
         self._set_if_capturing(payload, "input", safe_serialize(getattr(event, "inputs", None)))
-        self._emit("agent.input", payload, span_id=span_id, parent_span_id=None, span_name=f"flow:{flow_name}")
+        self._fire("agent.input", payload, span_id=span_id, parent_span_id=None, span_name=f"flow:{flow_name}")
 
     def _on_flow_finished(self, source: Any, event: Any) -> None:
-        latency_ms = self._stop_timer("crew")
+        latency_ms = self._tock("crew")
         flow_name = getattr(event, "flow_name", None) or self._get_name(source)
+        span_id = self._crew_span_id or self._new_span_id()
         payload = self._payload(flow_name=flow_name)
         if latency_ms is not None:
             payload["duration_ns"] = int(latency_ms * 1_000_000)
         self._set_if_capturing(payload, "output", safe_serialize(getattr(event, "result", None)))
-        self._emit(
-            "agent.output", payload,
-            span_id=self._crew_span_id or self._new_span_id(),
-            parent_span_id=None, span_name=f"flow:{flow_name}",
-        )
+        self._fire("agent.output", payload, span_id=span_id, parent_span_id=None, span_name=f"flow:{flow_name}")
         self._end_trace()
 
     # ------------------------------------------------------------------
@@ -461,8 +422,7 @@ class CrewAIAdapter(FrameworkAdapter):
             payload["mcp_server"] = server_name
         if latency_ms is not None:
             payload["latency_ms"] = latency_ms
-        parent = self._leaf_parent_span_id()
-        self._emit("tool.call", payload, parent_span_id=parent)
+        self._fire("tool.call", payload, parent_span_id=self._leaf_parent())
 
     def _on_mcp_tool_failed(self, source: Any, event: Any) -> None:
         tool_name = getattr(event, "tool_name", None) or "unknown"
@@ -471,5 +431,4 @@ class CrewAIAdapter(FrameworkAdapter):
         payload = self._payload(tool_name=tool_name, error=error)
         if server_name:
             payload["mcp_server"] = server_name
-        parent = self._leaf_parent_span_id()
-        self._emit("agent.error", payload, parent_span_id=parent)
+        self._fire("agent.error", payload, parent_span_id=self._leaf_parent())
