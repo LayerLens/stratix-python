@@ -32,15 +32,15 @@ from .conftest import find_event, find_events
 class StubAdapter(FrameworkAdapter):
     name = "stub"
 
-    def connect(self, target: Any = None, **kwargs: Any) -> Any:
-        self._connected = True
-        return target
-
     def fire_event(self, event_type: str, payload: Dict[str, Any],
                    span_id: Optional[str] = None,
                    parent_span_id: Optional[str] = None) -> None:
-        self._emit(event_type, payload, span_id=span_id,
-                   parent_span_id=parent_span_id, span_name=event_type)
+        kwargs: Dict[str, Any] = {"span_name": event_type}
+        if span_id is not None:
+            kwargs["span_id"] = span_id
+        if parent_span_id is not None:
+            kwargs["parent_span_id"] = parent_span_id
+        self._emit(event_type, payload, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -70,15 +70,11 @@ def capture_trace(mock_client):
 
 
 @pytest.fixture(autouse=True)
-def reset_circuit_breaker():
-    """Reset the upload circuit breaker between tests."""
-    _upload._error_count = 0
-    _upload._circuit_open = False
-    _upload._opened_at = 0.0
+def reset_upload_channels():
+    """Clear all upload channels between tests."""
+    _upload._channels.clear()
     yield
-    _upload._error_count = 0
-    _upload._circuit_open = False
-    _upload._opened_at = 0.0
+    _upload._channels.clear()
 
 
 # ===================================================================
@@ -133,7 +129,9 @@ class TestSharedCollectorViaTrace:
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
+        adapter._begin_run()
         adapter.fire_event("agent.lifecycle", {"action": "standalone"})
+        adapter._end_run()
         adapter.disconnect()
 
         assert len(capture_trace) == 1
@@ -365,12 +363,14 @@ class TestFlushSemantics:
         assert "tool.call" in types
         assert "agent.output" in types
 
-    def test_adapter_disconnect_flushes_own_collector_when_standalone(
+    def test_adapter_begin_end_run_flushes_collector(
         self, mock_client, capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
+        adapter._begin_run()
         adapter.fire_event("agent.lifecycle", {"action": "standalone"})
+        adapter._end_run()
         adapter.disconnect()
 
         assert len(capture_trace) == 1
@@ -397,34 +397,35 @@ class TestFlushSemantics:
 
 
 # ===================================================================
-# 6. Callback scope + _traced_call
+# 6. Run lifecycle (_begin_run / _end_run)
 # ===================================================================
 
-class TestCallbackScope:
+class TestRunLifecycle:
 
-    def test_pushes_collector_when_standalone(self, mock_client, capture_trace):
+    def test_begin_run_pushes_collector_standalone(self, mock_client, capture_trace):
         adapter = StubAdapter(mock_client)
         adapter.connect()
 
         assert _current_collector.get() is None
-        with adapter._callback_scope("test_scope") as scope_span_id:
-            assert _current_collector.get() is not None
-            assert _current_span_id.get() == scope_span_id
-            emit("tool.call", {"name": "test", "input": "x"})
+        run = adapter._begin_run()
+        assert _current_collector.get() is not None
+        assert _current_span_id.get() == run.root_span_id
+        emit("tool.call", {"name": "test", "input": "x"})
+        adapter._end_run()
 
-        assert _current_collector.get() is None
+        assert len(capture_trace) == 1
 
-    def test_preserves_shared_collector(self, mock_client, capture_trace):
+    def test_begin_run_preserves_shared_collector(self, mock_client, capture_trace):
         adapter = StubAdapter(mock_client)
         adapter.connect()
 
         @trace(mock_client)
         def run():
             shared_collector = _current_collector.get()
-            with adapter._callback_scope("inner") as scope_span:
-                assert _current_collector.get() is shared_collector
-                assert _current_span_id.get() == scope_span
-                emit("tool.call", {"name": "inner_tool", "input": "x"})
+            adapter_run = adapter._begin_run()
+            assert adapter_run.collector is shared_collector
+            emit("tool.call", {"name": "inner_tool", "input": "x"})
+            adapter._end_run()
             return "done"
 
         run()
@@ -434,34 +435,16 @@ class TestCallbackScope:
         tool_call = find_event(events, "tool.call")
         assert tool_call["payload"]["name"] == "inner_tool"
 
-    def test_creates_child_span(self, mock_client, capture_trace):
+    def test_end_run_cleans_up_on_error(self, mock_client):
         adapter = StubAdapter(mock_client)
         adapter.connect()
 
-        @trace(mock_client)
-        def run():
-            root_span = _current_span_id.get()
-            with adapter._callback_scope("child"):
-                child_span = _current_span_id.get()
-                assert child_span != root_span
-                emit("tool.call", {"name": "scoped", "input": "x"})
-            assert _current_span_id.get() == root_span
-            return "done"
-
-        run()
-
-    def test_cleans_up_on_error(self, mock_client):
-        adapter = StubAdapter(mock_client)
-        adapter.connect()
-
-        with pytest.raises(RuntimeError):
-            with adapter._callback_scope("failing"):
-                raise RuntimeError("boom")
-
+        adapter._begin_run()
+        assert _current_collector.get() is not None
+        adapter._end_run()
         assert _current_collector.get() is None
-        assert _current_span_id.get() is None
 
-    def test_traced_call_makes_providers_visible(self, mock_client, capture_trace):
+    def test_begin_run_makes_providers_visible(self, mock_client, capture_trace):
         adapter = StubAdapter(mock_client)
         adapter.connect()
 
@@ -471,27 +454,27 @@ class TestCallbackScope:
             return "result"
 
         assert _current_collector.get() is None
-        result = adapter._traced_call(fake_agent_run, "hello", _span_name="agent.run")
+        adapter._begin_run()
+        result = fake_agent_run("hello")
+        adapter._end_run()
         assert result == "result"
         assert _current_collector.get() is None
 
-        adapter.disconnect()
         assert len(capture_trace) == 1
         events = capture_trace[0]["events"]
         model_event = find_event(events, "model.invoke")
         assert model_event["payload"]["model"] == "gpt-4"
 
-    def test_traced_call_under_shared_context(self, mock_client, capture_trace):
+    def test_begin_run_under_shared_context(self, mock_client, capture_trace):
         adapter = StubAdapter(mock_client)
         adapter.connect()
 
-        def fake_agent_run(prompt):
-            emit("model.invoke", {"model": "gpt-4", "input": prompt})
-            return "result"
-
         @trace(mock_client)
         def run():
-            return adapter._traced_call(fake_agent_run, "hello", _span_name="agent.run")
+            adapter._begin_run()
+            emit("model.invoke", {"model": "gpt-4", "input": "hello"})
+            adapter._end_run()
+            return "done"
 
         run()
         assert len(capture_trace) == 1
@@ -506,12 +489,16 @@ class TestCallbackScope:
 
 class TestUploadCircuitBreaker:
 
+    def _channel(self, mock_client):
+        """Get or create the upload channel for mock_client."""
+        return _upload._get_channel(mock_client)
+
     def test_successful_upload(self, mock_client, capture_trace):
         with trace_context(mock_client):
             emit("tool.call", {"name": "test", "input": "x"})
 
         assert len(capture_trace) == 1
-        assert _upload._error_count == 0
+        assert self._channel(mock_client)._error_count == 0
 
     def test_upload_failure_records_error(self, mock_client):
         mock_client.traces.upload.side_effect = RuntimeError("network error")
@@ -519,22 +506,25 @@ class TestUploadCircuitBreaker:
         with trace_context(mock_client):
             emit("tool.call", {"name": "test", "input": "x"})
 
-        assert _upload._error_count == 1
-        assert not _upload._circuit_open
+        ch = self._channel(mock_client)
+        assert ch._error_count == 1
+        assert not ch._circuit_open
 
     def test_circuit_opens_after_threshold(self, mock_client):
         mock_client.traces.upload.side_effect = RuntimeError("network error")
 
-        for _ in range(_upload._THRESHOLD):
+        for _ in range(_upload.UploadChannel._THRESHOLD):
             with trace_context(mock_client):
                 emit("tool.call", {"name": "test", "input": "x"})
 
-        assert _upload._circuit_open
-        assert _upload._error_count == _upload._THRESHOLD
+        ch = self._channel(mock_client)
+        assert ch._circuit_open
+        assert ch._error_count == _upload.UploadChannel._THRESHOLD
 
     def test_open_circuit_skips_upload(self, mock_client):
-        _upload._circuit_open = True
-        _upload._opened_at = __import__("time").monotonic()
+        ch = self._channel(mock_client)
+        ch._circuit_open = True
+        ch._opened_at = __import__("time").monotonic()
 
         with trace_context(mock_client):
             emit("tool.call", {"name": "test", "input": "x"})
@@ -542,30 +532,33 @@ class TestUploadCircuitBreaker:
         mock_client.traces.upload.assert_not_called()
 
     def test_circuit_resets_after_cooldown(self, mock_client, capture_trace):
-        _upload._circuit_open = True
-        _upload._error_count = _upload._THRESHOLD
-        _upload._opened_at = (
-            __import__("time").monotonic() - _upload._COOLDOWN_S - 1
+        ch = self._channel(mock_client)
+        ch._circuit_open = True
+        ch._error_count = _upload.UploadChannel._THRESHOLD
+        ch._opened_at = (
+            __import__("time").monotonic() - _upload.UploadChannel._COOLDOWN_S - 1
         )
 
         with trace_context(mock_client):
             emit("tool.call", {"name": "test", "input": "x"})
 
         assert len(capture_trace) == 1
-        assert not _upload._circuit_open
-        assert _upload._error_count == 0
+        assert not ch._circuit_open
+        assert ch._error_count == 0
 
     def test_success_after_failures_resets_count(self, mock_client, capture_trace):
-        _upload._error_count = 5
+        ch = self._channel(mock_client)
+        ch._error_count = 5
 
         with trace_context(mock_client):
             emit("tool.call", {"name": "test", "input": "x"})
 
-        assert _upload._error_count == 0
+        assert ch._error_count == 0
 
     def test_protects_trace_decorator(self, mock_client):
-        _upload._circuit_open = True
-        _upload._opened_at = __import__("time").monotonic()
+        ch = self._channel(mock_client)
+        ch._circuit_open = True
+        ch._opened_at = __import__("time").monotonic()
 
         @trace(mock_client)
         def run():
@@ -579,11 +572,12 @@ class TestUploadCircuitBreaker:
         adapter = StubAdapter(mock_client)
         adapter.connect()
 
-        _upload._circuit_open = True
-        _upload._opened_at = __import__("time").monotonic()
+        ch = self._channel(mock_client)
+        ch._circuit_open = True
+        ch._opened_at = __import__("time").monotonic()
 
-        adapter.fire_event("tool.call", {"name": "test", "input": "x"})
-        adapter.disconnect()
+        with trace_context(mock_client):
+            adapter.fire_event("tool.call", {"name": "test", "input": "x"})
 
         mock_client.traces.upload.assert_not_called()
 
@@ -635,7 +629,9 @@ class TestEdgeCases:
 
         adapter = StubAdapter(mock_client)
         adapter.connect()
+        adapter._begin_run()
         adapter.fire_event("agent.lifecycle", {"phase": "standalone"})
+        adapter._end_run()
         adapter.disconnect()
 
         assert len(capture_trace) == 2

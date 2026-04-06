@@ -6,8 +6,9 @@ from typing import Any, Dict, Optional
 
 from ._base_framework import FrameworkAdapter
 from ._utils import safe_serialize
-from ..._collector import TraceCollector
 from ..._capture_config import CaptureConfig
+from ..._collector import TraceCollector
+from ..._context import _current_collector, _current_run, RunState
 
 log = logging.getLogger(__name__)
 
@@ -30,9 +31,9 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
     to receive all span lifecycle events, then maps agent, generation,
     function, handoff, and guardrail spans to flat layerlens events.
 
-    Unlike other adapters that use a single collector, this adapter manages
-    per-trace collectors because the SDK can run multiple concurrent traces
-    through the same global processor.
+    Each trace gets its own RunState created directly (bypassing
+    ``_begin_run``, which would pollute ContextVars for other traces),
+    stored per-trace in ``_trace_runs`` keyed by trace_id.
 
     Usage::
 
@@ -56,7 +57,8 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
 
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         FrameworkAdapter.__init__(self, client, capture_config)
-        self._collectors: Dict[str, TraceCollector] = {}
+        # trace_id -> RunState for concurrent trace isolation
+        self._trace_runs: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -73,7 +75,7 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
 
         set_trace_processors([])
         with self._lock:
-            self._collectors.clear()
+            self._trace_runs.clear()
 
     # ------------------------------------------------------------------
     # TracingProcessor interface
@@ -81,16 +83,24 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
 
     def on_trace_start(self, trace: Any) -> None:
         try:
-            self._get_collector(trace.trace_id)
+            # OA manages multiple concurrent traces from one processor,
+            # so we create RunState directly instead of using _begin_run
+            # (which would pollute ContextVars for the next trace).
+            run = RunState(
+                collector=TraceCollector(self._client, self._config),
+                root_span_id=self._new_span_id(),
+            )
+            with self._lock:
+                self._trace_runs[trace.trace_id] = run
         except Exception:
             log.warning("layerlens: error in on_trace_start", exc_info=True)
 
     def on_trace_end(self, trace: Any) -> None:
         try:
             with self._lock:
-                collector = self._collectors.pop(trace.trace_id, None)
-            if collector is not None:
-                collector.flush()
+                run = self._trace_runs.pop(trace.trace_id, None)
+            if run is not None:
+                run.collector.flush()
         except Exception:
             log.warning("layerlens: error in on_trace_end", exc_info=True)
 
@@ -99,10 +109,22 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
 
     def on_span_end(self, span: Any) -> None:
         try:
-            span_type = getattr(span.span_data, "type", None) or ""
-            handler_name = self._SPAN_HANDLERS.get(span_type)
-            if handler_name is not None:
-                getattr(self, handler_name)(span)
+            with self._lock:
+                run = self._trace_runs.get(span.trace_id)
+            if run is None:
+                return
+
+            # Temporarily set both ContextVars so _emit and providers work.
+            run_token = _current_run.set(run)
+            col_token = _current_collector.set(run.collector)
+            try:
+                span_type = getattr(span.span_data, "type", None) or ""
+                handler_name = self._SPAN_HANDLERS.get(span_type)
+                if handler_name is not None:
+                    getattr(self, handler_name)(span)
+            finally:
+                _current_collector.reset(col_token)
+                _current_run.reset(run_token)
         except Exception:
             log.warning("layerlens: error handling OpenAI Agents span", exc_info=True)
 
@@ -113,22 +135,11 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
         pass
 
     # ------------------------------------------------------------------
-    # Per-trace collector
-    # ------------------------------------------------------------------
-
-    def _get_collector(self, trace_id: str) -> TraceCollector:
-        with self._lock:
-            if trace_id not in self._collectors:
-                self._collectors[trace_id] = TraceCollector(self._client, self._config)
-            return self._collectors[trace_id]
-
-    # ------------------------------------------------------------------
     # Span handlers
     # ------------------------------------------------------------------
 
     def _handle_agent_span(self, span: Any) -> None:
         data = span.span_data
-        collector = self._get_collector(span.trace_id)
         agent_name = getattr(data, "name", "unknown")
         span_id = span.span_id or self._new_span_id()
         parent_id = span.parent_id
@@ -139,7 +150,7 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
             if val:
                 input_payload[key] = val
 
-        collector.emit(
+        self._emit(
             "agent.input", input_payload,
             span_id=span_id, parent_span_id=parent_id,
             span_name=f"agent:{agent_name}",
@@ -156,7 +167,7 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
         if span.error:
             out_payload["error"] = safe_serialize(span.error)
 
-        collector.emit(
+        self._emit(
             event_type, out_payload,
             span_id=span_id, parent_span_id=parent_id,
             span_name=f"agent:{agent_name}",
@@ -164,7 +175,6 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
 
     def _handle_generation_span(self, span: Any) -> None:
         data = span.span_data
-        collector = self._get_collector(span.trace_id)
         model = getattr(data, "model", None) or "unknown"
         span_id = span.span_id or self._new_span_id()
         parent_id = span.parent_id
@@ -186,43 +196,46 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
 
         if span.error:
             payload["error"] = safe_serialize(span.error)
-            collector.emit("agent.error", payload, span_id=span_id, parent_span_id=parent_id)
+            self._emit("agent.error", payload, span_id=span_id, parent_span_id=parent_id)
         else:
-            collector.emit("model.invoke", payload, span_id=span_id, parent_span_id=parent_id)
+            self._emit("model.invoke", payload, span_id=span_id, parent_span_id=parent_id)
 
         if tokens:
             cost_payload = self._payload(model=model)
             cost_payload.update(tokens)
-            collector.emit("cost.record", cost_payload, span_id=span_id, parent_span_id=parent_id)
+            self._emit("cost.record", cost_payload, span_id=span_id, parent_span_id=parent_id)
 
     def _handle_function_span(self, span: Any) -> None:
         data = span.span_data
-        collector = self._get_collector(span.trace_id)
         tool_name = getattr(data, "name", "unknown")
         span_id = span.span_id or self._new_span_id()
         parent_id = span.parent_id
 
-        payload = self._payload(tool_name=tool_name)
-        self._set_if_capturing(payload, "input", safe_serialize(getattr(data, "input", None)))
-        self._set_if_capturing(payload, "output", safe_serialize(getattr(data, "output", None)))
-
-        duration_ms = _compute_duration_ms(span)
-        if duration_ms is not None:
-            payload["latency_ms"] = duration_ms
-
+        # Emit tool.call with input
+        call_payload = self._payload(tool_name=tool_name)
+        self._set_if_capturing(call_payload, "input", safe_serialize(getattr(data, "input", None)))
         mcp_data = getattr(data, "mcp_data", None)
         if mcp_data:
-            payload["mcp_data"] = safe_serialize(mcp_data)
+            call_payload["mcp_data"] = safe_serialize(mcp_data)
+        self._emit("tool.call", call_payload, span_id=span_id, parent_span_id=parent_id)
 
+        # Emit tool.result or agent.error
+        duration_ms = _compute_duration_ms(span)
         if span.error:
-            payload["error"] = safe_serialize(span.error)
-            collector.emit("agent.error", payload, span_id=span_id, parent_span_id=parent_id)
+            err_payload = self._payload(tool_name=tool_name, error=safe_serialize(span.error))
+            if duration_ms is not None:
+                err_payload["latency_ms"] = duration_ms
+            self._emit("agent.error", err_payload, span_id=span_id, parent_span_id=parent_id)
         else:
-            collector.emit("tool.call", payload, span_id=span_id, parent_span_id=parent_id)
+            result_payload = self._payload(tool_name=tool_name, status="ok")
+            self._set_if_capturing(result_payload, "output", safe_serialize(getattr(data, "output", None)))
+            if duration_ms is not None:
+                result_payload["latency_ms"] = duration_ms
+            self._emit("tool.result", result_payload, span_id=span_id, parent_span_id=parent_id)
 
     def _handle_handoff_span(self, span: Any) -> None:
         data = span.span_data
-        self._get_collector(span.trace_id).emit(
+        self._emit(
             "agent.handoff",
             self._payload(
                 from_agent=getattr(data, "from_agent", None) or "unknown",
@@ -234,7 +247,7 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
 
     def _handle_guardrail_span(self, span: Any) -> None:
         data = span.span_data
-        self._get_collector(span.trace_id).emit(
+        self._emit(
             "evaluation.result",
             self._payload(
                 guardrail_name=getattr(data, "name", "unknown"),
@@ -250,7 +263,6 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
         if response is None:
             return
 
-        collector = self._get_collector(span.trace_id)
         span_id = span.span_id or self._new_span_id()
         parent_id = span.parent_id
         payload = self._payload()
@@ -281,9 +293,9 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
 
         if span.error:
             payload["error"] = safe_serialize(span.error)
-            collector.emit("agent.error", payload, span_id=span_id, parent_span_id=parent_id)
+            self._emit("agent.error", payload, span_id=span_id, parent_span_id=parent_id)
         else:
-            collector.emit("model.invoke", payload, span_id=span_id, parent_span_id=parent_id)
+            self._emit("model.invoke", payload, span_id=span_id, parent_span_id=parent_id)
 
 
 # ------------------------------------------------------------------

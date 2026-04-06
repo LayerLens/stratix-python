@@ -388,9 +388,13 @@ class TestFunctionSpans:
         tc = find_event(events, "tool.call")
         assert tc["payload"]["tool_name"] == "get_weather"
         assert tc["payload"]["input"] == '{"city":"NYC"}'
-        assert tc["payload"]["output"] == '{"temp":72}'
-        assert tc["payload"]["latency_ms"] >= 0
         assert tc["parent_span_id"] == "s_agent"
+
+        tr = find_event(events, "tool.result")
+        assert tr["payload"]["tool_name"] == "get_weather"
+        assert tr["payload"]["output"] == '{"temp":72}'
+        assert tr["payload"]["latency_ms"] >= 0
+        assert tr["parent_span_id"] == "s_agent"
 
     def test_function_span_with_error(self, adapter_and_trace):
         adapter, uploaded = adapter_and_trace
@@ -720,8 +724,8 @@ class TestErrorIsolation:
         trace = _make_trace(trace_id="t_safe")
         adapter.on_trace_start(trace)
 
-        # Break the collector
-        adapter._collectors["t_safe"] = None  # type: ignore[assignment]
+        # Break the run's collector
+        adapter._trace_runs["t_safe"] = None  # type: ignore[assignment]
 
         # This should not raise
         span = _make_span(adapter,"t_safe", "s_safe", AgentSpanData(name="test"))

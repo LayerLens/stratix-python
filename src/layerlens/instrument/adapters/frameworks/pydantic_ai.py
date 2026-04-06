@@ -90,7 +90,8 @@ class PydanticAIAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     def _on_before_run(self, ctx: Any) -> None:
-        run = self._begin_run()
+        self._begin_run()
+        root = self._get_root_span()
         agent_name = self._get_agent_name(ctx)
         model_name = self._get_model_name(ctx)
 
@@ -99,19 +100,18 @@ class PydanticAIAdapter(FrameworkAdapter):
             payload["model"] = model_name
         self._set_if_capturing(payload, "input", safe_serialize(ctx.prompt))
 
-        run.collector.emit(
+        self._emit(
             "agent.input", payload,
-            span_id=run.root_span_id, parent_span_id=None,
+            span_id=root, parent_span_id=None,
             span_name=f"pydantic_ai:{agent_name}",
         )
         self._start_timer("run")
 
     def _on_after_run(self, ctx: Any, *, result: Any) -> Any:
         latency_ms = self._stop_timer("run")
+        root = self._get_root_span()
         agent_name = self._get_agent_name(ctx)
         model_name = self._get_model_name(ctx)
-        root_span = self._get_root_span()
-        collector = self._ensure_collector()
 
         output = self._extract_output(result)
         usage = self._extract_usage(result)
@@ -123,9 +123,9 @@ class PydanticAIAdapter(FrameworkAdapter):
             payload["latency_ms"] = latency_ms
         self._set_if_capturing(payload, "output", output)
         payload.update(usage)
-        collector.emit(
+        self._emit(
             "agent.output", payload,
-            span_id=root_span, parent_span_id=None,
+            span_id=root, parent_span_id=None,
             span_name=f"pydantic_ai:{agent_name}",
         )
 
@@ -134,19 +134,15 @@ class PydanticAIAdapter(FrameworkAdapter):
             if model_name:
                 cost_payload["model"] = model_name
             cost_payload.update(usage)
-            collector.emit(
-                "cost.record", cost_payload,
-                span_id=self._new_span_id(), parent_span_id=root_span,
-            )
+            self._emit("cost.record", cost_payload)
 
         self._end_run()
         return result
 
     def _on_run_error(self, ctx: Any, *, error: BaseException) -> None:
         latency_ms = self._stop_timer("run")
+        root = self._get_root_span()
         agent_name = self._get_agent_name(ctx)
-        root_span = self._get_root_span()
-        collector = self._ensure_collector()
 
         payload = self._payload(
             agent_name=agent_name,
@@ -155,9 +151,9 @@ class PydanticAIAdapter(FrameworkAdapter):
         )
         if latency_ms is not None:
             payload["latency_ms"] = latency_ms
-        collector.emit(
+        self._emit(
             "agent.error", payload,
-            span_id=root_span, parent_span_id=None,
+            span_id=root, parent_span_id=None,
             span_name=f"pydantic_ai:{agent_name}",
         )
 
@@ -171,9 +167,6 @@ class PydanticAIAdapter(FrameworkAdapter):
     def _on_after_model_request(
         self, ctx: Any, *, request_context: Any, response: Any,
     ) -> Any:
-        root_span = self._get_root_span()
-        collector = self._ensure_collector()
-
         model_name = getattr(response, "model_name", None)
         usage = getattr(response, "usage", None)
         tokens = self._normalize_tokens(usage)
@@ -183,11 +176,7 @@ class PydanticAIAdapter(FrameworkAdapter):
             payload["model"] = model_name
         payload.update(tokens)
 
-        model_span = self._new_span_id()
-        collector.emit(
-            "model.invoke", payload,
-            span_id=model_span, parent_span_id=root_span,
-        )
+        self._emit("model.invoke", payload)
 
         parts = getattr(response, "parts", None) or []
         for part in parts:
@@ -198,27 +187,18 @@ class PydanticAIAdapter(FrameworkAdapter):
                     tool_payload, "input",
                     safe_serialize(getattr(part, "args", None)),
                 )
-                collector.emit(
-                    "tool.call", tool_payload,
-                    span_id=self._new_span_id(), parent_span_id=root_span,
-                )
+                self._emit("tool.call", tool_payload)
 
         return response
 
     def _on_model_request_error(
         self, ctx: Any, *, request_context: Any, error: Exception,
     ) -> None:
-        root_span = self._get_root_span()
-        collector = self._ensure_collector()
-
         payload = self._payload(
             error=str(error),
             error_type=type(error).__name__,
         )
-        collector.emit(
-            "agent.error", payload,
-            span_id=self._new_span_id(), parent_span_id=root_span,
-        )
+        self._emit("agent.error", payload)
         raise error
 
     # ------------------------------------------------------------------
@@ -229,58 +209,49 @@ class PydanticAIAdapter(FrameworkAdapter):
         self, ctx: Any, *, call: Any, tool_def: Any, args: Any,
     ) -> Any:
         tool_name = getattr(call, "tool_name", "unknown")
+        call_id = getattr(call, "id", None) or tool_name
         span_id = self._new_span_id()
         run = self._get_run()
         if run is not None:
-            run.data.setdefault("tool_spans", {})[tool_name] = span_id
-        self._start_timer(f"tool:{tool_name}")
+            run.data.setdefault("tool_spans", {})[call_id] = span_id
+        self._start_timer(f"tool:{call_id}")
         return args
 
     def _on_after_tool_execute(
         self, ctx: Any, *, call: Any, tool_def: Any, args: Any, result: Any,
     ) -> Any:
         tool_name = getattr(call, "tool_name", "unknown")
-        latency_ms = self._stop_timer(f"tool:{tool_name}")
+        call_id = getattr(call, "id", None) or tool_name
+        latency_ms = self._stop_timer(f"tool:{call_id}")
 
         run = self._get_run()
         tool_spans = run.data.get("tool_spans", {}) if run is not None else {}
-        span_id = tool_spans.pop(tool_name, self._new_span_id())
-
-        root_span = self._get_root_span()
-        collector = self._ensure_collector()
+        span_id = tool_spans.pop(call_id, self._new_span_id())
 
         payload = self._payload(tool_name=tool_name)
         self._set_if_capturing(payload, "output", safe_serialize(result))
         if latency_ms is not None:
             payload["latency_ms"] = latency_ms
-        collector.emit(
-            "tool.result", payload,
-            span_id=span_id, parent_span_id=root_span,
-        )
+        self._emit("tool.result", payload, span_id=span_id)
         return result
 
     def _on_tool_execute_error(
         self, ctx: Any, *, call: Any, tool_def: Any, args: Any, error: Exception,
     ) -> None:
         tool_name = getattr(call, "tool_name", "unknown")
-        self._stop_timer(f"tool:{tool_name}")
+        call_id = getattr(call, "id", None) or tool_name
+        self._stop_timer(f"tool:{call_id}")
 
         run = self._get_run()
         if run is not None:
-            run.data.get("tool_spans", {}).pop(tool_name, None)
-
-        root_span = self._get_root_span()
-        collector = self._ensure_collector()
+            run.data.get("tool_spans", {}).pop(call_id, None)
 
         payload = self._payload(
             tool_name=tool_name,
             error=str(error),
             error_type=type(error).__name__,
         )
-        collector.emit(
-            "agent.error", payload,
-            span_id=self._new_span_id(), parent_span_id=root_span,
-        )
+        self._emit("agent.error", payload)
         raise error
 
     # ------------------------------------------------------------------

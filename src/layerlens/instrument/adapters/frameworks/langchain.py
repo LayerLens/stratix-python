@@ -14,12 +14,8 @@ def _auto_flush(fn):  # type: ignore[type-arg]
     def wrapper(self, *args, run_id, **kwargs):  # type: ignore[no-untyped-def]
         fn(self, *args, run_id=run_id, **kwargs)
         run = self._get_run()
-        if run is not None:
-            if str(run_id) == run.data.get("root_run_id"):
-                self._end_run()
-        elif str(run_id) == self._root_run_id and self._collector is not None:
-            self._flush_collector()
-            self._root_run_id = None
+        if run is not None and str(run_id) == run.data.get("root_run_id"):
+            self._end_run()
     return wrapper
 
 
@@ -43,8 +39,6 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         FrameworkAdapter.__init__(self, client, capture_config=capture_config)
         # Pending LLM runs: run_id -> {name, messages, parent_run_id}
         self._pending_llm: Dict[str, Dict[str, Any]] = {}
-        # Context tokens for span propagation: run_id -> token from _push_context
-        self._run_contexts: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Chain callbacks
@@ -79,7 +73,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     ) -> None:
         payload = self._payload(status="ok")
         self._set_if_capturing(payload, "output", outputs)
-        self._emit("agent.output", payload, run_id=run_id)
+        self._emit("agent.output", payload, run_id=run_id, parent_run_id=parent_run_id)
 
     @_auto_flush
     def on_chain_error(
@@ -90,7 +84,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id)
+        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id)
 
     # ------------------------------------------------------------------
     # LLM callbacks — merged into single model.invoke on end
@@ -114,8 +108,6 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         }
         self._set_if_capturing(pending, "messages", prompts)
         self._pending_llm[str(run_id)] = pending
-        span_id, _ = self._span_id_for(run_id)
-        self._run_contexts[str(run_id)] = self._push_context(span_id)
 
     def on_chat_model_start(
         self,
@@ -138,8 +130,6 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
             [[_serialize_lc_message(m) for m in batch] for batch in messages],
         )
         self._pending_llm[str(run_id)] = pending
-        span_id, _ = self._span_id_for(run_id)
-        self._run_contexts[str(run_id)] = self._push_context(span_id)
 
     @_auto_flush
     def on_llm_end(
@@ -150,7 +140,6 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._pop_context(self._run_contexts.pop(str(run_id), None))
         pending = self._pending_llm.pop(str(run_id), {})
 
         # Extract response data
@@ -210,7 +199,6 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._pop_context(self._run_contexts.pop(str(run_id), None))
         pending = self._pending_llm.pop(str(run_id), {})
 
         payload = self._payload(error=str(error))
@@ -221,7 +209,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
             payload["latency_ms"] = latency_ms
         self._emit("model.invoke", payload, run_id=run_id, parent_run_id=pending.get("parent_run_id"))
 
-        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id)
+        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=pending.get("parent_run_id"))
 
     # ------------------------------------------------------------------
     # Tool callbacks
@@ -252,7 +240,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     ) -> None:
         payload = self._payload()
         self._set_if_capturing(payload, "output", output)
-        self._emit("tool.result", payload, run_id=run_id)
+        self._emit("tool.result", payload, run_id=run_id, parent_run_id=parent_run_id)
 
     @_auto_flush
     def on_tool_error(
@@ -263,7 +251,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id)
+        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id)
 
     # ------------------------------------------------------------------
     # Retriever callbacks
@@ -297,7 +285,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
             payload, "output",
             [_serialize_lc_document(d) for d in documents],
         )
-        self._emit("tool.result", payload, run_id=run_id)
+        self._emit("tool.result", payload, run_id=run_id, parent_run_id=parent_run_id)
 
     @_auto_flush
     def on_retriever_error(
@@ -308,7 +296,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id)
+        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id)
 
     # ------------------------------------------------------------------
     # Agent callbacks

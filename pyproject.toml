@@ -37,6 +37,9 @@ openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
 langchain = ["langchain-core>=0.1.0"]
 litellm = ["litellm>=1.0.0"]
+pydantic-ai = ["pydantic-ai>=0.2.0"]
+openai-agents = ["openai-agents>=0.1.0"]
+semantic-kernel = ["semantic-kernel>=1.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
@@ -50,14 +53,15 @@ stratix = "layerlens.cli:main"
 managed = true
 # version pins are in requirements-dev.lock
 dev-dependencies = [
-  "mypy",
-  "pytest",
-  "pyright==1.1.399",
-  "pytest-cov>=6.2.1",
-  "ruff",
-  "build",
-  "twine==6.1.0",
-  "click>=8.0.0",
+    "mypy",
+    "pytest",
+    "pyright==1.1.399",
+    "pytest-cov>=6.2.1",
+    "ruff",
+    "build",
+    "twine==6.1.0",
+    "click>=8.0.0",
+    "crewai>=0.5.0",
 ]
 
 [tool.rye.scripts]
@@ -146,6 +150,21 @@ known-first-party = ["openai", "tests"]
 "src/layerlens/cli/**" = ["T201", "T203"]
 "src/layerlens/instrument/adapters/frameworks/langchain.py" = ["ARG002"]
 "src/layerlens/instrument/adapters/frameworks/langgraph.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/crewai.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/pydantic_ai.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/openai_agents.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/autogen.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/llamaindex.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/semantic_kernel.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/smolagents.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/google_adk.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/agno.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/strands.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/bedrock_agents.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/ms_agent_framework.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/haystack.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/langfuse.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/agentforce.py" = ["ARG002"]
 
 [tool.pyright]
 include = ["src", "tests"]

@@ -301,7 +301,11 @@ class TestPromptRendering:
         async def mock_next(context):
             pass
 
+        # Prompt rendering only fires inside a function invocation,
+        # so we need an active RunState.
+        adapter._begin_run()
         _run(adapter._prompt_rendering_filter(ctx, mock_next))
+        adapter._end_run()
         adapter.disconnect()
 
         events = uploaded["events"]
@@ -325,7 +329,9 @@ class TestPromptRendering:
         async def mock_next(context):
             pass
 
+        adapter._begin_run()
         _run(adapter._prompt_rendering_filter(ctx, mock_next))
+        adapter._end_run()
         adapter.disconnect()
 
         events = uploaded["events"]
@@ -568,8 +574,10 @@ class TestLLMCallWrapping:
         adapter = SemanticKernelAdapter(mock_client)
         adapter.connect(target=kernel)
 
-        # Call the wrapped method directly
+        # In real usage, LLM calls happen inside a function invocation filter.
+        adapter._begin_run()
         _run(service._inner_get_chat_message_contents(None, None))
+        adapter._end_run()
 
         adapter.disconnect()
 
@@ -588,7 +596,9 @@ class TestLLMCallWrapping:
 
         adapter = SemanticKernelAdapter(mock_client)
         adapter.connect(target=kernel)
+        adapter._begin_run()
         _run(service._inner_get_chat_message_contents(None, None))
+        adapter._end_run()
         adapter.disconnect()
 
         events = uploaded["events"]
@@ -604,7 +614,9 @@ class TestLLMCallWrapping:
 
         adapter = SemanticKernelAdapter(mock_client)
         adapter.connect(target=kernel)
+        adapter._begin_run()
         _run(service._inner_get_chat_message_contents(None, None))
+        adapter._end_run()
         adapter.disconnect()
 
         events = uploaded["events"]
@@ -634,8 +646,10 @@ class TestLLMCallWrapping:
         service._inner_get_chat_message_contents = failing_inner
         adapter.connect(target=kernel)
 
+        adapter._begin_run()
         with pytest.raises(RuntimeError, match="API timeout"):
             _run(service._inner_get_chat_message_contents(None, None))
+        adapter._end_run()
 
         adapter.disconnect()
 

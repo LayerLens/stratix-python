@@ -13,7 +13,7 @@ import datetime
 
 import pytest
 
-from .conftest import capture_framework_trace, find_event, find_events
+from ..conftest import capture_framework_trace, find_event, find_events
 
 # Skip entire module if crewai is not importable (Python < 3.10 or not installed).
 # crewai uses `type | None` syntax which causes TypeError on Python < 3.10,
@@ -45,7 +45,7 @@ from crewai.events import (  # noqa: E402
 )
 from crewai.tasks.task_output import TaskOutput  # noqa: E402
 
-from layerlens.instrument.adapters.frameworks.crewai import CrewAIAdapter  # noqa: E402
+from layerlens.instrument.adapters.frameworks._staging.crewai import CrewAIAdapter  # noqa: E402
 
 
 @pytest.fixture

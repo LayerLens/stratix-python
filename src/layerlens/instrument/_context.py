@@ -27,6 +27,8 @@ class RunState:
     timers: Dict[str, int] = field(default_factory=dict)
     data: Dict[str, Any] = field(default_factory=dict)
     _token: Any = field(default=None, repr=False)
+    _col_token: Any = field(default=None, repr=False)
+    _span_snapshot: Any = field(default=None, repr=False)
 
 
 _current_run: ContextVar[Optional[RunState]] = ContextVar("_current_run", default=None)

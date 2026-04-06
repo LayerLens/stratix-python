@@ -9,24 +9,34 @@ import time
 import uuid
 import logging
 import threading
-from typing import Any, Dict, Generator, Optional
-from contextlib import contextmanager
+from typing import Any, Dict, Optional
 
 from .._base import AdapterInfo, BaseAdapter
 from ..._collector import TraceCollector
 from ..._capture_config import CaptureConfig
-from ..._context import _current_collector, _current_span_id, _push_span, _pop_span, _current_run, RunState
+from ..._context import (
+    _current_collector,
+    _current_span_id,
+    _push_span,
+    _pop_span,
+    _current_run,
+    RunState,
+)
 
 log = logging.getLogger(__name__)
 
-_UNSET: Any = object()  # sentinel: distinguish "not passed" from explicit None
-
 
 class FrameworkAdapter(BaseAdapter):
-    """Base for framework adapters with collector lifecycle management."""
+    """Base for framework adapters with collector lifecycle management.
 
-    name: str  # Subclass must set: "crewai", "llamaindex", etc.
-    package: str = ""  # pip extra name, e.g. "crewai" → pip install layerlens[crewai]
+    Every adapter call that produces events MUST be inside a
+    ``_begin_run`` / ``_end_run`` pair. ``_begin_run`` pushes the
+    collector and root span into ContextVars so provider adapters
+    can see it automatically.
+    """
+
+    name: str  # Subclass must set: "langchain", "pydantic-ai", etc.
+    package: str = ""  # pip extra name, e.g. "semantic-kernel"
 
     def _check_dependency(self, available: bool) -> None:
         """Raise ImportError with a helpful install message if the dependency is missing."""
@@ -42,15 +52,6 @@ class FrameworkAdapter(BaseAdapter):
         self._config = capture_config or CaptureConfig.standard()
         self._lock = threading.Lock()
         self._connected = False
-        self._collector: Optional[TraceCollector] = None
-        self._root_span_id: Optional[str] = None
-        self._using_shared_collector = False
-        # Optional run_id → span_id mapping for callback-style frameworks
-        self._span_ids: Dict[str, str] = {}
-        # Root run tracking for auto-flush on outermost callback completion
-        self._root_run_id: Optional[str] = None
-        # Timing: key → start_ns for _start_timer / _stop_timer
-        self._timers: Dict[str, int] = {}
         # Subclasses populate during connect() for adapter_info() metadata
         self._metadata: Dict[str, Any] = {}
 
@@ -61,66 +62,69 @@ class FrameworkAdapter(BaseAdapter):
     def _begin_run(self) -> RunState:
         """Start a new run with its own collector, root span, and timers.
 
-        Stores the RunState in a ContextVar so all subsequent calls to
-        ``_ensure_collector``, ``_start_timer``, ``_stop_timer``, and
-        ``_get_root_span`` use per-run state instead of instance state.
+        Pushes the collector and root span into ContextVars so that:
+        - Subsequent ``_emit`` calls route to this run's collector
+        - Provider adapters see the collector via ``_current_collector``
+        - ContextVars are automatically isolated per ``asyncio.Task``
 
-        ContextVars are automatically isolated per ``asyncio.Task``, so
-        concurrent runs on the same adapter get independent state.
+        If called inside an existing ``trace_context()``, reuses the
+        shared collector instead of creating a new one.
         """
+        existing = _current_collector.get()
+        if existing is not None:
+            collector = existing
+            col_token = None
+        else:
+            collector = TraceCollector(self._client, self._config)
+            col_token = _current_collector.set(collector)
+
+        root_span_id = uuid.uuid4().hex[:16]
+        span_snapshot = _push_span(root_span_id, f"{self.name}:root")
+
         run = RunState(
-            collector=TraceCollector(self._client, self._config),
-            root_span_id=uuid.uuid4().hex[:16],
+            collector=collector,
+            root_span_id=root_span_id,
+            _token=None,
+            _col_token=col_token,
+            _span_snapshot=span_snapshot,
         )
         run._token = _current_run.set(run)
         return run
 
     def _end_run(self) -> None:
-        """Flush the current run's collector and restore the previous ContextVar state."""
+        """Pop ContextVars and flush the collector."""
         run = _current_run.get()
         if run is None:
             return
+
+        # Restore ContextVars — use try/except for each because
+        # frameworks like PydanticAI can copy contexts between hook
+        # callbacks, making tokens invalid in the current Context.
+        if run._span_snapshot is not None:
+            try:
+                _pop_span(run._span_snapshot)
+            except ValueError:
+                pass
+        if run._col_token is not None:
+            try:
+                _current_collector.reset(run._col_token)
+            except ValueError:
+                _current_collector.set(None)
         if run._token is not None:
             try:
                 _current_run.reset(run._token)
             except ValueError:
-                # Token created in a different Context (e.g. framework copies
-                # contexts between hook callbacks). Fall back to plain set.
                 _current_run.set(None)
         else:
             _current_run.set(None)
-        run.collector.flush()
+
+        # Only flush if we own the collector (not shared from trace_context)
+        if run._col_token is not None:
+            run.collector.flush()
 
     def _get_run(self) -> Optional[RunState]:
         """Return the current RunState, or None if not inside a ``_begin_run`` scope."""
         return _current_run.get()
-
-    # ------------------------------------------------------------------
-    # Collector lifecycle
-    # ------------------------------------------------------------------
-
-    def _ensure_collector(self) -> TraceCollector:
-        """Return the collector for the current context.
-
-        Checks (in order): active RunState, shared collector from ContextVars,
-        then creates a private instance-level collector as fallback.
-        """
-        run = _current_run.get()
-        if run is not None:
-            return run.collector
-
-        shared = _current_collector.get()
-        if shared is not None:
-            self._using_shared_collector = True
-            if self._root_span_id is None:
-                self._root_span_id = _current_span_id.get()
-            return shared
-
-        if self._collector is None:
-            self._using_shared_collector = False
-            self._collector = TraceCollector(self._client, self._config)
-            self._root_span_id = uuid.uuid4().hex[:16]
-        return self._collector
 
     @staticmethod
     def _new_span_id() -> str:
@@ -131,12 +135,7 @@ class FrameworkAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     def _payload(self, **extra: Any) -> Dict[str, Any]:
-        """Start a payload dict with ``framework: self.name``.
-
-        Usage::
-
-            payload = self._payload(agent_name="foo", status="ok")
-        """
+        """Start a payload dict with ``framework: self.name``."""
         p: Dict[str, Any] = {"framework": self.name}
         if extra:
             p.update(extra)
@@ -145,30 +144,20 @@ class FrameworkAdapter(BaseAdapter):
     def _get_root_span(self) -> str:
         """Return the root span ID for the current run.
 
-        Checks RunState first, then falls back to instance-level ``_root_span_id``.
-        If neither is set, generates a new one.
+        Returns a new random span ID if no run is active — callers should
+        only call this inside a ``_begin_run`` scope.
         """
         run = _current_run.get()
         if run is not None:
             return run.root_span_id
-
-        with self._lock:
-            sid = self._root_span_id
-        if sid is not None:
-            return sid
-        sid = self._new_span_id()
-        with self._lock:
-            self._root_span_id = sid
-        return sid
+        log.debug("layerlens: _get_root_span called outside _begin_run scope")
+        return self._new_span_id()
 
     def _start_timer(self, key: str) -> None:
         """Record a start timestamp (nanoseconds) under *key*."""
         run = _current_run.get()
         if run is not None:
             run.timers[key] = time.time_ns()
-            return
-        with self._lock:
-            self._timers[key] = time.time_ns()
 
     def _stop_timer(self, key: str) -> Optional[float]:
         """Pop the start time for *key* and return elapsed ``latency_ms``, or ``None``."""
@@ -176,8 +165,7 @@ class FrameworkAdapter(BaseAdapter):
         if run is not None:
             start_ns = run.timers.pop(key, 0)
         else:
-            with self._lock:
-                start_ns = self._timers.pop(key, 0)
+            start_ns = 0
         if not start_ns:
             return None
         return (time.time_ns() - start_ns) / 1_000_000
@@ -187,29 +175,32 @@ class FrameworkAdapter(BaseAdapter):
         """Extract token counts from any usage object or dict.
 
         Handles field-name variants across providers:
-        ``prompt_tokens`` / ``input_tokens`` → ``tokens_prompt``
-        ``completion_tokens`` / ``output_tokens`` → ``tokens_completion``
+        ``prompt_tokens`` / ``input_tokens`` -> ``tokens_prompt``
+        ``completion_tokens`` / ``output_tokens`` -> ``tokens_completion``
 
         Returns a dict with ``tokens_prompt``, ``tokens_completion``,
-        ``tokens_total`` — only keys that have non-zero values.
+        ``tokens_total`` -- only keys that have non-zero values.
+        Returns empty dict when all values are zero.
         """
         tokens: Dict[str, Any] = {}
         if usage is None:
             return tokens
 
         if isinstance(usage, dict):
-            prompt = usage.get("prompt_tokens") or usage.get("input_tokens")
-            completion = usage.get("completion_tokens") or usage.get("output_tokens")
+            prompt = usage.get("prompt_tokens")
+            if prompt is None:
+                prompt = usage.get("input_tokens")
+            completion = usage.get("completion_tokens")
+            if completion is None:
+                completion = usage.get("output_tokens")
             total = usage.get("total_tokens")
         else:
-            prompt = (
-                getattr(usage, "prompt_tokens", None)
-                or getattr(usage, "input_tokens", None)
-            )
-            completion = (
-                getattr(usage, "completion_tokens", None)
-                or getattr(usage, "output_tokens", None)
-            )
+            prompt = getattr(usage, "prompt_tokens", None)
+            if prompt is None:
+                prompt = getattr(usage, "input_tokens", None)
+            completion = getattr(usage, "completion_tokens", None)
+            if completion is None:
+                completion = getattr(usage, "output_tokens", None)
             total = getattr(usage, "total_tokens", None)
 
         if prompt is not None:
@@ -220,6 +211,10 @@ class FrameworkAdapter(BaseAdapter):
             tokens["tokens_total"] = int(prompt) + int(completion)
         elif total is not None:
             tokens["tokens_total"] = int(total)
+
+        # Strip all-zero results so callers can use ``if tokens:``
+        if tokens and not any(tokens.values()):
+            return {}
         return tokens
 
     def _set_if_capturing(self, payload: Dict[str, Any], key: str, value: Any) -> None:
@@ -228,64 +223,7 @@ class FrameworkAdapter(BaseAdapter):
             payload[key] = value
 
     # ------------------------------------------------------------------
-    # Callback scope — bridges framework callbacks to ContextVars
-    # ------------------------------------------------------------------
-
-    def _push_context(self, span_id: str, span_name: Optional[str] = None) -> Any:
-        """Push collector + span into ContextVars. Returns an opaque token for ``_pop_context``."""
-        with self._lock:
-            collector = self._ensure_collector()
-        needs_collector_push = _current_collector.get() is None
-        col_token = _current_collector.set(collector) if needs_collector_push else None
-        snapshot = _push_span(span_id, span_name)
-        return (snapshot, col_token)
-
-    def _pop_context(self, token: Any) -> None:
-        """Restore ContextVars from a token returned by ``_push_context``."""
-        if token is None:
-            return
-        snapshot, col_token = token
-        _pop_span(snapshot)
-        if col_token is not None:
-            _current_collector.reset(col_token)
-
-    @contextmanager
-    def _callback_scope(
-        self,
-        span_name: Optional[str] = None,
-    ) -> Generator[str, None, None]:
-        """Push collector + new span into ContextVars; yields the span_id."""
-        span_id = self._new_span_id()
-        token = self._push_context(span_id, span_name)
-        try:
-            yield span_id
-        finally:
-            self._pop_context(token)
-
-    def _traced_call(
-        self,
-        original: Any,
-        *args: Any,
-        _span_name: Optional[str] = None,
-        **kwargs: Any,
-    ) -> Any:
-        """Call *original* inside a _callback_scope so providers see this collector."""
-        with self._callback_scope(_span_name):
-            return original(*args, **kwargs)
-
-    async def _async_traced_call(
-        self,
-        original: Any,
-        *args: Any,
-        _span_name: Optional[str] = None,
-        **kwargs: Any,
-    ) -> Any:
-        """Async version of _traced_call."""
-        with self._callback_scope(_span_name):
-            return await original(*args, **kwargs)
-
-    # ------------------------------------------------------------------
-    # Event emission (thread-safe)
+    # Event emission
     # ------------------------------------------------------------------
 
     def _emit(
@@ -293,83 +231,54 @@ class FrameworkAdapter(BaseAdapter):
         event_type: str,
         payload: Dict[str, Any],
         span_id: Optional[str] = None,
-        parent_span_id: Any = _UNSET,
+        parent_span_id: Optional[str] = None,
         span_name: Optional[str] = None,
         run_id: Any = None,
         parent_run_id: Any = None,
     ) -> None:
-        """Thread-safe event emission through the collector.
+        """Emit an event into the active collector.
 
-        When *run_id* is provided, it is translated to a span_id via
-        ``_span_id_for`` and the first run_id seen is tracked as the root
-        (for flush-on-completion in callback-style frameworks).
-
-        When *parent_span_id* is omitted, falls back to ``_root_span_id``.
-        Pass ``parent_span_id=None`` explicitly to emit with no parent
-        (for adapters that manage their own span hierarchy).
+        Single path: reads ``_current_collector``.  If there's also a
+        RunState, uses it for run_id mapping and root_span_id fallback.
+        No-op when no collector is active.
         """
-        # RunState path: per-run isolation, no lock needed
-        run = _current_run.get()
-        if run is not None:
-            if run_id is not None:
-                span_id, parent_span_id = self._span_id_for(run_id, parent_run_id)
-            sid = span_id or self._new_span_id()
-            parent = run.root_span_id if parent_span_id is _UNSET else parent_span_id
-            run.collector.emit(
-                event_type, payload,
-                span_id=sid, parent_span_id=parent, span_name=span_name,
-            )
+        collector = _current_collector.get()
+        if collector is None:
             return
 
-        # Legacy path: instance-level state with lock
-        if run_id is not None:
+        run = _current_run.get()
+
+        if run_id is not None and run is not None:
             span_id, parent_span_id = self._span_id_for(run_id, parent_run_id)
-            if self._root_run_id is None:
-                self._root_run_id = str(run_id)
-        with self._lock:
-            collector = self._ensure_collector()
-            sid = span_id or self._new_span_id()
-            parent = self._root_span_id if parent_span_id is _UNSET else parent_span_id
-            collector.emit(
-                event_type, payload,
-                span_id=sid, parent_span_id=parent, span_name=span_name,
-            )
+
+        sid = span_id or self._new_span_id()
+        if parent_span_id is None:
+            parent_span_id = run.root_span_id if run is not None else _current_span_id.get()
+
+        collector.emit(
+            event_type, payload,
+            span_id=sid, parent_span_id=parent_span_id, span_name=span_name,
+        )
 
     # ------------------------------------------------------------------
-    # Run ID → span ID mapping (opt-in for callback-style frameworks)
+    # Run ID -> span ID mapping (for callback-style frameworks)
     # ------------------------------------------------------------------
 
     def _span_id_for(self, run_id: Any, parent_run_id: Any = None) -> tuple[str, Optional[str]]:
         """Map a framework run_id to a (span_id, parent_span_id) pair.
 
-        When a RunState is active, span_ids are stored per-run in
-        ``run.data["span_ids"]`` for concurrent-run isolation.
-        Falls back to instance-level ``_span_ids`` otherwise.
+        Span IDs are stored per-run in ``run.data["span_ids"]``.
         """
         run = _current_run.get()
-        span_ids = run.data.setdefault("span_ids", {}) if run is not None else self._span_ids
+        if run is None:
+            return self._new_span_id(), None
+        span_ids = run.data.setdefault("span_ids", {})
         rid = str(run_id)
         if rid not in span_ids:
             span_ids[rid] = self._new_span_id()
         span_id = span_ids[rid]
         parent_span_id = span_ids.get(str(parent_run_id)) if parent_run_id else None
         return span_id, parent_span_id
-
-    # ------------------------------------------------------------------
-    # Flush
-    # ------------------------------------------------------------------
-
-    def _flush_collector(self) -> None:
-        """Flush private collector (no-op for shared collectors)."""
-        with self._lock:
-            collector = self._collector
-            is_shared = self._using_shared_collector
-            self._collector = None
-            self._root_span_id = None
-            self._using_shared_collector = False
-            self._span_ids.clear()
-        if collector is not None and not is_shared:
-            collector.flush()
 
     # ------------------------------------------------------------------
     # BaseAdapter interface
@@ -386,9 +295,8 @@ class FrameworkAdapter(BaseAdapter):
         pass
 
     def disconnect(self) -> None:
-        """Clean up framework resources, flush events, and mark as disconnected."""
+        """Clean up framework resources and mark as disconnected."""
         self._on_disconnect()
-        self._flush_collector()
         self._connected = False
         self._metadata.clear()
 

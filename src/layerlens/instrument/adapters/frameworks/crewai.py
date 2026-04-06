@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from ._base_framework import FrameworkAdapter
-from ._utils import safe_serialize
-from ..._capture_config import CaptureConfig
+from .._base_framework import FrameworkAdapter
+from .._utils import safe_serialize
+from ...._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
 

@@ -24,6 +24,11 @@ class SemanticKernelAdapter(FrameworkAdapter):
     invocation filters on a Kernel instance to capture plugin calls,
     prompt templates, and LLM-initiated function calls as flat events.
 
+    Uses a nesting depth counter to detect run boundaries: ``_begin_run``
+    when the first (outermost) function invocation starts, ``_end_run``
+    when it completes. Concurrent invocations on different asyncio tasks
+    are isolated via ContextVar-based RunState.
+
     Usage::
 
         adapter = SemanticKernelAdapter(client)
@@ -40,7 +45,7 @@ class SemanticKernelAdapter(FrameworkAdapter):
         self._kernel: Any = None
         self._filter_ids: List[tuple] = []  # (FilterTypes, filter_id) for removal
         self._seen_plugins: set = set()
-        self._patched_services: Dict[str, Any] = {}  # service_id → original method
+        self._patched_services: Dict[str, Any] = {}  # service_id -> original method
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -85,6 +90,29 @@ class SemanticKernelAdapter(FrameworkAdapter):
         self._kernel = None
 
     # ------------------------------------------------------------------
+    # Run boundary tracking via nesting depth
+    # ------------------------------------------------------------------
+
+    def _enter_invocation(self) -> None:
+        """Increment depth; _begin_run on 0->1 transition."""
+        run = self._get_run()
+        if run is None:
+            run = self._begin_run()
+            run.data["depth"] = 1
+        else:
+            run.data["depth"] = run.data.get("depth", 0) + 1
+
+    def _leave_invocation(self) -> None:
+        """Decrement depth; _end_run on 1->0 transition."""
+        run = self._get_run()
+        if run is None:
+            return
+        depth = run.data.get("depth", 1) - 1
+        run.data["depth"] = depth
+        if depth <= 0:
+            self._end_run()
+
+    # ------------------------------------------------------------------
     # LLM call wrapping
     # ------------------------------------------------------------------
 
@@ -102,9 +130,7 @@ class SemanticKernelAdapter(FrameworkAdapter):
 
             async def _traced_inner(chat_history: Any, settings: Any, _orig: Any = original, _svc: Any = service) -> Any:
                 span_id = adapter._new_span_id()
-                root_span = adapter._get_root_span()
                 adapter._start_timer(span_id)
-                collector = adapter._ensure_collector()
 
                 model_name = getattr(_svc, "ai_model_id", None)
 
@@ -120,10 +146,7 @@ class SemanticKernelAdapter(FrameworkAdapter):
                         payload["model"] = model_name
                     if latency_ms is not None:
                         payload["latency_ms"] = latency_ms
-                    collector.emit(
-                        "agent.error", payload,
-                        span_id=span_id, parent_span_id=root_span,
-                    )
+                    adapter._emit("agent.error", payload, span_id=span_id)
                     raise
 
                 latency_ms = adapter._stop_timer(span_id)
@@ -135,20 +158,14 @@ class SemanticKernelAdapter(FrameworkAdapter):
                 if latency_ms is not None:
                     payload["latency_ms"] = latency_ms
                 payload.update(tokens)
-                collector.emit(
-                    "model.invoke", payload,
-                    span_id=span_id, parent_span_id=root_span,
-                )
+                adapter._emit("model.invoke", payload, span_id=span_id)
 
                 if tokens:
                     cost_payload = adapter._payload()
                     if model_name:
                         cost_payload["model"] = model_name
                     cost_payload.update(tokens)
-                    collector.emit(
-                        "cost.record", cost_payload,
-                        span_id=span_id, parent_span_id=root_span,
-                    )
+                    adapter._emit("cost.record", cost_payload, span_id=span_id)
 
                 return result
 
@@ -187,17 +204,23 @@ class SemanticKernelAdapter(FrameworkAdapter):
             plugins = getattr(kernel, "plugins", None)
             if plugins is None:
                 return
-            names = list(plugins.keys()) if hasattr(plugins, "keys") else [str(p) for p in plugins]
-            collector = self._ensure_collector()
-            for name in names:
-                if name not in self._seen_plugins:
-                    self._seen_plugins.add(name)
-                    collector.emit(
-                        "environment.config",
-                        self._payload(plugin_name=name, event_subtype="plugin_registered"),
-                        span_id=self._new_span_id(),
-                        parent_span_id=self._get_root_span(),
-                    )
+            # Need a run to emit events — start one temporarily if needed
+            owned_run = False
+            if self._get_run() is None:
+                self._begin_run()
+                owned_run = True
+            try:
+                names = list(plugins.keys()) if hasattr(plugins, "keys") else [str(p) for p in plugins]
+                for name in names:
+                    if name not in self._seen_plugins:
+                        self._seen_plugins.add(name)
+                        self._emit(
+                            "environment.config",
+                            self._payload(plugin_name=name, event_subtype="plugin_registered"),
+                        )
+            finally:
+                if owned_run:
+                    self._end_run()
         except Exception:
             log.debug("layerlens: error discovering SK plugins", exc_info=True)
 
@@ -208,12 +231,9 @@ class SemanticKernelAdapter(FrameworkAdapter):
             if plugin_name in self._seen_plugins:
                 return
             self._seen_plugins.add(plugin_name)
-        collector = self._ensure_collector()
-        collector.emit(
+        self._emit(
             "environment.config",
             self._payload(plugin_name=plugin_name, event_subtype="plugin_registered"),
-            span_id=self._new_span_id(),
-            parent_span_id=self._get_root_span(),
         )
 
     # ------------------------------------------------------------------
@@ -229,9 +249,11 @@ class SemanticKernelAdapter(FrameworkAdapter):
     ) -> None:
         """Shared wrap-and-emit logic for function and auto-function filters.
 
-        Emits tool.call on start, tool.result on success (or agent.error on failure),
-        with timing. The ``auto_invoked`` flag adds LLM-specific metadata.
+        Manages run boundaries via depth counting: ``_begin_run`` on the
+        outermost invocation, ``_end_run`` when it completes.
         """
+        self._enter_invocation()
+
         plugin_name = _extract_plugin_name(context)
         function_name = _extract_function_name(context)
         tool_name = f"{plugin_name}.{function_name}" if plugin_name else function_name
@@ -239,9 +261,7 @@ class SemanticKernelAdapter(FrameworkAdapter):
         self._maybe_discover_plugin(plugin_name)
 
         span_id = self._new_span_id()
-        root_span = self._get_root_span()
         self._start_timer(span_id)
-        collector = self._ensure_collector()
 
         # -- Emit tool.call (start) --
         call_payload = self._payload(
@@ -253,7 +273,6 @@ class SemanticKernelAdapter(FrameworkAdapter):
             call_payload["auto_invoked"] = True
             call_payload["request_sequence_index"] = getattr(context, "request_sequence_index", 0)
             call_payload["function_sequence_index"] = getattr(context, "function_sequence_index", 0)
-            # Auto-invoked: args come from the LLM's function_call_content
             call_content = getattr(context, "function_call_content", None)
             if call_content:
                 self._set_if_capturing(
@@ -261,16 +280,14 @@ class SemanticKernelAdapter(FrameworkAdapter):
                     safe_serialize(getattr(call_content, "arguments", None)),
                 )
         else:
-            # User-invoked: args come from context.arguments
             self._set_if_capturing(
                 call_payload, "input",
                 safe_serialize(_extract_arguments(context)),
             )
 
-        collector.emit(
+        self._emit(
             "tool.call", call_payload,
-            span_id=span_id, parent_span_id=root_span,
-            span_name=f"sk:{tool_name}",
+            span_id=span_id, span_name=f"sk:{tool_name}",
         )
 
         # -- Execute --
@@ -293,12 +310,8 @@ class SemanticKernelAdapter(FrameworkAdapter):
                     err_payload["auto_invoked"] = True
                 if latency_ms is not None:
                     err_payload["latency_ms"] = latency_ms
-                collector.emit(
-                    "agent.error", err_payload,
-                    span_id=span_id, parent_span_id=root_span,
-                )
+                self._emit("agent.error", err_payload, span_id=span_id)
             else:
-                # Extract result from the appropriate field
                 if auto_invoked:
                     func_result = getattr(context, "function_result", None)
                 else:
@@ -314,11 +327,12 @@ class SemanticKernelAdapter(FrameworkAdapter):
                 if latency_ms is not None:
                     result_payload["latency_ms"] = latency_ms
                 self._set_if_capturing(result_payload, "output", safe_serialize(result_value))
-                collector.emit(
+                self._emit(
                     "tool.result", result_payload,
-                    span_id=span_id, parent_span_id=root_span,
-                    span_name=f"sk:{tool_name}",
+                    span_id=span_id, span_name=f"sk:{tool_name}",
                 )
+
+            self._leave_invocation()
 
     # ------------------------------------------------------------------
     # Filters
@@ -339,11 +353,7 @@ class SemanticKernelAdapter(FrameworkAdapter):
         if rendered and self._config.capture_content:
             payload["rendered_prompt"] = truncate(str(rendered), 2000)
 
-        collector = self._ensure_collector()
-        collector.emit(
-            "agent.code", payload,
-            span_id=self._new_span_id(), parent_span_id=self._get_root_span(),
-        )
+        self._emit("agent.code", payload)
 
     async def _auto_function_invocation_filter(self, context: Any, next: Any) -> None:
         await self._wrap_invocation(context, next, auto_invoked=True)
