@@ -46,7 +46,7 @@ def trace(
                         span_id=root_span_id,
                         span_name=span_name,
                     )
-                    await collector.async_flush()
+                    collector.flush()
                     return result
                 except Exception as exc:
                     collector.emit(
@@ -55,7 +55,7 @@ def trace(
                         span_id=root_span_id,
                         span_name=span_name,
                     )
-                    await collector.async_flush()
+                    collector.flush()
                     raise
                 finally:
                     _pop_span(span_snapshot)

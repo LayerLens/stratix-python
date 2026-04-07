@@ -3,18 +3,25 @@ from __future__ import annotations
 import time
 import uuid
 import logging
+import threading
 from typing import Any, Dict, List, Optional
 
 from layerlens.attestation import HashChain
 
 from ._capture_config import CaptureConfig
-from ._upload import upload_trace, async_upload_trace
+from ._upload import enqueue_upload
 
 log: logging.Logger = logging.getLogger(__name__)
 
 
 class TraceCollector:
-    """Collects flat events for a single trace, with CaptureConfig gating and attestation."""
+    """Collects flat events for a single trace, with CaptureConfig gating and attestation.
+
+    Thread-safe: all mutations go through ``self._lock``.
+    Once ``flush()`` is called the collector is sealed — further ``emit()`` calls are no-ops.
+    """
+
+    MAX_EVENTS = 10_000
 
     def __init__(self, client: Any, config: CaptureConfig) -> None:
         self._client = client
@@ -23,6 +30,9 @@ class TraceCollector:
         self._events: List[Dict[str, Any]] = []
         self._sequence: int = 0
         self._chain = HashChain()
+        self._capped = False
+        self._sealed = False
+        self._lock = threading.Lock()
 
     @property
     def trace_id(self) -> str:
@@ -46,19 +56,32 @@ class TraceCollector:
 
         payload = self._config.redact_payload(event_type, payload)
 
-        self._sequence += 1
-        event: Dict[str, Any] = {
-            "event_type": event_type,
-            "trace_id": self._trace_id,
-            "span_id": span_id,
-            "parent_span_id": parent_span_id,
-            "span_name": span_name,
-            "sequence_id": self._sequence,
-            "timestamp_ns": time.time_ns(),
-            "payload": payload,
-        }
-        self._chain.add_event(event)
-        self._events.append(event)
+        with self._lock:
+            if self._sealed:
+                return
+
+            if len(self._events) >= self.MAX_EVENTS:
+                if not self._capped:
+                    self._capped = True
+                    log.warning(
+                        "layerlens: trace %s hit %d event limit, further events dropped",
+                        self._trace_id, self.MAX_EVENTS,
+                    )
+                return
+
+            self._sequence += 1
+            event: Dict[str, Any] = {
+                "event_type": event_type,
+                "trace_id": self._trace_id,
+                "span_id": span_id,
+                "parent_span_id": parent_span_id,
+                "span_name": span_name,
+                "sequence_id": self._sequence,
+                "timestamp_ns": time.time_ns(),
+                "payload": payload,
+            }
+            self._chain.add_event(event)
+            self._events.append(event)
 
     def _build_trace_payload(self) -> Dict[str, Any]:
         """Build the attestation envelope and trace payload."""
@@ -73,21 +96,23 @@ class TraceCollector:
             log.warning("Failed to build attestation chain", exc_info=True)
             attestation = {"attestation_error": str(exc)}
 
-        return {
+        trace_payload: Dict[str, Any] = {
             "trace_id": self._trace_id,
             "events": self._events,
             "capture_config": self._config.to_dict(),
             "attestation": attestation,
         }
+        if self._capped:
+            trace_payload["truncated"] = True
+            trace_payload["max_events"] = self.MAX_EVENTS
+        return trace_payload
 
     def flush(self) -> None:
-        """Build attestation and upload the trace."""
-        if not self._events:
-            return
-        upload_trace(self._client, self._build_trace_payload())
+        """Seal the collector, build attestation, and enqueue the trace for background upload."""
+        with self._lock:
+            if self._sealed or not self._events:
+                return
+            self._sealed = True
+            payload = self._build_trace_payload()
+        enqueue_upload(self._client, payload)
 
-    async def async_flush(self) -> None:
-        """Async version of flush."""
-        if not self._events:
-            return
-        await async_upload_trace(self._client, self._build_trace_payload())

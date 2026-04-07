@@ -37,6 +37,7 @@ class MonkeyPatchProvider(BaseAdapter):
 
         def wrapped(*args: Any, **kwargs: Any) -> Any:
             if _current_collector.get() is None:
+                log.debug("layerlens.%s: no active trace context, passing through", event_name)
                 return original(*args, **kwargs)
             start = time.time()
             try:
@@ -61,6 +62,7 @@ class MonkeyPatchProvider(BaseAdapter):
 
         async def wrapped(*args: Any, **kwargs: Any) -> Any:
             if _current_collector.get() is None:
+                log.debug("layerlens.%s: no active trace context, passing through", event_name)
                 return await original(*args, **kwargs)
             start = time.time()
             try:
