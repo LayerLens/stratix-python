@@ -9,9 +9,8 @@ from layerlens.instrument.adapters.providers.anthropic import (
     uninstrument_anthropic,
 )
 
-from ...conftest import find_event
 from .conftest import make_anthropic_response, make_anthropic_response_empty_content
-
+from ...conftest import find_event
 
 # ---------------------------------------------------------------------------
 # Emit events
@@ -29,7 +28,8 @@ class TestEmitsEvents:
         @trace(mock_client)
         def my_agent():
             r = anthropic_client.messages.create(
-                model="claude-3-opus-20240229", max_tokens=1024,
+                model="claude-3-opus-20240229",
+                max_tokens=1024,
                 messages=[{"role": "user", "content": "Hi"}],
             )
             return r.content[0].text
@@ -180,7 +180,10 @@ class TestCaptureParams:
         @trace(mock_client)
         def my_agent():
             anthropic_client.messages.create(
-                model="claude-3-opus-20240229", max_tokens=1024, temperature=0.5, top_k=40,
+                model="claude-3-opus-20240229",
+                max_tokens=1024,
+                temperature=0.5,
+                top_k=40,
                 messages=[{"role": "user", "content": "Hi"}],
             )
             return "done"
@@ -202,8 +205,11 @@ class TestCaptureParams:
         @trace(mock_client)
         def my_agent():
             anthropic_client.messages.create(
-                model="claude-3-opus-20240229", max_tokens=1024,
-                messages=[], stream=True, metadata={"user_id": "abc"},
+                model="claude-3-opus-20240229",
+                max_tokens=1024,
+                messages=[],
+                stream=True,
+                metadata={"user_id": "abc"},
             )
             return "done"
 
@@ -232,7 +238,8 @@ class TestExtractors:
     def test_extract_meta_normal(self):
         r = make_anthropic_response(
             model="claude-3-5-sonnet-20241022",
-            input_tokens=100, output_tokens=50,
+            input_tokens=100,
+            output_tokens=50,
             stop_reason="max_tokens",
         )
         meta = AnthropicProvider.extract_meta(r)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict
+from dataclasses import dataclass
 
 # Maps event type strings to CaptureConfig field names
 _EVENT_TYPE_MAP: Dict[str, str] = {
@@ -89,16 +89,10 @@ class CaptureConfig:
     # Gates LLM message content (prompts/completions) independently of L-layers
     capture_content: bool = True
 
-    def redact_payload(
-        self, event_type: str, payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def redact_payload(self, event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Return a copy of payload with fields removed per config."""
         if not self.capture_content and event_type == "model.invoke":
-            payload = {
-                k: v
-                for k, v in payload.items()
-                if k not in ("messages", "output_message")
-            }
+            payload = {k: v for k, v in payload.items() if k not in ("messages", "output_message")}
         return payload
 
     def is_layer_enabled(self, event_type: str) -> bool:

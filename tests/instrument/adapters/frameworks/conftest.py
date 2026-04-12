@@ -4,7 +4,6 @@ import json
 from typing import Any, Dict
 from unittest.mock import Mock
 
-
 # Re-export from root conftest so framework tests can do `from .conftest import ...`
 from ...conftest import find_event, find_events  # noqa: F401
 

@@ -4,9 +4,9 @@ import time
 import logging
 from typing import Any, Dict, Optional
 
-from ._base_framework import FrameworkAdapter
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
+from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
@@ -14,13 +14,13 @@ log = logging.getLogger(__name__)
 _HAS_STRANDS = False
 try:
     from strands.hooks.events import (  # pyright: ignore[reportMissingImports]
-        AgentInitializedEvent as _AgentInitializedEvent,
-        BeforeInvocationEvent as _BeforeInvocationEvent,
-        AfterInvocationEvent as _AfterInvocationEvent,
-        BeforeModelCallEvent as _BeforeModelCallEvent,
+        AfterToolCallEvent as _AfterToolCallEvent,
         AfterModelCallEvent as _AfterModelCallEvent,
         BeforeToolCallEvent as _BeforeToolCallEvent,
-        AfterToolCallEvent as _AfterToolCallEvent,
+        AfterInvocationEvent as _AfterInvocationEvent,
+        BeforeModelCallEvent as _BeforeModelCallEvent,
+        AgentInitializedEvent as _AgentInitializedEvent,
+        BeforeInvocationEvent as _BeforeInvocationEvent,
     )
 
     _HAS_STRANDS = True
@@ -143,7 +143,8 @@ class StrandsAdapter(FrameworkAdapter):
         if c is None:
             return
         c.emit(
-            event_type, payload,
+            event_type,
+            payload,
             span_id=span_id or self._new_span_id(),
             parent_span_id=parent_span_id,
             span_name=span_name,
@@ -287,8 +288,14 @@ class StrandsAdapter(FrameworkAdapter):
     def _on_before_tool(self, event: Any) -> None:
         try:
             tool_use = event.tool_use
-            tool_name = tool_use.get("name", "unknown") if isinstance(tool_use, dict) else getattr(tool_use, "name", "unknown")
-            tool_id = tool_use.get("toolUseId", tool_name) if isinstance(tool_use, dict) else getattr(tool_use, "toolUseId", tool_name)
+            tool_name = (
+                tool_use.get("name", "unknown") if isinstance(tool_use, dict) else getattr(tool_use, "name", "unknown")
+            )
+            tool_id = (
+                tool_use.get("toolUseId", tool_name)
+                if isinstance(tool_use, dict)
+                else getattr(tool_use, "toolUseId", tool_name)
+            )
             self._tick(f"tool:{tool_id}")
         except Exception:
             log.warning("layerlens: error in Strands before_tool", exc_info=True)
@@ -296,8 +303,14 @@ class StrandsAdapter(FrameworkAdapter):
     def _on_after_tool(self, event: Any) -> None:
         try:
             tool_use = event.tool_use
-            tool_name = tool_use.get("name", "unknown") if isinstance(tool_use, dict) else getattr(tool_use, "name", "unknown")
-            tool_id = tool_use.get("toolUseId", tool_name) if isinstance(tool_use, dict) else getattr(tool_use, "toolUseId", tool_name)
+            tool_name = (
+                tool_use.get("name", "unknown") if isinstance(tool_use, dict) else getattr(tool_use, "name", "unknown")
+            )
+            tool_id = (
+                tool_use.get("toolUseId", tool_name)
+                if isinstance(tool_use, dict)
+                else getattr(tool_use, "toolUseId", tool_name)
+            )
             tool_input = tool_use.get("input", None) if isinstance(tool_use, dict) else getattr(tool_use, "input", None)
             latency_ms = self._tock(f"tool:{tool_id}")
 
@@ -324,7 +337,9 @@ class StrandsAdapter(FrameworkAdapter):
                 result_payload["error"] = str(exception)
                 result_payload["error_type"] = type(exception).__name__
 
-            self._fire("tool.result", result_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
+            self._fire(
+                "tool.result", result_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}"
+            )
         except Exception:
             log.warning("layerlens: error in Strands after_tool", exc_info=True)
 
@@ -445,6 +460,7 @@ def _model_id(agent: Any) -> Optional[str]:
 def _get_version() -> str:
     try:
         import strands as _mod  # pyright: ignore[reportMissingImports]
+
         return getattr(_mod, "__version__", "unknown")
     except Exception:
         return "unknown"

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, NamedTuple
 from contextvars import ContextVar
+from dataclasses import field, dataclass
 
 from ._collector import TraceCollector
 

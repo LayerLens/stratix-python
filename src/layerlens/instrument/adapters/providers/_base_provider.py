@@ -6,8 +6,8 @@ import logging
 from typing import Any, Dict
 
 from .._base import AdapterInfo, BaseAdapter
-from ._emit_helpers import emit_llm_events, emit_llm_error
 from ..._context import _current_collector
+from ._emit_helpers import emit_llm_error, emit_llm_events
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -48,8 +48,13 @@ class MonkeyPatchProvider(BaseAdapter):
                 raise
             latency_ms = (time.time() - start) * 1000
             emit_llm_events(
-                event_name, kwargs, response,
-                extract_output, extract_meta, capture_params, latency_ms,
+                event_name,
+                kwargs,
+                response,
+                extract_output,
+                extract_meta,
+                capture_params,
+                latency_ms,
             )
             return response
 
@@ -73,8 +78,13 @@ class MonkeyPatchProvider(BaseAdapter):
                 raise
             latency_ms = (time.time() - start) * 1000
             emit_llm_events(
-                event_name, kwargs, response,
-                extract_output, extract_meta, capture_params, latency_ms,
+                event_name,
+                kwargs,
+                response,
+                extract_output,
+                extract_meta,
+                capture_params,
+                latency_ms,
             )
             return response
 

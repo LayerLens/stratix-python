@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import atexit
 import os
 import json
-import queue
 import time
+import queue
+import atexit
 import logging
 import tempfile
 import threading
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -97,7 +97,9 @@ class UploadChannel:
             if self._worker is not None and self._worker.is_alive():
                 return
             self._worker = threading.Thread(
-                target=self._worker_loop, daemon=True, name="layerlens-upload",
+                target=self._worker_loop,
+                daemon=True,
+                name="layerlens-upload",
             )
             self._worker.start()
 

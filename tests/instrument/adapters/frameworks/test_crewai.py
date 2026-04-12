@@ -9,16 +9,16 @@ Requires crewai >= 1.0.0 (Python >= 3.10).
 
 from __future__ import annotations
 
-import datetime
-
-import pytest
-
-from .conftest import capture_framework_trace, find_event, find_events
-
 # Skip entire module if crewai is not importable (Python < 3.10 or not installed).
 # crewai uses `type | None` syntax which causes TypeError on Python < 3.10,
 # and importorskip only catches ImportError, so we guard explicitly.
 import sys
+import datetime
+
+import pytest
+
+from .conftest import find_event, find_events, capture_framework_trace
+
 if sys.version_info < (3, 10):
     pytest.skip("crewai requires Python >= 3.10", allow_module_level=True)
 try:
@@ -32,13 +32,13 @@ from crewai.events import (  # noqa: E402
     LLMCallFailedEvent,
     TaskCompletedEvent,
     ToolUsageErrorEvent,
-    ToolUsageStartedEvent,
     LLMCallCompletedEvent,
+    ToolUsageStartedEvent,
     CrewKickoffFailedEvent,
     ToolUsageFinishedEvent,
     CrewKickoffStartedEvent,
-    CrewKickoffCompletedEvent,
     AgentExecutionErrorEvent,
+    CrewKickoffCompletedEvent,
     AgentExecutionStartedEvent,
     AgentExecutionCompletedEvent,
     crewai_event_bus,  # noqa: E402
@@ -371,11 +371,17 @@ class TestFullCrewLifecycle:
 
         # 2a. Agent execution starts within task 1
         adapter._on_agent_execution_started(
-            None, AgentExecutionStartedEvent.model_construct(agent_role="Researcher", task_prompt="Research quantum computing")
+            None,
+            AgentExecutionStartedEvent.model_construct(
+                agent_role="Researcher", task_prompt="Research quantum computing"
+            ),
         )
 
         # 3. LLM call within task 1
-        response = {"content": "Quantum computing uses qubits...", "usage": {"prompt_tokens": 200, "completion_tokens": 100}}
+        response = {
+            "content": "Quantum computing uses qubits...",
+            "usage": {"prompt_tokens": 200, "completion_tokens": 100},
+        }
         adapter._on_llm_completed(
             None, LLMCallCompletedEvent(model="claude-3-opus", call_id="c1", call_type="llm_call", response=response)
         )
@@ -384,7 +390,9 @@ class TestFullCrewLifecycle:
         now = datetime.datetime.now()
         adapter._on_tool_started(
             None,
-            ToolUsageStartedEvent(tool_name="arxiv_search", tool_args="quantum computing 2024", agent_key="researcher_1"),
+            ToolUsageStartedEvent(
+                tool_name="arxiv_search", tool_args="quantum computing 2024", agent_key="researcher_1"
+            ),
         )
         adapter._on_tool_finished(
             None,
@@ -409,7 +417,8 @@ class TestFullCrewLifecycle:
 
         # 6. Task 2: Writing
         adapter._on_task_started(
-            None, TaskStartedEvent(context="write about quantum computing", task_name="Write Report", agent_role="Writer")
+            None,
+            TaskStartedEvent(context="write about quantum computing", task_name="Write Report", agent_role="Writer"),
         )
 
         # 6a. Agent execution starts within task 2
@@ -542,11 +551,12 @@ class TestCaptureConfigGating:
                 None, LLMCallCompletedEvent(model="gpt-4o", call_id="c1", call_type="llm_call", response=response)
             )
             now = datetime.datetime.now()
-            adapter._on_tool_started(
-                None, ToolUsageStartedEvent(tool_name="x", tool_args="y", agent_key="a1")
-            )
+            adapter._on_tool_started(None, ToolUsageStartedEvent(tool_name="x", tool_args="y", agent_key="a1"))
             adapter._on_tool_finished(
-                None, ToolUsageFinishedEvent(tool_name="x", tool_args="y", agent_key="a1", started_at=now, finished_at=now, output="z")
+                None,
+                ToolUsageFinishedEvent(
+                    tool_name="x", tool_args="y", agent_key="a1", started_at=now, finished_at=now, output="z"
+                ),
             )
 
             to = TaskOutput(description="t", raw="ok", agent="R")
@@ -660,19 +670,32 @@ class TestLLMLatencyTracking:
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
 
         # Start event stores timestamp
-        adapter._on_llm_started(None, LLMCallStartedEvent(
-            model="gpt-4o", call_id="latency_test", messages=[], call_type="llm_call",
-        ))
+        adapter._on_llm_started(
+            None,
+            LLMCallStartedEvent(
+                model="gpt-4o",
+                call_id="latency_test",
+                messages=[],
+                call_type="llm_call",
+            ),
+        )
 
         # Small delay to get measurable latency
         import time
+
         time.sleep(0.01)
 
         # Complete event computes latency
         response = {"content": "hi", "usage": {"prompt_tokens": 5, "completion_tokens": 3}}
-        adapter._on_llm_completed(None, LLMCallCompletedEvent(
-            model="gpt-4o", call_id="latency_test", call_type="llm_call", response=response,
-        ))
+        adapter._on_llm_completed(
+            None,
+            LLMCallCompletedEvent(
+                model="gpt-4o",
+                call_id="latency_test",
+                call_type="llm_call",
+                response=response,
+            ),
+        )
 
         to = TaskOutput(description="t", raw="ok", agent="R")
         adapter._on_crew_completed(None, CrewKickoffCompletedEvent(crew_name="C", output=to))
@@ -692,9 +715,8 @@ class TestAgentExecutionLifecycle:
         adapter._on_task_started(None, TaskStartedEvent(context="ctx", task_name="T", agent_role="Researcher"))
 
         adapter._on_agent_execution_started(
-            None, AgentExecutionStartedEvent.model_construct(
-                agent_role="Researcher", task_prompt="Find AI papers", tools=[]
-            )
+            None,
+            AgentExecutionStartedEvent.model_construct(agent_role="Researcher", task_prompt="Find AI papers", tools=[]),
         )
 
         to = TaskOutput(description="t", raw="ok", agent="R")
@@ -703,7 +725,11 @@ class TestAgentExecutionLifecycle:
         events = uploaded["events"]
         agent_inputs = find_events(events, "agent.input")
         # Filter for agent execution events (have agent_role but NOT task_name)
-        agent_exec = [e for e in agent_inputs if e["payload"].get("agent_role") == "Researcher" and "task_name" not in e["payload"]]
+        agent_exec = [
+            e
+            for e in agent_inputs
+            if e["payload"].get("agent_role") == "Researcher" and "task_name" not in e["payload"]
+        ]
         assert len(agent_exec) == 1
         assert agent_exec[0]["payload"]["framework"] == "crewai"
         assert agent_exec[0]["payload"]["task_prompt"] == "Find AI papers"
@@ -712,9 +738,7 @@ class TestAgentExecutionLifecycle:
         adapter, uploaded = adapter_and_trace
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
 
-        adapter._on_agent_execution_started(
-            None, AgentExecutionStartedEvent.model_construct(agent_role="Writer")
-        )
+        adapter._on_agent_execution_started(None, AgentExecutionStartedEvent.model_construct(agent_role="Writer"))
         adapter._on_agent_execution_completed(
             None, AgentExecutionCompletedEvent.model_construct(agent_role="Writer", output="Final draft")
         )
@@ -733,9 +757,7 @@ class TestAgentExecutionLifecycle:
         adapter, uploaded = adapter_and_trace
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
 
-        adapter._on_agent_execution_started(
-            None, AgentExecutionStartedEvent.model_construct(agent_role="Researcher")
-        )
+        adapter._on_agent_execution_started(None, AgentExecutionStartedEvent.model_construct(agent_role="Researcher"))
         adapter._on_agent_execution_error(
             None, AgentExecutionErrorEvent.model_construct(agent_role="Researcher", error="agent crashed")
         )
@@ -754,9 +776,7 @@ class TestAgentExecutionLifecycle:
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
         adapter._on_task_started(None, TaskStartedEvent(context="ctx", task_name="T1", agent_role="R"))
 
-        adapter._on_agent_execution_started(
-            None, AgentExecutionStartedEvent.model_construct(agent_role="R")
-        )
+        adapter._on_agent_execution_started(None, AgentExecutionStartedEvent.model_construct(agent_role="R"))
         adapter._on_agent_execution_completed(
             None, AgentExecutionCompletedEvent.model_construct(agent_role="R", output="done")
         )
@@ -771,7 +791,11 @@ class TestAgentExecutionLifecycle:
         task_span = task_inputs[0]["span_id"]
 
         # Agent execution should be parented to task (filter out task event which also has agent_role)
-        agent_exec_inputs = [e for e in find_events(events, "agent.input") if e["payload"].get("agent_role") == "R" and "task_name" not in e["payload"]]
+        agent_exec_inputs = [
+            e
+            for e in find_events(events, "agent.input")
+            if e["payload"].get("agent_role") == "R" and "task_name" not in e["payload"]
+        ]
         assert len(agent_exec_inputs) == 1
         assert agent_exec_inputs[0]["parent_span_id"] == task_span
 
@@ -781,9 +805,7 @@ class TestAgentExecutionLifecycle:
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
         adapter._on_task_started(None, TaskStartedEvent(context="ctx", task_name="T1", agent_role="R"))
 
-        adapter._on_agent_execution_started(
-            None, AgentExecutionStartedEvent.model_construct(agent_role="R")
-        )
+        adapter._on_agent_execution_started(None, AgentExecutionStartedEvent.model_construct(agent_role="R"))
 
         response = {"content": "hi", "usage": {"prompt_tokens": 5, "completion_tokens": 3}}
         adapter._on_llm_completed(
@@ -799,7 +821,11 @@ class TestAgentExecutionLifecycle:
 
         events = uploaded["events"]
         # Find the agent execution span_id (not the task event which also has agent_role)
-        agent_exec_inputs = [e for e in find_events(events, "agent.input") if e["payload"].get("agent_role") == "R" and "task_name" not in e["payload"]]
+        agent_exec_inputs = [
+            e
+            for e in find_events(events, "agent.input")
+            if e["payload"].get("agent_role") == "R" and "task_name" not in e["payload"]
+        ]
         assert len(agent_exec_inputs) == 1
         agent_span = agent_exec_inputs[0]["span_id"]
 

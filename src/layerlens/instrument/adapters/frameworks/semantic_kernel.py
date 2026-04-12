@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from ._utils import truncate, safe_serialize
 from ._base_framework import FrameworkAdapter
-from ._utils import safe_serialize, truncate
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
@@ -122,13 +122,15 @@ class SemanticKernelAdapter(FrameworkAdapter):
         if not services or not isinstance(services, dict):
             return
 
+        adapter = self
         for service_id, service in services.items():
             if not hasattr(service, "_inner_get_chat_message_contents"):
                 continue
             original = service._inner_get_chat_message_contents
-            adapter = self
 
-            async def _traced_inner(chat_history: Any, settings: Any, _orig: Any = original, _svc: Any = service) -> Any:
+            async def _traced_inner(
+                chat_history: Any, settings: Any, _orig: Any = original, _svc: Any = service
+            ) -> Any:
                 span_id = adapter._new_span_id()
                 adapter._start_timer(span_id)
 
@@ -276,18 +278,22 @@ class SemanticKernelAdapter(FrameworkAdapter):
             call_content = getattr(context, "function_call_content", None)
             if call_content:
                 self._set_if_capturing(
-                    call_payload, "input",
+                    call_payload,
+                    "input",
                     safe_serialize(getattr(call_content, "arguments", None)),
                 )
         else:
             self._set_if_capturing(
-                call_payload, "input",
+                call_payload,
+                "input",
                 safe_serialize(_extract_arguments(context)),
             )
 
         self._emit(
-            "tool.call", call_payload,
-            span_id=span_id, span_name=f"sk:{tool_name}",
+            "tool.call",
+            call_payload,
+            span_id=span_id,
+            span_name=f"sk:{tool_name}",
         )
 
         # -- Execute --
@@ -328,8 +334,10 @@ class SemanticKernelAdapter(FrameworkAdapter):
                     result_payload["latency_ms"] = latency_ms
                 self._set_if_capturing(result_payload, "output", safe_serialize(result_value))
                 self._emit(
-                    "tool.result", result_payload,
-                    span_id=span_id, span_name=f"sk:{tool_name}",
+                    "tool.result",
+                    result_payload,
+                    span_id=span_id,
+                    span_name=f"sk:{tool_name}",
                 )
 
             self._leave_invocation()

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from ._base_provider import MonkeyPatchProvider
 from .openai import OpenAIProvider
+from ._base_provider import MonkeyPatchProvider
 
 _CAPTURE_PARAMS = frozenset(
     {
@@ -35,8 +35,7 @@ class LiteLLMProvider(MonkeyPatchProvider):
             import litellm
         except ImportError as err:
             raise ImportError(
-                "The 'litellm' package is required for LiteLLM instrumentation. "
-                "Install it with: pip install litellm"
+                "The 'litellm' package is required for LiteLLM instrumentation. Install it with: pip install litellm"
             ) from err
 
         self._client = litellm

@@ -4,11 +4,11 @@ Tests use real Kernel objects and KernelFunctions. Filters are exercised
 either through actual kernel.invoke() calls or by directly invoking the
 filter callables with mock contexts.
 """
+
 from __future__ import annotations
 
 import asyncio
 from typing import Any, Optional
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -16,18 +16,16 @@ sk = pytest.importorskip("semantic_kernel")
 
 from semantic_kernel import Kernel  # noqa: E402
 from semantic_kernel.functions import kernel_function  # noqa: E402
-from semantic_kernel.filters.filter_types import FilterTypes  # noqa: E402
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.semantic_kernel import (  # noqa: E402
     SemanticKernelAdapter,
     _extract_arguments,
-    _extract_function_name,
     _extract_plugin_name,
+    _extract_function_name,
 )
 
-from .conftest import capture_framework_trace, find_event, find_events  # noqa: E402
-
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -201,7 +199,7 @@ class TestFunctionInvocation:
         adapter = SemanticKernelAdapter(mock_client)
         adapter.connect(target=kernel)
 
-        with pytest.raises(Exception):
+        with pytest.raises(ZeroDivisionError):
             _run(kernel.invoke(plugin_name="MathPlugin", function_name="divide", a=1, b=0))
 
         adapter.disconnect()
@@ -547,8 +545,13 @@ class MockChatMessage:
 class MockChatService:
     """Minimal mock that looks like a ChatCompletionClientBase to the adapter."""
 
-    def __init__(self, response_text: str = "Hello!", model_id: str = "gpt-4o",
-                 prompt_tokens: int = 100, completion_tokens: int = 50):
+    def __init__(
+        self,
+        response_text: str = "Hello!",
+        model_id: str = "gpt-4o",
+        prompt_tokens: int = 100,
+        completion_tokens: int = 50,
+    ):
         self.ai_model_id = model_id
         self._response = MockChatMessage(
             text=response_text,
@@ -759,6 +762,7 @@ class TestHelpers:
 
     def test_extract_arguments_mapping(self):
         """SK KernelArguments has .items() but isn't a dict."""
+
         class FakeArgs:
             def items(self):
                 return [("a", 1)]

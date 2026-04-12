@@ -14,19 +14,18 @@ import pytest
 strands_mod = pytest.importorskip("strands")
 from strands.hooks import HookRegistry  # noqa: E402
 from strands.hooks.events import (  # noqa: E402
-    BeforeInvocationEvent,
-    AfterInvocationEvent,
-    BeforeModelCallEvent,
+    AfterToolCallEvent,
     AfterModelCallEvent,
     BeforeToolCallEvent,
-    AfterToolCallEvent,
+    AfterInvocationEvent,
+    BeforeModelCallEvent,
+    BeforeInvocationEvent,
 )
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.strands import StrandsAdapter  # noqa: E402
 
-from .conftest import capture_framework_trace, find_event, find_events  # noqa: E402
-
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -118,7 +117,9 @@ def _simulate_invocation(
     if tool_calls:
         for tc in tool_calls:
             tool_use = {"name": tc["name"], "toolUseId": tc.get("id", "tc-1"), "input": tc.get("input", {})}
-            tool_result = tc.get("result", {"toolUseId": tc.get("id", "tc-1"), "status": "success", "content": [{"text": "ok"}]})
+            tool_result = tc.get(
+                "result", {"toolUseId": tc.get("id", "tc-1"), "status": "success", "content": [{"text": "ok"}]}
+            )
             before_tool = BeforeToolCallEvent(
                 agent=agent,
                 selected_tool=Mock(name=tc["name"]),
@@ -141,10 +142,12 @@ def _simulate_invocation(
     # AFTER AfterModelCallEvent but BEFORE AfterInvocationEvent)
     if model_tokens:
         invocation = Mock()
-        invocation.cycles = [_make_cycle(
-            input_tokens=model_tokens.get("input", 0),
-            output_tokens=model_tokens.get("output", 0),
-        )]
+        invocation.cycles = [
+            _make_cycle(
+                input_tokens=model_tokens.get("input", 0),
+                output_tokens=model_tokens.get("output", 0),
+            )
+        ]
         agent.event_loop_metrics.agent_invocations = [invocation]
 
     # AfterInvocation
@@ -344,13 +347,16 @@ class TestToolCalls:
 
         agent = _make_agent()
         _simulate_invocation(
-            adapter, agent,
-            tool_calls=[{
-                "name": "web_search",
-                "id": "tc-123",
-                "input": {"query": "AI safety"},
-                "result": {"toolUseId": "tc-123", "status": "success", "content": [{"text": "Found 5 results"}]},
-            }],
+            adapter,
+            agent,
+            tool_calls=[
+                {
+                    "name": "web_search",
+                    "id": "tc-123",
+                    "input": {"query": "AI safety"},
+                    "result": {"toolUseId": "tc-123", "status": "success", "content": [{"text": "Found 5 results"}]},
+                }
+            ],
         )
 
         events = uploaded["events"]
@@ -415,13 +421,16 @@ class TestToolCalls:
 
         agent = _make_agent()
         _simulate_invocation(
-            adapter, agent,
-            tool_calls=[{
-                "name": "search",
-                "id": "tc-1",
-                "input": {"secret": "data"},
-                "result": {"toolUseId": "tc-1", "status": "success", "content": [{"text": "secret result"}]},
-            }],
+            adapter,
+            agent,
+            tool_calls=[
+                {
+                    "name": "search",
+                    "id": "tc-1",
+                    "input": {"secret": "data"},
+                    "result": {"toolUseId": "tc-1", "status": "success", "content": [{"text": "secret result"}]},
+                }
+            ],
         )
 
         events = uploaded["events"]
@@ -439,7 +448,8 @@ class TestToolCalls:
 
         agent = _make_agent()
         _simulate_invocation(
-            adapter, agent,
+            adapter,
+            agent,
             tool_calls=[
                 {"name": "search", "id": "tc-1", "input": {"q": "a"}},
                 {"name": "calculator", "id": "tc-2", "input": {"expr": "2+2"}},
@@ -529,7 +539,8 @@ class TestTraceIntegrity:
 
         agent = _make_agent()
         _simulate_invocation(
-            adapter, agent,
+            adapter,
+            agent,
             model_tokens={"input": 100, "output": 50},
             tool_calls=[{"name": "search", "id": "tc-1", "input": {}}],
         )
@@ -562,7 +573,8 @@ class TestTraceIntegrity:
 
         agent = _make_agent()
         _simulate_invocation(
-            adapter, agent,
+            adapter,
+            agent,
             model_tokens={"input": 10, "output": 5},
             tool_calls=[{"name": "search", "id": "tc-1", "input": {}}],
         )

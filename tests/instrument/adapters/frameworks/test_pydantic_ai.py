@@ -4,6 +4,7 @@ Tests use PydanticAI's TestModel to exercise the real agent loop with
 hooks firing at each lifecycle point — no monkey-patching or mocking of
 PydanticAI internals.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -19,8 +20,7 @@ from pydantic_ai.models.test import TestModel  # noqa: E402
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.pydantic_ai import PydanticAIAdapter  # noqa: E402
 
-from .conftest import capture_framework_trace, find_event, find_events  # noqa: E402
-
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers

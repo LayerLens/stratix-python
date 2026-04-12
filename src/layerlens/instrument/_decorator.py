@@ -5,9 +5,9 @@ import asyncio
 import functools
 from typing import Any, Dict, Tuple, Callable, Optional
 
-from ._capture_config import CaptureConfig
+from ._context import _pop_span, _push_span, _current_collector
 from ._collector import TraceCollector
-from ._context import _current_collector, _push_span, _pop_span
+from ._capture_config import CaptureConfig
 
 
 def trace(

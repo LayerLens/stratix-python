@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from unittest.mock import Mock
 
-from layerlens.instrument import span, emit, trace
+from layerlens.instrument import emit, span, trace
 from layerlens.attestation import verify_chain, detect_tampering
 from layerlens.attestation._envelope import HashScope, AttestationEnvelope
 

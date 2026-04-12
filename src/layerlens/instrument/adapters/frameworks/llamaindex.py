@@ -4,9 +4,9 @@ import time
 import logging
 from typing import Any, Dict, List, Optional
 
-from ._base_framework import FrameworkAdapter
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
+from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ try:
     from llama_index.core.instrumentation.event_handlers import (
         BaseEventHandler as _BaseEventHandler,  # pyright: ignore[reportMissingImports]
     )
+
     _HAS_LLAMAINDEX = True
 except ImportError:
     _BaseSpan = None  # type: ignore[assignment,misc]
@@ -49,22 +50,22 @@ class LlamaIndexAdapter(FrameworkAdapter):
     package = "llama-index-core"
 
     _EVENT_DISPATCH = {
-        "LLMChatStartEvent":       "_on_llm_chat_start",
-        "LLMChatEndEvent":         "_on_llm_chat_end",
+        "LLMChatStartEvent": "_on_llm_chat_start",
+        "LLMChatEndEvent": "_on_llm_chat_end",
         "LLMCompletionStartEvent": "_on_llm_completion_start",
-        "LLMCompletionEndEvent":   "_on_llm_completion_end",
-        "AgentToolCallEvent":      "_on_tool_call",
-        "RetrievalStartEvent":     "_on_retrieval_start",
-        "RetrievalEndEvent":       "_on_retrieval_end",
-        "EmbeddingStartEvent":     "_on_embedding_start",
-        "EmbeddingEndEvent":       "_on_embedding_end",
-        "QueryStartEvent":         "_on_query_start",
-        "QueryEndEvent":           "_on_query_end",
-        "AgentRunStepStartEvent":  "_on_agent_step_start",
-        "AgentRunStepEndEvent":    "_on_agent_step_end",
-        "ExceptionEvent":          "_on_exception",
-        "ReRankStartEvent":        "_on_rerank_start",
-        "ReRankEndEvent":          "_on_rerank_end",
+        "LLMCompletionEndEvent": "_on_llm_completion_end",
+        "AgentToolCallEvent": "_on_tool_call",
+        "RetrievalStartEvent": "_on_retrieval_start",
+        "RetrievalEndEvent": "_on_retrieval_end",
+        "EmbeddingStartEvent": "_on_embedding_start",
+        "EmbeddingEndEvent": "_on_embedding_end",
+        "QueryStartEvent": "_on_query_start",
+        "QueryEndEvent": "_on_query_end",
+        "AgentRunStepStartEvent": "_on_agent_step_start",
+        "AgentRunStepEndEvent": "_on_agent_step_end",
+        "ExceptionEvent": "_on_exception",
+        "ReRankStartEvent": "_on_rerank_start",
+        "ReRankEndEvent": "_on_rerank_end",
     }
 
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
@@ -450,16 +451,25 @@ def _make_span_handler(adapter: LlamaIndexAdapter) -> Any:
     class _SpanHandler(_BaseSpanHandler[_BaseSpan]):  # type: ignore[type-arg]
         model_config = {"arbitrary_types_allowed": True}
 
-        def new_span(self, id_: str, bound_args: Any, instance: Any = None,
-                     parent_span_id: Any = None, tags: Any = None, **kw: Any) -> Any:
+        def new_span(
+            self,
+            id_: str,
+            bound_args: Any,
+            instance: Any = None,
+            parent_span_id: Any = None,
+            tags: Any = None,
+            **kw: Any,
+        ) -> Any:
             return adapter._on_span_enter(id_, parent_span_id)
 
-        def prepare_to_exit_span(self, id_: str, bound_args: Any, instance: Any = None,
-                                 result: Any = None, **kw: Any) -> Any:
+        def prepare_to_exit_span(
+            self, id_: str, bound_args: Any, instance: Any = None, result: Any = None, **kw: Any
+        ) -> Any:
             return adapter._on_span_exit(id_)
 
-        def prepare_to_drop_span(self, id_: str, bound_args: Any, instance: Any = None,
-                                 err: Any = None, **kw: Any) -> Any:
+        def prepare_to_drop_span(
+            self, id_: str, bound_args: Any, instance: Any = None, err: Any = None, **kw: Any
+        ) -> Any:
             return adapter._on_span_drop(id_)
 
     handler = _SpanHandler()

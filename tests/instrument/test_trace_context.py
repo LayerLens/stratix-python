@@ -1,6 +1,7 @@
 """Tests for trace context: shared collectors, context propagation,
 callback scope, and upload circuit breaker.
 """
+
 from __future__ import annotations
 
 import json
@@ -10,31 +11,35 @@ from unittest.mock import Mock
 import pytest
 
 from layerlens.instrument import (
-    trace,
-    trace_context,
+    CaptureConfig,
     emit,
     span,
+    trace,
+    _upload,
+    trace_context,
     get_trace_context,
-    CaptureConfig,
 )
-from layerlens.instrument._context import _current_collector, _current_span_id
+from layerlens.instrument._context import _current_span_id, _current_collector
 from layerlens.instrument._collector import TraceCollector
-from layerlens.instrument import _upload
 from layerlens.instrument.adapters.frameworks._base_framework import FrameworkAdapter
 
 from .conftest import find_event, find_events
-
 
 # ---------------------------------------------------------------------------
 # Minimal concrete adapter for testing
 # ---------------------------------------------------------------------------
 
+
 class StubAdapter(FrameworkAdapter):
     name = "stub"
 
-    def fire_event(self, event_type: str, payload: Dict[str, Any],
-                   span_id: Optional[str] = None,
-                   parent_span_id: Optional[str] = None) -> None:
+    def fire_event(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        span_id: Optional[str] = None,
+        parent_span_id: Optional[str] = None,
+    ) -> None:
         kwargs: Dict[str, Any] = {"span_name": event_type}
         if span_id is not None:
             kwargs["span_id"] = span_id
@@ -46,6 +51,7 @@ class StubAdapter(FrameworkAdapter):
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_client():
@@ -81,10 +87,12 @@ def reset_upload_channels():
 # 1. Shared trace_id via @trace
 # ===================================================================
 
-class TestSharedCollectorViaTrace:
 
+class TestSharedCollectorViaTrace:
     def test_framework_adapter_shares_trace_id_with_trace_decorator(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
@@ -103,7 +111,9 @@ class TestSharedCollectorViaTrace:
         assert lifecycle["trace_id"] == agent_input["trace_id"]
 
     def test_multiple_adapters_share_same_trace(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter_a = StubAdapter(mock_client)
         adapter_b = StubAdapter(mock_client)
@@ -125,7 +135,9 @@ class TestSharedCollectorViaTrace:
         assert lifecycles[0]["trace_id"] == lifecycles[1]["trace_id"]
 
     def test_framework_adapter_standalone_creates_own_trace(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
@@ -144,10 +156,12 @@ class TestSharedCollectorViaTrace:
 # 2. Cross-adapter parent-child spans
 # ===================================================================
 
-class TestCrossAdapterSpanHierarchy:
 
+class TestCrossAdapterSpanHierarchy:
     def test_framework_events_parent_to_trace_root_span(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
@@ -166,7 +180,9 @@ class TestCrossAdapterSpanHierarchy:
         assert lifecycle["parent_span_id"] == root_span
 
     def test_framework_events_parent_to_active_span(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
@@ -186,7 +202,9 @@ class TestCrossAdapterSpanHierarchy:
         assert tool_call["trace_id"] == agent_input["trace_id"]
 
     def test_adapter_with_explicit_parent_overrides_default(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
@@ -195,7 +213,8 @@ class TestCrossAdapterSpanHierarchy:
         @trace(mock_client)
         def agent_run():
             adapter.fire_event(
-                "agent.lifecycle", {"action": "step"},
+                "agent.lifecycle",
+                {"action": "step"},
                 parent_span_id=explicit_parent,
             )
             return "done"
@@ -211,8 +230,8 @@ class TestCrossAdapterSpanHierarchy:
 # 3. trace_context()
 # ===================================================================
 
-class TestTraceContext:
 
+class TestTraceContext:
     def test_creates_shared_collector(self, mock_client, capture_trace):
         adapter_a = StubAdapter(mock_client)
         adapter_b = StubAdapter(mock_client)
@@ -268,8 +287,8 @@ class TestTraceContext:
 # 4. Context serialisation (get_trace_context / from_context)
 # ===================================================================
 
-class TestGetTraceContext:
 
+class TestGetTraceContext:
     def test_returns_none_outside_trace(self):
         assert get_trace_context() is None
 
@@ -308,7 +327,6 @@ class TestGetTraceContext:
 
 
 class TestTraceContextFromContext:
-
     def test_restores_trace_id(self, mock_client, capture_trace):
         with trace_context(mock_client):
             original_ctx = get_trace_context()
@@ -339,10 +357,12 @@ class TestTraceContextFromContext:
 # 5. Flush semantics
 # ===================================================================
 
-class TestFlushSemantics:
 
+class TestFlushSemantics:
     def test_adapter_disconnect_does_not_flush_shared_collector(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
@@ -364,7 +384,9 @@ class TestFlushSemantics:
         assert "agent.output" in types
 
     def test_adapter_begin_end_run_flushes_collector(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
@@ -376,7 +398,9 @@ class TestFlushSemantics:
         assert len(capture_trace) == 1
 
     def test_multiple_adapters_disconnect_independently_under_shared_context(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter_a = StubAdapter(mock_client)
         adapter_b = StubAdapter(mock_client)
@@ -400,8 +424,8 @@ class TestFlushSemantics:
 # 6. Run lifecycle (_begin_run / _end_run)
 # ===================================================================
 
-class TestRunLifecycle:
 
+class TestRunLifecycle:
     def test_begin_run_pushes_collector_standalone(self, mock_client, capture_trace):
         adapter = StubAdapter(mock_client)
         adapter.connect()
@@ -487,8 +511,8 @@ class TestRunLifecycle:
 # 7. Upload circuit breaker
 # ===================================================================
 
-class TestUploadCircuitBreaker:
 
+class TestUploadCircuitBreaker:
     def _channel(self, mock_client):
         """Get or create the upload channel for mock_client."""
         return _upload._get_channel(mock_client)
@@ -535,9 +559,7 @@ class TestUploadCircuitBreaker:
         ch = self._channel(mock_client)
         ch._circuit_open = True
         ch._error_count = _upload.UploadChannel._THRESHOLD
-        ch._opened_at = (
-            __import__("time").monotonic() - _upload.UploadChannel._COOLDOWN_S - 1
-        )
+        ch._opened_at = __import__("time").monotonic() - _upload.UploadChannel._COOLDOWN_S - 1
 
         with trace_context(mock_client):
             emit("tool.call", {"name": "test", "input": "x"})
@@ -586,10 +608,12 @@ class TestUploadCircuitBreaker:
 # 8. Edge cases
 # ===================================================================
 
-class TestEdgeCases:
 
+class TestEdgeCases:
     def test_adapter_used_across_multiple_traces(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()
@@ -617,7 +641,9 @@ class TestEdgeCases:
         mock_client.traces.upload.assert_not_called()
 
     def test_standalone_adapter_unaffected_by_previous_shared_context(
-        self, mock_client, capture_trace,
+        self,
+        mock_client,
+        capture_trace,
     ):
         adapter = StubAdapter(mock_client)
         adapter.connect()

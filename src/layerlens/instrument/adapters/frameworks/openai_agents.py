@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any, Dict, Optional
+from datetime import datetime
 
-from ._base_framework import FrameworkAdapter
 from ._utils import safe_serialize
-from ..._capture_config import CaptureConfig
+from ..._context import RunState, _current_run, _current_collector
 from ..._collector import TraceCollector
-from ..._context import _current_collector, _current_run, RunState
+from ._base_framework import FrameworkAdapter
+from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
 
@@ -151,8 +151,10 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
                 input_payload[key] = val
 
         self._emit(
-            "agent.input", input_payload,
-            span_id=span_id, parent_span_id=parent_id,
+            "agent.input",
+            input_payload,
+            span_id=span_id,
+            parent_span_id=parent_id,
             span_name=f"agent:{agent_name}",
         )
 
@@ -168,8 +170,10 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
             out_payload["error"] = safe_serialize(span.error)
 
         self._emit(
-            event_type, out_payload,
-            span_id=span_id, parent_span_id=parent_id,
+            event_type,
+            out_payload,
+            span_id=span_id,
+            parent_span_id=parent_id,
             span_name=f"agent:{agent_name}",
         )
 

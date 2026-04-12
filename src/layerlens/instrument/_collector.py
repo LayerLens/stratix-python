@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from layerlens.attestation import HashChain
 
-from ._capture_config import CaptureConfig
 from ._upload import enqueue_upload
+from ._capture_config import CaptureConfig
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -65,7 +65,8 @@ class TraceCollector:
                     self._capped = True
                     log.warning(
                         "layerlens: trace %s hit %d event limit, further events dropped",
-                        self._trace_id, self.MAX_EVENTS,
+                        self._trace_id,
+                        self.MAX_EVENTS,
                     )
                 return
 
@@ -115,4 +116,3 @@ class TraceCollector:
             self._sealed = True
             payload = self._build_trace_payload()
         enqueue_upload(self._client, payload)
-

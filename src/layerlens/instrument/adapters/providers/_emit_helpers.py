@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Dict, Callable
 
-from ..._context import _current_collector, _current_span_id
+from ..._context import _current_span_id, _current_collector
 
 
 def emit_llm_events(

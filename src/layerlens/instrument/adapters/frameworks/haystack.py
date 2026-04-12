@@ -6,8 +6,8 @@ import threading
 from typing import Any, Dict, Iterator, Optional
 from contextlib import contextmanager
 
-from ._base_framework import FrameworkAdapter
 from ._utils import safe_serialize
+from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
@@ -110,8 +110,12 @@ class HaystackAdapter(FrameworkAdapter):
             self._on_tool_end(span, elapsed_ms, tags, comp_name, comp_type)
 
     def _on_generator_end(
-        self, span: _LayerLensSpan, elapsed_ms: float,
-        tags: Dict[str, Any], name: str, comp_type: str,
+        self,
+        span: _LayerLensSpan,
+        elapsed_ms: float,
+        tags: Dict[str, Any],
+        name: str,
+        comp_type: str,
     ) -> None:
         model = _extract_model(tags)
         output = tags.get("haystack.component.output", {})
@@ -124,7 +128,13 @@ class HaystackAdapter(FrameworkAdapter):
         self._set_if_capturing(payload, "input", safe_serialize(tags.get("haystack.component.input")))
         if isinstance(output, dict) and "replies" in output:
             self._set_if_capturing(payload, "output", safe_serialize(output["replies"]))
-        self._emit("model.invoke", payload, span_id=span.span_id, parent_span_id=span._parent_span_id, span_name=f"component:{name}")
+        self._emit(
+            "model.invoke",
+            payload,
+            span_id=span.span_id,
+            parent_span_id=span._parent_span_id,
+            span_name=f"component:{name}",
+        )
 
         if tokens:
             cost = self._payload(**tokens)
@@ -133,18 +143,30 @@ class HaystackAdapter(FrameworkAdapter):
             self._emit("cost.record", cost, parent_span_id=span.span_id)
 
     def _on_tool_end(
-        self, span: _LayerLensSpan, elapsed_ms: float,
-        tags: Dict[str, Any], name: str, comp_type: str,
+        self,
+        span: _LayerLensSpan,
+        elapsed_ms: float,
+        tags: Dict[str, Any],
+        name: str,
+        comp_type: str,
     ) -> None:
         call = self._payload(tool_name=name, component_type=comp_type)
         self._set_if_capturing(call, "input", safe_serialize(tags.get("haystack.component.input")))
-        self._emit("tool.call", call, span_id=span.span_id, parent_span_id=span._parent_span_id, span_name=f"component:{name}")
+        self._emit(
+            "tool.call", call, span_id=span.span_id, parent_span_id=span._parent_span_id, span_name=f"component:{name}"
+        )
 
         result = self._payload(tool_name=name, component_type=comp_type, latency_ms=elapsed_ms)
         self._set_if_capturing(result, "output", safe_serialize(tags.get("haystack.component.output")))
         if tags.get("error"):
             result["error"] = str(tags.get("error.message", "unknown"))
-        self._emit("tool.result", result, span_id=span.span_id, parent_span_id=span._parent_span_id, span_name=f"component:{name}")
+        self._emit(
+            "tool.result",
+            result,
+            span_id=span.span_id,
+            parent_span_id=span._parent_span_id,
+            span_name=f"component:{name}",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -175,10 +197,12 @@ class _LayerLensTracer:
             self._adapter._begin_run()
 
         span = _LayerLensSpan(
-            self._adapter, operation_name,
+            self._adapter,
+            operation_name,
             self._adapter._get_root_span() if is_pipeline else self._adapter._new_span_id(),
             getattr(parent_span, "span_id", None),
-            tags or {}, is_pipeline,
+            tags or {},
+            is_pipeline,
         )
 
         prev = getattr(self._local, "current_span", None)
@@ -199,10 +223,18 @@ class _LayerLensTracer:
 
 class _NullSpan:
     """No-op span returned outside an active trace."""
-    def set_tag(self, key: str, value: Any) -> None: pass
-    def set_content_tag(self, key: str, value: Any) -> None: pass
-    def raw_span(self) -> None: return None
-    def get_correlation_data_for_logs(self) -> Dict[str, Any]: return {}
+
+    def set_tag(self, key: str, value: Any) -> None:
+        pass
+
+    def set_content_tag(self, key: str, value: Any) -> None:
+        pass
+
+    def raw_span(self) -> None:
+        return None
+
+    def get_correlation_data_for_logs(self) -> Dict[str, Any]:
+        return {}
 
 
 class _LayerLensSpan:
@@ -210,9 +242,13 @@ class _LayerLensSpan:
     Delegates to ``adapter._on_span_end`` on finish."""
 
     def __init__(
-        self, adapter: HaystackAdapter, operation_name: str,
-        span_id: str, parent_span_id: Optional[str],
-        tags: Dict[str, Any], is_pipeline: bool,
+        self,
+        adapter: HaystackAdapter,
+        operation_name: str,
+        span_id: str,
+        parent_span_id: Optional[str],
+        tags: Dict[str, Any],
+        is_pipeline: bool,
     ) -> None:
         self._adapter = adapter
         self._operation_name = operation_name
@@ -273,6 +309,7 @@ def _extract_usage(output: Any) -> Optional[Dict[str, int]]:
 def _get_version() -> str:
     try:
         import haystack as _mod  # pyright: ignore[reportMissingImports]
+
         return getattr(_mod, "__version__", "unknown")
     except Exception:
         return "unknown"

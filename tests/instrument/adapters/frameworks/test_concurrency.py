@@ -3,10 +3,11 @@
 Two asyncio.gather runs on the same PydanticAI adapter must produce
 two separate traces with independent events and distinct trace_ids.
 """
+
 from __future__ import annotations
 
-import asyncio
 import json
+import asyncio
 from typing import Any, Dict, List
 
 import pytest
@@ -83,9 +84,7 @@ class TestConcurrentRunIsolation:
             assert "model.invoke" in event_types, f"Missing model.invoke in {event_types}"
 
             # All events in a single trace share the same trace_id
-            assert all(
-                e["trace_id"] == trace["trace_id"] for e in events
-            ), "Events within a trace must share trace_id"
+            assert all(e["trace_id"] == trace["trace_id"] for e in events), "Events within a trace must share trace_id"
 
             # agent.output has status ok
             output_events = [e for e in events if e["event_type"] == "agent.output"]

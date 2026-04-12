@@ -3,6 +3,7 @@
 Subclasses MUST set ``name`` and implement ``connect()``.
 Subclasses SHOULD call ``super().disconnect()`` after unhooking.
 """
+
 from __future__ import annotations
 
 import time
@@ -12,16 +13,16 @@ import threading
 from typing import Any, Dict, Optional
 
 from .._base import AdapterInfo, BaseAdapter
+from ..._context import (
+    RunState,
+    _pop_span,
+    _push_span,
+    _current_run,
+    _current_span_id,
+    _current_collector,
+)
 from ..._collector import TraceCollector
 from ..._capture_config import CaptureConfig
-from ..._context import (
-    _current_collector,
-    _current_span_id,
-    _push_span,
-    _pop_span,
-    _current_run,
-    RunState,
-)
 
 log = logging.getLogger(__name__)
 
@@ -256,8 +257,11 @@ class FrameworkAdapter(BaseAdapter):
             parent_span_id = run.root_span_id if run is not None else _current_span_id.get()
 
         collector.emit(
-            event_type, payload,
-            span_id=sid, parent_span_id=parent_span_id, span_name=span_name,
+            event_type,
+            payload,
+            span_id=sid,
+            parent_span_id=parent_span_id,
+            span_name=span_name,
         )
 
     # ------------------------------------------------------------------

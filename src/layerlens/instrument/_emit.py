@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from ._context import _current_collector, _current_span_id, _parent_span_id, _current_span_name
+from ._context import _parent_span_id, _current_span_id, _current_collector, _current_span_name
 
 
 def emit(

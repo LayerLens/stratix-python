@@ -4,9 +4,9 @@ import time
 import logging
 from typing import Any, Dict, List, Optional
 
-from ._base_framework import FrameworkAdapter
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
+from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
@@ -159,7 +159,8 @@ class SmolAgentsAdapter(FrameworkAdapter):
         if c is None:
             return
         c.emit(
-            event_type, payload,
+            event_type,
+            payload,
             span_id=span_id or self._new_span_id(),
             parent_span_id=parent_span_id,
             span_name=span_name,
@@ -205,11 +206,15 @@ class SmolAgentsAdapter(FrameworkAdapter):
 
         tools = getattr(agent, "tools", None)
         if tools:
-            payload["tools"] = list(tools.keys()) if isinstance(tools, dict) else [getattr(t, "name", str(t)) for t in tools]
+            payload["tools"] = (
+                list(tools.keys()) if isinstance(tools, dict) else [getattr(t, "name", str(t)) for t in tools]
+            )
 
         managed = getattr(agent, "managed_agents", None)
         if managed:
-            payload["managed_agents"] = list(managed.keys()) if isinstance(managed, dict) else [getattr(a, "name", str(a)) for a in managed]
+            payload["managed_agents"] = (
+                list(managed.keys()) if isinstance(managed, dict) else [getattr(a, "name", str(a)) for a in managed]
+            )
 
         self._set_if_capturing(payload, "input", safe_serialize(task))
         self._fire("agent.input", payload, span_id=span_id, span_name=agent_name)
@@ -301,7 +306,13 @@ class SmolAgentsAdapter(FrameworkAdapter):
             step_payload["code_action"] = str(code_action)[:2000]
 
         self._set_if_capturing(step_payload, "observations", safe_serialize(getattr(step, "observations", None)))
-        self._fire("agent.step", step_payload, span_id=step_span_id, parent_span_id=self._run_span_id, span_name=f"step:{self._step_count}")
+        self._fire(
+            "agent.step",
+            step_payload,
+            span_id=step_span_id,
+            parent_span_id=self._run_span_id,
+            span_name=f"step:{self._step_count}",
+        )
 
     def _emit_model_invoke(self, step: Any, model_id: Optional[str], parent_span_id: str) -> None:
         token_usage = getattr(step, "token_usage", None)
@@ -379,6 +390,7 @@ def _model_id(agent: Any) -> Optional[str]:
 def _get_version() -> str:
     try:
         import smolagents  # pyright: ignore[reportMissingImports]
+
         return getattr(smolagents, "__version__", "unknown")
     except Exception:
         return "unknown"

@@ -11,9 +11,8 @@ from layerlens.instrument.adapters.providers.litellm import (
     uninstrument_litellm,
 )
 
+from .conftest import make_openai_response, make_openai_response_no_usage, make_openai_response_empty_choices
 from ...conftest import find_event
-from .conftest import make_openai_response, make_openai_response_empty_choices, make_openai_response_no_usage
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -54,9 +53,8 @@ class TestEmitsEvents:
         @trace(mock_client)
         def my_agent():
             import litellm
-            r = litellm.completion(
-                model="gpt-4", messages=[{"role": "user", "content": "Hi"}]
-            )
+
+            r = litellm.completion(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
             return r.choices[0].message.content
 
         my_agent()
@@ -80,6 +78,7 @@ class TestEmitsEvents:
         @trace(mock_client)
         def my_agent():
             import litellm
+
             try:
                 litellm.completion(model="gpt-4", messages=[])
             except RuntimeError:
@@ -108,6 +107,7 @@ class TestPassthrough:
     def test_no_op_outside_trace(self):
         instrument_litellm()
         import litellm
+
         result = litellm.completion(model="gpt-4", messages=[])
         assert result.choices[0].message.content == "Hello!"
 
@@ -206,8 +206,11 @@ class TestCaptureParams:
         @trace(mock_client)
         def my_agent():
             import litellm
+
             litellm.completion(
-                model="gpt-4", temperature=0.7, top_p=0.9,
+                model="gpt-4",
+                temperature=0.7,
+                top_p=0.9,
                 messages=[{"role": "user", "content": "Hi"}],
             )
             return "done"
@@ -224,8 +227,12 @@ class TestCaptureParams:
         @trace(mock_client)
         def my_agent():
             import litellm
+
             litellm.completion(
-                model="gpt-4", messages=[], stream=True, api_key="sk-123",
+                model="gpt-4",
+                messages=[],
+                stream=True,
+                api_key="sk-123",
             )
             return "done"
 

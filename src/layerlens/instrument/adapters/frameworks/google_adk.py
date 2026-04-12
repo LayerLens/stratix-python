@@ -4,9 +4,9 @@ import time
 import logging
 from typing import Any, Dict, Optional
 
-from ._base_framework import FrameworkAdapter
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
+from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
@@ -98,7 +98,8 @@ class GoogleADKAdapter(FrameworkAdapter):
         if c is None:
             return
         c.emit(
-            event_type, payload,
+            event_type,
+            payload,
             span_id=span_id or self._new_span_id(),
             parent_span_id=parent_span_id,
             span_name=span_name,
@@ -199,7 +200,9 @@ class GoogleADKAdapter(FrameworkAdapter):
         payload = self._payload(agent_name=name)
         if latency_ms is not None:
             payload["duration_ns"] = int(latency_ms * 1_000_000)
-        self._fire("agent.output", payload, span_id=span_id, parent_span_id=self._run_span_id, span_name=f"agent:{name}")
+        self._fire(
+            "agent.output", payload, span_id=span_id, parent_span_id=self._run_span_id, span_name=f"agent:{name}"
+        )
 
     # ------------------------------------------------------------------
     # Model lifecycle handlers
@@ -424,7 +427,9 @@ def _make_plugin(adapter: GoogleADKAdapter) -> Any:
                 log.warning("layerlens: error in after_tool_callback", exc_info=True)
             return None
 
-        async def on_tool_error_callback(self, *, tool: Any, tool_args: Any, tool_context: Any, error: Exception) -> None:
+        async def on_tool_error_callback(
+            self, *, tool: Any, tool_args: Any, tool_context: Any, error: Exception
+        ) -> None:
             try:
                 adapter._on_tool_error(tool, tool_args, tool_context, error)
             except Exception:
@@ -453,6 +458,7 @@ def _agent_name(agent: Any) -> str:
 def _get_version() -> str:
     try:
         import google.adk as _adk  # pyright: ignore[reportMissingImports]
+
         return getattr(_adk, "__version__", "unknown")
     except Exception:
         return "unknown"

@@ -8,7 +8,7 @@ emission without needing a real ADK Runner.
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from unittest.mock import Mock
 
 import pytest
@@ -18,8 +18,7 @@ pytest.importorskip("google.adk")
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.google_adk import GoogleADKAdapter  # noqa: E402
 
-from .conftest import capture_framework_trace, find_event, find_events  # noqa: E402
-
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers

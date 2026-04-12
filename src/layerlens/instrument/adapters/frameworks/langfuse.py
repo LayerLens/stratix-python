@@ -4,9 +4,9 @@ import uuid
 import logging
 from typing import Any, Dict, List, Optional
 
-from ._base_framework import FrameworkAdapter
 from ._utils import truncate, new_span_id
 from ..._collector import TraceCollector
+from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Langfuse observation type -> LayerLens event type mapping
 # ---------------------------------------------------------------------------
+
 
 class LangfuseAdapter(FrameworkAdapter):
     """Bidirectional trace sync adapter for Langfuse.
@@ -107,9 +108,7 @@ class LangfuseAdapter(FrameworkAdapter):
         except Exception as exc:
             self._http.close()
             self._http = None
-            raise ConnectionError(
-                f"Failed to connect to Langfuse at {self._host}: {exc}"
-            ) from exc
+            raise ConnectionError(f"Failed to connect to Langfuse at {self._host}: {exc}") from exc
 
         log.info("layerlens: Langfuse adapter connected to %s", self._host)
 
@@ -460,12 +459,14 @@ class LangfuseAdapter(FrameworkAdapter):
         if trace_output is not None:
             trace_body["output"] = trace_output
 
-        batch.append({
-            "id": uuid.uuid4().hex,
-            "type": "trace-create",
-            "timestamp": _iso_now(),
-            "body": trace_body,
-        })
+        batch.append(
+            {
+                "id": uuid.uuid4().hex,
+                "type": "trace-create",
+                "timestamp": _iso_now(),
+                "body": trace_body,
+            }
+        )
 
         # Convert individual events to observations
         for evt in events:
@@ -475,13 +476,23 @@ class LangfuseAdapter(FrameworkAdapter):
             span_name = evt.get("span_name")
 
             if etype == "model.invoke":
-                batch.append(self._event_to_generation(
-                    langfuse_trace_id, span_id, span_name, payload,
-                ))
+                batch.append(
+                    self._event_to_generation(
+                        langfuse_trace_id,
+                        span_id,
+                        span_name,
+                        payload,
+                    )
+                )
             elif etype == "tool.call":
-                batch.append(self._event_to_span(
-                    langfuse_trace_id, span_id, span_name, payload,
-                ))
+                batch.append(
+                    self._event_to_span(
+                        langfuse_trace_id,
+                        span_id,
+                        span_name,
+                        payload,
+                    )
+                )
             elif etype in ("agent.input", "agent.output"):
                 # Already handled in trace envelope
                 continue
@@ -490,9 +501,15 @@ class LangfuseAdapter(FrameworkAdapter):
                 continue
             else:
                 # Emit as generic Langfuse event
-                batch.append(self._event_to_langfuse_event(
-                    langfuse_trace_id, span_id, span_name, etype, payload,
-                ))
+                batch.append(
+                    self._event_to_langfuse_event(
+                        langfuse_trace_id,
+                        span_id,
+                        span_name,
+                        etype,
+                        payload,
+                    )
+                )
 
         return batch
 
@@ -598,9 +615,7 @@ class LangfuseAdapter(FrameworkAdapter):
 
     def _require_connected(self) -> None:
         if not self._connected or self._http is None:
-            raise RuntimeError(
-                "LangfuseAdapter is not connected. Call connect() first."
-            )
+            raise RuntimeError("LangfuseAdapter is not connected. Call connect() first.")
 
 
 # ---------------------------------------------------------------------------

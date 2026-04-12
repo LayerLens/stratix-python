@@ -24,7 +24,7 @@ from layerlens.instrument.adapters.frameworks.langfuse import (
     _safe_dict,
 )
 
-from .conftest import capture_framework_trace, find_event, find_events
+from .conftest import find_event, find_events, capture_framework_trace
 
 # ---------------------------------------------------------------------------
 # Helpers: mock HTTP plumbing
@@ -262,7 +262,9 @@ class TestImportTraces:
 
         adapter.import_traces(since="2026-01-15T00:00:00Z")
         call_args = mock_http.get.call_args_list[0]
-        params = call_args[1].get("params") or call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})
+        params = (
+            call_args[1].get("params") or call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})
+        )
         assert params.get("fromTimestamp") == "2026-01-15T00:00:00Z"
 
     def test_import_traces_respects_limit_parameter(self, connected_adapter):
@@ -567,10 +569,12 @@ class TestExportTraces:
         mock_http.post.return_value = _make_response({})
 
         events = self._make_ll_events()
-        count = adapter.export_traces(events_by_trace={
-            "trace-1": events,
-            "trace-2": events,
-        })
+        count = adapter.export_traces(
+            events_by_trace={
+                "trace-1": events,
+                "trace-2": events,
+            }
+        )
         assert count == 2
 
     def test_export_empty_returns_zero(self, connected_adapter):
@@ -661,12 +665,14 @@ class TestErrorIsolation:
         adapter, uploaded, mock_http = connected_adapter
         mock_http.get.side_effect = [
             # List traces returns 2
-            _make_response({
-                "data": [
-                    {"id": "t1", "updatedAt": "2026-01-01T00:00:00Z"},
-                    {"id": "t2", "updatedAt": "2026-01-02T00:00:00Z"},
-                ],
-            }),
+            _make_response(
+                {
+                    "data": [
+                        {"id": "t1", "updatedAt": "2026-01-01T00:00:00Z"},
+                        {"id": "t2", "updatedAt": "2026-01-02T00:00:00Z"},
+                    ],
+                }
+            ),
             # Fetch t1 fails
             _make_response(status_code=500),
             # Fetch t2 succeeds
@@ -680,6 +686,7 @@ class TestErrorIsolation:
         adapter, _, mock_http = connected_adapter
 
         call_count = {"n": 0}
+
         def _post_side_effect(*args, **kwargs):
             call_count["n"] += 1
             if call_count["n"] == 1:
@@ -691,10 +698,12 @@ class TestErrorIsolation:
         events = [
             {"event_type": "agent.input", "span_id": "s1", "payload": {"content": "hi"}},
         ]
-        count = adapter.export_traces(events_by_trace={
-            "trace-fail": events,
-            "trace-ok": events,
-        })
+        count = adapter.export_traces(
+            events_by_trace={
+                "trace-fail": events,
+                "trace-ok": events,
+            }
+        )
         assert count == 1
 
 

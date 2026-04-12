@@ -3,6 +3,7 @@
 Centralises helpers that were previously copy-pasted across adapter
 files: serialisation, span ID generation, and text truncation.
 """
+
 from __future__ import annotations
 
 import uuid

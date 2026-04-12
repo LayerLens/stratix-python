@@ -7,8 +7,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 
 from layerlens.instrument.adapters.frameworks.langgraph import LangGraphCallbackHandler
 
-from .conftest import capture_framework_trace, find_event, find_events
-
+from .conftest import find_event, find_events, capture_framework_trace
 
 # ---------------------------------------------------------------------------
 # Sanity: real base class
@@ -41,8 +40,10 @@ class TestInheritedBehavior:
 
         handler.on_chain_start({"name": "Graph"}, {}, run_id=chain_id)
         handler.on_llm_start(
-            {"name": "ChatOpenAI"}, ["prompt"],
-            run_id=llm_id, parent_run_id=chain_id,
+            {"name": "ChatOpenAI"},
+            ["prompt"],
+            run_id=llm_id,
+            parent_run_id=chain_id,
         )
         llm_response = Mock()
         llm_response.generations = [[Mock(text="output")]]

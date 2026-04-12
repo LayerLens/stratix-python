@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from anthropic.types import Usage, Message, TextBlock
+
+from openai.types import CompletionUsage
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
-from openai.types import CompletionUsage
-
-from anthropic.types import Message, TextBlock, Usage
 
 
 def make_openai_response(

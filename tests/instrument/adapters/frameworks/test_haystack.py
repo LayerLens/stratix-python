@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 from typing import Any, Optional
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock, MagicMock
 
 import pytest
 
@@ -16,13 +16,13 @@ import layerlens.instrument.adapters.frameworks.haystack as _mod
 from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.frameworks.haystack import (
     HaystackAdapter,
-    _LayerLensTracer,
     _NullSpan,
     _extract_model,
     _extract_usage,
+    _LayerLensTracer,
 )
 
-from .conftest import capture_framework_trace, find_event, find_events
+from .conftest import find_event, find_events, capture_framework_trace
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +55,7 @@ def _simulate_pipeline(
         if max_runs is not None:
             pipe.set_tag("haystack.pipeline.max_runs_per_component", max_runs)
 
-        for comp in (components or []):
+        for comp in components or []:
             with tracer.trace("haystack.component.run") as cs:
                 cs.set_tag("haystack.component.name", comp["name"])
                 cs.set_tag("haystack.component.type", comp["type"])
@@ -180,7 +180,9 @@ class TestPipelineSpans:
 class TestGeneratorComponents:
     def _gen_component(self, **overrides: Any) -> dict:
         base = {
-            "name": "llm", "type": "OpenAIChatGenerator", "model": "gpt-4o",
+            "name": "llm",
+            "type": "OpenAIChatGenerator",
+            "model": "gpt-4o",
             "output": {
                 "replies": ["answer"],
                 "meta": [{"model": "gpt-4o", "usage": {"prompt_tokens": 100, "completion_tokens": 50}}],
@@ -217,9 +219,12 @@ class TestGeneratorComponents:
     def test_chatgenerator_classified(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = _make_adapter(mock_client)
-        _simulate_pipeline(adapter._tracer, components=[
-            {"name": "c", "type": "haystack.components.generators.chat.openai.OpenAIChatGenerator"},
-        ])
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[
+                {"name": "c", "type": "haystack.components.generators.chat.openai.OpenAIChatGenerator"},
+            ],
+        )
         assert len(find_events(uploaded["events"], "model.invoke")) == 1
         adapter.disconnect()
 
@@ -236,10 +241,19 @@ class TestGeneratorComponents:
     def test_model_from_output_meta(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = _make_adapter(mock_client)
-        _simulate_pipeline(adapter._tracer, components=[{
-            "name": "llm", "type": "ChatGenerator",
-            "output": {"replies": ["ok"], "meta": [{"model": "claude-3", "usage": {"prompt_tokens": 5, "completion_tokens": 3}}]},
-        }])
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[
+                {
+                    "name": "llm",
+                    "type": "ChatGenerator",
+                    "output": {
+                        "replies": ["ok"],
+                        "meta": [{"model": "claude-3", "usage": {"prompt_tokens": 5, "completion_tokens": 3}}],
+                    },
+                }
+            ],
+        )
         assert find_event(uploaded["events"], "model.invoke")["payload"]["model"] == "claude-3"
         adapter.disconnect()
 
@@ -253,9 +267,12 @@ class TestToolComponents:
     def test_tool_call_and_result(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = _make_adapter(mock_client)
-        _simulate_pipeline(adapter._tracer, components=[
-            {"name": "my_retriever", "type": "BM25Retriever", "input": {"q": "find"}, "output": {"docs": ["d1"]}},
-        ])
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[
+                {"name": "my_retriever", "type": "BM25Retriever", "input": {"q": "find"}, "output": {"docs": ["d1"]}},
+            ],
+        )
 
         call = find_event(uploaded["events"], "tool.call")
         assert call["payload"]["tool_name"] == "my_retriever"
@@ -270,9 +287,12 @@ class TestToolComponents:
     def test_content_gating(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = _make_adapter(mock_client, config=CaptureConfig(capture_content=False))
-        _simulate_pipeline(adapter._tracer, components=[
-            {"name": "r", "type": "Retriever", "input": "secret", "output": "classified"},
-        ])
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[
+                {"name": "r", "type": "Retriever", "input": "secret", "output": "classified"},
+            ],
+        )
         assert "input" not in find_event(uploaded["events"], "tool.call")["payload"]
         assert "output" not in find_event(uploaded["events"], "tool.result")["payload"]
         adapter.disconnect()
@@ -280,18 +300,24 @@ class TestToolComponents:
     def test_component_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = _make_adapter(mock_client)
-        _simulate_pipeline(adapter._tracer, components=[
-            {"name": "broken", "type": "Custom", "error": "crashed"},
-        ])
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[
+                {"name": "broken", "type": "Custom", "error": "crashed"},
+            ],
+        )
         assert find_event(uploaded["events"], "tool.result")["payload"]["error"] == "crashed"
         adapter.disconnect()
 
     def test_prompt_builder_is_tool(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = _make_adapter(mock_client)
-        _simulate_pipeline(adapter._tracer, components=[
-            {"name": "pb", "type": "PromptBuilder", "input": {"tpl": "hi"}, "output": {"prompt": "hi"}},
-        ])
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[
+                {"name": "pb", "type": "PromptBuilder", "input": {"tpl": "hi"}, "output": {"prompt": "hi"}},
+            ],
+        )
         assert len(find_events(uploaded["events"], "tool.call")) == 1
         assert len([e for e in uploaded["events"] if e["event_type"] == "agent.code"]) == 0
         adapter.disconnect()
@@ -314,8 +340,13 @@ class TestFullPipeline:
                 {"name": "retriever", "type": "BM25Retriever"},
                 {"name": "prompt_builder", "type": "PromptBuilder"},
                 {
-                    "name": "llm", "type": "OpenAIChatGenerator", "model": "gpt-4o",
-                    "output": {"replies": ["answer"], "meta": [{"usage": {"prompt_tokens": 20, "completion_tokens": 10}}]},
+                    "name": "llm",
+                    "type": "OpenAIChatGenerator",
+                    "model": "gpt-4o",
+                    "output": {
+                        "replies": ["answer"],
+                        "meta": [{"usage": {"prompt_tokens": 20, "completion_tokens": 10}}],
+                    },
                 },
             ],
         )
@@ -337,10 +368,17 @@ class TestTraceIntegrity:
     def test_shared_trace_id(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = _make_adapter(mock_client)
-        _simulate_pipeline(adapter._tracer, components=[
-            {"name": "r", "type": "Retriever"},
-            {"name": "g", "type": "ChatGenerator", "output": {"replies": ["ok"], "meta": [{"usage": {"prompt_tokens": 1, "completion_tokens": 1}}]}},
-        ])
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[
+                {"name": "r", "type": "Retriever"},
+                {
+                    "name": "g",
+                    "type": "ChatGenerator",
+                    "output": {"replies": ["ok"], "meta": [{"usage": {"prompt_tokens": 1, "completion_tokens": 1}}]},
+                },
+            ],
+        )
         assert len({e["trace_id"] for e in uploaded["events"]}) == 1
         adapter.disconnect()
 
@@ -355,10 +393,13 @@ class TestTraceIntegrity:
     def test_span_hierarchy(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = _make_adapter(mock_client)
-        _simulate_pipeline(adapter._tracer, components=[
-            {"name": "ret", "type": "Retriever"},
-            {"name": "gen", "type": "ChatGenerator"},
-        ])
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[
+                {"name": "ret", "type": "Retriever"},
+                {"name": "gen", "type": "ChatGenerator"},
+            ],
+        )
         events = uploaded["events"]
         root = find_event(events, "agent.input")["span_id"]
         assert find_event(events, "tool.call")["parent_span_id"] == root
@@ -421,8 +462,12 @@ class TestThreadSafety:
 
         def _run(tid: int) -> None:
             try:
-                _simulate_pipeline(adapter._tracer, input_data={"t": tid}, output_data={"r": tid},
-                                   components=[{"name": f"c_{tid}", "type": "T"}])
+                _simulate_pipeline(
+                    adapter._tracer,
+                    input_data={"t": tid},
+                    output_data={"r": tid},
+                    components=[{"name": f"c_{tid}", "type": "T"}],
+                )
             except Exception as e:
                 errors.append(e)
 

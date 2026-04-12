@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Optional, Generator
 from contextlib import contextmanager
 
+from ._context import (
+    _pop_span,
+    _push_span,
+    _parent_span_id,
+    _current_span_id,
+    _current_collector,
+)
 from ._collector import TraceCollector
 from ._capture_config import CaptureConfig
-from ._context import (
-    _current_collector,
-    _current_span_id,
-    _parent_span_id,
-    _push_span,
-    _pop_span,
-)
 
 
 @contextmanager

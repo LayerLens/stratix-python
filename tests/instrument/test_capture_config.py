@@ -213,9 +213,11 @@ class TestCaptureConfigWithProviders:
 
         @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
-            return openai_client.chat.completions.create(
-                model="gpt-4", messages=[{"role": "user", "content": "Hi"}]
-            ).choices[0].message.content
+            return (
+                openai_client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
+                .choices[0]
+                .message.content
+            )
 
         my_agent()
         events = capture_trace["events"]
@@ -238,11 +240,15 @@ class TestCaptureConfigWithProviders:
 
         @trace(mock_client, capture_config=config)
         def my_agent():
-            return openai_client.chat.completions.create(
-                model="gpt-4",
-                temperature=0.7,
-                messages=[{"role": "user", "content": "Hi"}],
-            ).choices[0].message.content
+            return (
+                openai_client.chat.completions.create(
+                    model="gpt-4",
+                    temperature=0.7,
+                    messages=[{"role": "user", "content": "Hi"}],
+                )
+                .choices[0]
+                .message.content
+            )
 
         my_agent()
         events = capture_trace["events"]
@@ -282,11 +288,15 @@ class TestCaptureConfigWithProviders:
 
         @trace(mock_client, capture_config=config)
         def my_agent():
-            return anthropic_client.messages.create(
-                model="claude-3-opus",
-                max_tokens=1024,
-                messages=[{"role": "user", "content": "Hi"}],
-            ).content[0].text
+            return (
+                anthropic_client.messages.create(
+                    model="claude-3-opus",
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": "Hi"}],
+                )
+                .content[0]
+                .text
+            )
 
         my_agent()
         events = capture_trace["events"]
@@ -311,9 +321,11 @@ class TestCaptureConfigWithProviders:
 
         @trace(mock_client, capture_config=config)
         def my_agent():
-            return openai_client.chat.completions.create(
-                model="gpt-4", messages=[{"role": "user", "content": "Hi"}]
-            ).choices[0].message.content
+            return (
+                openai_client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
+                .choices[0]
+                .message.content
+            )
 
         my_agent()
         events = capture_trace["events"]
@@ -340,9 +352,11 @@ class TestCaptureConfigWithProviders:
 
         @trace(mock_client, capture_config=config)
         def my_agent():
-            return openai_client.chat.completions.create(
-                model="gpt-4", messages=[{"role": "user", "content": "Hi"}]
-            ).choices[0].message.content
+            return (
+                openai_client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
+                .choices[0]
+                .message.content
+            )
 
         my_agent()
         events = capture_trace["events"]

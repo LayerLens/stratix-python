@@ -10,12 +10,14 @@ from ..._capture_config import CaptureConfig
 
 def _auto_flush(fn):  # type: ignore[type-arg]
     """Decorator: after the callback returns, flush if this was the outermost run."""
+
     @functools.wraps(fn)
     def wrapper(self, *args, run_id, **kwargs):  # type: ignore[no-untyped-def]
         fn(self, *args, run_id=run_id, **kwargs)
         run = self._get_run()
         if run is not None and str(run_id) == run.data.get("root_run_id"):
             self._end_run()
+
     return wrapper
 
 
@@ -84,7 +86,9 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id)
+        self._emit(
+            "agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id
+        )
 
     # ------------------------------------------------------------------
     # LLM callbacks — merged into single model.invoke on end
@@ -126,7 +130,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
             "parent_run_id": parent_run_id,
         }
         self._set_if_capturing(
-            pending, "messages",
+            pending,
+            "messages",
             [[_serialize_lc_message(m) for m in batch] for batch in messages],
         )
         self._pending_llm[str(run_id)] = pending
@@ -178,8 +183,10 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         payload.update(tokens)
 
         self._emit(
-            "model.invoke", payload,
-            run_id=run_id, parent_run_id=pending.get("parent_run_id"),
+            "model.invoke",
+            payload,
+            run_id=run_id,
+            parent_run_id=pending.get("parent_run_id"),
         )
 
         # Separate cost.record if we have token data
@@ -209,7 +216,12 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
             payload["latency_ms"] = latency_ms
         self._emit("model.invoke", payload, run_id=run_id, parent_run_id=pending.get("parent_run_id"))
 
-        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=pending.get("parent_run_id"))
+        self._emit(
+            "agent.error",
+            self._payload(error=str(error), status="error"),
+            run_id=run_id,
+            parent_run_id=pending.get("parent_run_id"),
+        )
 
     # ------------------------------------------------------------------
     # Tool callbacks
@@ -251,7 +263,9 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id)
+        self._emit(
+            "agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id
+        )
 
     # ------------------------------------------------------------------
     # Retriever callbacks
@@ -282,7 +296,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     ) -> None:
         payload = self._payload()
         self._set_if_capturing(
-            payload, "output",
+            payload,
+            "output",
             [_serialize_lc_document(d) for d in documents],
         )
         self._emit("tool.result", payload, run_id=run_id, parent_run_id=parent_run_id)
@@ -296,7 +311,9 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        self._emit("agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id)
+        self._emit(
+            "agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id
+        )
 
     # ------------------------------------------------------------------
     # Agent callbacks

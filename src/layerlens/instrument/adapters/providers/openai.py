@@ -58,16 +58,12 @@ class OpenAIProvider(MonkeyPatchProvider):
         if hasattr(target, "chat") and hasattr(target.chat, "completions"):
             orig = target.chat.completions.create
             self._originals["chat.completions.create"] = orig
-            target.chat.completions.create = self._wrap_sync(
-                "openai.chat.completions.create", orig
-            )
+            target.chat.completions.create = self._wrap_sync("openai.chat.completions.create", orig)
 
             if hasattr(target.chat.completions, "acreate"):
                 async_orig = target.chat.completions.acreate
                 self._originals["chat.completions.acreate"] = async_orig
-                target.chat.completions.acreate = self._wrap_async(
-                    "openai.chat.completions.create", async_orig
-                )
+                target.chat.completions.acreate = self._wrap_async("openai.chat.completions.create", async_orig)
 
         return target
 

@@ -3,15 +3,16 @@
 Uses real TracingProcessor, SpanImpl, Trace, and span data types.
 No mocking of Agents SDK internals — only our mock_client for upload capture.
 """
+
 from __future__ import annotations
 
+import sys
 import json
 from typing import Any, Dict, List
 from unittest.mock import MagicMock
 
 import pytest
 
-import sys
 if sys.version_info < (3, 10):
     pytest.skip("openai-agents requires Python >= 3.10", allow_module_level=True)
 try:
@@ -33,7 +34,7 @@ from agents.tracing.span_data import (  # noqa: E402
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.openai_agents import OpenAIAgentsAdapter  # noqa: E402
 
-from .conftest import capture_framework_trace, find_event, find_events  # noqa: E402
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
 # -- Helpers --
 
@@ -161,7 +162,9 @@ class TestAgentSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t1", "s_agent",
+            adapter,
+            "t1",
+            "s_agent",
             AgentSpanData(name="research_agent", tools=["search", "browse"], handoffs=["writer"]),
         )
         span.start()
@@ -193,7 +196,7 @@ class TestAgentSpans:
 
         adapter.on_trace_start(trace)
 
-        span = _make_span(adapter,"t_err", "s_err", AgentSpanData(name="buggy_agent"))
+        span = _make_span(adapter, "t_err", "s_err", AgentSpanData(name="buggy_agent"))
         span.start()
         adapter.on_span_start(span)
         span.set_error({"message": "Agent crashed", "data": {"step": 3}})
@@ -217,12 +220,12 @@ class TestAgentSpans:
         adapter.on_trace_start(trace)
 
         # Parent agent
-        parent = _make_span(adapter,"t_nested", "s_parent", AgentSpanData(name="orchestrator"))
+        parent = _make_span(adapter, "t_nested", "s_parent", AgentSpanData(name="orchestrator"))
         parent.start()
         adapter.on_span_start(parent)
 
         # Child agent
-        child = _make_span(adapter,"t_nested", "s_child", AgentSpanData(name="researcher"), parent_id="s_parent")
+        child = _make_span(adapter, "t_nested", "s_child", AgentSpanData(name="researcher"), parent_id="s_parent")
         child.start()
         adapter.on_span_start(child)
         child.finish()
@@ -253,7 +256,9 @@ class TestGenerationSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_gen", "s_gen",
+            adapter,
+            "t_gen",
+            "s_gen",
             GenerationSpanData(
                 input=[{"role": "user", "content": "What is 2+2?"}],
                 output=[{"role": "assistant", "content": "4"}],
@@ -290,9 +295,13 @@ class TestGenerationSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_cost", "s_cost",
+            adapter,
+            "t_cost",
+            "s_cost",
             GenerationSpanData(
-                input=[], output=[], model="gpt-4o-mini",
+                input=[],
+                output=[],
+                model="gpt-4o-mini",
                 model_config={},
                 usage={"input_tokens": 100, "output_tokens": 25},
             ),
@@ -317,11 +326,15 @@ class TestGenerationSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_gen_err", "s_gen_err",
+            adapter,
+            "t_gen_err",
+            "s_gen_err",
             GenerationSpanData(
                 input=[{"role": "user", "content": "fail"}],
-                output=[], model="gpt-4o",
-                model_config={}, usage={},
+                output=[],
+                model="gpt-4o",
+                model_config={},
+                usage={},
             ),
         )
         span.start()
@@ -344,9 +357,13 @@ class TestGenerationSpans:
 
         for i, (inp_tok, out_tok) in enumerate([(50, 15), (80, 20)]):
             span = _make_span(
-                adapter,"t_multi_gen", f"s_gen_{i}",
+                adapter,
+                "t_multi_gen",
+                f"s_gen_{i}",
                 GenerationSpanData(
-                    input=[], output=[], model="gpt-4o",
+                    input=[],
+                    output=[],
+                    model="gpt-4o",
                     model_config={},
                     usage={"input_tokens": inp_tok, "output_tokens": out_tok},
                 ),
@@ -375,7 +392,9 @@ class TestFunctionSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_func", "s_func",
+            adapter,
+            "t_func",
+            "s_func",
             FunctionSpanData(name="get_weather", input='{"city":"NYC"}', output='{"temp":72}'),
             parent_id="s_agent",
         )
@@ -404,7 +423,9 @@ class TestFunctionSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_func_err", "s_func_err",
+            adapter,
+            "t_func_err",
+            "s_func_err",
             FunctionSpanData(name="dangerous_tool", input="delete all", output=None),
         )
         span.start()
@@ -427,7 +448,9 @@ class TestFunctionSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_mcp", "s_mcp",
+            adapter,
+            "t_mcp",
+            "s_mcp",
             FunctionSpanData(name="mcp_tool", input="query", output="result"),
         )
         # Set mcp_data manually
@@ -453,7 +476,9 @@ class TestHandoffSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_handoff", "s_handoff",
+            adapter,
+            "t_handoff",
+            "s_handoff",
             HandoffSpanData(from_agent="triage", to_agent="specialist"),
             parent_id="s_agent",
         )
@@ -480,7 +505,9 @@ class TestGuardrailSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_guard", "s_guard",
+            adapter,
+            "t_guard",
+            "s_guard",
             GuardrailSpanData(name="content_filter", triggered=True),
         )
         span.start()
@@ -501,7 +528,9 @@ class TestGuardrailSpans:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_guard2", "s_guard2",
+            adapter,
+            "t_guard2",
+            "s_guard2",
             GuardrailSpanData(name="pii_detector", triggered=False),
         )
         span.start()
@@ -525,13 +554,15 @@ class TestFullAgentFlow:
         adapter.on_trace_start(trace)
 
         # Agent span
-        agent = _make_span(adapter,"t_flow", "s_agent", AgentSpanData(name="triage", tools=["classify"]))
+        agent = _make_span(adapter, "t_flow", "s_agent", AgentSpanData(name="triage", tools=["classify"]))
         agent.start()
         adapter.on_span_start(agent)
 
         # LLM call
         gen = _make_span(
-            adapter,"t_flow", "s_gen",
+            adapter,
+            "t_flow",
+            "s_gen",
             GenerationSpanData(
                 input=[{"role": "user", "content": "I need help"}],
                 output=[{"role": "assistant", "content": "Let me classify this"}],
@@ -547,7 +578,9 @@ class TestFullAgentFlow:
 
         # Tool call
         tool = _make_span(
-            adapter,"t_flow", "s_tool",
+            adapter,
+            "t_flow",
+            "s_tool",
             FunctionSpanData(name="classify", input="I need help", output="billing"),
             parent_id="s_agent",
         )
@@ -557,7 +590,9 @@ class TestFullAgentFlow:
 
         # Guardrail
         guard = _make_span(
-            adapter,"t_flow", "s_guard",
+            adapter,
+            "t_flow",
+            "s_guard",
             GuardrailSpanData(name="safety_check", triggered=False),
             parent_id="s_agent",
         )
@@ -567,7 +602,9 @@ class TestFullAgentFlow:
 
         # Handoff
         handoff = _make_span(
-            adapter,"t_flow", "s_handoff",
+            adapter,
+            "t_flow",
+            "s_handoff",
             HandoffSpanData(from_agent="triage", to_agent="billing_agent"),
             parent_id="s_agent",
         )
@@ -613,23 +650,27 @@ class TestCaptureConfigGating:
         adapter = OpenAIAgentsAdapter(mock_client, capture_config=config)
         adapter.connect()
 
-
         trace = _make_trace(trace_id="t_min")
 
         adapter.on_trace_start(trace)
 
         # Agent span (L1 — should be captured)
-        agent = _make_span(adapter,"t_min", "s_agent", AgentSpanData(name="test"))
+        agent = _make_span(adapter, "t_min", "s_agent", AgentSpanData(name="test"))
         agent.start()
         agent.finish()
         adapter.on_span_end(agent)
 
         # Generation span (L3 — should be skipped)
         gen = _make_span(
-            adapter,"t_min", "s_gen",
+            adapter,
+            "t_min",
+            "s_gen",
             GenerationSpanData(
-                input=[], output=[], model="gpt-4o",
-                model_config={}, usage={"input_tokens": 10, "output_tokens": 5},
+                input=[],
+                output=[],
+                model="gpt-4o",
+                model_config={},
+                usage={"input_tokens": 10, "output_tokens": 5},
             ),
         )
         gen.start()
@@ -638,7 +679,9 @@ class TestCaptureConfigGating:
 
         # Tool span (L5a — should be skipped)
         tool = _make_span(
-            adapter,"t_min", "s_tool",
+            adapter,
+            "t_min",
+            "s_tool",
             FunctionSpanData(name="search", input="q", output="r"),
         )
         tool.start()
@@ -676,7 +719,6 @@ class TestConcurrentTraces:
         adapter = OpenAIAgentsAdapter(mock_client)
         adapter.connect()
 
-
         # Two concurrent traces
         t1 = _make_trace(trace_id="t_par_1")
         t2 = _make_trace(trace_id="t_par_2")
@@ -685,13 +727,13 @@ class TestConcurrentTraces:
         adapter.on_trace_start(t2)
 
         # Agent in trace 1
-        s1 = _make_span(adapter,"t_par_1", "s1", AgentSpanData(name="agent_1"))
+        s1 = _make_span(adapter, "t_par_1", "s1", AgentSpanData(name="agent_1"))
         s1.start()
         s1.finish()
         adapter.on_span_end(s1)
 
         # Agent in trace 2
-        s2 = _make_span(adapter,"t_par_2", "s2", AgentSpanData(name="agent_2"))
+        s2 = _make_span(adapter, "t_par_2", "s2", AgentSpanData(name="agent_2"))
         s2.start()
         s2.finish()
         adapter.on_span_end(s2)
@@ -720,7 +762,6 @@ class TestErrorIsolation:
         adapter = OpenAIAgentsAdapter(mock_client)
         adapter.connect()
 
-
         trace = _make_trace(trace_id="t_safe")
         adapter.on_trace_start(trace)
 
@@ -728,7 +769,7 @@ class TestErrorIsolation:
         adapter._trace_runs["t_safe"] = None  # type: ignore[assignment]
 
         # This should not raise
-        span = _make_span(adapter,"t_safe", "s_safe", AgentSpanData(name="test"))
+        span = _make_span(adapter, "t_safe", "s_safe", AgentSpanData(name="test"))
         span.start()
         span.finish()
         adapter.on_span_end(span)  # Should log warning, not crash
@@ -748,7 +789,9 @@ class TestEdgeCases:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_empty", "s_empty",
+            adapter,
+            "t_empty",
+            "s_empty",
             GenerationSpanData(input=[], output=[], model="gpt-4o", model_config={}, usage={}),
         )
         span.start()
@@ -769,7 +812,9 @@ class TestEdgeCases:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_none", "s_none",
+            adapter,
+            "t_none",
+            "s_none",
             AgentSpanData(name="minimal_agent"),  # no tools, no handoffs
         )
         span.start()
@@ -791,7 +836,9 @@ class TestEdgeCases:
         adapter.on_trace_start(trace)
 
         span = _make_span(
-            adapter,"t_none_out", "s_func",
+            adapter,
+            "t_none_out",
+            "s_func",
             FunctionSpanData(name="void_tool", input="run", output=None),
         )
         span.start()
@@ -815,7 +862,7 @@ class TestEdgeCases:
 
         adapter.on_trace_start(trace)
 
-        span = _make_span(adapter,"t_dur", "s_dur", AgentSpanData(name="slow_agent"))
+        span = _make_span(adapter, "t_dur", "s_dur", AgentSpanData(name="slow_agent"))
         span.start()
         _time.sleep(0.02)  # 20ms
         span.finish()

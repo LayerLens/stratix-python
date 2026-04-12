@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from ._base_framework import FrameworkAdapter
 from ._utils import safe_serialize
+from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
@@ -32,9 +32,9 @@ class PydanticAIAdapter(FrameworkAdapter):
     Usage::
 
         adapter = PydanticAIAdapter(client)
-        adapter.connect(target=agent)   # injects hooks capability
+        adapter.connect(target=agent)  # injects hooks capability
         result = agent.run_sync("hello")
-        adapter.disconnect()            # removes hooks capability
+        adapter.disconnect()  # removes hooks capability
     """
 
     name = "pydantic-ai"
@@ -101,8 +101,10 @@ class PydanticAIAdapter(FrameworkAdapter):
         self._set_if_capturing(payload, "input", safe_serialize(ctx.prompt))
 
         self._emit(
-            "agent.input", payload,
-            span_id=root, parent_span_id=None,
+            "agent.input",
+            payload,
+            span_id=root,
+            parent_span_id=None,
             span_name=f"pydantic_ai:{agent_name}",
         )
         self._start_timer("run")
@@ -124,8 +126,10 @@ class PydanticAIAdapter(FrameworkAdapter):
         self._set_if_capturing(payload, "output", output)
         payload.update(usage)
         self._emit(
-            "agent.output", payload,
-            span_id=root, parent_span_id=None,
+            "agent.output",
+            payload,
+            span_id=root,
+            parent_span_id=None,
             span_name=f"pydantic_ai:{agent_name}",
         )
 
@@ -152,8 +156,10 @@ class PydanticAIAdapter(FrameworkAdapter):
         if latency_ms is not None:
             payload["latency_ms"] = latency_ms
         self._emit(
-            "agent.error", payload,
-            span_id=root, parent_span_id=None,
+            "agent.error",
+            payload,
+            span_id=root,
+            parent_span_id=None,
             span_name=f"pydantic_ai:{agent_name}",
         )
 
@@ -165,7 +171,11 @@ class PydanticAIAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     def _on_after_model_request(
-        self, ctx: Any, *, request_context: Any, response: Any,
+        self,
+        ctx: Any,
+        *,
+        request_context: Any,
+        response: Any,
     ) -> Any:
         model_name = getattr(response, "model_name", None)
         usage = getattr(response, "usage", None)
@@ -184,7 +194,8 @@ class PydanticAIAdapter(FrameworkAdapter):
                 tool_name = getattr(part, "tool_name", "unknown")
                 tool_payload = self._payload(tool_name=tool_name)
                 self._set_if_capturing(
-                    tool_payload, "input",
+                    tool_payload,
+                    "input",
                     safe_serialize(getattr(part, "args", None)),
                 )
                 self._emit("tool.call", tool_payload)
@@ -192,7 +203,11 @@ class PydanticAIAdapter(FrameworkAdapter):
         return response
 
     def _on_model_request_error(
-        self, ctx: Any, *, request_context: Any, error: Exception,
+        self,
+        ctx: Any,
+        *,
+        request_context: Any,
+        error: Exception,
     ) -> None:
         payload = self._payload(
             error=str(error),
@@ -206,7 +221,12 @@ class PydanticAIAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     def _on_before_tool_execute(
-        self, ctx: Any, *, call: Any, tool_def: Any, args: Any,
+        self,
+        ctx: Any,
+        *,
+        call: Any,
+        tool_def: Any,
+        args: Any,
     ) -> Any:
         tool_name = getattr(call, "tool_name", "unknown")
         call_id = getattr(call, "id", None) or tool_name
@@ -218,7 +238,13 @@ class PydanticAIAdapter(FrameworkAdapter):
         return args
 
     def _on_after_tool_execute(
-        self, ctx: Any, *, call: Any, tool_def: Any, args: Any, result: Any,
+        self,
+        ctx: Any,
+        *,
+        call: Any,
+        tool_def: Any,
+        args: Any,
+        result: Any,
     ) -> Any:
         tool_name = getattr(call, "tool_name", "unknown")
         call_id = getattr(call, "id", None) or tool_name
@@ -236,7 +262,13 @@ class PydanticAIAdapter(FrameworkAdapter):
         return result
 
     def _on_tool_execute_error(
-        self, ctx: Any, *, call: Any, tool_def: Any, args: Any, error: Exception,
+        self,
+        ctx: Any,
+        *,
+        call: Any,
+        tool_def: Any,
+        args: Any,
+        error: Exception,
     ) -> None:
         tool_name = getattr(call, "tool_name", "unknown")
         call_id = getattr(call, "id", None) or tool_name

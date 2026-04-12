@@ -9,13 +9,12 @@ from layerlens.instrument.adapters.providers.openai import (
     uninstrument_openai,
 )
 
-from ...conftest import find_event
 from .conftest import (
     make_openai_response,
     make_openai_response_no_usage,
     make_openai_response_empty_choices,
 )
-
+from ...conftest import find_event
 
 # ---------------------------------------------------------------------------
 # Emit events
@@ -32,9 +31,7 @@ class TestEmitsEvents:
 
         @trace(mock_client)
         def my_agent():
-            r = openai_client.chat.completions.create(
-                model="gpt-4", messages=[{"role": "user", "content": "Hi"}]
-            )
+            r = openai_client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
             return r.choices[0].message.content
 
         my_agent()
@@ -182,7 +179,9 @@ class TestCaptureParams:
         @trace(mock_client)
         def my_agent():
             openai_client.chat.completions.create(
-                model="gpt-4", temperature=0.7, top_p=0.9,
+                model="gpt-4",
+                temperature=0.7,
+                top_p=0.9,
                 messages=[{"role": "user", "content": "Hi"}],
             )
             return "done"
@@ -203,7 +202,10 @@ class TestCaptureParams:
         @trace(mock_client)
         def my_agent():
             openai_client.chat.completions.create(
-                model="gpt-4", messages=[], stream=True, user="test-user",
+                model="gpt-4",
+                messages=[],
+                stream=True,
+                user="test-user",
             )
             return "done"
 

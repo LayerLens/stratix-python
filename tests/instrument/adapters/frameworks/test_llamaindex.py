@@ -1,4 +1,5 @@
 """Tests for LlamaIndex adapter using real LlamaIndex types."""
+
 from __future__ import annotations
 
 import uuid
@@ -65,14 +66,8 @@ def clean_dispatcher():
     yield
     dispatcher = get_dispatcher()
     # Remove any _LayerLens handlers
-    dispatcher.event_handlers = [
-        h for h in dispatcher.event_handlers
-        if "LayerLens" not in type(h).__name__
-    ]
-    dispatcher.span_handlers = [
-        h for h in dispatcher.span_handlers
-        if "LayerLens" not in type(h).__name__
-    ]
+    dispatcher.event_handlers = [h for h in dispatcher.event_handlers if "LayerLens" not in type(h).__name__]
+    dispatcher.span_handlers = [h for h in dispatcher.span_handlers if "LayerLens" not in type(h).__name__]
 
 
 def _find_events(adapter: LlamaIndexAdapter, event_type: str) -> List[Dict[str, Any]]:
@@ -105,6 +100,7 @@ def _emit_event_via_dispatcher(event: Any, span_id: Optional[str] = None) -> Non
 def _create_span(adapter: LlamaIndexAdapter, parent_span_id: Optional[str] = None) -> str:
     """Create a span in the adapter's span handler, return span_id."""
     import inspect
+
     span_id = f"Test.method-{uuid.uuid4().hex}"
     handler = adapter._span_handler
     # Use a mock BoundArguments
@@ -121,6 +117,7 @@ def _create_span(adapter: LlamaIndexAdapter, parent_span_id: Optional[str] = Non
 def _close_span(adapter: LlamaIndexAdapter, span_id: str) -> None:
     """Close a span, triggering flush if root."""
     import inspect
+
     handler = adapter._span_handler
     mock_bound = MagicMock(spec=inspect.BoundArguments)
     handler.span_exit(
@@ -235,6 +232,7 @@ class TestLLMChatEvents:
 
         # Brief pause for measurable latency
         import time
+
         time.sleep(0.01)
 
         # Send end event

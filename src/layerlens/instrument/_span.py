@@ -4,7 +4,7 @@ import uuid
 from typing import Generator
 from contextlib import contextmanager
 
-from ._context import _push_span, _pop_span
+from ._context import _pop_span, _push_span
 
 
 @contextmanager

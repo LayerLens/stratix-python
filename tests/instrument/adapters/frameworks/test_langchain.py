@@ -8,8 +8,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.frameworks.langchain import LangChainCallbackHandler
 
-from .conftest import capture_framework_trace, find_event, find_events
-
+from .conftest import find_event, find_events, capture_framework_trace
 
 # ---------------------------------------------------------------------------
 # Sanity: real base class
@@ -108,7 +107,8 @@ class TestLLMLifecycle:
         handler.on_llm_start(
             {"name": "ChatOpenAI"},
             ["What is AI?"],
-            run_id=llm_id, parent_run_id=chain_id,
+            run_id=llm_id,
+            parent_run_id=chain_id,
         )
         handler.on_llm_end(_make_llm_response(), run_id=llm_id)
         handler.on_chain_end({"output": "AI is..."}, run_id=chain_id)
@@ -163,7 +163,8 @@ class TestLLMLifecycle:
         handler.on_chat_model_start(
             {"name": "ChatAnthropic"},
             [[msg]],
-            run_id=chat_id, parent_run_id=chain_id,
+            run_id=chat_id,
+            parent_run_id=chain_id,
         )
         handler.on_llm_end(
             _make_llm_response(text="Hi!", model_name="claude-3"),
@@ -287,8 +288,10 @@ class TestToolsAndRetrievers:
 
         handler.on_chain_start({"name": "Agent"}, {}, run_id=chain_id)
         handler.on_tool_start(
-            {"name": "search"}, "query text",
-            run_id=tool_id, parent_run_id=chain_id,
+            {"name": "search"},
+            "query text",
+            run_id=tool_id,
+            parent_run_id=chain_id,
         )
         handler.on_tool_end("search results", run_id=tool_id)
         handler.on_chain_end({}, run_id=chain_id)
@@ -310,8 +313,10 @@ class TestToolsAndRetrievers:
 
         handler.on_chain_start({"name": "Agent"}, {}, run_id=chain_id)
         handler.on_retriever_start(
-            {"name": "vectorstore"}, "query",
-            run_id=ret_id, parent_run_id=chain_id,
+            {"name": "vectorstore"},
+            "query",
+            run_id=ret_id,
+            parent_run_id=chain_id,
         )
         docs = [Mock(page_content="doc text", metadata={"source": "a.txt"})]
         handler.on_retriever_end(docs, run_id=ret_id)
@@ -461,8 +466,10 @@ class TestSpanRelationships:
 
         handler.on_chain_start({"name": "Chain"}, {}, run_id=chain_id)
         handler.on_llm_start(
-            {"name": "LLM"}, ["prompt"],
-            run_id=llm_id, parent_run_id=chain_id,
+            {"name": "LLM"},
+            ["prompt"],
+            run_id=llm_id,
+            parent_run_id=chain_id,
         )
         handler.on_llm_end(_make_llm_response(), run_id=llm_id)
         handler.on_chain_end({}, run_id=chain_id)

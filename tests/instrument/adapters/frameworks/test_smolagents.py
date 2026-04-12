@@ -14,15 +14,14 @@ from unittest.mock import Mock, MagicMock
 import pytest
 
 smolagents = pytest.importorskip("smolagents")
-from smolagents import ActionStep, PlanningStep, FinalAnswerStep, ToolCall  # noqa: E402
+from smolagents import ToolCall, ActionStep, PlanningStep, FinalAnswerStep  # noqa: E402
 from smolagents.memory import Timing, CallbackRegistry  # noqa: E402
 from smolagents.monitoring import TokenUsage  # noqa: E402
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.smolagents import SmolAgentsAdapter  # noqa: E402
 
-from .conftest import capture_framework_trace, find_event, find_events  # noqa: E402
-
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
