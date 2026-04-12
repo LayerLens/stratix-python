@@ -46,6 +46,10 @@ class OrganizationResponse(BaseModel):
     data: Organization
 
 
+class OrganizationsListResponse(BaseModel):
+    data: List[Organization]
+
+
 class ResultMetrics(BaseModel):
     total_count: int
 

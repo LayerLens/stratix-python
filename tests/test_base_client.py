@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from layerlens import _exceptions
-from layerlens._base_client import BaseClient
+from layerlens._base_client import MAX_RETRIES, BaseClient
 
 
 @dataclass
@@ -232,3 +232,145 @@ class TestBaseClient:
 
         with pytest.raises(NotImplementedError):
             client._make_status_error("test", body=None, response=mock_response)
+
+    def test_default_max_retries(self):
+        """BaseClient defaults to MAX_RETRIES."""
+        client = BaseClient(base_url="https://api.test.com")
+
+        assert client._max_retries == MAX_RETRIES
+
+    def test_custom_max_retries(self):
+        """BaseClient accepts custom max_retries."""
+        client = BaseClient(base_url="https://api.test.com", max_retries=5)
+
+        assert client._max_retries == 5
+
+    def test_zero_max_retries_disables_retries(self):
+        """max_retries=0 disables automatic retries."""
+        client = BaseClient(base_url="https://api.test.com", max_retries=0)
+
+        assert client._max_retries == 0
+
+    @patch("layerlens._base_client.time.sleep")
+    @patch("httpx.Client.request")
+    def test_retries_on_429(self, mock_request, mock_sleep, client):
+        """Client retries on 429 and succeeds on subsequent attempt."""
+        rate_limited = Mock(spec=httpx.Response)
+        rate_limited.status_code = 429
+        rate_limited.headers = {}
+
+        success = Mock(spec=httpx.Response)
+        success.status_code = 200
+        success.raise_for_status.return_value = None
+        success.json.return_value = {"name": "ok", "value": 1}
+
+        mock_request.side_effect = [rate_limited, success]
+
+        result = client._request_cast("GET", "/test", cast_to=ResponseModel)
+
+        assert isinstance(result, ResponseModel)
+        assert mock_request.call_count == 2
+        assert mock_sleep.call_count == 1
+
+    @patch("layerlens._base_client.time.sleep")
+    @patch("httpx.Client.request")
+    def test_retries_respect_retry_after_header(self, mock_request, mock_sleep, client):
+        """Client uses Retry-After header value for sleep duration."""
+        rate_limited = Mock(spec=httpx.Response)
+        rate_limited.status_code = 429
+        rate_limited.headers = {"retry-after": "2"}
+
+        success = Mock(spec=httpx.Response)
+        success.status_code = 200
+        success.raise_for_status.return_value = None
+
+        mock_request.side_effect = [rate_limited, success]
+
+        client._request_cast("GET", "/test")
+
+        mock_sleep.assert_called_once_with(2.0)
+
+    @patch("layerlens._base_client.time.sleep")
+    @patch("httpx.Client.request")
+    def test_retries_exhaust_then_raise(self, mock_request, _mock_sleep):
+        """Client raises after exhausting all retries."""
+        client = BaseClient(base_url="https://api.test.com", max_retries=1)
+
+        rate_limited = Mock(spec=httpx.Response)
+        rate_limited.status_code = 429
+        rate_limited.headers = {}
+        rate_limited.text = '{"message": "Too Many Requests"}'
+        rate_limited.raise_for_status.side_effect = httpx.HTTPStatusError("429", request=Mock(), response=rate_limited)
+
+        mock_request.return_value = rate_limited
+
+        with patch.object(client, "_make_status_error_from_response") as mock_make_error:
+            mock_make_error.side_effect = _exceptions.RateLimitError("Rate limited", response=rate_limited, body=None)
+
+            with pytest.raises(_exceptions.RateLimitError):
+                client._request_cast("GET", "/test")
+
+        # 1 initial + 1 retry = 2 calls
+        assert mock_request.call_count == 2
+
+    @patch("layerlens._base_client.time.sleep")
+    @patch("httpx.Client.request")
+    def test_no_retries_when_max_retries_zero(self, mock_request, _mock_sleep):
+        """max_retries=0 means no retries at all."""
+        client = BaseClient(base_url="https://api.test.com", max_retries=0)
+
+        rate_limited = Mock(spec=httpx.Response)
+        rate_limited.status_code = 429
+        rate_limited.headers = {}
+        rate_limited.text = '{"message": "Too Many Requests"}'
+        rate_limited.raise_for_status.side_effect = httpx.HTTPStatusError("429", request=Mock(), response=rate_limited)
+
+        mock_request.return_value = rate_limited
+
+        with patch.object(client, "_make_status_error_from_response") as mock_make_error:
+            mock_make_error.side_effect = _exceptions.RateLimitError("Rate limited", response=rate_limited, body=None)
+
+            with pytest.raises(_exceptions.RateLimitError):
+                client._request_cast("GET", "/test")
+
+        assert mock_request.call_count == 1
+
+    @patch("layerlens._base_client.time.sleep")
+    @patch("httpx.Client.request")
+    def test_retries_on_500(self, mock_request, mock_sleep, client):
+        """Client retries on 500 server errors."""
+        server_error = Mock(spec=httpx.Response)
+        server_error.status_code = 500
+        server_error.headers = {}
+
+        success = Mock(spec=httpx.Response)
+        success.status_code = 200
+        success.raise_for_status.return_value = None
+
+        mock_request.side_effect = [server_error, success]
+
+        client._request_cast("GET", "/test")
+
+        assert mock_request.call_count == 2
+        assert mock_sleep.call_count == 1
+
+    @patch("layerlens._base_client.time.sleep")
+    @patch("httpx.Client.request")
+    def test_custom_max_retries_allows_more_attempts(self, mock_request, mock_sleep):
+        """Custom max_retries=4 allows up to 4 retries."""
+        client = BaseClient(base_url="https://api.test.com", max_retries=4)
+
+        server_error = Mock(spec=httpx.Response)
+        server_error.status_code = 502
+        server_error.headers = {}
+
+        success = Mock(spec=httpx.Response)
+        success.status_code = 200
+        success.raise_for_status.return_value = None
+
+        mock_request.side_effect = [server_error, server_error, server_error, success]
+
+        client._request_cast("GET", "/test")
+
+        assert mock_request.call_count == 4
+        assert mock_sleep.call_count == 3

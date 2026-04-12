@@ -33,13 +33,14 @@ client = AsyncStratix(api_key="your_api_key")
 
 ## Constructor Parameters
 
-### `Stratix(api_key, base_url, timeout)` and `AsyncStratix(api_key, base_url, timeout)`
+### `Stratix(api_key, base_url, timeout, max_retries)` and `AsyncStratix(api_key, base_url, timeout, max_retries)`
 
-| Parameter  | Type                             | Required | Default       | Description                   |
-| ---------- | -------------------------------- | -------- | ------------- | ----------------------------- |
-| `api_key`  | `str \| None`                    | Yes\*    | `None`        | Your LayerLens Stratix API key  |
-| `base_url` | `str \| httpx.URL \| None`       | No       | Stratix API URL | Custom API base URL           |
-| `timeout`  | `float \| httpx.Timeout \| None` | No       | 10 minutes    | Request timeout configuration |
+| Parameter     | Type                             | Required | Default       | Description                   |
+| ------------- | -------------------------------- | -------- | ------------- | ----------------------------- |
+| `api_key`     | `str \| None`                    | Yes\*    | `None`        | Your LayerLens Stratix API key  |
+| `base_url`    | `str \| httpx.URL \| None`       | No       | Stratix API URL | Custom API base URL           |
+| `timeout`     | `float \| httpx.Timeout \| None` | No       | 10 minutes    | Request timeout configuration |
+| `max_retries` | `int`                            | No       | `2`           | Maximum number of retries on retryable errors (429, 500, 502, 503, 504) |
 
 \*Required unless set via environment variables
 
@@ -79,6 +80,23 @@ from layerlens import Stratix
 
 # 30-second timeout for all requests
 client = Stratix(timeout=30.0)
+```
+
+### Retry Configuration
+
+The client automatically retries requests that fail with retryable status codes (429 Too Many Requests, 500, 502, 503, 504) using exponential backoff. If the server sends a `Retry-After` header, the client respects it.
+
+```python
+from layerlens import Stratix
+
+# Default: 2 retries
+client = Stratix()
+
+# More retries for batch-heavy workloads
+client = Stratix(max_retries=5)
+
+# Disable retries entirely
+client = Stratix(max_retries=0)
 ```
 
 ### Per-Request Timeout Override

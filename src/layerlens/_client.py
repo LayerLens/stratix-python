@@ -10,8 +10,8 @@ import httpx
 
 from . import _exceptions
 from ._utils import is_mapping
-from .models import Organization, OrganizationResponse
-from ._constants import DEFAULT_TIMEOUT, DEFAULT_BASE_URL
+from .models import Organization, OrganizationResponse, OrganizationsListResponse
+from ._constants import DEFAULT_TIMEOUT, DEFAULT_BASE_URL, DIRTY_ROUTER_PREFIX
 from ._exceptions import StratixError, APIStatusError
 from ._base_client import BaseClient, BaseAsyncClient
 
@@ -37,6 +37,7 @@ class Stratix(BaseClient):
     api_key: str
     organization_id: str | None
     project_id: str | None
+    _use_bearer_auth: bool
 
     def __init__(
         self,
@@ -44,6 +45,8 @@ class Stratix(BaseClient):
         api_key: str | None = None,
         base_url: str | httpx.URL | None = None,
         timeout: Union[float, httpx.Timeout, None] = DEFAULT_TIMEOUT,
+        max_retries: int = 2,
+        use_bearer_auth: bool = False,
     ) -> None:
         """Construct a new synchronous Stratix client instance.
 
@@ -57,15 +60,21 @@ class Stratix(BaseClient):
                 "The api_key client option must be set either by passing api_key to the client or by setting the LAYERLENS_STRATIX_API_KEY environment variable"
             )
         self.api_key = api_key
+        self._use_bearer_auth = use_bearer_auth
 
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_STRATIX_BASE_URL") or os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
             base_url = DEFAULT_BASE_URL
 
+        # Bearer auth (OAuth tokens) routes through the dirty prefix
+        if use_bearer_auth:
+            base_url = str(base_url).rstrip("/") + DIRTY_ROUTER_PREFIX
+
         super().__init__(
             base_url=base_url,
             timeout=timeout,
+            max_retries=max_retries,
         )
 
         organization = self._get_organization()
@@ -154,7 +163,11 @@ class Stratix(BaseClient):
     @property
     @override
     def auth_headers(self) -> dict[str, str]:
-        return {"x-api-key": self.api_key} if self.api_key else {}
+        if not self.api_key:
+            return {}
+        if self._use_bearer_auth:
+            return {"Authorization": f"Bearer {self.api_key}"}
+        return {"x-api-key": self.api_key}
 
     def copy(
         self,
@@ -171,6 +184,7 @@ class Stratix(BaseClient):
             api_key=api_key or self.api_key,
             base_url=base_url or self.base_url,
             timeout=self.timeout or timeout,
+            use_bearer_auth=self._use_bearer_auth,
             **_extra_kwargs,
         )
 
@@ -214,8 +228,32 @@ class Stratix(BaseClient):
         return APIStatusError(err_msg, response=response, body=data)
 
     def _get_organization(self) -> Optional[Organization]:
+        if self._use_bearer_auth:
+            # JWT-authenticated route returns a list of organizations
+            resp = super().get_cast(
+                "/organizations",
+                timeout=30,
+                cast_to=OrganizationsListResponse,
+            )
+            if isinstance(resp, OrganizationsListResponse) and resp.data:
+                # Try to find an org owned by the logged-in user that has projects
+                from .cli._auth import load_credentials
+
+                creds = load_credentials()
+                email = (creds or {}).get("user", {}).get("email") if creds else None
+                if email:
+                    for org in resp.data:
+                        if org.owner_id == email and org.projects:
+                            return org
+                # Fall back to first org with projects
+                for org in resp.data:
+                    if org.projects:
+                        return org
+                return resp.data[0]
+            return None
+
         organization = super().get_cast(
-            f"/organizations",
+            "/organizations",
             timeout=30,
             cast_to=OrganizationResponse,
         )
@@ -226,6 +264,7 @@ class AsyncStratix(BaseAsyncClient):
     api_key: str
     organization_id: str | None
     project_id: str | None
+    _use_bearer_auth: bool
 
     def __init__(
         self,
@@ -233,6 +272,8 @@ class AsyncStratix(BaseAsyncClient):
         api_key: str | None = None,
         base_url: str | httpx.URL | None = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+        max_retries: int = 2,
+        use_bearer_auth: bool = False,
     ) -> None:
         """Construct a new asynchronous Stratix client instance.
 
@@ -247,13 +288,17 @@ class AsyncStratix(BaseAsyncClient):
                 "or by setting the LAYERLENS_STRATIX_API_KEY environment variable"
             )
         self.api_key = api_key
+        self._use_bearer_auth = use_bearer_auth
 
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_STRATIX_BASE_URL") or os.environ.get("LAYERLENS_ATLAS_BASE_URL")
         if base_url is None:
             base_url = DEFAULT_BASE_URL
 
-        super().__init__(base_url=base_url, timeout=timeout)
+        if use_bearer_auth:
+            base_url = str(base_url).rstrip("/") + DIRTY_ROUTER_PREFIX
+
+        super().__init__(base_url=base_url, timeout=timeout, max_retries=max_retries)
 
         organization = self._get_organization()
         if organization is None:
@@ -341,7 +386,11 @@ class AsyncStratix(BaseAsyncClient):
     @property
     @override
     def auth_headers(self) -> dict[str, str]:
-        return {"x-api-key": self.api_key} if self.api_key else {}
+        if not self.api_key:
+            return {}
+        if self._use_bearer_auth:
+            return {"Authorization": f"Bearer {self.api_key}"}
+        return {"x-api-key": self.api_key}
 
     def copy(
         self,
@@ -355,6 +404,7 @@ class AsyncStratix(BaseAsyncClient):
             api_key=api_key or self.api_key,
             base_url=base_url or self.base_url,
             timeout=self.timeout or timeout,
+            use_bearer_auth=self._use_bearer_auth,
             **_extra_kwargs,
         )
 
@@ -397,6 +447,23 @@ class AsyncStratix(BaseAsyncClient):
             response.raise_for_status()
 
         data = response.json()
+
+        if self._use_bearer_auth:
+            resp = OrganizationsListResponse(**data)
+            if resp.data:
+                from .cli._auth import load_credentials
+
+                creds = load_credentials()
+                email = (creds or {}).get("user", {}).get("email") if creds else None
+                if email:
+                    for org in resp.data:
+                        if org.owner_id == email and org.projects:
+                            return org
+                for org in resp.data:
+                    if org.projects:
+                        return org
+                return resp.data[0]
+            return None
 
         organization = OrganizationResponse(**data)
         return organization.data if isinstance(organization, OrganizationResponse) else None

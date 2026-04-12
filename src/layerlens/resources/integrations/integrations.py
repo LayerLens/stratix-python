@@ -72,12 +72,20 @@ class Integrations(SyncAPIResource):
             return None
 
         data = _unwrap(resp)
-        if not isinstance(data, dict):
+
+        # The API returns the integrations array directly (wrapped in the
+        # standard {"status": ..., "data": [...]} envelope).  After unwrapping,
+        # ``data`` is a list of integration dicts.
+        if isinstance(data, list):
+            items = data
+        elif isinstance(data, dict):
+            items = data.get("integrations", [])
+        else:
             return None
 
-        integrations = [i if isinstance(i, Integration) else Integration(**i) for i in data.get("integrations", [])]
-        count: int = data.get("count", len(integrations))
-        total_count: int = data.get("total_count", count)
+        integrations = [i if isinstance(i, Integration) else Integration(**i) for i in items]
+        count = len(integrations)
+        total_count = count
 
         try:
             return IntegrationsResponse(integrations=integrations, count=count, total_count=total_count)
@@ -153,12 +161,20 @@ class AsyncIntegrations(AsyncAPIResource):
             return None
 
         data = _unwrap(resp)
-        if not isinstance(data, dict):
+
+        # The API returns the integrations array directly (wrapped in the
+        # standard {"status": ..., "data": [...]} envelope).  After unwrapping,
+        # ``data`` is a list of integration dicts.
+        if isinstance(data, list):
+            items = data
+        elif isinstance(data, dict):
+            items = data.get("integrations", [])
+        else:
             return None
 
-        integrations = [i if isinstance(i, Integration) else Integration(**i) for i in data.get("integrations", [])]
-        count: int = data.get("count", len(integrations))
-        total_count: int = data.get("total_count", count)
+        integrations = [i if isinstance(i, Integration) else Integration(**i) for i in items]
+        count = len(integrations)
+        total_count = count
 
         try:
             return IntegrationsResponse(integrations=integrations, count=count, total_count=total_count)

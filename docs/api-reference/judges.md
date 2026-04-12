@@ -67,7 +67,7 @@ Creates a new judge with the specified evaluation criteria.
 | ----------------- | -------------------------------- | -------- | -------------------------------------------- |
 | `name`            | `str`                            | Yes      | Display name for the judge                   |
 | `evaluation_goal` | `str`                            | Yes      | Description of what the judge should evaluate |
-| `model_id`        | `str \| None`                    | Yes*     | ID of the LLM model to use (required by API)|
+| `model_id`        | `str \| None`                    | No       | ID of the LLM model to use. If omitted, the server uses a default model |
 | `timeout`         | `float \| httpx.Timeout \| None` | No       | Override request timeout                     |
 
 #### Returns

@@ -163,8 +163,8 @@ trace_eval = client.trace_evaluations.create(
     judge_id=judge.id,
 )
 
-# Get results
-results = client.trace_evaluations.get_results(trace_eval.id)
+# Wait for completion and get results
+result = client.trace_evaluations.wait_for_completion(trace_eval.id)
 ```
 
 ### Custom models
