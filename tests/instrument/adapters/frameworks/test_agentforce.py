@@ -13,16 +13,15 @@ import pytest
 
 import layerlens.instrument.adapters.frameworks.agentforce as _mod
 from layerlens.instrument._capture_config import CaptureConfig
+from layerlens.instrument.adapters.frameworks._utils import truncate as _truncate
 from layerlens.instrument.adapters.frameworks.agentforce import (
     AgentforceAdapter,
-    _SalesforceCredentials,
     _int_or_zero,
     _sf_datetime,
+    _SalesforceCredentials,
 )
-from layerlens.instrument.adapters.frameworks._utils import truncate as _truncate
 
-from .conftest import capture_framework_trace, find_event, find_events
-
+from .conftest import find_event, find_events, capture_framework_trace
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -122,7 +121,8 @@ def _setup(
     adapter._connection = mock_conn
     adapter._connected = True
     adapter._credentials = _SalesforceCredentials(
-        client_id="test", client_secret="test",
+        client_id="test",
+        client_secret="test",
         instance_url="https://test.salesforce.com",
         access_token="fake-token",
     )
@@ -145,10 +145,13 @@ class TestLifecycle:
     def test_raises_when_httpx_missing(self, mock_client, monkeypatch):
         monkeypatch.setattr(_mod, "_HAS_HTTPX", False)
         with pytest.raises(ImportError, match="httpx"):
-            AgentforceAdapter(mock_client).connect(credentials={
-                "client_id": "x", "client_secret": "y",
-                "instance_url": "https://test.salesforce.com",
-            })
+            AgentforceAdapter(mock_client).connect(
+                credentials={
+                    "client_id": "x",
+                    "client_secret": "y",
+                    "instance_url": "https://test.salesforce.com",
+                }
+            )
 
     def test_raises_when_credentials_missing(self, mock_client):
         with pytest.raises(ValueError, match="credentials are required"):
@@ -156,9 +159,12 @@ class TestLifecycle:
 
     def test_raises_when_instance_url_missing(self, mock_client):
         with pytest.raises(ValueError, match="instance_url is required"):
-            AgentforceAdapter(mock_client).connect(credentials={
-                "client_id": "x", "client_secret": "y",
-            })
+            AgentforceAdapter(mock_client).connect(
+                credentials={
+                    "client_id": "x",
+                    "client_secret": "y",
+                }
+            )
 
     def test_disconnect_closes_connection(self, mock_client):
         adapter, _, mock_conn = _setup(mock_client)
@@ -184,14 +190,16 @@ class TestLifecycle:
 class TestCredentials:
     def test_normalizes_instance_url(self):
         creds = _SalesforceCredentials(
-            client_id="x", client_secret="y",
+            client_id="x",
+            client_secret="y",
             instance_url="https://test.salesforce.com/",
         )
         assert creds.instance_url == "https://test.salesforce.com"
 
     def test_builds_token_url(self):
         creds = _SalesforceCredentials(
-            client_id="x", client_secret="y",
+            client_id="x",
+            client_secret="y",
             instance_url="https://test.salesforce.com",
         )
         assert creds.token_url == "https://test.salesforce.com/services/oauth2/token"
@@ -325,12 +333,14 @@ class TestToolStep:
         adapter, uploaded, _ = _setup(
             mock_client,
             sessions=[_make_session()],
-            interactions=[_make_interaction(
-                step_type="action",
-                ToolName="get_weather",
-                ToolInput='{"city": "SF"}',
-                ToolOutput='{"temp": 72}',
-            )],
+            interactions=[
+                _make_interaction(
+                    step_type="action",
+                    ToolName="get_weather",
+                    ToolInput='{"city": "SF"}',
+                    ToolOutput='{"temp": 72}',
+                )
+            ],
         )
         adapter.import_sessions()
         tc = find_event(uploaded["events"], "tool.call")
@@ -343,9 +353,14 @@ class TestToolStep:
             mock_client,
             capture_config=CaptureConfig(capture_content=False),
             sessions=[_make_session()],
-            interactions=[_make_interaction(
-                step_type="action", ToolName="t", ToolInput="secret", ToolOutput="classified",
-            )],
+            interactions=[
+                _make_interaction(
+                    step_type="action",
+                    ToolName="t",
+                    ToolInput="secret",
+                    ToolOutput="classified",
+                )
+            ],
         )
         adapter.import_sessions()
         tc = find_event(uploaded["events"], "tool.call")
@@ -363,12 +378,14 @@ class TestHandoffStep:
         adapter, uploaded, _ = _setup(
             mock_client,
             sessions=[_make_session()],
-            interactions=[_make_interaction(
-                step_type="escalation",
-                StepName="escalate_to_human",
-                EscalationTarget="support-queue-1",
-                Input="Customer needs help",
-            )],
+            interactions=[
+                _make_interaction(
+                    step_type="escalation",
+                    StepName="escalate_to_human",
+                    EscalationTarget="support-queue-1",
+                    Input="Customer needs help",
+                )
+            ],
         )
         adapter.import_sessions()
         h = find_event(uploaded["events"], "agent.handoff")
@@ -464,7 +481,8 @@ class TestErrorIsolation:
         adapter._connection = mock_conn
         adapter._connected = True
         adapter._credentials = _SalesforceCredentials(
-            client_id="test", client_secret="test",
+            client_id="test",
+            client_secret="test",
             instance_url="https://test.salesforce.com",
             access_token="fake-token",
         )

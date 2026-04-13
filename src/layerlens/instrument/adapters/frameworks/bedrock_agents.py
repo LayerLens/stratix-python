@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Set
+from typing import Any, Set, Dict, Optional
 
-from ._base_framework import FrameworkAdapter
 from ._utils import safe_serialize
+from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
@@ -139,8 +139,10 @@ class BedrockAgentsAdapter(FrameworkAdapter):
             )
             self._set_if_capturing(payload, "input", params.get("inputText"))
             self._emit(
-                "agent.input", payload,
-                span_id=root, parent_span_id=None,
+                "agent.input",
+                payload,
+                span_id=root,
+                parent_span_id=None,
                 span_name="bedrock.invoke_agent",
             )
         except Exception:
@@ -160,8 +162,10 @@ class BedrockAgentsAdapter(FrameworkAdapter):
                 payload["latency_ms"] = latency_ms
             self._set_if_capturing(payload, "output", output)
             self._emit(
-                "agent.output", payload,
-                span_id=root, parent_span_id=None,
+                "agent.output",
+                payload,
+                span_id=root,
+                parent_span_id=None,
                 span_name="bedrock.invoke_agent",
             )
 

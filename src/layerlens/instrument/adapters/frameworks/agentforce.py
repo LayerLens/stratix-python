@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 from dataclasses import dataclass
 
-from ._base_framework import FrameworkAdapter
 from ._utils import truncate
+from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)

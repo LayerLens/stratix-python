@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from ._base_framework import FrameworkAdapter
-from ._utils import safe_serialize, truncate
-from ..._capture_config import CaptureConfig
+from ._utils import truncate, safe_serialize
 from ..._collector import TraceCollector
+from ._base_framework import FrameworkAdapter
+from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +121,8 @@ class AutoGenAdapter(FrameworkAdapter):
         if c is None:
             return
         c.emit(
-            event_type, payload,
+            event_type,
+            payload,
             span_id=span_id or self._new_span_id(),
             parent_span_id=parent_span_id or self._root_span_id,
             span_name=span_name,
@@ -217,7 +218,8 @@ class AutoGenAdapter(FrameworkAdapter):
         if stage is not None:
             payload["delivery_stage"] = _enum_name(stage)
         self._set_if_capturing(
-            payload, "content",
+            payload,
+            "content",
             truncate(str(_get_field(event, "payload", "")), 2000),
         )
 

@@ -8,13 +8,12 @@ Requires autogen-core >= 0.4 (Python >= 3.10).
 
 from __future__ import annotations
 
+# Skip entire module when autogen_core is not available.
+import sys
 import logging
 from typing import Any, Optional
 
 import pytest
-
-# Skip entire module when autogen_core is not available.
-import sys
 
 if sys.version_info < (3, 10):
     pytest.skip("autogen-core requires Python >= 3.10", allow_module_level=True)
@@ -25,27 +24,26 @@ except (ImportError, TypeError):
 
 from autogen_core import EVENT_LOGGER_NAME, AgentId  # noqa: E402
 from autogen_core.logging import (  # noqa: E402
-    AgentConstructionExceptionEvent,
-    DeliveryStage,
+    MessageKind,
     LLMCallEvent,
+    MessageEvent,
+    DeliveryStage,
+    ToolCallEvent,
     LLMStreamEndEvent,
     MessageDroppedEvent,
-    MessageEvent,
     MessageHandlerExceptionEvent,
-    MessageKind,
-    ToolCallEvent,
+    AgentConstructionExceptionEvent,
 )
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.autogen import (  # noqa: E402
     AutoGenAdapter,
     _enum_name,
-    _extract_model,
     _get_field,
+    _extract_model,
 )
 
-from .conftest import capture_framework_trace, find_event, find_events  # noqa: E402
-
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -98,10 +96,15 @@ class TestLifecycle:
 
     def test_disconnect_flushes_trace(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, LLMCallEvent(
-            messages=[], response={"model": "gpt-4o"},
-            prompt_tokens=10, completion_tokens=5,
-        ))
+        _log_and_flush(
+            adapter,
+            LLMCallEvent(
+                messages=[],
+                response={"model": "gpt-4o"},
+                prompt_tokens=10,
+                completion_tokens=5,
+            ),
+        )
         assert uploaded.get("trace_id") is not None
 
 
@@ -113,11 +116,15 @@ class TestLifecycle:
 class TestLLMCall:
     def test_model_invoke_emitted(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, LLMCallEvent(
-            messages=[{"role": "user", "content": "What is 2+2?"}],
-            response={"model": "gpt-4o", "choices": [{"message": {"content": "4"}}]},
-            prompt_tokens=50, completion_tokens=10,
-        ))
+        _log_and_flush(
+            adapter,
+            LLMCallEvent(
+                messages=[{"role": "user", "content": "What is 2+2?"}],
+                response={"model": "gpt-4o", "choices": [{"message": {"content": "4"}}]},
+                prompt_tokens=50,
+                completion_tokens=10,
+            ),
+        )
         events = uploaded["events"]
         me = find_event(events, "model.invoke")
         assert me["payload"]["framework"] == "autogen"
@@ -129,28 +136,44 @@ class TestLLMCall:
 
     def test_cost_record_emitted(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, LLMCallEvent(
-            messages=[], response={"model": "gpt-4o-mini"},
-            prompt_tokens=100, completion_tokens=25,
-        ))
+        _log_and_flush(
+            adapter,
+            LLMCallEvent(
+                messages=[],
+                response={"model": "gpt-4o-mini"},
+                prompt_tokens=100,
+                completion_tokens=25,
+            ),
+        )
         cost = find_event(uploaded["events"], "cost.record")
         assert cost["payload"]["tokens_total"] == 125
         assert cost["payload"]["model"] == "gpt-4o-mini"
 
     def test_zero_tokens_no_cost(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, LLMCallEvent(
-            messages=[], response={}, prompt_tokens=0, completion_tokens=0,
-        ))
+        _log_and_flush(
+            adapter,
+            LLMCallEvent(
+                messages=[],
+                response={},
+                prompt_tokens=0,
+                completion_tokens=0,
+            ),
+        )
         me = find_event(uploaded["events"], "model.invoke")
         assert "tokens_prompt" not in me["payload"]
         assert len(find_events(uploaded["events"], "cost.record")) == 0
 
     def test_stream_end_handled_same(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, LLMStreamEndEvent(
-            response={"model": "gpt-4o"}, prompt_tokens=30, completion_tokens=15,
-        ))
+        _log_and_flush(
+            adapter,
+            LLMStreamEndEvent(
+                response={"model": "gpt-4o"},
+                prompt_tokens=30,
+                completion_tokens=15,
+            ),
+        )
         me = find_event(uploaded["events"], "model.invoke")
         assert me["payload"]["tokens_total"] == 45
 
@@ -162,21 +185,30 @@ class TestLLMCall:
         handles that gracefully.
         """
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, LLMCallEvent(
-            messages=[], response={},
-            prompt_tokens=10, completion_tokens=5,
-        ))
+        _log_and_flush(
+            adapter,
+            LLMCallEvent(
+                messages=[],
+                response={},
+                prompt_tokens=10,
+                completion_tokens=5,
+            ),
+        )
         me = find_event(uploaded["events"], "model.invoke")
         # No runtime context => agent_id is None => not in payload
         assert "agent_id" not in me["payload"]
 
     def test_content_gating(self, mock_client):
         adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=False))
-        _log_and_flush(adapter, LLMCallEvent(
-            messages=[{"role": "user", "content": "secret"}],
-            response={"model": "gpt-4o", "choices": [{"message": {"content": "classified"}}]},
-            prompt_tokens=10, completion_tokens=5,
-        ))
+        _log_and_flush(
+            adapter,
+            LLMCallEvent(
+                messages=[{"role": "user", "content": "secret"}],
+                response={"model": "gpt-4o", "choices": [{"message": {"content": "classified"}}]},
+                prompt_tokens=10,
+                completion_tokens=5,
+            ),
+        )
         me = find_event(uploaded["events"], "model.invoke")
         assert "messages" not in me["payload"]
         assert "output_message" not in me["payload"]
@@ -190,11 +222,14 @@ class TestLLMCall:
 class TestToolCall:
     def test_tool_call_emitted(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, ToolCallEvent(
-            tool_name="get_weather",
-            arguments={"city": "NYC"},
-            result='{"temp": 72}',
-        ))
+        _log_and_flush(
+            adapter,
+            ToolCallEvent(
+                tool_name="get_weather",
+                arguments={"city": "NYC"},
+                result='{"temp": 72}',
+            ),
+        )
         tc = find_event(uploaded["events"], "tool.call")
         assert tc["payload"]["tool_name"] == "get_weather"
         assert tc["payload"]["input"] == {"city": "NYC"}
@@ -202,9 +237,14 @@ class TestToolCall:
 
     def test_tool_content_gating(self, mock_client):
         adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=False))
-        _log_and_flush(adapter, ToolCallEvent(
-            tool_name="search", arguments={"q": "secret"}, result="classified",
-        ))
+        _log_and_flush(
+            adapter,
+            ToolCallEvent(
+                tool_name="search",
+                arguments={"q": "secret"},
+                result="classified",
+            ),
+        )
         tc = find_event(uploaded["events"], "tool.call")
         assert tc["payload"]["tool_name"] == "search"
         assert "input" not in tc["payload"]
@@ -228,13 +268,16 @@ class TestToolCall:
 class TestMessage:
     def test_direct_message_emits_agent_input(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, MessageEvent(
-            payload="Hello, can you help?",
-            sender=AgentId("user_proxy", "default"),
-            receiver=AgentId("assistant", "default"),
-            kind=MessageKind.DIRECT,
-            delivery_stage=DeliveryStage.SEND,
-        ))
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="Hello, can you help?",
+                sender=AgentId("user_proxy", "default"),
+                receiver=AgentId("assistant", "default"),
+                kind=MessageKind.DIRECT,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
         msg = find_event(uploaded["events"], "agent.input")
         assert msg["payload"]["sender"] == "user_proxy/default"
         assert msg["payload"]["receiver"] == "assistant/default"
@@ -243,53 +286,77 @@ class TestMessage:
 
     def test_respond_message_emits_agent_output(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, MessageEvent(
-            payload="The answer is 42",
-            sender=AgentId("assistant", "default"),
-            receiver=AgentId("user_proxy", "default"),
-            kind=MessageKind.RESPOND,
-            delivery_stage=DeliveryStage.SEND,
-        ))
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="The answer is 42",
+                sender=AgentId("assistant", "default"),
+                receiver=AgentId("user_proxy", "default"),
+                kind=MessageKind.RESPOND,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
         out = find_event(uploaded["events"], "agent.output")
         assert "The answer is 42" in out["payload"]["content"]
 
     def test_publish_message(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, MessageEvent(
-            payload="Broadcast",
-            sender=AgentId("orchestrator", "default"),
-            receiver=AgentId("chat", "default"),
-            kind=MessageKind.PUBLISH,
-            delivery_stage=DeliveryStage.SEND,
-        ))
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="Broadcast",
+                sender=AgentId("orchestrator", "default"),
+                receiver=AgentId("chat", "default"),
+                kind=MessageKind.PUBLISH,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
         msg = find_event(uploaded["events"], "agent.input")
         assert msg["payload"]["message_kind"] == "PUBLISH"
 
     def test_none_sender_receiver(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, MessageEvent(
-            payload="orphan", sender=None, receiver=None,
-            kind=MessageKind.DIRECT, delivery_stage=DeliveryStage.SEND,
-        ))
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="orphan",
+                sender=None,
+                receiver=None,
+                kind=MessageKind.DIRECT,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
         msg = find_event(uploaded["events"], "agent.input")
         assert "sender" not in msg["payload"]
         assert "receiver" not in msg["payload"]
 
     def test_large_message_truncated(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, MessageEvent(
-            payload="x" * 5000, sender=None, receiver=None,
-            kind=MessageKind.DIRECT, delivery_stage=DeliveryStage.SEND,
-        ))
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="x" * 5000,
+                sender=None,
+                receiver=None,
+                kind=MessageKind.DIRECT,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
         msg = find_event(uploaded["events"], "agent.input")
         assert len(msg["payload"]["content"]) <= 2010  # truncate adds "..."
 
     def test_content_gating(self, mock_client):
         adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=False))
-        _log_and_flush(adapter, MessageEvent(
-            payload="secret message", sender=None, receiver=None,
-            kind=MessageKind.DIRECT, delivery_stage=DeliveryStage.SEND,
-        ))
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="secret message",
+                sender=None,
+                receiver=None,
+                kind=MessageKind.DIRECT,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
         msg = find_event(uploaded["events"], "agent.input")
         assert "content" not in msg["payload"]
 
@@ -302,23 +369,29 @@ class TestMessage:
 class TestErrors:
     def test_message_dropped(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, MessageDroppedEvent(
-            payload="blocked",
-            sender=AgentId("user", "default"),
-            receiver=AgentId("assistant", "default"),
-            kind=MessageKind.DIRECT,
-        ))
+        _log_and_flush(
+            adapter,
+            MessageDroppedEvent(
+                payload="blocked",
+                sender=AgentId("user", "default"),
+                receiver=AgentId("assistant", "default"),
+                kind=MessageKind.DIRECT,
+            ),
+        )
         err = find_event(uploaded["events"], "agent.error")
         assert err["payload"]["dropped"] is True
         assert err["payload"]["sender"] == "user/default"
 
     def test_handler_exception(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, MessageHandlerExceptionEvent(
-            payload="bad message",
-            handling_agent=AgentId("assistant", "default"),
-            exception=RuntimeError("Handler crashed"),
-        ))
+        _log_and_flush(
+            adapter,
+            MessageHandlerExceptionEvent(
+                payload="bad message",
+                handling_agent=AgentId("assistant", "default"),
+                exception=RuntimeError("Handler crashed"),
+            ),
+        )
         err = find_event(uploaded["events"], "agent.error")
         assert "Handler crashed" in err["payload"]["error"]
         # Real autogen events stringify exceptions in kwargs, so the
@@ -328,10 +401,13 @@ class TestErrors:
 
     def test_construction_exception(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, AgentConstructionExceptionEvent(
-            agent_id=AgentId("broken_agent", "default"),
-            exception=TypeError("Missing required param"),
-        ))
+        _log_and_flush(
+            adapter,
+            AgentConstructionExceptionEvent(
+                agent_id=AgentId("broken_agent", "default"),
+                exception=TypeError("Missing required param"),
+            ),
+        )
         err = find_event(uploaded["events"], "agent.error")
         assert "Missing required param" in err["payload"]["error"]
         # Same as above: exception is stringified in kwargs.
@@ -340,11 +416,14 @@ class TestErrors:
 
     def test_string_exception_fallback(self, mock_client):
         adapter, uploaded = _setup(mock_client)
-        _log_and_flush(adapter, MessageHandlerExceptionEvent(
-            payload="bad",
-            handling_agent=AgentId("a", "d"),
-            exception="serialized error",
-        ))
+        _log_and_flush(
+            adapter,
+            MessageHandlerExceptionEvent(
+                payload="bad",
+                handling_agent=AgentId("a", "d"),
+                exception="serialized error",
+            ),
+        )
         err = find_event(uploaded["events"], "agent.error")
         assert err["payload"]["error"] == "serialized error"
         assert err["payload"]["error_type"] == "Exception"
@@ -361,34 +440,51 @@ class TestFullConversation:
         logger = logging.getLogger(EVENT_LOGGER_NAME)
 
         # User sends message
-        logger.info(MessageEvent(
-            payload="What's the weather?",
-            sender=AgentId("user_proxy", "default"),
-            receiver=AgentId("assistant", "default"),
-            kind=MessageKind.DIRECT, delivery_stage=DeliveryStage.SEND,
-        ))
+        logger.info(
+            MessageEvent(
+                payload="What's the weather?",
+                sender=AgentId("user_proxy", "default"),
+                receiver=AgentId("assistant", "default"),
+                kind=MessageKind.DIRECT,
+                delivery_stage=DeliveryStage.SEND,
+            )
+        )
         # LLM call
-        logger.info(LLMCallEvent(
-            messages=[{"role": "user", "content": "What's the weather?"}],
-            response={"model": "gpt-4o"},
-            prompt_tokens=50, completion_tokens=15,
-        ))
+        logger.info(
+            LLMCallEvent(
+                messages=[{"role": "user", "content": "What's the weather?"}],
+                response={"model": "gpt-4o"},
+                prompt_tokens=50,
+                completion_tokens=15,
+            )
+        )
         # Tool call
-        logger.info(ToolCallEvent(
-            tool_name="get_weather", arguments={"city": "NYC"}, result='{"temp": 72}',
-        ))
+        logger.info(
+            ToolCallEvent(
+                tool_name="get_weather",
+                arguments={"city": "NYC"},
+                result='{"temp": 72}',
+            )
+        )
         # Second LLM call
-        logger.info(LLMCallEvent(
-            messages=[], response={"model": "gpt-4o"},
-            prompt_tokens=80, completion_tokens=20,
-        ))
+        logger.info(
+            LLMCallEvent(
+                messages=[],
+                response={"model": "gpt-4o"},
+                prompt_tokens=80,
+                completion_tokens=20,
+            )
+        )
         # Agent responds
-        logger.info(MessageEvent(
-            payload="It's 72F in NYC",
-            sender=AgentId("assistant", "default"),
-            receiver=AgentId("user_proxy", "default"),
-            kind=MessageKind.RESPOND, delivery_stage=DeliveryStage.SEND,
-        ))
+        logger.info(
+            MessageEvent(
+                payload="It's 72F in NYC",
+                sender=AgentId("assistant", "default"),
+                receiver=AgentId("user_proxy", "default"),
+                kind=MessageKind.RESPOND,
+                delivery_stage=DeliveryStage.SEND,
+            )
+        )
 
         adapter.disconnect()
         events = uploaded["events"]
@@ -422,9 +518,14 @@ class TestTraceIntegrity:
         adapter, uploaded = _setup(mock_client)
         logger = logging.getLogger(EVENT_LOGGER_NAME)
         for i in range(5):
-            logger.info(LLMCallEvent(
-                messages=[], response={}, prompt_tokens=10 * (i + 1), completion_tokens=5,
-            ))
+            logger.info(
+                LLMCallEvent(
+                    messages=[],
+                    response={},
+                    prompt_tokens=10 * (i + 1),
+                    completion_tokens=5,
+                )
+            )
         adapter.disconnect()
         seq = [e["sequence_id"] for e in uploaded["events"]]
         assert seq == sorted(seq)
@@ -468,10 +569,14 @@ class TestConcurrency:
         adapter, uploaded = _setup(mock_client)
         logger = logging.getLogger(EVENT_LOGGER_NAME)
         for i in range(5):
-            logger.info(LLMCallEvent(
-                messages=[], response={"model": "gpt-4o"},
-                prompt_tokens=10 * (i + 1), completion_tokens=5 * (i + 1),
-            ))
+            logger.info(
+                LLMCallEvent(
+                    messages=[],
+                    response={"model": "gpt-4o"},
+                    prompt_tokens=10 * (i + 1),
+                    completion_tokens=5 * (i + 1),
+                )
+            )
         adapter.disconnect()
         model_events = find_events(uploaded["events"], "model.invoke")
         assert len(model_events) == 5
@@ -489,7 +594,8 @@ class TestHelpers:
         e = LLMCallEvent(
             messages=[{"role": "user", "content": "hi"}],
             response={"model": "gpt-4o"},
-            prompt_tokens=100, completion_tokens=50,
+            prompt_tokens=100,
+            completion_tokens=50,
         )
         assert _get_field(e, "messages") == [{"role": "user", "content": "hi"}]
         assert _get_field(e, "prompt_tokens") == 100
@@ -499,12 +605,15 @@ class TestHelpers:
     def test_get_field_from_attr(self):
         class E:
             model = "claude-3"
+
         assert _get_field(E(), "model") == "claude-3"
 
     def test_extract_model_from_response(self):
         e = LLMCallEvent(
-            messages=[], response={"model": "gpt-4o"},
-            prompt_tokens=0, completion_tokens=0,
+            messages=[],
+            response={"model": "gpt-4o"},
+            prompt_tokens=0,
+            completion_tokens=0,
         )
         assert _extract_model(e) == "gpt-4o"
 
@@ -512,15 +621,20 @@ class TestHelpers:
         # Real events don't have a top-level "model" kwarg, but _extract_model
         # falls back to checking kwargs["model"] if response has none.
         e = LLMCallEvent(
-            messages=[], response={}, model="claude-3",
-            prompt_tokens=0, completion_tokens=0,
+            messages=[],
+            response={},
+            model="claude-3",
+            prompt_tokens=0,
+            completion_tokens=0,
         )
         assert _extract_model(e) == "claude-3"
 
     def test_extract_model_none(self):
         e = LLMCallEvent(
-            messages=[], response={},
-            prompt_tokens=0, completion_tokens=0,
+            messages=[],
+            response={},
+            prompt_tokens=0,
+            completion_tokens=0,
         )
         assert _extract_model(e) is None
 

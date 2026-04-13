@@ -9,27 +9,25 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, Iterator, Optional
-from unittest.mock import Mock
 
 import pytest
 
 agno = pytest.importorskip("agno")
 
+from agno.metrics import RunMetrics, ModelMetrics, ToolCallMetrics  # noqa: E402
 from agno.agent.agent import Agent  # noqa: E402
-from agno.metrics import ModelMetrics, RunMetrics, ToolCallMetrics  # noqa: E402
 from agno.models.base import Model  # noqa: E402
 from agno.models.response import ModelResponse, ToolExecution  # noqa: E402
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.agno import (  # noqa: E402
     AgnoAdapter,
-    _extract_tokens,
-    _extract_tools,
     _model_id,
+    _extract_tools,
+    _extract_tokens,
 )
 
-from .conftest import capture_framework_trace, find_event, find_events  # noqa: E402
-
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Test model
@@ -82,7 +80,7 @@ class _TestModel(Model):
         if run_response and run_response.metrics:
             run_response.metrics.input_tokens += resp.input_tokens or 0
             run_response.metrics.output_tokens += resp.output_tokens or 0
-            run_response.metrics.total_tokens += (resp.total_tokens or 0)
+            run_response.metrics.total_tokens += resp.total_tokens or 0
         return resp
 
     async def aresponse(self, messages: Any, **kwargs: Any) -> ModelResponse:
@@ -219,7 +217,9 @@ class TestSyncAgentIO:
     def test_content_gating(self, mock_client):
         agent = _make_agent(content="secret")
         uploaded = _connect_and_run(
-            mock_client, agent=agent, config=CaptureConfig(capture_content=False),
+            mock_client,
+            agent=agent,
+            config=CaptureConfig(capture_content=False),
         )
         events = uploaded["events"]
         assert "input" not in find_event(events, "agent.input")["payload"]
@@ -233,6 +233,7 @@ class TestSyncAgentIO:
 
         # Sabotage the original run to raise
         original = agent.run._layerlens_original
+
         def _boom(*a: Any, **kw: Any) -> Any:
             raise RuntimeError("boom")
 

@@ -23,19 +23,20 @@ import pytest
 boto3 = pytest.importorskip("boto3")
 from botocore.stub import Stubber  # noqa: E402
 
+import layerlens.instrument.adapters.frameworks.bedrock_agents as _mod  # noqa: E402
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.bedrock_agents import (  # noqa: E402
     BedrockAgentsAdapter,
     _collect_steps,
     _extract_completion,
 )
-import layerlens.instrument.adapters.frameworks.bedrock_agents as _mod  # noqa: E402
 
-from .conftest import capture_framework_trace, find_event, find_events  # noqa: E402
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Minimal valid Stubber response (compliant with the service model)
 # ---------------------------------------------------------------------------
+
 
 def _stub_response() -> Dict[str, Any]:
     """Return a fresh minimal valid InvokeAgent response for the Stubber."""
@@ -80,9 +81,7 @@ def _make_injector(
         if trace_steps is not None:
             parsed["trace"] = {"steps": trace_steps}
         if nested_trace_steps is not None:
-            parsed.setdefault("trace", {})["trace"] = {
-                "orchestrationTrace": {"steps": nested_trace_steps}
-            }
+            parsed.setdefault("trace", {})["trace"] = {"orchestrationTrace": {"steps": nested_trace_steps}}
         if session_id is not None:
             parsed["sessionId"] = session_id
 
@@ -190,9 +189,7 @@ class TestLifecycle:
         boto.meta.events.register(_mod._BEFORE_HOOK, check_before)
         boto.meta.events.register(_mod._AFTER_HOOK, check_after)
 
-        boto.invoke_agent(
-            agentId="a1", agentAliasId="al1", sessionId="sess-1", inputText="hi"
-        )
+        boto.invoke_agent(agentId="a1", agentAliasId="al1", sessionId="sess-1", inputText="hi")
 
         assert fired["before"]
         assert fired["after"]
@@ -213,9 +210,7 @@ class TestLifecycle:
         stubber.add_response("invoke_agent", _stub_response())
 
         # No collector active, no events emitted, no crash
-        boto.invoke_agent(
-            agentId="a1", agentAliasId="al1", sessionId="sess-1", inputText="hi"
-        )
+        boto.invoke_agent(agentId="a1", agentAliasId="al1", sessionId="sess-1", inputText="hi")
 
     def test_connect_returns_target(self, mock_client):
         boto = _make_boto_client()
@@ -390,12 +385,14 @@ class TestActionGroup:
     def test_action_group_emitted(self, mock_client):
         injector = _make_injector(
             output_text="done",
-            trace_steps=[{
-                "type": "ACTION_GROUP",
-                "actionGroupName": "MyAction",
-                "actionGroupInput": {"key": "val"},
-                "actionGroupInvocationOutput": {"output": "result"},
-            }],
+            trace_steps=[
+                {
+                    "type": "ACTION_GROUP",
+                    "actionGroupName": "MyAction",
+                    "actionGroupInput": {"key": "val"},
+                    "actionGroupInvocationOutput": {"output": "result"},
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)
 
@@ -412,12 +409,14 @@ class TestActionGroup:
     def test_action_group_content_gating(self, mock_client):
         injector = _make_injector(
             output_text="done",
-            trace_steps=[{
-                "type": "ACTION_GROUP",
-                "actionGroupName": "A",
-                "actionGroupInput": "secret",
-                "actionGroupInvocationOutput": {"output": "classified"},
-            }],
+            trace_steps=[
+                {
+                    "type": "ACTION_GROUP",
+                    "actionGroupName": "A",
+                    "actionGroupInput": "secret",
+                    "actionGroupInvocationOutput": {"output": "classified"},
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(
             mock_client,
@@ -442,12 +441,14 @@ class TestKnowledgeBase:
     def test_knowledge_base_emitted(self, mock_client):
         injector = _make_injector(
             output_text="found it",
-            trace_steps=[{
-                "type": "KNOWLEDGE_BASE",
-                "knowledgeBaseId": "kb-99",
-                "knowledgeBaseLookupInput": "search query",
-                "knowledgeBaseLookupOutput": {"retrievedReferences": [{"text": "ref1"}]},
-            }],
+            trace_steps=[
+                {
+                    "type": "KNOWLEDGE_BASE",
+                    "knowledgeBaseId": "kb-99",
+                    "knowledgeBaseLookupInput": "search query",
+                    "knowledgeBaseLookupOutput": {"retrievedReferences": [{"text": "ref1"}]},
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)
 
@@ -469,11 +470,13 @@ class TestModelInvocation:
     def test_model_invoke_with_tokens(self, mock_client):
         injector = _make_injector(
             output_text="ok",
-            trace_steps=[{
-                "type": "MODEL_INVOCATION",
-                "foundationModel": "anthropic.claude-3",
-                "modelInvocationOutput": {"usage": {"inputTokens": 100, "outputTokens": 50}},
-            }],
+            trace_steps=[
+                {
+                    "type": "MODEL_INVOCATION",
+                    "foundationModel": "anthropic.claude-3",
+                    "modelInvocationOutput": {"usage": {"inputTokens": 100, "outputTokens": 50}},
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)
 
@@ -491,11 +494,13 @@ class TestModelInvocation:
     def test_cost_record_emitted(self, mock_client):
         injector = _make_injector(
             output_text="ok",
-            trace_steps=[{
-                "type": "MODEL_INVOCATION",
-                "foundationModel": "anthropic.claude-3",
-                "modelInvocationOutput": {"usage": {"inputTokens": 10, "outputTokens": 5}},
-            }],
+            trace_steps=[
+                {
+                    "type": "MODEL_INVOCATION",
+                    "foundationModel": "anthropic.claude-3",
+                    "modelInvocationOutput": {"usage": {"inputTokens": 10, "outputTokens": 5}},
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)
 
@@ -509,11 +514,13 @@ class TestModelInvocation:
     def test_no_tokens_no_cost(self, mock_client):
         injector = _make_injector(
             output_text="ok",
-            trace_steps=[{
-                "type": "MODEL_INVOCATION",
-                "foundationModel": "anthropic.claude-3",
-                "modelInvocationOutput": {},
-            }],
+            trace_steps=[
+                {
+                    "type": "MODEL_INVOCATION",
+                    "foundationModel": "anthropic.claude-3",
+                    "modelInvocationOutput": {},
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)
 
@@ -525,11 +532,13 @@ class TestModelInvocation:
     def test_cost_parented_to_model_span(self, mock_client):
         injector = _make_injector(
             output_text="ok",
-            trace_steps=[{
-                "type": "MODEL_INVOCATION",
-                "foundationModel": "m",
-                "modelInvocationOutput": {"usage": {"inputTokens": 1, "outputTokens": 1}},
-            }],
+            trace_steps=[
+                {
+                    "type": "MODEL_INVOCATION",
+                    "foundationModel": "m",
+                    "modelInvocationOutput": {"usage": {"inputTokens": 1, "outputTokens": 1}},
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)
 
@@ -551,11 +560,13 @@ class TestCollaboratorHandoff:
     def test_handoff_emitted(self, mock_client):
         injector = _make_injector(
             output_text="done",
-            trace_steps=[{
-                "type": "AGENT_COLLABORATOR",
-                "supervisorAgentId": "sup-1",
-                "collaboratorAgentId": "collab-2",
-            }],
+            trace_steps=[
+                {
+                    "type": "AGENT_COLLABORATOR",
+                    "supervisorAgentId": "sup-1",
+                    "collaboratorAgentId": "collab-2",
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)
 
@@ -629,11 +640,13 @@ class TestTraceIntegrity:
     def test_shared_trace_id_within_invocation(self, mock_client):
         injector = _make_injector(
             output_text="ok",
-            trace_steps=[{
-                "type": "MODEL_INVOCATION",
-                "foundationModel": "m",
-                "modelInvocationOutput": {"usage": {"inputTokens": 1, "outputTokens": 1}},
-            }],
+            trace_steps=[
+                {
+                    "type": "MODEL_INVOCATION",
+                    "foundationModel": "m",
+                    "modelInvocationOutput": {"usage": {"inputTokens": 1, "outputTokens": 1}},
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)
 
@@ -677,10 +690,12 @@ class TestTraceIntegrity:
     def test_nested_orchestration_trace_path(self, mock_client):
         injector = _make_injector(
             output_text="ok",
-            nested_trace_steps=[{
-                "type": "ACTION_GROUP",
-                "actionGroupName": "Nested",
-            }],
+            nested_trace_steps=[
+                {
+                    "type": "ACTION_GROUP",
+                    "actionGroupName": "Nested",
+                }
+            ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)
 
@@ -745,9 +760,11 @@ class TestHelpers:
         assert len(steps) == 1
 
     def test_collect_steps_nested(self):
-        steps = _collect_steps({
-            "trace": {"trace": {"orchestrationTrace": {"steps": [{"type": "B"}]}}},
-        })
+        steps = _collect_steps(
+            {
+                "trace": {"trace": {"orchestrationTrace": {"steps": [{"type": "B"}]}}},
+            }
+        )
         assert len(steps) == 1
 
     def test_collect_steps_bad_trace(self):
