@@ -173,8 +173,10 @@ include = ["src", "tests"]
 exclude = ["**/__pycache__"]
 reportMissingTypeStubs = false
 
-# Less strict settings for tests and cli
+# Less strict settings for adapter frameworks (optional deps not always installed), tests, and cli
 executionEnvironments = [
+  { root = "src/layerlens/instrument/adapters/frameworks", reportMissingImports = false, reportPossiblyUnboundVariable = false, reportOptionalMemberAccess = false, reportOptionalCall = false, reportArgumentType = false, reportAttributeAccessIssue = false },
+  { root = "src/layerlens/instrument/adapters/providers", reportMissingImports = false, reportAttributeAccessIssue = false },
   { root = "src/layerlens/cli", reportMissingImports = false, reportFunctionMemberAccess = false, reportCallIssue = false, reportArgumentType = false, reportAttributeAccessIssue = false },
   { root = "tests", reportGeneralTypeIssues = false, reportOptionalSubscript = false, reportOptionalMemberAccess = false, reportUntypedFunctionDecorator = false, reportUnknownArgumentType = false, reportUnknownMemberType = false, reportUnknownVariableType = false, reportUnnecessaryIsInstance = false, reportUnnecessaryComparison = false, reportArgumentType = false, reportCallIssue = false },
 ]
