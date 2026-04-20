@@ -107,7 +107,7 @@ class CaptureConfig:
         field_name = _EVENT_TYPE_MAP.get(event_type)
         if field_name is None:
             return True  # fail-open for unknown event types
-        return getattr(self, field_name)
+        return bool(getattr(self, field_name))
 
     @classmethod
     def minimal(cls) -> CaptureConfig:

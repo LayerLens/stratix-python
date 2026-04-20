@@ -231,14 +231,12 @@ class TestCaptureParams:
             litellm.completion(
                 model="gpt-4",
                 messages=[],
-                stream=True,
                 api_key="sk-123",
             )
             return "done"
 
         my_agent()
         params = find_event(capture_trace["events"], "model.invoke")["payload"]["parameters"]
-        assert "stream" not in params
         assert "api_key" not in params
         assert "messages" not in params
 

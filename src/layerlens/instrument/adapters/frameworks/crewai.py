@@ -45,6 +45,26 @@ class CrewAIAdapter(FrameworkAdapter):
         self._current_agent_span_id: Optional[str] = None
         self._tool_span_ids: Dict[str, str] = {}
         self._timers: Dict[str, int] = {}
+        self._llm_in_flight_model: Optional[str] = None
+
+    @staticmethod
+    def _llm_timer_key(event: Any) -> str:
+        """Stable timer key for an LLM call.
+
+        Uses ``call_id`` when present (older crewai versions), otherwise
+        falls back to ``agent_id``/``task_id`` (newer versions dropped
+        ``call_id``). We deliberately keep a single key when none of these
+        are present — LLM calls within a crew are serial, so the matching
+        start/complete event pair shares the key.
+        """
+        call_id = getattr(event, "call_id", None)
+        if call_id:
+            return f"llm:{call_id}"
+        agent_id = getattr(event, "agent_id", None)
+        task_id = getattr(event, "task_id", None)
+        if agent_id or task_id:
+            return f"llm:{agent_id}:{task_id}"
+        return "llm:current"
 
     _EVENT_MAP = [
         ("CrewKickoffStartedEvent", "_on_crew_started"),
@@ -66,6 +86,15 @@ class CrewAIAdapter(FrameworkAdapter):
         ("FlowFinishedEvent", "_on_flow_finished"),
         ("MCPToolExecutionCompletedEvent", "_on_mcp_tool_completed"),
         ("MCPToolExecutionFailedEvent", "_on_mcp_tool_failed"),
+    ]
+
+    # Optional delegation events — class names vary across crewai versions.
+    # We attempt to subscribe to each at connect time, swallowing AttributeError
+    # when the class doesn't exist in the installed version.
+    _DELEGATION_EVENT_MAP = [
+        ("AgentDelegationStartedEvent", "_on_delegation_started"),
+        ("AgentDelegationCompletedEvent", "_on_delegation_completed"),
+        ("DelegationEvent", "_on_delegation_started"),
     ]
 
     # ------------------------------------------------------------------
@@ -96,6 +125,22 @@ class CrewAIAdapter(FrameworkAdapter):
 
             ev.crewai_event_bus.on(event_cls)(_handler)
             self._registered_handlers.append((event_cls, _handler))
+
+        # Delegation events are optional — not every crewai version ships them.
+        for event_name, method_name in self._DELEGATION_EVENT_MAP:
+            event_cls = getattr(ev, event_name, None)
+            if event_cls is None:
+                continue
+            method = getattr(self, method_name)
+
+            def _delegation_handler(source: Any, event: Any, _m: Any = method) -> None:
+                try:
+                    _m(source, event)
+                except Exception:
+                    log.warning("layerlens: error in CrewAI delegation handler", exc_info=True)
+
+            ev.crewai_event_bus.on(event_cls)(_delegation_handler)
+            self._registered_handlers.append((event_cls, _delegation_handler))
 
     def _unsubscribe(self) -> None:
         try:
@@ -283,6 +328,13 @@ class CrewAIAdapter(FrameworkAdapter):
             self._current_agent_span_id = span_id
             parent = self._current_task_span_id or self._crew_span_id
         payload = self._payload(agent_role=agent_role)
+        # Capture manager-agent context so hierarchical crews are visible.
+        allow_delegation = getattr(agent, "allow_delegation", None) if agent else None
+        if allow_delegation is not None:
+            payload["allow_delegation"] = bool(allow_delegation)
+        is_manager = getattr(agent, "is_manager", None) if agent else None
+        if is_manager is not None:
+            payload["is_manager"] = bool(is_manager)
         tools = getattr(event, "tools", None)
         if tools:
             payload["tools"] = [getattr(t, "name", str(t)) for t in tools]
@@ -328,16 +380,50 @@ class CrewAIAdapter(FrameworkAdapter):
         )
 
     # ------------------------------------------------------------------
+    # Delegation / handoff (hierarchical crews)
+    # ------------------------------------------------------------------
+
+    def _on_delegation_started(self, source: Any, event: Any) -> None:
+        from_role = (
+            getattr(event, "from_agent", None)
+            or getattr(event, "manager_role", None)
+            or getattr(event, "source_agent", None)
+            or "manager"
+        )
+        to_role = (
+            getattr(event, "to_agent", None)
+            or getattr(event, "delegate_role", None)
+            or getattr(event, "target_agent", None)
+            or "worker"
+        )
+        task_name = self._get_task_name(event) or getattr(event, "description", "") or ""
+        payload = self._payload(from_agent=str(from_role), to_agent=str(to_role), phase="start")
+        if task_name:
+            payload["task"] = str(task_name)[:200]
+        self._set_if_capturing(payload, "context", safe_serialize(getattr(event, "context", None)))
+        self._fire("agent.handoff", payload, parent_span_id=self._leaf_parent())
+
+    def _on_delegation_completed(self, source: Any, event: Any) -> None:
+        from_role = getattr(event, "from_agent", None) or getattr(event, "manager_role", None) or "manager"
+        to_role = getattr(event, "to_agent", None) or getattr(event, "delegate_role", None) or "worker"
+        payload = self._payload(from_agent=str(from_role), to_agent=str(to_role), phase="complete")
+        self._set_if_capturing(payload, "result", safe_serialize(getattr(event, "result", None)))
+        self._fire("agent.handoff", payload, parent_span_id=self._leaf_parent())
+
+    # ------------------------------------------------------------------
     # LLM calls
     # ------------------------------------------------------------------
 
     def _on_llm_started(self, source: Any, event: Any) -> None:
-        call_id = getattr(event, "call_id", None)
-        if call_id:
-            self._tick(f"llm:{call_id}")
+        key = self._llm_timer_key(event)
+        self._tick(key)
+        # Remember the model for the paired completed/failed event, which in
+        # newer crewai drops ``call_id`` and may also drop ``model`` on failure.
+        with self._lock:
+            self._llm_in_flight_model = getattr(event, "model", None)
 
     def _on_llm_completed(self, source: Any, event: Any) -> None:
-        model = getattr(event, "model", None)
+        model = getattr(event, "model", None) or getattr(self, "_llm_in_flight_model", None)
         response = getattr(event, "response", None)
         usage = (
             getattr(response, "usage", None)
@@ -348,21 +434,22 @@ class CrewAIAdapter(FrameworkAdapter):
         payload = self._payload()
         if model:
             payload["model"] = model
-        call_id = getattr(event, "call_id", None)
-        if call_id:
-            latency_ms = self._tock(f"llm:{call_id}")
-            if latency_ms is not None:
-                payload["latency_ms"] = latency_ms
+        key = self._llm_timer_key(event)
+        latency_ms = self._tock(key)
+        if latency_ms is not None:
+            payload["latency_ms"] = latency_ms
         payload.update(tokens)
         parent = self._leaf_parent()
         span_id = self._new_span_id()
         self._fire("model.invoke", payload, span_id=span_id, parent_span_id=parent)
         if tokens:
             self._fire("cost.record", self._payload(model=model, **tokens), span_id=span_id, parent_span_id=parent)
+        with self._lock:
+            self._llm_in_flight_model = None
 
     def _on_llm_failed(self, source: Any, event: Any) -> None:
         error = str(getattr(event, "error", "unknown error"))
-        model = getattr(event, "model", None)
+        model = getattr(event, "model", None) or getattr(self, "_llm_in_flight_model", None)
         payload = self._payload(error=error)
         if model:
             payload["model"] = model

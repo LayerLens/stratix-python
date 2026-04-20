@@ -231,16 +231,51 @@ class LangfuseAdapter(FrameworkAdapter):
                     exc_info=True,
                 )
 
+        # Scores (Langfuse "annotations") — both human annotations and LLM-as-judge
+        # scores land in the same collection. Emit them as evaluation.result so
+        # the migration path preserves all grading signal.
+        for score in trace.get("scores", []) or []:
+            try:
+                score_payload: Dict[str, Any] = {
+                    "framework": "langfuse",
+                    "langfuse_trace_id": trace_id,
+                    "name": score.get("name"),
+                    "value": score.get("value"),
+                    "source": score.get("source"),
+                    "data_type": score.get("dataType"),
+                    "observation_id": score.get("observationId"),
+                }
+                comment = score.get("comment")
+                if comment:
+                    score_payload["comment"] = truncate(str(comment), max_len=2000)
+                # Session clustering: Langfuse groups related traces via sessionId.
+                # Carry it through so downstream session-level analytics work.
+                session_id = score.get("sessionId") or trace.get("sessionId")
+                if session_id:
+                    score_payload["session_id"] = session_id
+                collector.emit(
+                    "evaluation.result",
+                    score_payload,
+                    span_id=new_span_id(),
+                    parent_span_id=root_span_id,
+                )
+            except Exception:
+                log.warning("layerlens: failed to import score", exc_info=True)
+
         # Emit agent.output from trace output
         trace_output = trace.get("output")
         if trace_output is not None:
+            out_payload: Dict[str, Any] = {
+                "framework": "langfuse",
+                "langfuse_trace_id": trace_id,
+                "content": truncate(str(trace_output), max_len=4000),
+            }
+            session_id = trace.get("sessionId")
+            if session_id:
+                out_payload["session_id"] = session_id
             collector.emit(
                 "agent.output",
-                {
-                    "framework": "langfuse",
-                    "langfuse_trace_id": trace_id,
-                    "content": truncate(str(trace_output), max_len=4000),
-                },
+                out_payload,
                 span_id=root_span_id,
                 parent_span_id=None,
                 span_name=trace.get("name"),
@@ -325,7 +360,7 @@ class LangfuseAdapter(FrameworkAdapter):
             span_name=obs.get("name"),
         )
 
-        # Emit cost.record alongside generation
+        # Emit cost.record alongside generation with fuller breakdown
         if prompt_tokens or completion_tokens:
             cost_payload: Dict[str, Any] = {
                 "framework": "langfuse",
@@ -334,13 +369,41 @@ class LangfuseAdapter(FrameworkAdapter):
                 "tokens_completion": completion_tokens,
                 "tokens_total": total_tokens,
             }
-            # Include cost amounts if available
+            # Include cost breakdown (input/output/cache/audio) and detailed
+            # usage pieces so dashboards can attribute spend beyond a single
+            # lump-sum number.
             cost_details = obs.get("costDetails") or {}
-            total_cost = obs.get("calculatedTotalCost")
+            total_cost = obs.get("calculatedTotalCost") or obs.get("totalCost")
             if total_cost is not None:
                 cost_payload["cost_usd"] = total_cost
-            elif cost_details:
+            if cost_details:
+                # Normalize well-known cost breakdown keys so downstream UIs
+                # don't each need to know about Langfuse's JSON shape.
+                for src, dst in (
+                    ("input", "cost_input_usd"),
+                    ("output", "cost_output_usd"),
+                    ("total", "cost_total_usd"),
+                    ("inputCache", "cost_input_cache_usd"),
+                    ("outputReasoning", "cost_output_reasoning_usd"),
+                    ("audio", "cost_audio_usd"),
+                ):
+                    val = cost_details.get(src)
+                    if val is not None:
+                        cost_payload[dst] = val
                 cost_payload["cost_details"] = cost_details
+            usage_details = obs.get("usageDetails") or {}
+            for src, dst in (
+                ("cacheRead", "cached_tokens"),
+                ("cacheCreation", "cache_creation_tokens"),
+                ("reasoning", "reasoning_tokens"),
+                ("audio", "audio_tokens"),
+            ):
+                val = usage_details.get(src)
+                if val is not None:
+                    try:
+                        cost_payload[dst] = int(val)
+                    except (TypeError, ValueError):
+                        pass
 
             collector.emit(
                 "cost.record",

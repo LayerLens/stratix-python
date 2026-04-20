@@ -230,12 +230,23 @@ class AgentforceAdapter(FrameworkAdapter):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         limit: Optional[int] = None,
+        since_cursor: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Incrementally import Agentforce sessions.
+
+        ``since_cursor`` — when provided, only sessions whose ``StartTime``
+        strictly exceeds the cursor are imported. On return, the summary
+        includes a ``next_cursor`` set to the max ``StartTime`` seen so the
+        caller can persist it and pass it into the next run for exactly-once
+        incremental sync.
+        """
         conn = self._connection
         if conn is None or not self._connected:
             raise RuntimeError("Adapter is not connected — call connect() first")
 
         where_parts: List[str] = []
+        if since_cursor:
+            where_parts.append(f"StartTime > {_sf_datetime(since_cursor)}")
         if start_date:
             where_parts.append(f"StartTime >= {_sf_datetime(start_date)}")
         if end_date:
@@ -244,7 +255,12 @@ class AgentforceAdapter(FrameworkAdapter):
         limit_clause = f"LIMIT {limit}" if limit else ""
 
         soql = _SOQL_SESSIONS.format(where_clause=where_clause, limit_clause=limit_clause)
-        summary: Dict[str, Any] = {"sessions_imported": 0, "events_emitted": 0, "errors": 0}
+        summary: Dict[str, Any] = {
+            "sessions_imported": 0,
+            "events_emitted": 0,
+            "errors": 0,
+            "next_cursor": since_cursor,
+        }
 
         try:
             sessions = conn.query(soql)
@@ -253,15 +269,23 @@ class AgentforceAdapter(FrameworkAdapter):
             summary["errors"] += 1
             return summary
 
+        max_cursor = since_cursor
         for session in sessions:
             try:
                 emitted = self._import_session(conn, session)
                 summary["sessions_imported"] += 1
                 summary["events_emitted"] += emitted
+                # Advance the cursor to the latest StartTime seen. StartTime
+                # values are ISO-8601 so lexicographic comparison is correct.
+                start_time = session.get("StartTime")
+                if start_time and (max_cursor is None or str(start_time) > str(max_cursor)):
+                    max_cursor = str(start_time)
             except Exception:
                 log.warning("layerlens: error importing session %s", session.get("Id"), exc_info=True)
                 summary["errors"] += 1
 
+        if max_cursor is not None:
+            summary["next_cursor"] = max_cursor
         return summary
 
     # ------------------------------------------------------------------

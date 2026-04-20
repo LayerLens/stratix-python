@@ -226,7 +226,11 @@ class TestImportSessions:
     def test_no_sessions_returns_zeros(self, mock_client):
         adapter, _, _ = _setup(mock_client, sessions=[])
         summary = adapter.import_sessions()
-        assert summary == {"sessions_imported": 0, "events_emitted": 0, "errors": 0}
+        assert summary["sessions_imported"] == 0
+        assert summary["events_emitted"] == 0
+        assert summary["errors"] == 0
+        # No cursor advancement when there's nothing to import.
+        assert summary["next_cursor"] is None
 
 
 # ---------------------------------------------------------------------------

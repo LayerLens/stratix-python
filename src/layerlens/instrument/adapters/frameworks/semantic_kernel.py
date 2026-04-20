@@ -216,10 +216,35 @@ class SemanticKernelAdapter(FrameworkAdapter):
                 for name in names:
                     if name not in self._seen_plugins:
                         self._seen_plugins.add(name)
-                        self._emit(
-                            "environment.config",
-                            self._payload(plugin_name=name, event_subtype="plugin_registered"),
+                        # Extract function inventory + dependency shape so we can
+                        # reason about what each plugin can do and which other
+                        # plugins/services it leans on.
+                        plugin_payload = self._payload(
+                            plugin_name=name,
+                            event_subtype="plugin_registered",
                         )
+                        try:
+                            plugin_obj = (
+                                plugins[name] if hasattr(plugins, "__getitem__") else getattr(plugins, name, None)
+                            )
+                        except Exception:
+                            plugin_obj = None
+                        if plugin_obj is not None:
+                            functions = getattr(plugin_obj, "functions", None) or {}
+                            func_names = (
+                                list(functions.keys())
+                                if hasattr(functions, "keys")
+                                else [getattr(f, "name", str(f)) for f in functions]
+                            )
+                            if func_names:
+                                plugin_payload["functions"] = func_names
+                            # Plugin dependencies: SK plugins often hold references to
+                            # a kernel-scoped service (e.g. a chat completion service).
+                            # Surface the service IDs so the plugin graph is visible.
+                            deps = _extract_plugin_deps(plugin_obj)
+                            if deps:
+                                plugin_payload["dependencies"] = deps
+                        self._emit("environment.config", plugin_payload)
             finally:
                 if owned_run:
                     self._end_run()
@@ -405,3 +430,28 @@ def _extract_arguments(context: Any) -> Optional[Dict[str, Any]]:
     if hasattr(args, "items"):
         return dict(args.items())
     return None
+
+
+def _extract_plugin_deps(plugin: Any) -> list:
+    """Extract the set of kernel services this plugin relies on.
+
+    SK plugins typically bind to a service via ``service_id`` on individual
+    functions. We union those IDs so the plugin's dependency on named services
+    is visible in telemetry.
+    """
+    deps: set = set()
+    functions = getattr(plugin, "functions", None) or {}
+    iterable = functions.values() if hasattr(functions, "values") else functions
+    for fn in iterable:
+        for attr in ("service_id", "prompt_execution_settings_service_id"):
+            val = getattr(fn, attr, None)
+            if val:
+                deps.add(str(val))
+        # Prompt templates may declare service IDs inside execution settings.
+        settings = getattr(fn, "prompt_execution_settings", None)
+        if settings is not None:
+            for entry in settings.values() if hasattr(settings, "values") else []:
+                sid = getattr(entry, "service_id", None)
+                if sid:
+                    deps.add(str(sid))
+    return sorted(deps)

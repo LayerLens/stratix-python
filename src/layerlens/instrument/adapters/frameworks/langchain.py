@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import functools
 from uuid import UUID
 from typing import Any, Dict, List, Optional, Sequence
@@ -39,7 +40,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         BaseCallbackHandler.__init__(self)
         FrameworkAdapter.__init__(self, client, capture_config=capture_config)
-        # Pending LLM runs: run_id -> {name, messages, parent_run_id}
+        # Pending LLM runs: run_id -> {name, messages, parent_run_id, tokens_accum, first_token_at_ns}
         self._pending_llm: Dict[str, Dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
@@ -136,6 +137,24 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         )
         self._pending_llm[str(run_id)] = pending
 
+    def on_llm_new_token(
+        self,
+        token: str,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
+    ) -> None:
+        """Accumulate streaming tokens; captures time-to-first-token per run."""
+        pending = self._pending_llm.get(str(run_id))
+        if pending is None:
+            return
+        if pending.get("first_token_at_ns") is None:
+            pending["first_token_at_ns"] = time.time_ns()
+        pending["tokens_accum"] = (pending.get("tokens_accum") or 0) + 1
+        if self._config.capture_content:
+            pending["streamed_text"] = (pending.get("streamed_text") or "") + (token or "")
+
     @_auto_flush
     def on_llm_end(
         self,
@@ -149,19 +168,50 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
 
         # Extract response data
         output = None
+        finish_reason = None
+        tool_calls: list[dict[str, Any]] = []
         try:
             generations = response.generations
             if generations and generations[0]:
-                output = generations[0][0].text
+                gen0 = generations[0][0]
+                raw_output = getattr(gen0, "text", None)
+                output = raw_output if isinstance(raw_output, str) else None
+                gen_info = getattr(gen0, "generation_info", None)
+                if not isinstance(gen_info, dict):
+                    gen_info = {}
+                fr = gen_info.get("finish_reason")
+                finish_reason = fr if isinstance(fr, str) else None
+                # Extract tool_calls from message additional_kwargs (chat models)
+                msg = getattr(gen0, "message", None)
+                if msg is not None:
+                    extra = getattr(msg, "additional_kwargs", None)
+                    if not isinstance(extra, dict):
+                        extra = {}
+                    raw_calls = extra.get("tool_calls") or getattr(msg, "tool_calls", None) or []
+                    if not isinstance(raw_calls, (list, tuple)):
+                        raw_calls = []
+                    for tc in raw_calls:
+                        if isinstance(tc, dict):
+                            fn = tc.get("function") or {}
+                            tool_calls.append(
+                                {
+                                    "id": tc.get("id"),
+                                    "tool_name": fn.get("name") or tc.get("name"),
+                                    "arguments": fn.get("arguments") or tc.get("args"),
+                                }
+                            )
         except (AttributeError, IndexError):
             pass
 
         try:
-            llm_output = response.llm_output or {}
+            llm_output = response.llm_output
         except AttributeError:
+            llm_output = None
+        if not isinstance(llm_output, dict):
             llm_output = {}
 
-        model_name = llm_output.get("model_name")
+        raw_model = llm_output.get("model_name")
+        model_name = raw_model if isinstance(raw_model, str) else None
 
         # Build single merged model.invoke event
         payload = self._payload()
@@ -177,6 +227,15 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         if latency_ms is not None:
             payload["latency_ms"] = latency_ms
 
+        # Streaming metrics — time-to-first-token + chunk count
+        first_tok = pending.get("first_token_at_ns")
+        if first_tok is not None:
+            payload["streaming"] = True
+            payload["streamed_chunks"] = pending.get("tokens_accum", 0)
+
+        if finish_reason is not None:
+            payload["finish_reason"] = finish_reason
+
         # Tokens
         usage = llm_output.get("token_usage") or llm_output.get("usage_metadata")
         tokens = self._normalize_tokens(usage)
@@ -188,6 +247,13 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
             run_id=run_id,
             parent_run_id=pending.get("parent_run_id"),
         )
+
+        # Emit tool.call events for any tool calls the model requested
+        for tc in tool_calls:
+            tc_payload = self._payload(**tc)
+            if model_name:
+                tc_payload["model"] = model_name
+            self._emit("tool.call", tc_payload, run_id=run_id, parent_run_id=pending.get("parent_run_id"))
 
         # Separate cost.record if we have token data
         if tokens:

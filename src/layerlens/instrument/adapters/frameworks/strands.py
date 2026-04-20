@@ -407,7 +407,19 @@ class StrandsAdapter(FrameworkAdapter):
                 tokens["tokens_completion"] = output_t
             tokens["tokens_total"] = input_t + output_t
 
+            # Per-cycle timing — Strands stores start/end on each cycle;
+            # surface the duration so we can chart tokens/sec per cycle.
+            cycle_latency_ms = _cycle_latency_ms(cycle)
+            if cycle_latency_ms is not None:
+                tokens["cycle_latency_ms"] = int(cycle_latency_ms)
+            # Per-cycle stop reason (set when the cycle exits due to e.g.
+            # tool_use, end_turn, max_tokens, etc.).
+            stop_reason = _cycle_stop_reason(cycle)
+            if stop_reason:
+                tokens["stop_reason"] = stop_reason
+
             cost_payload = self._payload(**tokens)
+            cost_payload["cycle_index"] = i
             if model_id:
                 cost_payload["model"] = model_id
 
@@ -464,3 +476,24 @@ def _get_version() -> str:
         return getattr(_mod, "__version__", "unknown")
     except Exception:
         return "unknown"
+
+
+def _cycle_latency_ms(cycle: Any) -> Optional[float]:
+    if isinstance(cycle, dict):
+        start = cycle.get("start_time") or cycle.get("startTime")
+        end = cycle.get("end_time") or cycle.get("endTime")
+    else:
+        start = getattr(cycle, "start_time", None) or getattr(cycle, "startTime", None)
+        end = getattr(cycle, "end_time", None) or getattr(cycle, "endTime", None)
+    if start is None or end is None:
+        return None
+    try:
+        return (end - start) * 1000 if isinstance(start, (int, float)) else None
+    except Exception:
+        return None
+
+
+def _cycle_stop_reason(cycle: Any) -> Optional[str]:
+    if isinstance(cycle, dict):
+        return cycle.get("stop_reason") or cycle.get("stopReason")
+    return getattr(cycle, "stop_reason", None) or getattr(cycle, "stopReason", None)

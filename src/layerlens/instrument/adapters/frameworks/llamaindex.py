@@ -334,6 +334,11 @@ class LlamaIndexAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     def _on_embedding_start(self, event: Any) -> None:
+        # When L3 model metadata is suppressed, skip the costly embedding serialization
+        # — bulk ingestion runs fire thousands of these events and the collector
+        # would drop them anyway.
+        if not self._config.l3_model_metadata:
+            return
         span_id = getattr(event, "span_id", None)
         payload = self._payload(embedding=True)
         model = _model_from_dict(getattr(event, "model_dict", None))
@@ -342,12 +347,29 @@ class LlamaIndexAdapter(FrameworkAdapter):
         self._fire("model.invoke", payload, span_id=span_id, span_name="embedding")
 
     def _on_embedding_end(self, event: Any) -> None:
+        if not self._config.l3_model_metadata:
+            return
         span_id = getattr(event, "span_id", None)
         chunks = getattr(event, "chunks", None)
         embeddings = getattr(event, "embeddings", None)
         payload = self._payload(embedding=True)
         if chunks is not None:
             payload["num_chunks"] = len(chunks)
+            # Chunking metrics: surface total/avg length so slow-retrieval diagnosis
+            # can correlate chunk size against downstream latency.
+            total_len = 0
+            nonempty = 0
+            for c in chunks:
+                try:
+                    s = str(c)
+                except Exception:
+                    continue
+                if s:
+                    total_len += len(s)
+                    nonempty += 1
+            if nonempty:
+                payload["chunk_chars_total"] = total_len
+                payload["chunk_chars_avg"] = total_len // nonempty
         if embeddings is not None:
             payload["num_embeddings"] = len(embeddings)
             if embeddings:

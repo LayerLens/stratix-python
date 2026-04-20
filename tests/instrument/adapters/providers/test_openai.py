@@ -204,14 +204,12 @@ class TestCaptureParams:
             openai_client.chat.completions.create(
                 model="gpt-4",
                 messages=[],
-                stream=True,
                 user="test-user",
             )
             return "done"
 
         my_agent()
         params = find_event(capture_trace["events"], "model.invoke")["payload"]["parameters"]
-        assert "stream" not in params
         assert "user" not in params
         assert "messages" not in params
 

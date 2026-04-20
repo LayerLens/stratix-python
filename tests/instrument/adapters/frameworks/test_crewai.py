@@ -223,11 +223,19 @@ class TestLLMEvents:
         assert cost["payload"]["tokens_total"] == 150
 
     def test_llm_failed_emits_agent_error(self, adapter_and_trace):
+        from crewai.events import LLMCallStartedEvent
+
         adapter, uploaded = adapter_and_trace
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
 
-        evt = LLMCallFailedEvent(model="gpt-4o", call_id="call_1", error="rate limit exceeded")
-        adapter._on_llm_failed(None, evt)
+        # Realistic flow: started first (captures the model), then failed.
+        # Newer crewai dropped ``model`` from LLMCallFailedEvent, so we rely on
+        # the adapter's in-flight model bookkeeping.
+        adapter._on_llm_started(
+            None,
+            LLMCallStartedEvent(model="gpt-4o", messages=[], call_type="llm_call"),
+        )
+        adapter._on_llm_failed(None, LLMCallFailedEvent(error="rate limit exceeded"))
 
         adapter._on_crew_failed(None, CrewKickoffFailedEvent(crew_name="C", error="llm fail"))
 
@@ -497,14 +505,17 @@ class TestEventBusIntegration:
             adapter.connect()
 
             # Emit events on the real bus — adapter should pick them up.
-            # Flush between events so the async started-handler completes
-            # before completed-handler triggers _flush() (which resets state).
-            crewai_event_bus.emit(None, event=CrewKickoffStartedEvent(crew_name="BusCrew", inputs={"x": 1}))
-            crewai_event_bus.flush(timeout=5.0)
+            # Current crewai dispatches handlers on an executor; ``emit`` now
+            # returns a Future that resolves once every handler has finished
+            # (and the previous ``flush`` API was removed).
+            fut1 = crewai_event_bus.emit(None, event=CrewKickoffStartedEvent(crew_name="BusCrew", inputs={"x": 1}))
+            if fut1 is not None:
+                fut1.result(timeout=5.0)
 
             to = TaskOutput(description="t", raw="bus result", agent="A")
-            crewai_event_bus.emit(None, event=CrewKickoffCompletedEvent(crew_name="BusCrew", output=to))
-            crewai_event_bus.flush(timeout=5.0)
+            fut2 = crewai_event_bus.emit(None, event=CrewKickoffCompletedEvent(crew_name="BusCrew", output=to))
+            if fut2 is not None:
+                fut2.result(timeout=5.0)
 
         events = uploaded["events"]
         assert len(events) >= 2
@@ -525,7 +536,6 @@ class TestEventBusIntegration:
 
         # Events emitted AFTER scope should NOT be captured
         crewai_event_bus.emit(None, event=CrewKickoffStartedEvent(crew_name="Ghost", inputs={}))
-        crewai_event_bus.flush(timeout=2.0)
 
         # Nothing should have been captured (no flush happened either)
         assert uploaded.get("events") is None or len(uploaded.get("events", [])) == 0

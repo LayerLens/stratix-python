@@ -85,6 +85,8 @@ class AutoGenAdapter(FrameworkAdapter):
         self._handler: Optional[_LayerLensHandler] = None
         self._collector: Optional[TraceCollector] = None
         self._root_span_id: Optional[str] = None
+        # Conversation state: topic/session → {participants: set, turn_count: int, message_count: int}
+        self._conversations: Dict[str, Dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -138,6 +140,22 @@ class AutoGenAdapter(FrameworkAdapter):
             collector = self._collector
             self._collector = None
             self._root_span_id = None
+            # Flush any open conversations as summary events before tearing down.
+            for conv_id, state in list(self._conversations.items()):
+                if collector is not None:
+                    collector.emit(
+                        "conversation.ended",
+                        self._payload(
+                            conversation_id=conv_id,
+                            participants=sorted(state["participants"]),
+                            message_count=state["message_count"],
+                            turn_count=state["turn_count"],
+                            reason="trace_end",
+                        ),
+                        span_id=self._new_span_id(),
+                        parent_span_id=self._root_span_id,
+                    )
+            self._conversations.clear()
         if collector is not None:
             collector.flush()
 
@@ -208,7 +226,29 @@ class AutoGenAdapter(FrameworkAdapter):
         kind = _get_field(event, "kind")
         stage = _get_field(event, "delivery_stage")
 
+        # Conversation tracking: group messages by topic/session ID so downstream
+        # analysis can reason about multi-agent turn-taking.
+        topic_id = _get_field(event, "topic_id") or _get_field(event, "session_id")
+        conv_id = str(topic_id) if topic_id is not None else f"{sender}->{receiver}"
+        state = self._conversations.setdefault(
+            conv_id,
+            {"participants": set(), "turn_count": 0, "message_count": 0, "last_sender": None},
+        )
+        if sender is not None:
+            state["participants"].add(str(sender))
+        if receiver is not None:
+            state["participants"].add(str(receiver))
+        state["message_count"] += 1
+        last = state["last_sender"]
+        if sender is not None and last is not None and str(sender) != last:
+            state["turn_count"] += 1
+        if sender is not None:
+            state["last_sender"] = str(sender)
+
         payload = self._payload()
+        payload["conversation_id"] = conv_id
+        payload["turn_index"] = state["turn_count"]
+        payload["message_index"] = state["message_count"]
         if sender is not None:
             payload["sender"] = str(sender)
         if receiver is not None:

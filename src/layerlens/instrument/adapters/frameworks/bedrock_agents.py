@@ -186,11 +186,37 @@ class BedrockAgentsAdapter(FrameworkAdapter):
             getattr(self, handler_name)(step)
 
     def _on_action_group(self, step: Dict[str, Any]) -> None:
-        action_output = step.get("actionGroupInvocationOutput", {})
+        action_output = (
+            step.get("actionGroupInvocationOutput", {})
+            if isinstance(step.get("actionGroupInvocationOutput"), dict)
+            else {}
+        )
         payload = self._payload(
             tool_name=step.get("actionGroupName", "unknown"),
             tool_type="action_group",
         )
+        # Function / API schema introspection: Bedrock action groups ship both
+        # the called function name and the HTTP verb + resource path when the
+        # schema is an OpenAPI doc. Surface both so action-group tool.call events
+        # can be cross-referenced with the action group definition.
+        function = step.get("function") or action_output.get("function")
+        if function:
+            payload["function"] = str(function)
+        verb = step.get("verb") or action_output.get("verb")
+        if verb:
+            payload["verb"] = str(verb)
+        api_path = step.get("apiPath") or action_output.get("apiPath")
+        if api_path:
+            payload["api_path"] = str(api_path)
+        execution_type = step.get("executionType") or action_output.get("executionType")
+        if execution_type:
+            payload["execution_type"] = str(execution_type)
+        invocation_id = action_output.get("invocationId") or step.get("invocationId")
+        if invocation_id:
+            payload["invocation_id"] = str(invocation_id)
+        status = action_output.get("responseState") or action_output.get("status")
+        if status:
+            payload["status"] = str(status)
         self._set_if_capturing(payload, "input", safe_serialize(step.get("actionGroupInput")))
         output = action_output.get("output") if isinstance(action_output, dict) else None
         self._set_if_capturing(payload, "output", safe_serialize(output))
@@ -204,6 +230,30 @@ class BedrockAgentsAdapter(FrameworkAdapter):
         )
         self._set_if_capturing(payload, "input", safe_serialize(step.get("knowledgeBaseLookupInput")))
         refs = kb_output.get("retrievedReferences") if isinstance(kb_output, dict) else None
+        # Retrieval ranking: surface the number of references + their scores so
+        # we can measure retrieval quality across runs without capturing raw
+        # chunks (which tend to be large and may contain PII).
+        if isinstance(refs, list):
+            payload["num_results"] = len(refs)
+            scores: list[float] = []
+            sources: list[str] = []
+            for ref in refs:
+                if not isinstance(ref, dict):
+                    continue
+                score = ref.get("score")
+                if isinstance(score, (int, float)):
+                    scores.append(float(score))
+                location = ref.get("location") or {}
+                if isinstance(location, dict):
+                    s3 = location.get("s3Location") or {}
+                    if isinstance(s3, dict) and s3.get("uri"):
+                        sources.append(str(s3["uri"]))
+            if scores:
+                payload["retrieval_scores"] = scores[:20]
+                payload["retrieval_score_max"] = max(scores)
+                payload["retrieval_score_min"] = min(scores)
+            if sources:
+                payload["retrieval_sources"] = sources[:20]
         self._set_if_capturing(payload, "output", safe_serialize(refs))
         self._emit("tool.call", payload, span_name="bedrock.knowledge_base")
 
@@ -238,15 +288,24 @@ class BedrockAgentsAdapter(FrameworkAdapter):
             self._emit("cost.record", cost_payload, span_id=span_id)
 
     def _on_collaborator_handoff(self, step: Dict[str, Any]) -> None:
-        self._emit(
-            "agent.handoff",
-            self._payload(
-                from_agent=step.get("supervisorAgentId", "supervisor"),
-                to_agent=step.get("collaboratorAgentId", "collaborator"),
-                reason="supervisor_delegation",
-            ),
-            span_name="bedrock.handoff",
+        payload = self._payload(
+            from_agent=step.get("supervisorAgentId", "supervisor"),
+            to_agent=step.get("collaboratorAgentId", "collaborator"),
+            reason="supervisor_delegation",
         )
+        # Collaborator metadata: the supervisor's rationale for delegating
+        # ("why this agent?") and the task it's handing off. This is what
+        # makes a multi-agent trace readable without replaying every step.
+        for key in ("collaboratorName", "collaboratorDescription", "collaboratorInvocationType"):
+            val = step.get(key)
+            if val:
+                payload[_snake(key)] = val
+        rationale = step.get("rationale") or step.get("reasoning")
+        if rationale:
+            self._set_if_capturing(payload, "rationale", str(rationale)[:1000])
+        task_input = step.get("invocationInput") or step.get("collaboratorInvocationInput")
+        self._set_if_capturing(payload, "input", safe_serialize(task_input))
+        self._emit("agent.handoff", payload, span_name="bedrock.handoff")
 
     # ------------------------------------------------------------------
     # Environment config
@@ -266,3 +325,12 @@ class BedrockAgentsAdapter(FrameworkAdapter):
             ),
             span_name="bedrock.config",
         )
+
+
+def _snake(camel: str) -> str:
+    out = []
+    for i, ch in enumerate(camel):
+        if ch.isupper() and i > 0:
+            out.append("_")
+        out.append(ch.lower())
+    return "".join(out)

@@ -84,6 +84,15 @@ class PydanticAIAdapter(FrameworkAdapter):
         hooks.on.before_tool_execute(self._on_before_tool_execute)
         hooks.on.after_tool_execute(self._on_after_tool_execute)
         hooks.on.tool_execute_error(self._on_tool_execute_error)
+        # Streaming hooks are optional — pydantic-ai >= 0.5 exposes on.stream_chunk
+        # / on.after_stream. Older versions simply don't have them.
+        for hook_name, method in (
+            ("stream_chunk", self._on_stream_chunk),
+            ("after_stream", self._on_after_stream),
+        ):
+            attr = getattr(hooks.on, hook_name, None)
+            if callable(attr):
+                attr(method)
 
     # ------------------------------------------------------------------
     # Run lifecycle hooks
@@ -99,6 +108,29 @@ class PydanticAIAdapter(FrameworkAdapter):
         if model_name:
             payload["model"] = model_name
         self._set_if_capturing(payload, "input", safe_serialize(ctx.prompt))
+
+        # Surface the declared result/output type and dependency shape so
+        # downstream telemetry can reason about what the agent is configured
+        # to return, independent of any single response.
+        agent = getattr(ctx, "agent", None) or getattr(ctx, "_agent", None)
+        if agent is not None:
+            result_type = (
+                getattr(agent, "output_type", None)
+                or getattr(agent, "result_type", None)
+                or getattr(agent, "_output_type", None)
+            )
+            if result_type is not None:
+                payload["result_type"] = _describe_type(result_type)
+            deps_type = getattr(agent, "deps_type", None) or getattr(agent, "_deps_type", None)
+            if deps_type is not None:
+                payload["deps_type"] = _describe_type(deps_type)
+        # Record the deps instance (not raw — key/type summary only) so
+        # result-injection-driven runs can be differentiated.
+        deps = getattr(ctx, "deps", None)
+        if deps is not None and self._config.capture_content:
+            payload["deps_summary"] = (
+                safe_serialize(deps)[:500] if isinstance(safe_serialize(deps), str) else _summarize_deps(deps)
+            )
 
         self._emit(
             "agent.input",
@@ -287,6 +319,36 @@ class PydanticAIAdapter(FrameworkAdapter):
         raise error
 
     # ------------------------------------------------------------------
+    # Streaming hooks (pydantic-ai >= 0.5)
+    # ------------------------------------------------------------------
+
+    def _on_stream_chunk(self, ctx: Any, *, chunk: Any, **_kwargs: Any) -> None:
+        """Accumulate streaming chunks on the RunState; aggregated at stream end."""
+        run = self._get_run()
+        if run is None:
+            return
+        buf = run.data.setdefault("stream_buffer", [])
+        buf.append(chunk)
+
+    def _on_after_stream(self, ctx: Any, *, response: Any = None, **_kwargs: Any) -> None:
+        run = self._get_run()
+        if run is None:
+            return
+        chunks = run.data.pop("stream_buffer", [])
+        payload = self._payload(streaming=True, streamed_chunks=len(chunks))
+        model_name = self._get_model_name(ctx)
+        if model_name:
+            payload["model"] = model_name
+        if response is not None:
+            usage = getattr(response, "usage", None)
+            payload.update(self._normalize_tokens(usage))
+            if self._config.capture_content:
+                output = self._extract_output(response)
+                if output is not None:
+                    payload["output_message"] = output
+        self._emit("model.invoke", payload)
+
+    # ------------------------------------------------------------------
     # Static helpers
     # ------------------------------------------------------------------
 
@@ -351,3 +413,29 @@ class PydanticAIAdapter(FrameworkAdapter):
             tokens["model_requests"] = requests
 
         return tokens
+
+
+def _describe_type(t: Any) -> str:
+    """Render a type hint as a readable string for telemetry."""
+    if t is None:
+        return "None"
+    name = getattr(t, "__name__", None)
+    if name:
+        mod = getattr(t, "__module__", "")
+        return f"{mod}.{name}" if mod and mod != "builtins" else name
+    return str(t)[:200]
+
+
+def _summarize_deps(deps: Any) -> Dict[str, Any]:
+    """Dependencies are often request-scoped (request_id, user, db handle).
+    Capture shape only — key names + value types — so we never log raw data.
+    """
+    out: Dict[str, Any] = {"type": type(deps).__name__}
+    try:
+        if hasattr(deps, "__dict__"):
+            out["fields"] = {k: type(v).__name__ for k, v in vars(deps).items() if not k.startswith("_")}
+        elif isinstance(deps, dict):
+            out["fields"] = {k: type(v).__name__ for k, v in deps.items()}
+    except Exception:
+        pass
+    return out

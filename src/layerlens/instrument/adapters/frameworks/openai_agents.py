@@ -20,11 +20,13 @@ try:
 except (ImportError, Exception):
     TracingProcessor = None  # type: ignore[assignment,misc]
 
-# Real TracingProcessor when installed, plain object otherwise.
-_Base: Any = TracingProcessor if _HAS_OPENAI_AGENTS else object
+# Real TracingProcessor when installed; otherwise we inherit FrameworkAdapter
+# directly. Using ``object`` as a second base produces an MRO conflict because
+# FrameworkAdapter already has ``object`` in its chain.
+_Bases: tuple = (TracingProcessor, FrameworkAdapter) if _HAS_OPENAI_AGENTS else (FrameworkAdapter,)
 
 
-class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
+class OpenAIAgentsAdapter(*_Bases):
     """OpenAI Agents SDK adapter using the TracingProcessor API.
 
     The adapter *is* the trace processor — it registers itself globally
@@ -215,12 +217,42 @@ class OpenAIAgentsAdapter(_Base, FrameworkAdapter):
         span_id = span.span_id or self._new_span_id()
         parent_id = span.parent_id
 
-        # Emit tool.call with input
+        # Emit tool.call with input + full function signature when available.
         call_payload = self._payload(tool_name=tool_name)
         self._set_if_capturing(call_payload, "input", safe_serialize(getattr(data, "input", None)))
+
+        # Function signature enrichment: parameters schema + description + return type
+        # (populated by the Agents SDK from @function_tool decorators).
+        parameters = getattr(data, "parameters", None) or getattr(data, "parameters_json_schema", None)
+        if parameters:
+            call_payload["parameters_schema"] = safe_serialize(parameters)
+        description = getattr(data, "description", None)
+        if description:
+            call_payload["description"] = str(description)[:1000]
+        return_type = getattr(data, "return_type", None) or getattr(data, "returns", None)
+        if return_type:
+            call_payload["return_type"] = str(return_type)[:200]
+        strict = getattr(data, "strict", None) or getattr(data, "strict_json_schema", None)
+        if strict is not None:
+            call_payload["strict"] = bool(strict)
+
         mcp_data = getattr(data, "mcp_data", None)
         if mcp_data:
+            # Surface MCP server + resource identifiers as top-level keys so they
+            # can be correlated with MCP protocol-adapter events.
             call_payload["mcp_data"] = safe_serialize(mcp_data)
+            server_label = (
+                getattr(mcp_data, "server_label", None)
+                or getattr(mcp_data, "server_name", None)
+                or (mcp_data.get("server_label") if isinstance(mcp_data, dict) else None)
+            )
+            if server_label:
+                call_payload["mcp_server"] = str(server_label)
+            resource_ref = getattr(mcp_data, "resource_uri", None) or (
+                mcp_data.get("resource_uri") if isinstance(mcp_data, dict) else None
+            )
+            if resource_ref:
+                call_payload["mcp_resource_uri"] = str(resource_ref)
         self._emit("tool.call", call_payload, span_id=span_id, parent_span_id=parent_id)
 
         # Emit tool.result or agent.error

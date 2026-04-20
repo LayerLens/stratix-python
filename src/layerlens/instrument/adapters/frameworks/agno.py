@@ -36,6 +36,11 @@ def _extract_tokens(result: Any) -> Dict[str, int]:
 
     inp = getattr(metrics, "input_tokens", None)
     out = getattr(metrics, "output_tokens", None)
+    reasoning = getattr(metrics, "reasoning_tokens", None) or getattr(metrics, "thinking_tokens", None)
+    cached = getattr(metrics, "cached_tokens", None) or getattr(metrics, "cache_read_tokens", None)
+    audio = getattr(metrics, "audio_tokens", None)
+    time_ms = getattr(metrics, "duration_ms", None) or getattr(metrics, "time", None)
+
     if inp is not None or out is not None:
         tokens: Dict[str, int] = {}
         if inp:
@@ -44,18 +49,41 @@ def _extract_tokens(result: Any) -> Dict[str, int]:
             tokens["tokens_completion"] = int(out)
         if inp or out:
             tokens["tokens_total"] = (int(inp) if inp else 0) + (int(out) if out else 0)
+        if reasoning:
+            tokens["reasoning_tokens"] = int(reasoning)
+        if cached:
+            tokens["cached_tokens"] = int(cached)
+        if audio:
+            tokens["audio_tokens"] = int(audio)
+        if time_ms:
+            try:
+                tokens["duration_ms"] = int(float(time_ms))
+            except (TypeError, ValueError):
+                pass
         return tokens
 
     details = getattr(metrics, "details", None)
     if not isinstance(details, dict):
         return {}
-    total_in = total_out = 0
-    for model_metrics_list in details.values():
+    total_in = total_out = total_reason = total_cached = 0
+    per_model: Dict[str, Dict[str, int]] = {}
+    for model_name, model_metrics_list in details.items():
         if not isinstance(model_metrics_list, list):
             continue
+        model_in = model_out = 0
         for mm in model_metrics_list:
-            total_in += getattr(mm, "input_tokens", 0) or 0
-            total_out += getattr(mm, "output_tokens", 0) or 0
+            model_in += getattr(mm, "input_tokens", 0) or 0
+            model_out += getattr(mm, "output_tokens", 0) or 0
+            total_reason += getattr(mm, "reasoning_tokens", 0) or 0
+            total_cached += getattr(mm, "cached_tokens", 0) or 0
+        total_in += model_in
+        total_out += model_out
+        if model_in or model_out:
+            per_model[str(model_name)] = {
+                "tokens_prompt": model_in,
+                "tokens_completion": model_out,
+                "tokens_total": model_in + model_out,
+            }
     if not total_in and not total_out:
         return {}
     tokens = {}
@@ -64,6 +92,14 @@ def _extract_tokens(result: Any) -> Dict[str, int]:
     if total_out:
         tokens["tokens_completion"] = total_out
     tokens["tokens_total"] = total_in + total_out
+    if total_reason:
+        tokens["reasoning_tokens"] = total_reason
+    if total_cached:
+        tokens["cached_tokens"] = total_cached
+    # Multi-model aggregation: surface per-model breakdown so we can see which
+    # model contributed how many tokens in a hybrid run.
+    if len(per_model) > 1:
+        tokens["per_model"] = per_model  # type: ignore[assignment]
     return tokens
 
 

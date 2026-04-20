@@ -9,8 +9,11 @@ from .commands.bulk import bulk
 from .commands.judge import judge
 from .commands.space import space
 from .commands.trace import trace
+from .commands.replay import replay
 from .commands.scorer import scorer
 from .commands.evaluate import evaluate
+from .commands.synthetic import synthetic
+from .commands.evaluations import evaluations
 from .commands.integration import integration
 
 
@@ -78,6 +81,11 @@ cli.add_command(scorer)
 cli.add_command(space)
 cli.add_command(bulk)
 cli.add_command(ci)
+
+# Local dataset / replay / synthetic workflows
+cli.add_command(replay)
+cli.add_command(synthetic)
+cli.add_command(evaluations)
 
 # Auth commands
 cli.add_command(login)

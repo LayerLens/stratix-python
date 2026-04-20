@@ -192,6 +192,8 @@ class TestFunctionInvocation:
         assert tool_result["payload"]["output"] == 30
 
     def test_invoke_error_emits_agent_error(self, mock_client):
+        from semantic_kernel.exceptions.kernel_exceptions import KernelInvokeException
+
         uploaded = capture_framework_trace(mock_client)
         kernel = Kernel()
         kernel.add_plugin(MathPlugin(), "MathPlugin")
@@ -199,8 +201,12 @@ class TestFunctionInvocation:
         adapter = SemanticKernelAdapter(mock_client)
         adapter.connect(target=kernel)
 
-        with pytest.raises(ZeroDivisionError):
+        # semantic_kernel wraps function errors in KernelInvokeException starting
+        # with 1.x; the inner ZeroDivisionError lives on ``__cause__``.
+        with pytest.raises((ZeroDivisionError, KernelInvokeException)) as exc_info:
             _run(kernel.invoke(plugin_name="MathPlugin", function_name="divide", a=1, b=0))
+        inner = exc_info.value.__cause__ or exc_info.value
+        assert isinstance(inner, ZeroDivisionError) or isinstance(exc_info.value, ZeroDivisionError)
 
         adapter.disconnect()
 

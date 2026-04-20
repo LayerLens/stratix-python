@@ -3,9 +3,10 @@ from __future__ import annotations
 from unittest.mock import Mock, patch
 
 import pytest
-from click.testing import CliRunner
 
 from layerlens.cli._app import cli
+
+from .conftest import _make_runner
 
 
 class TestTraceCommands:
@@ -13,7 +14,7 @@ class TestTraceCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @pytest.fixture
     def mock_traces(self):
@@ -114,7 +115,7 @@ class TestJudgeCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.judge.get_client")
     def test_judge_list(self, mock_get_client, runner):
@@ -184,7 +185,7 @@ class TestEvaluateCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.evaluate.get_client")
     def test_evaluate_list(self, mock_get_client, runner):
@@ -216,7 +217,7 @@ class TestScorerCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.scorer.get_client")
     def test_scorer_list(self, mock_get_client, runner):
@@ -285,7 +286,7 @@ class TestSpaceCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.space.get_client")
     def test_space_create_dry_run(self, mock_get_client, runner):
@@ -306,7 +307,7 @@ class TestBulkCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.bulk.get_client")
     def test_bulk_eval_file_dry_run(self, _mock_get_client, runner):
@@ -359,7 +360,7 @@ class TestCiCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     def test_ci_report_dry_run(self, runner):
         """ci report --dry-run previews."""
@@ -422,7 +423,7 @@ class TestGlobalOptions:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     def test_version(self, runner):
         """--version prints version."""

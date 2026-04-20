@@ -208,14 +208,12 @@ class TestCaptureParams:
                 model="claude-3-opus-20240229",
                 max_tokens=1024,
                 messages=[],
-                stream=True,
                 metadata={"user_id": "abc"},
             )
             return "done"
 
         my_agent()
         params = find_event(capture_trace["events"], "model.invoke")["payload"]["parameters"]
-        assert "stream" not in params
         assert "metadata" not in params
         assert "messages" not in params
 

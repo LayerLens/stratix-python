@@ -281,8 +281,10 @@ class SmolAgentsAdapter(FrameworkAdapter):
         if tool_calls:
             self._emit_tool_calls(tool_calls, step, step_span_id)
 
-        # step event
-        step_payload = self._payload(step_number=self._step_count)
+        # step event — explicitly marked as the "action" phase so downstream UIs
+        # can distinguish planning rounds from execution rounds when smolagents
+        # runs in ReAct / planning mode.
+        step_payload = self._payload(step_number=self._step_count, phase="action")
         if model_id:
             step_payload["model"] = model_id
 
@@ -351,7 +353,7 @@ class SmolAgentsAdapter(FrameworkAdapter):
         span_id = self._new_span_id()
         model_id = _model_id(agent) if agent else None
 
-        payload = self._payload()
+        payload = self._payload(phase="planning")
         if model_id:
             payload["model"] = model_id
 
@@ -362,7 +364,15 @@ class SmolAgentsAdapter(FrameworkAdapter):
             if start is not None and end is not None:
                 payload["duration_ns"] = int((end - start) * 1_000_000_000)
 
-        self._set_if_capturing(payload, "plan", safe_serialize(getattr(step, "plan", None)))
+        # Surface the plan content (when content capture is on) plus a compact
+        # summary — number of steps in the plan — so planning-round telemetry
+        # is interesting even when content is stripped.
+        plan = getattr(step, "plan", None)
+        if plan is not None:
+            summary = _plan_summary(plan)
+            if summary:
+                payload["plan_summary"] = summary
+        self._set_if_capturing(payload, "plan", safe_serialize(plan))
         self._fire("agent.step", payload, span_id=span_id, parent_span_id=self._run_span_id, span_name="planning")
 
         # model.invoke for the planning LLM call
@@ -394,3 +404,14 @@ def _get_version() -> str:
         return getattr(smolagents, "__version__", "unknown")
     except Exception:
         return "unknown"
+
+
+def _plan_summary(plan: Any) -> Optional[Dict[str, Any]]:
+    """Cheap structural summary of a plan: length + bullet count."""
+    if plan is None:
+        return None
+    text = plan if isinstance(plan, str) else str(getattr(plan, "content", "") or plan)
+    if not text:
+        return None
+    bullets = sum(1 for line in text.splitlines() if line.strip().startswith(("-", "*", "1.", "2.", "3.", "4.", "5.")))
+    return {"char_count": len(text), "bullet_count": bullets}

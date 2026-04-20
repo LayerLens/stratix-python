@@ -145,15 +145,32 @@ class GoogleADKAdapter(FrameworkAdapter):
         agent_name = _agent_name(agent)
         payload = self._payload(agent_name=agent_name)
 
+        # Fuller session metadata: user + app name + state snapshot summary so
+        # traces produced by stateful ADK agents can be correlated across runs.
         session = getattr(invocation_context, "session", None)
         if session is not None:
             sid = getattr(session, "id", None)
             if sid:
                 payload["session_id"] = str(sid)
+            user_id = getattr(session, "user_id", None)
+            if user_id:
+                payload["user_id"] = str(user_id)
+            app_name = getattr(session, "app_name", None)
+            if app_name:
+                payload["app_name"] = str(app_name)
+            state = getattr(session, "state", None)
+            if isinstance(state, dict):
+                payload["session_state_keys"] = sorted(list(state.keys()))[:50]
 
         invocation_id = getattr(invocation_context, "invocation_id", None)
         if invocation_id:
             payload["invocation_id"] = str(invocation_id)
+
+        # Sub-agent collaboration: capture the agent tree declared on the root.
+        if agent is not None:
+            tree = _agent_tree(agent)
+            if tree:
+                payload["agent_tree"] = tree
 
         user_content = getattr(invocation_context, "user_content", None)
         self._set_if_capturing(payload, "input", safe_serialize(user_content))
@@ -453,6 +470,23 @@ def _agent_name(agent: Any) -> str:
     if agent is None:
         return "unknown"
     return getattr(agent, "name", None) or type(agent).__name__
+
+
+def _agent_tree(agent: Any, depth: int = 0, max_depth: int = 4) -> Any:
+    """Flatten the sub-agent collaboration graph for telemetry.
+
+    Returns a single dict ``{"name": ..., "children": [...]}`` describing the
+    agent and (up to ``max_depth``) its sub_agents. ADK supports hierarchical
+    agents — this gives downstream UIs the orchestration topology.
+    """
+    if agent is None or depth > max_depth:
+        return None
+    node: Dict[str, Any] = {"name": _agent_name(agent), "children": []}
+    for child in (getattr(agent, "sub_agents", None) or [])[:20]:
+        sub = _agent_tree(child, depth + 1, max_depth)
+        if sub is not None:
+            node["children"].append(sub)
+    return node
 
 
 def _get_version() -> str:

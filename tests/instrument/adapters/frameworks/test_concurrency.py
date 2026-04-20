@@ -13,6 +13,8 @@ from typing import Any, Dict, List
 import pytest
 
 pydantic_ai = pytest.importorskip("pydantic_ai")
+# Adapter depends on the (unreleased) Hooks capability API; skip until it lands.
+pytest.importorskip("pydantic_ai.capabilities.hooks")
 
 from pydantic_ai import Agent  # noqa: E402
 from pydantic_ai.models.test import TestModel  # noqa: E402
@@ -22,7 +24,7 @@ from layerlens.instrument.adapters.frameworks.pydantic_ai import PydanticAIAdapt
 
 def _make_agent(output_text: str = "Hello!", tools: list | None = None) -> Agent:
     agent = Agent(
-        model=TestModel(custom_output_text=output_text, model_name="test-model"),
+        model=TestModel(custom_output_text=output_text),
         name="test_agent",
     )
     if tools:
