@@ -33,6 +33,34 @@ classifiers = [
 
 [project.optional-dependencies]
 cli = ["click>=8.0.0"]
+openai = ["openai>=1.0.0"]
+anthropic = ["anthropic>=0.18.0"]
+azure = ["openai>=1.0.0"]
+google-vertex = ["google-cloud-aiplatform>=1.38"]
+bedrock = ["boto3>=1.34"]
+ollama = ["ollama>=0.1"]
+langchain = ["langchain-core>=0.1.0"]
+litellm = ["litellm>=1.0.0"]
+pydantic-ai = ["pydantic-ai>=0.2.0"]
+openai-agents = ["openai-agents>=0.1.0"]
+semantic-kernel = ["semantic-kernel>=1.0.0; python_version >= '3.10'"]
+# mcp SDK requires Python 3.10+, so we gate the optional-dep on the interpreter
+# version rather than bumping the library's overall requires-python.
+mcp = ["mcp>=0.9; python_version >= '3.10'"]
+a2a = ["a2a-sdk>=0.1; python_version >= '3.10'"]
+agui = []
+all-providers = [
+  "openai>=1.0.0",
+  "anthropic>=0.18.0",
+  "google-cloud-aiplatform>=1.38",
+  "boto3>=1.34",
+  "ollama>=0.1",
+  "litellm>=1.0.0",
+]
+all-protocols = [
+  "mcp>=0.9; python_version >= '3.10'",
+  "a2a-sdk>=0.1; python_version >= '3.10'",
+]
 
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
@@ -46,14 +74,20 @@ stratix = "layerlens.cli:main"
 managed = true
 # version pins are in requirements-dev.lock
 dev-dependencies = [
-  "mypy",
-  "pytest",
-  "pyright==1.1.399",
-  "pytest-cov>=6.2.1",
-  "ruff",
-  "build",
-  "twine==6.1.0",
-  "click>=8.0.0",
+    "mypy",
+    "pytest",
+    "pyright==1.1.399",
+    "pytest-cov>=6.2.1",
+    "ruff",
+    "build",
+    "twine==6.1.0",
+    "click>=8.0.0",
+    # crewai>=1.14 (the version compatible with openai 2.x) requires Python 3.10+,
+    # so gate it. Pre-3.10 dev envs simply skip crewai-backed tests.
+    "crewai>=0.5.0; python_version >= '3.10'",
+    "openai>=2.31.0",
+    "anthropic>=0.94.0",
+    "langchain-core>=0.3.84",
 ]
 
 [tool.rye.scripts]
@@ -136,16 +170,39 @@ known-first-party = ["openai", "tests"]
 "bin/**.py" = ["T201", "T203"]
 "scripts/**.py" = ["T201", "T203"]
 "tests/**.py" = ["T201", "T203"]
+"tests/instrument/**.py" = ["T201", "T203", "ARG"]
+"tests/attestation/**.py" = ["T201", "T203", "ARG"]
+"tests/replay/**.py" = ["T201", "T203", "ARG"]
 "examples/**.py" = ["T201", "T203"]
+"samples/**.py" = ["T201", "T203", "ARG"]
 "src/layerlens/cli/**" = ["T201", "T203"]
+"src/layerlens/instrument/adapters/frameworks/langchain.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/langgraph.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/crewai.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/pydantic_ai.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/openai_agents.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/autogen.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/llamaindex.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/semantic_kernel.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/smolagents.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/google_adk.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/agno.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/strands.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/bedrock_agents.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/haystack.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/langfuse.py" = ["ARG002"]
+"src/layerlens/instrument/adapters/frameworks/agentforce.py" = ["ARG002"]
 
 [tool.pyright]
 include = ["src", "tests"]
 exclude = ["**/__pycache__"]
 reportMissingTypeStubs = false
 
-# Less strict settings for tests and cli
+# Less strict settings for adapter frameworks (optional deps not always installed), tests, and cli
 executionEnvironments = [
+  { root = "src/layerlens/instrument/adapters/frameworks", reportMissingImports = false, reportPossiblyUnboundVariable = false, reportOptionalMemberAccess = false, reportOptionalCall = false, reportArgumentType = false, reportAttributeAccessIssue = false, reportGeneralTypeIssues = false },
+  { root = "src/layerlens/instrument/adapters/providers", reportMissingImports = false, reportAttributeAccessIssue = false },
+  { root = "src/layerlens/instrument/adapters/protocols", reportMissingImports = false, reportPossiblyUnboundVariable = false, reportOptionalMemberAccess = false, reportOptionalCall = false, reportArgumentType = false, reportAttributeAccessIssue = false, reportCallIssue = false },
   { root = "src/layerlens/cli", reportMissingImports = false, reportFunctionMemberAccess = false, reportCallIssue = false, reportArgumentType = false, reportAttributeAccessIssue = false },
   { root = "tests", reportGeneralTypeIssues = false, reportOptionalSubscript = false, reportOptionalMemberAccess = false, reportUntypedFunctionDecorator = false, reportUnknownArgumentType = false, reportUnknownMemberType = false, reportUnknownVariableType = false, reportUnnecessaryIsInstance = false, reportUnnecessaryComparison = false, reportArgumentType = false, reportCallIssue = false },
 ]

@@ -1,0 +1,90 @@
+{
+  "name": "layerlens-vscode",
+  "displayName": "LayerLens",
+  "description": "LayerLens trace viewer, debugger, and SDK integration for VS Code.",
+  "version": "0.1.0",
+  "publisher": "LayerLens",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other", "Debuggers", "Testing"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "layerlens.connect", "title": "LayerLens: Connect to Project", "category": "LayerLens" },
+      { "command": "layerlens.disconnect", "title": "LayerLens: Disconnect", "category": "LayerLens" },
+      { "command": "layerlens.refreshTraces", "title": "LayerLens: Refresh Traces", "category": "LayerLens", "icon": "$(refresh)" },
+      { "command": "layerlens.viewTrace", "title": "LayerLens: View Trace", "category": "LayerLens" },
+      { "command": "layerlens.runEvaluation", "title": "LayerLens: Run Evaluation on Dataset", "category": "LayerLens" },
+      { "command": "layerlens.replayTrace", "title": "LayerLens: Replay Trace Locally", "category": "LayerLens" },
+      { "command": "layerlens.generateSynthetic", "title": "LayerLens: Generate Synthetic Traces", "category": "LayerLens" },
+      { "command": "layerlens.openDashboard", "title": "LayerLens: Open Dashboard", "category": "LayerLens" }
+    ],
+    "configuration": {
+      "title": "LayerLens",
+      "properties": {
+        "layerlens.apiBaseUrl": {
+          "type": "string",
+          "default": "https://api.layerlens.ai",
+          "description": "Base URL of the LayerLens API."
+        },
+        "layerlens.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "LayerLens API key. Prefer LAYERLENS_API_KEY env var.",
+          "scope": "window"
+        },
+        "layerlens.organizationId": {
+          "type": "string",
+          "default": "",
+          "description": "Default organization/tenant ID."
+        },
+        "layerlens.projectId": {
+          "type": "string",
+          "default": "",
+          "description": "Default project ID used for trace/evaluation endpoints."
+        },
+        "layerlens.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Interpreter used for local layerlens.cli invocations (replay, synthetic, evaluations)."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "layerlens",
+          "title": "LayerLens",
+          "icon": "resources/layerlens-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "layerlens": [
+        { "id": "layerlens.traces", "name": "Traces" }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        { "command": "layerlens.refreshTraces", "when": "view == layerlens.traces", "group": "navigation" }
+      ],
+      "view/item/context": [
+        { "command": "layerlens.viewTrace", "when": "view == layerlens.traces", "group": "inline" },
+        { "command": "layerlens.replayTrace", "when": "view == layerlens.traces", "group": "layerlens" }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/vscode": "^1.85.0",
+    "jest": "^29",
+    "ts-jest": "^29",
+    "typescript": "^5.4"
+  }
+}
