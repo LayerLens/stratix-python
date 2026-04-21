@@ -34,6 +34,19 @@
   * [Judges and Traces](examples/judges-and-traces.md)
   * [Public API](examples/public-api.md)
 
+## Samples & Tutorials
+* [Samples Overview](samples-guide.md)
+  * [Core SDK Operations](samples-guide.md#core-sdk-operations-18-samples) -- Traces, judges, evaluations, results, models, benchmarks, async
+  * [Industry Solutions](samples-guide.md#industry-solutions-10-samples) -- Healthcare, finance, legal, government, insurance, retail
+  * [Multi-Agent Evaluation](samples-guide.md#multi-agent-evaluation-5-samples) -- Cowork and Agent Teams patterns
+  * [Content-Type Evaluations](samples-guide.md#content-type-evaluations-3-samples) -- Text, brand, document
+  * [CI/CD Integration](samples-guide.md#cicd-integration-2-samples--workflow) -- Quality gates, pre-commit hooks, GitHub Actions
+  * [LLM Provider Integrations](samples-guide.md#llm-provider-integrations-2-samples) -- OpenAI, Anthropic
+  * [OpenClaw Agent Evaluation](samples-guide.md#openclaw-agent-evaluation-10-demos--skill) -- Cage match, code gate, safety audit, red-team
+  * [MCP Server](samples-guide.md#mcp-server-1-sample) -- LayerLens as tools for Claude and other MCP clients
+  * [CopilotKit Integration](samples-guide.md#copilotkit-integration-2-agents--ui-components) -- LangGraph CoAgents, React components
+  * [Claude Code Skills](samples-guide.md#claude-code-skills-6-skills) -- Slash commands for CLI and desktop
+
 ## Troubleshooting
 * [Overview](troubleshooting/README.md)
   * [Common Issues](troubleshooting/common-issues.md)

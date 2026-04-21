@@ -1,0 +1,38 @@
+# AI Quality Gate for GitHub Actions
+# Runs evaluation against a golden dataset using the LayerLens Python SDK.
+# Blocks PRs if pass rate drops below threshold.
+#
+# Prerequisites:
+#   - LAYERLENS_STRATIX_API_KEY stored as a GitHub Actions secret
+#
+# Usage:
+#   Copy to .github/workflows/ai-quality-gate.yml
+
+name: AI Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "prompts/**"
+      - "agents/**"
+
+env:
+  LAYERLENS_STRATIX_API_KEY: ${{ secrets.LAYERLENS_STRATIX_API_KEY }}
+  PASS_RATE_THRESHOLD: "0.85"
+
+jobs:
+  evaluate:
+    name: Run AI Evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install layerlens
+      - name: Run evaluation gate
+        run: python samples/cicd/quality_gate.py --threshold $PASS_RATE_THRESHOLD

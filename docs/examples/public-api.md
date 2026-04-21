@@ -17,7 +17,7 @@ public = PublicClient()
 
 ## Public Models
 
-> Source: [`examples/public_models.py`](../../examples/public_models.py)
+> Source: [`samples/core/public_catalog.py`](../../samples/core/public_catalog.py)
 
 ```python
 from layerlens import PublicClient
@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
 ## Public Benchmarks
 
-> Source: [`examples/public_benchmarks.py`](../../examples/public_benchmarks.py)
+> Source: [`samples/core/public_catalog.py`](../../samples/core/public_catalog.py)
 
 ```python
 from layerlens import PublicClient
@@ -144,7 +144,7 @@ if __name__ == "__main__":
 
 ## Public Evaluations
 
-> Source: [`examples/public_evaluations.py`](../../examples/public_evaluations.py)
+> Source: [`samples/core/public_catalog.py`](../../samples/core/public_catalog.py)
 
 ```python
 from layerlens import PublicClient
@@ -207,7 +207,7 @@ if __name__ == "__main__":
 
 ## Comparing Evaluations
 
-> Source: [`examples/compare_evaluations.py`](../../examples/compare_evaluations.py)
+> Source: [`samples/core/compare_evaluations.py`](../../samples/core/compare_evaluations.py)
 
 Compare how two models perform on the same benchmark, prompt by prompt.
 

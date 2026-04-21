@@ -1,0 +1,162 @@
+{
+  "trace_id": "tr_00005",
+  "timestamp": "2026-03-13T14:08:22.004Z",
+  "framework": "langchain",
+  "agent_name": "document-summarizer",
+  "status": "error",
+  "duration_ms": 47231,
+  "metadata": {
+    "sdk_version": "1.3.0",
+    "environment": "staging",
+    "seed": 42,
+    "error_summary": "TimeoutError after 3 attempts; partial result returned"
+  },
+  "events": [
+    {
+      "span_id": "sp_00005_001",
+      "span_name": "llm_call_attempt_1",
+      "span_type": "llm",
+      "parent_span_id": null,
+      "start_time": "2026-03-13T14:08:22.004Z",
+      "end_time": "2026-03-13T14:08:52.004Z",
+      "status": "error",
+      "attributes": {
+        "llm.model": "gpt-5.3",
+        "llm.temperature": 0.4,
+        "llm.max_tokens": 2048,
+        "llm.prompt": [
+          {
+            "role": "system",
+            "content": "Summarize the provided document in a structured format with key findings, methodology, and conclusions."
+          },
+          {
+            "role": "user",
+            "content": "[Document: 47-page quarterly financial report for FY2025-Q4. Content truncated for trace storage. Total input tokens: 28,412]"
+          }
+        ],
+        "llm.response": null,
+        "llm.token_usage": null,
+        "error": {
+          "type": "TimeoutError",
+          "message": "Request timed out after 30000ms",
+          "timestamp": "2026-03-13T14:08:52.004Z"
+        },
+        "retry.attempt": 1,
+        "retry.max_attempts": 3,
+        "retry.delay_ms": 0,
+        "llm.latency_ms": 30000
+      }
+    },
+    {
+      "span_id": "sp_00005_002",
+      "span_name": "retry_backoff",
+      "span_type": "event",
+      "parent_span_id": null,
+      "start_time": "2026-03-13T14:08:52.010Z",
+      "end_time": "2026-03-13T14:08:57.010Z",
+      "status": "ok",
+      "attributes": {
+        "retry.attempt": 1,
+        "retry.strategy": "exponential_backoff",
+        "retry.delay_ms": 5000,
+        "retry.jitter_ms": 0
+      }
+    },
+    {
+      "span_id": "sp_00005_003",
+      "span_name": "llm_call_attempt_2",
+      "span_type": "llm",
+      "parent_span_id": null,
+      "start_time": "2026-03-13T14:08:57.012Z",
+      "end_time": "2026-03-13T14:09:27.012Z",
+      "status": "error",
+      "attributes": {
+        "llm.model": "gpt-5.3",
+        "llm.temperature": 0.4,
+        "llm.max_tokens": 2048,
+        "llm.prompt": [
+          {
+            "role": "system",
+            "content": "Summarize the provided document in a structured format with key findings, methodology, and conclusions."
+          },
+          {
+            "role": "user",
+            "content": "[Document: 47-page quarterly financial report for FY2025-Q4. Content truncated for trace storage. Total input tokens: 28,412]"
+          }
+        ],
+        "llm.response": null,
+        "llm.token_usage": null,
+        "error": {
+          "type": "TimeoutError",
+          "message": "Request timed out after 30000ms",
+          "timestamp": "2026-03-13T14:09:27.012Z"
+        },
+        "retry.attempt": 2,
+        "retry.max_attempts": 3,
+        "retry.delay_ms": 5000,
+        "llm.latency_ms": 30000
+      }
+    },
+    {
+      "span_id": "sp_00005_004",
+      "span_name": "retry_backoff",
+      "span_type": "event",
+      "parent_span_id": null,
+      "start_time": "2026-03-13T14:09:27.015Z",
+      "end_time": "2026-03-13T14:09:37.015Z",
+      "status": "ok",
+      "attributes": {
+        "retry.attempt": 2,
+        "retry.strategy": "exponential_backoff",
+        "retry.delay_ms": 10000,
+        "retry.jitter_ms": 0
+      }
+    },
+    {
+      "span_id": "sp_00005_005",
+      "span_name": "llm_call_attempt_3_partial",
+      "span_type": "llm",
+      "parent_span_id": null,
+      "start_time": "2026-03-13T14:09:37.018Z",
+      "end_time": "2026-03-13T14:09:49.235Z",
+      "status": "error",
+      "attributes": {
+        "llm.model": "gpt-5.3",
+        "llm.temperature": 0.4,
+        "llm.max_tokens": 1024,
+        "llm.prompt": [
+          {
+            "role": "system",
+            "content": "Summarize the provided document in a structured format with key findings, methodology, and conclusions. Provide a partial summary if the document is too long."
+          },
+          {
+            "role": "user",
+            "content": "[Document: First 15 pages of 47-page quarterly financial report for FY2025-Q4. Content truncated. Total input tokens: 9,104]"
+          }
+        ],
+        "llm.response": {
+          "role": "assistant",
+          "content": "## Partial Summary (Pages 1-15 of 47)\n\n**Key Findings**:\n- Revenue: $142.3M (+18% YoY)\n- Operating margin: 12.4% (up from 9.1%)\n- ARR: $487M, net retention 128%\n\n**Note**: This is a partial summary covering only the first 15 pages. Full financial analysis, segment breakdowns, and forward guidance were not processed due to timeout constraints.",
+          "finish_reason": "stop"
+        },
+        "llm.token_usage": {
+          "prompt_tokens": 9104,
+          "completion_tokens": 97,
+          "total_tokens": 9201
+        },
+        "error": {
+          "type": "PartialResultError",
+          "message": "Only 32% of document processed after retry exhaustion. Returning partial result.",
+          "timestamp": "2026-03-13T14:09:49.235Z",
+          "original_error": "TimeoutError",
+          "pages_processed": 15,
+          "pages_total": 47
+        },
+        "retry.attempt": 3,
+        "retry.max_attempts": 3,
+        "retry.strategy": "reduced_input",
+        "llm.latency_ms": 12217
+      }
+    }
+  ]
+}

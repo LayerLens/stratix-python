@@ -1,0 +1,107 @@
+{
+  "trace_id": "tr_00002",
+  "timestamp": "2026-03-13T10:22:08.117Z",
+  "framework": "langchain",
+  "agent_name": "knowledge-base-qa",
+  "status": "ok",
+  "duration_ms": 2814,
+  "metadata": {
+    "sdk_version": "1.3.0",
+    "environment": "development",
+    "pipeline_type": "rag",
+    "seed": 42
+  },
+  "events": [
+    {
+      "span_id": "sp_00002_001",
+      "span_name": "retriever",
+      "span_type": "retrieval",
+      "parent_span_id": null,
+      "start_time": "2026-03-13T10:22:08.117Z",
+      "end_time": "2026-03-13T10:22:09.341Z",
+      "status": "ok",
+      "attributes": {
+        "retriever.engine": "pgvector",
+        "retriever.query": "What are the SLA guarantees for the enterprise tier?",
+        "retriever.top_k": 5,
+        "retriever.documents": [
+          {
+            "doc_id": "doc_0041",
+            "title": "Enterprise SLA Agreement v3.2",
+            "content": "Enterprise tier customers receive a 99.95% uptime SLA with automated credits. Incident response times: P1 critical within 15 minutes, P2 high within 1 hour, P3 medium within 4 hours. Monthly uptime is calculated excluding scheduled maintenance windows announced 72 hours in advance.",
+            "score": 0.94,
+            "source": "legal/sla-enterprise-v3.2.pdf",
+            "chunk_index": 2
+          },
+          {
+            "doc_id": "doc_0042",
+            "title": "Enterprise SLA Agreement v3.2",
+            "content": "SLA credit schedule: Below 99.95% but above 99.9% — 10% credit. Below 99.9% but above 99.0% — 25% credit. Below 99.0% — 50% credit. Credits are applied to the next billing cycle and do not exceed the monthly subscription fee.",
+            "score": 0.91,
+            "source": "legal/sla-enterprise-v3.2.pdf",
+            "chunk_index": 3
+          },
+          {
+            "doc_id": "doc_0108",
+            "title": "Pricing and Plans Overview",
+            "content": "Enterprise plans include dedicated infrastructure, custom data residency, SSO/SCIM provisioning, and a named account manager. SLA-backed uptime guarantees apply to all production endpoints.",
+            "score": 0.82,
+            "source": "marketing/pricing-overview.md",
+            "chunk_index": 1
+          },
+          {
+            "doc_id": "doc_0073",
+            "title": "Support Tiers Comparison",
+            "content": "Enterprise support includes 24/7 coverage with phone, email, and Slack channels. Dedicated support engineer assigned within 48 hours of contract signing. Quarterly business reviews included.",
+            "score": 0.76,
+            "source": "support/tiers-comparison.md",
+            "chunk_index": 4
+          },
+          {
+            "doc_id": "doc_0019",
+            "title": "Platform Architecture Overview",
+            "content": "The platform is deployed across three AWS regions (us-east-1, eu-west-1, ap-southeast-1) with active-active replication. Failover is automatic with sub-30-second DNS propagation.",
+            "score": 0.68,
+            "source": "engineering/architecture-overview.md",
+            "chunk_index": 7
+          }
+        ],
+        "retriever.latency_ms": 1224
+      }
+    },
+    {
+      "span_id": "sp_00002_002",
+      "span_name": "llm_call",
+      "span_type": "llm",
+      "parent_span_id": null,
+      "start_time": "2026-03-13T10:22:09.345Z",
+      "end_time": "2026-03-13T10:22:10.931Z",
+      "status": "ok",
+      "attributes": {
+        "llm.model": "gpt-5.3",
+        "llm.temperature": 0.3,
+        "llm.max_tokens": 1024,
+        "llm.prompt": [
+          {
+            "role": "system",
+            "content": "You are a helpful assistant that answers questions using only the provided context. If the context does not contain enough information, say so. Cite document sources."
+          },
+          {
+            "role": "user",
+            "content": "Context:\n[1] Enterprise SLA Agreement v3.2 (chunk 2): Enterprise tier customers receive a 99.95% uptime SLA with automated credits. Incident response times: P1 critical within 15 minutes, P2 high within 1 hour, P3 medium within 4 hours. Monthly uptime is calculated excluding scheduled maintenance windows announced 72 hours in advance.\n\n[2] Enterprise SLA Agreement v3.2 (chunk 3): SLA credit schedule: Below 99.95% but above 99.9% — 10% credit. Below 99.9% but above 99.0% — 25% credit. Below 99.0% — 50% credit. Credits are applied to the next billing cycle and do not exceed the monthly subscription fee.\n\n[3] Pricing and Plans Overview (chunk 1): Enterprise plans include dedicated infrastructure, custom data residency, SSO/SCIM provisioning, and a named account manager. SLA-backed uptime guarantees apply to all production endpoints.\n\nQuestion: What are the SLA guarantees for the enterprise tier?"
+          }
+        ],
+        "llm.response": {
+          "role": "assistant",
+          "content": "The enterprise tier includes the following SLA guarantees:\n\n**Uptime**: 99.95% uptime SLA with automated credits [1].\n\n**Incident Response Times** [1]:\n- P1 (Critical): 15 minutes\n- P2 (High): 1 hour\n- P3 (Medium): 4 hours\n\n**SLA Credit Schedule** [2]:\n- 99.9%--99.95% uptime: 10% credit\n- 99.0%--99.9% uptime: 25% credit\n- Below 99.0% uptime: 50% credit\n\nCredits are applied to the next billing cycle and capped at the monthly subscription fee. Scheduled maintenance windows (announced 72 hours ahead) are excluded from uptime calculations [1].\n\nAdditionally, the SLA covers all production endpoints and includes dedicated infrastructure [3]."
+        },
+        "llm.token_usage": {
+          "prompt_tokens": 312,
+          "completion_tokens": 168,
+          "total_tokens": 480
+        },
+        "llm.latency_ms": 1586
+      }
+    }
+  ]
+}
