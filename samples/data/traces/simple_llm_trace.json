@@ -1,0 +1,48 @@
+{
+  "trace_id": "tr_00001",
+  "timestamp": "2026-03-13T10:15:32.441Z",
+  "framework": "openai",
+  "agent_name": "support-assistant",
+  "status": "ok",
+  "duration_ms": 1237,
+  "metadata": {
+    "sdk_version": "1.3.0",
+    "environment": "development",
+    "seed": 42
+  },
+  "events": [
+    {
+      "span_id": "sp_00001_001",
+      "span_name": "llm_call",
+      "span_type": "llm",
+      "start_time": "2026-03-13T10:15:32.441Z",
+      "end_time": "2026-03-13T10:15:33.678Z",
+      "status": "ok",
+      "attributes": {
+        "llm.model": "gpt-5.3",
+        "llm.temperature": 0.7,
+        "llm.max_tokens": 512,
+        "llm.prompt": [
+          {
+            "role": "system",
+            "content": "You are a helpful customer support assistant for an enterprise SaaS platform. Be concise and professional."
+          },
+          {
+            "role": "user",
+            "content": "How do I reset my API key?"
+          }
+        ],
+        "llm.response": {
+          "role": "assistant",
+          "content": "To reset your API key, follow these steps:\n\n1. Navigate to **Settings > API Keys** in the dashboard.\n2. Click the key you want to reset.\n3. Select **Regenerate Key** and confirm the action.\n4. Copy the new key immediately -- it will only be shown once.\n\nNote: Any integrations using the old key will stop working. Update them with the new key before the old one expires (24-hour grace period)."
+        },
+        "llm.token_usage": {
+          "prompt_tokens": 47,
+          "completion_tokens": 93,
+          "total_tokens": 140
+        },
+        "llm.latency_ms": 1192
+      }
+    }
+  ]
+}

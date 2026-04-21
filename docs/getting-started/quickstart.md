@@ -34,7 +34,6 @@ print(f"Accuracy: {result.accuracy}")
 ## Create a Judge and Evaluate Traces
 
 ```python
-import time
 from layerlens import Stratix
 
 client = Stratix()
@@ -55,15 +54,8 @@ trace_eval = client.trace_evaluations.create(
     judge_id=judge.id,
 )
 
-# Poll until complete
-while True:
-    evaluation = client.trace_evaluations.get(trace_eval.id)
-    if evaluation.status.value in ("success", "failure"):
-        break
-    time.sleep(2)
-
-# Get results
-result = client.trace_evaluations.get_results(trace_eval.id)
+# Wait for completion and get results
+result = client.trace_evaluations.wait_for_completion(trace_eval.id)
 if result:
     print(f"Score: {result.score}, Passed: {result.passed}")
     print(f"Reasoning: {result.reasoning}")

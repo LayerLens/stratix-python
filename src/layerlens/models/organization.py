@@ -8,6 +8,7 @@ from pydantic import BaseModel
 class Organization(BaseModel):
     id: str
     name: str
+    owner_id: Optional[str] = None
     projects: Optional[List[Project]] = None
 
 

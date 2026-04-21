@@ -4,7 +4,7 @@ Examples for browsing, filtering, creating, and managing models and benchmarks u
 
 ## Filtering Models
 
-> Source: [`examples/get_models.py`](../../examples/get_models.py)
+> Source: [`samples/core/model_benchmark_management.py`](../../samples/core/model_benchmark_management.py)
 
 ```python
 import asyncio
@@ -56,7 +56,7 @@ if __name__ == "__main__":
 
 ## Filtering Benchmarks
 
-> Source: [`examples/get_benchmarks.py`](../../examples/get_benchmarks.py)
+> Source: [`samples/core/model_benchmark_management.py`](../../samples/core/model_benchmark_management.py)
 
 ```python
 import asyncio
@@ -98,7 +98,7 @@ if __name__ == "__main__":
 
 ## Creating a Custom Model
 
-> Source: [`examples/create_custom_model.py`](../../examples/create_custom_model.py)
+> Source: [`samples/core/custom_model.py`](../../samples/core/custom_model.py)
 
 Custom models let you evaluate any model accessible via an OpenAI-compatible chat completions endpoint.
 
@@ -139,7 +139,7 @@ if __name__ == "__main__":
 
 ## Creating a Custom Benchmark
 
-> Source: [`examples/create_custom_benchmark.py`](../../examples/create_custom_benchmark.py)
+> Source: [`samples/core/custom_benchmark.py`](../../samples/core/custom_benchmark.py)
 
 Custom benchmarks are created from JSONL files with `input` and `truth` fields.
 
@@ -197,7 +197,7 @@ Optional field: `subset` (for grouping prompts into categories).
 
 ## Creating a Smart Benchmark
 
-> Source: [`examples/create_smart_benchmark.py`](../../examples/create_smart_benchmark.py)
+> Source: [`samples/core/custom_benchmark.py`](../../samples/core/custom_benchmark.py)
 
 Smart benchmarks use AI to automatically generate benchmark prompts from uploaded documents. Supported file types: `.txt`, `.pdf`, `.html`, `.docx`, `.csv`, `.json`, `.jsonl`, `.parquet`.
 
@@ -238,7 +238,7 @@ if __name__ == "__main__":
 
 ## Managing Project Models and Benchmarks
 
-> Source: [`examples/manage_project_models_benchmarks.py`](../../examples/manage_project_models_benchmarks.py)
+> Source: [`samples/core/model_benchmark_management.py`](../../samples/core/model_benchmark_management.py)
 
 Add and remove public models and benchmarks from your project.
 

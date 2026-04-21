@@ -4,7 +4,7 @@ Examples for working with judges, traces, and trace evaluations on the Stratix p
 
 ## Creating and Managing Judges
 
-> Source: [`examples/judges.py`](../../examples/judges.py)
+> Source: [`samples/core/create_judge.py`](../../samples/core/create_judge.py)
 
 ```python
 import time
@@ -51,7 +51,7 @@ print(f"Deleted judge {deleted.id}")
 
 ## Uploading and Managing Traces
 
-> Source: [`examples/traces.py`](../../examples/traces.py)
+> Source: [`samples/core/basic_trace.py`](../../samples/core/basic_trace.py)
 
 ```python
 import os
@@ -94,7 +94,7 @@ print(f"Deleted: {deleted}")
 
 ## Running Trace Evaluations
 
-> Source: [`examples/trace_evaluations.py`](../../examples/trace_evaluations.py)
+> Source: [`samples/core/trace_evaluation.py`](../../samples/core/trace_evaluation.py)
 
 ```python
 import time
@@ -103,14 +103,10 @@ from layerlens import Stratix
 
 client = Stratix()
 
-# Fetch a model and create a judge
-models = client.models.get(type="public", name="gpt-4o")
-model = models[0]
-
+# Create a judge (no model_id → server uses default model)
 judge = client.judges.create(
     name=f"Trace Eval Demo Judge {int(time.time())}",
     evaluation_goal="Evaluate whether the response is accurate, complete, and well-structured",
-    model_id=model.id,
 )
 print(f"Created judge {judge.id}: {judge.name}")
 
@@ -133,28 +129,16 @@ evaluation = client.trace_evaluations.create(
 )
 print(f"Created evaluation {evaluation.id}, status: {evaluation.status}")
 
-# --- Wait for evaluation to complete
-for _ in range(30):
-    evaluation = client.trace_evaluations.get(evaluation.id)
-    print(f"Evaluation status: {evaluation.status}")
-    if evaluation.status.value in ("success", "failure"):
-        break
-    time.sleep(2)
-
-# --- Get evaluation results
-try:
-    results_response = client.trace_evaluations.get_results(evaluation.id)
-    if results_response and results_response.results:
-        for result in results_response.results:
-            print(f"  Score: {result.score}, Passed: {result.passed}")
-            print(f"  Reasoning: {result.reasoning}")
-            if result.steps:
-                for step in result.steps:
-                    print(f"    Step {step.step}: {step.reasoning}")
-    else:
-        print("  No results returned")
-except Exception:
-    print("  No results yet (evaluation may still be in progress)")
+# --- Wait for completion and get results
+result = client.trace_evaluations.wait_for_completion(evaluation.id)
+if result:
+    print(f"  Score: {result.score}, Passed: {result.passed}")
+    print(f"  Reasoning: {result.reasoning}")
+    if result.steps:
+        for step in result.steps:
+            print(f"    Tool: {step.tool}, Result: {step.result[:80]}")
+else:
+    print("  No results returned (evaluation may have failed)")
 
 # --- List all trace evaluations
 response = client.trace_evaluations.get_many()
@@ -166,7 +150,7 @@ client.judges.delete(judge.id)
 
 ## Judge Optimizations
 
-> Source: [`examples/judge_optimizations.py`](../../examples/judge_optimizations.py)
+> Source: [`samples/core/judge_optimization.py`](../../samples/core/judge_optimization.py)
 
 Optimization requires that the judge has at least 10 annotations (trace evaluation results). Run trace evaluations first to build up annotation data.
 
@@ -237,7 +221,7 @@ client.judges.delete(judge.id)
 
 ## Async Judges and Traces
 
-> Source: [`examples/async_judges_and_traces.py`](../../examples/async_judges_and_traces.py)
+> Source: [`samples/core/async_results.py`](../../samples/core/async_results.py)
 
 ```python
 import os
@@ -287,20 +271,17 @@ async def main():
         if evaluation:
             print(f"  Evaluation {evaluation.id}: {evaluation.status}")
 
-    # --- Wait and fetch results
-    await asyncio.sleep(10)
-    for evaluation in evaluations:
-        if not evaluation:
-            continue
-        try:
-            results_response = await client.trace_evaluations.get_results(evaluation.id)
-            if results_response and results_response.results:
-                for result in results_response.results:
-                    print(f"  Score: {result.score}, Passed: {result.passed}")
-            else:
-                print(f"  Evaluation {evaluation.id}: no results yet")
-        except Exception:
-            print(f"  Evaluation {evaluation.id}: results not available yet")
+    # --- Wait for results concurrently
+    result_tasks = [
+        client.trace_evaluations.wait_for_completion(e.id)
+        for e in evaluations if e
+    ]
+    results = await asyncio.gather(*result_tasks)
+    for result in results:
+        if result:
+            print(f"  Score: {result.score}, Passed: {result.passed}")
+        else:
+            print(f"  No results (evaluation may have failed)")
 
     await client.judges.delete(judge.id)
 

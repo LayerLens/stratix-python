@@ -88,6 +88,7 @@ typecheck = { chain = ["typecheck:pyright", "typecheck:mypy"] }
 line-length = 120
 output-format = "grouped"
 target-version = "py37"
+exclude = ["samples"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -135,7 +136,7 @@ known-first-party = ["openai", "tests"]
 [tool.ruff.lint.per-file-ignores]
 "bin/**.py" = ["T201", "T203"]
 "scripts/**.py" = ["T201", "T203"]
-"tests/**.py" = ["T201", "T203"]
+"tests/**.py" = ["T201", "T203", "ARG", "B007"]
 "examples/**.py" = ["T201", "T203"]
 "src/layerlens/cli/**" = ["T201", "T203"]
 

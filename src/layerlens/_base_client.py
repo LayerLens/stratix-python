@@ -24,14 +24,18 @@ log.addFilter(SensitiveHeadersFilter())
 
 
 class BaseClient(httpx.Client):
+    _max_retries: int
+
     def __init__(
         self,
         *,
         base_url: URL | str,
         headers: Optional[Dict[str, str]] = None,
         timeout: Union[float, httpx.Timeout, None] = None,
+        max_retries: int = MAX_RETRIES,
         **kwargs: Any,
     ):
+        self._max_retries = max_retries
         super().__init__(base_url=base_url, headers=headers, timeout=timeout, **kwargs)
 
     @property
@@ -58,7 +62,7 @@ class BaseClient(httpx.Client):
         **kwargs: Any,
     ) -> Union[ResponseT, httpx.Response]:
         combined_headers = {**self.default_headers, **(headers or {})}
-        retries_left = MAX_RETRIES
+        retries_left = self._max_retries
         delay = INITIAL_RETRY_DELAY
 
         while True:
@@ -168,14 +172,18 @@ class BaseClient(httpx.Client):
 
 
 class BaseAsyncClient(httpx.AsyncClient):
+    _max_retries: int
+
     def __init__(
         self,
         *,
         base_url: URL | str,
         headers: Optional[Dict[str, str]] = None,
         timeout: Union[float, httpx.Timeout, None] = None,
+        max_retries: int = MAX_RETRIES,
         **kwargs: Any,
     ):
+        self._max_retries = max_retries
         super().__init__(base_url=base_url, headers=headers, timeout=timeout, **kwargs)
 
     @property
@@ -204,7 +212,7 @@ class BaseAsyncClient(httpx.AsyncClient):
         import asyncio
 
         combined_headers = {**self.default_headers, **(headers or {})}
-        retries_left = MAX_RETRIES
+        retries_left = self._max_retries
         delay = INITIAL_RETRY_DELAY
 
         while True:

@@ -26,9 +26,9 @@ evaluation = client.trace_evaluations.create(
     judge_id="judge-123",
 )
 
-# Get results
-results = client.trace_evaluations.get_results(evaluation.id)
-for result in results.results:
+# Wait for completion and get results
+result = client.trace_evaluations.wait_for_completion(evaluation.id)
+if result:
     print(f"Score: {result.score}, Passed: {result.passed}")
     print(f"Reasoning: {result.reasoning}")
 ```
@@ -47,8 +47,8 @@ async def main():
         judge_id="judge-123",
     )
 
-    results = await client.trace_evaluations.get_results(evaluation.id)
-    for result in results.results:
+    result = await client.trace_evaluations.wait_for_completion(evaluation.id)
+    if result:
         print(f"Score: {result.score}, Passed: {result.passed}")
 
 if __name__ == "__main__":
@@ -149,6 +149,8 @@ response = client.trace_evaluations.get_many(
 
 Retrieves the detailed results of a completed trace evaluation, including scores, reasoning, and step-by-step analysis.
 
+Returns `None` if results are not yet available (evaluation still pending or in progress).
+
 #### Parameters
 
 | Parameter | Type                             | Required | Description                        |
@@ -158,23 +160,62 @@ Retrieves the detailed results of a completed trace evaluation, including scores
 
 #### Returns
 
-Returns a `TraceEvaluationResultsResponse` object containing:
+Returns a `TraceEvaluationResultsResponse` object with the evaluation result fields (score, passed, reasoning, etc.).
 
-- `results`: List of `TraceEvaluationResult` objects
-
-Returns `None` if the request fails.
+Returns `None` if the evaluation has not completed yet or if the request fails.
 
 #### Example
 
 ```python
-results_response = client.trace_evaluations.get_results("eval-123")
-if results_response:
-    for result in results_response.results:
-        print(f"Score: {result.score}")
-        print(f"Passed: {result.passed}")
-        print(f"Reasoning: {result.reasoning}")
-        for step in result.steps:
-            print(f"  Step {step.step}: {step.reasoning}")
+result = client.trace_evaluations.get_results("eval-123")
+if result:
+    print(f"Score: {result.score}")
+    print(f"Passed: {result.passed}")
+    print(f"Reasoning: {result.reasoning}")
+    for step in result.steps:
+        print(f"  Tool: {step.tool}, Result: {step.result}")
+```
+
+### `wait_for_completion(id, interval_seconds=3, timeout_seconds=300)`
+
+Polls the evaluation status until it reaches a terminal state (success or failure), then returns the results. This is the recommended way to wait for trace evaluation results.
+
+#### Parameters
+
+| Parameter          | Type           | Required | Default | Description                                      |
+| ------------------ | -------------- | -------- | ------- | ------------------------------------------------ |
+| `id`               | `str`          | Yes      |         | The unique trace evaluation ID                   |
+| `interval_seconds` | `int`          | No       | `3`     | Seconds between status polls                     |
+| `timeout_seconds`  | `int \| None`  | No       | `300`   | Maximum wait time. `None` waits indefinitely     |
+
+#### Returns
+
+Returns a `TraceEvaluationResultsResponse` object if the evaluation completes successfully.
+
+Returns `None` if the evaluation failed or no results are available.
+
+Raises `TimeoutError` if `timeout_seconds` is exceeded.
+
+#### Example
+
+```python
+evaluation = client.trace_evaluations.create(
+    trace_id="trace-abc",
+    judge_id="judge-xyz",
+)
+
+# Wait up to 5 minutes for results
+result = client.trace_evaluations.wait_for_completion(evaluation.id)
+if result:
+    print(f"Score: {result.score}, Passed: {result.passed}")
+    print(f"Reasoning: {result.reasoning}")
+
+# Custom timeout and polling interval
+result = client.trace_evaluations.wait_for_completion(
+    evaluation.id,
+    interval_seconds=5,
+    timeout_seconds=600,
+)
 ```
 
 ### `estimate_cost(trace_ids, judge_id, timeout=None)`

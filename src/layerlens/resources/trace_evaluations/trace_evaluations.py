@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+import asyncio
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -7,11 +9,18 @@ import httpx
 from ...models import (
     TraceEvaluation,
     CostEstimateResponse,
+    TraceEvaluationStatus,
     TraceEvaluationsResponse,
     TraceEvaluationResultsResponse,
 )
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
+from ..._exceptions import NotFoundError
+
+_TERMINAL_STATUSES = {
+    TraceEvaluationStatus.SUCCESS,
+    TraceEvaluationStatus.FAILURE,
+}
 
 DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 20
@@ -136,11 +145,14 @@ class TraceEvaluations(SyncAPIResource):
         *,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[TraceEvaluationResultsResponse]:
-        resp = self._get(
-            f"{self._base_url()}/{id}/results",
-            timeout=timeout,
-            cast_to=dict,
-        )
+        try:
+            resp = self._get(
+                f"{self._base_url()}/{id}/results",
+                timeout=timeout,
+                cast_to=dict,
+            )
+        except NotFoundError:
+            return None
         data = _unwrap(resp)
         if not data or not isinstance(data, dict):
             return None
@@ -149,6 +161,26 @@ class TraceEvaluations(SyncAPIResource):
             return TraceEvaluationResultsResponse(**data)
         except Exception:
             return None
+
+    def wait_for_completion(
+        self,
+        id: str,
+        *,
+        interval_seconds: int = 3,
+        timeout_seconds: Optional[int] = 300,
+    ) -> Optional[TraceEvaluationResultsResponse]:
+        """Poll until the trace evaluation finishes, then return results."""
+        start = time.time()
+
+        while True:
+            te = self.get(id)
+            if te and te.status in _TERMINAL_STATUSES:
+                break
+            if timeout_seconds and (time.time() - start) > timeout_seconds:
+                raise TimeoutError(f"Trace evaluation {id} did not complete within {timeout_seconds} seconds")
+            time.sleep(interval_seconds)
+
+        return self.get_results(id)
 
     def estimate_cost(
         self,
@@ -283,11 +315,14 @@ class AsyncTraceEvaluations(AsyncAPIResource):
         *,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[TraceEvaluationResultsResponse]:
-        resp = await self._get(
-            f"{self._base_url()}/{id}/results",
-            timeout=timeout,
-            cast_to=dict,
-        )
+        try:
+            resp = await self._get(
+                f"{self._base_url()}/{id}/results",
+                timeout=timeout,
+                cast_to=dict,
+            )
+        except NotFoundError:
+            return None
         data = _unwrap(resp)
         if not data or not isinstance(data, dict):
             return None
@@ -296,6 +331,26 @@ class AsyncTraceEvaluations(AsyncAPIResource):
             return TraceEvaluationResultsResponse(**data)
         except Exception:
             return None
+
+    async def wait_for_completion(
+        self,
+        id: str,
+        *,
+        interval_seconds: int = 3,
+        timeout_seconds: Optional[int] = 300,
+    ) -> Optional[TraceEvaluationResultsResponse]:
+        """Poll until the trace evaluation finishes, then return results."""
+        start = asyncio.get_event_loop().time()
+
+        while True:
+            te = await self.get(id)
+            if te and te.status in _TERMINAL_STATUSES:
+                break
+            if timeout_seconds and (asyncio.get_event_loop().time() - start) > timeout_seconds:
+                raise TimeoutError(f"Trace evaluation {id} did not complete within {timeout_seconds} seconds")
+            await asyncio.sleep(interval_seconds)
+
+        return await self.get_results(id)
 
     async def estimate_cost(
         self,

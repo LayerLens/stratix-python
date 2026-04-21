@@ -19,4 +19,5 @@ codegen.log
 Brewfile.lock.json
 
 .DS_Store
-.coverage
+.coveragedocs/review/
+marc-only/

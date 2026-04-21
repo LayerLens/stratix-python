@@ -170,8 +170,10 @@ class Models(SyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
         """Add models to the project by their IDs."""
-        current = self.get(timeout=timeout) or []
-        current_ids = [m.id for m in current]
+        # Only fetch public (platform) models — custom models are managed
+        # separately and must not be included in the project patch payload.
+        current = self.get(timeout=timeout, type="public") or []
+        current_ids = [str(m.id) for m in current]
         new_ids = list(dict.fromkeys(current_ids + list(model_ids)))
         return self._patch_project_models(new_ids, timeout)
 
@@ -181,9 +183,11 @@ class Models(SyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
         """Remove models from the project by their IDs."""
-        current = self.get(timeout=timeout) or []
+        # Only fetch public (platform) models — custom models are managed
+        # separately and must not be included in the project patch payload.
+        current = self.get(timeout=timeout, type="public") or []
         remove_set = set(model_ids)
-        new_ids = [m.id for m in current if m.id not in remove_set]
+        new_ids = [str(m.id) for m in current if str(m.id) not in remove_set]
         return self._patch_project_models(new_ids, timeout)
 
     def _patch_project_models(
@@ -198,7 +202,11 @@ class Models(SyncAPIResource):
             timeout=timeout,
             cast_to=dict,
         )
-        return isinstance(resp, dict) and "id" in resp
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            if isinstance(data, dict) and "id" in data:
+                return True
+        return False
 
     def create_custom(
         self,
@@ -361,8 +369,10 @@ class AsyncModels(AsyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
         """Add models to the project by their IDs."""
-        current = await self.get(timeout=timeout) or []
-        current_ids = [m.id for m in current]
+        # Only fetch public (platform) models — custom models are managed
+        # separately and must not be included in the project patch payload.
+        current = await self.get(timeout=timeout, type="public") or []
+        current_ids = [str(m.id) for m in current]
         new_ids = list(dict.fromkeys(current_ids + list(model_ids)))
         return await self._patch_project_models(new_ids, timeout)
 
@@ -372,9 +382,11 @@ class AsyncModels(AsyncAPIResource):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
         """Remove models from the project by their IDs."""
-        current = await self.get(timeout=timeout) or []
+        # Only fetch public (platform) models — custom models are managed
+        # separately and must not be included in the project patch payload.
+        current = await self.get(timeout=timeout, type="public") or []
         remove_set = set(model_ids)
-        new_ids = [m.id for m in current if m.id not in remove_set]
+        new_ids = [str(m.id) for m in current if str(m.id) not in remove_set]
         return await self._patch_project_models(new_ids, timeout)
 
     async def _patch_project_models(
@@ -389,7 +401,11 @@ class AsyncModels(AsyncAPIResource):
             timeout=timeout,
             cast_to=dict,
         )
-        return isinstance(resp, dict) and "id" in resp
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            if isinstance(data, dict) and "id" in data:
+                return True
+        return False
 
     async def create_custom(
         self,
