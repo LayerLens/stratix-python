@@ -33,6 +33,7 @@ Usage from the CLI::
 """
 from __future__ import annotations
 
+import atexit
 import contextlib
 import os
 import time
@@ -43,6 +44,7 @@ _initialized: bool = False
 _meter: Any = None
 _counter_events: Any = None
 _hist_request_duration: Any = None
+_atexit_registered: bool = False
 
 
 def _enabled() -> bool:
@@ -85,9 +87,23 @@ def _try_init() -> bool:
     endpoint = os.environ.get(
         "LAYERLENS_OTLP_ENDPOINT", "https://otel.layerlens.ai:4317"
     )
-    insecure = (
-        os.environ.get("LAYERLENS_OTLP_INSECURE", "false").lower() == "true"
-    )
+
+    # Resolve insecure-vs-TLS from the endpoint scheme when one is present,
+    # falling back to the explicit env flag for schemeless endpoints (the
+    # OTel gRPC convention of "host:port"). This avoids the ambiguity where
+    # a caller sets LAYERLENS_OTLP_ENDPOINT=https://... AND
+    # LAYERLENS_OTLP_INSECURE=true — previously the flags would disagree,
+    # and the OTLP gRPC exporter's behaviour was version-dependent. Now
+    # the scheme, when present, is authoritative.
+    insecure_env = os.environ.get("LAYERLENS_OTLP_INSECURE", "").strip().lower()
+    if endpoint.startswith("https://"):
+        insecure = False
+        endpoint = endpoint[len("https://") :]
+    elif endpoint.startswith("http://"):
+        insecure = True
+        endpoint = endpoint[len("http://") :]
+    else:
+        insecure = insecure_env == "true"
 
     resource = Resource.create({
         "service.name": "atlas-sdk-python",
@@ -122,6 +138,18 @@ def _try_init() -> bool:
         _hist_request_duration = None
         return False
 
+    # Auto-register atexit shutdown on first successful init. Without this,
+    # SDK consumers that don't manually call _telemetry.shutdown() would
+    # lose up to 30 s of buffered events on clean process exit (the
+    # PeriodicExportingMetricReader flush interval). The CLI also calls
+    # atexit.register(_telemetry.shutdown) explicitly — the registered-once
+    # guard here means a second registration is a no-op, keeping shutdown
+    # idempotent regardless of call path.
+    global _atexit_registered
+    if not _atexit_registered:
+        atexit.register(shutdown)
+        _atexit_registered = True
+
     return True
 
 
@@ -134,16 +162,24 @@ def event(
     """Increment ``atlas_sdk_events_total{surface, event}`` by 1.
 
     No-op when telemetry is disabled or OTel SDK is absent.
+
+    The ``attributes`` parameter is accepted for forward compatibility and
+    (when present) is attached to the **OTel span** covering the timed()
+    context — NOT to the counter. The atlas-app Prometheus counter
+    ``atlas_sdk_events_total`` is declared with exactly 2 labels
+    (``surface, event``) in ``apps/shared/observability/metrics.go``; any
+    third attribute on the counter would create a divergent label set that
+    the server-side declaration and dashboards don't anticipate. Extra
+    attributes are therefore dropped here by design — keep atlas-app as
+    the single source of truth for the counter's label schema.
     """
     if not _try_init() or _counter_events is None:
         return
+    # Exactly two labels — MUST match the atlas-app Go declaration.
     attrs: dict[str, Any] = {"surface": surface, "event": event_name}
-    if attributes:
-        # Only allow a small allowlist of attribute keys — no PII.
-        allow = {"command", "resource", "outcome", "status_code"}
-        for k, v in attributes.items():
-            if k in allow and isinstance(v, (str, int, bool, float)):
-                attrs[k] = str(v)
+    # Note: `attributes` is intentionally ignored for the counter. See
+    # docstring above for rationale + where richer dimensions belong.
+    _ = attributes
     try:
         _counter_events.add(1, attributes=attrs)
     except Exception:
