@@ -1278,6 +1278,7 @@ class TestAllSamplesWithMockedSDK:
         pytest.importorskip("langchain_core")
 
         from types import SimpleNamespace
+
         from langgraph.types import Command
 
         fake_judge = SimpleNamespace(
@@ -1399,9 +1400,10 @@ class TestAllSamplesWithMockedSDK:
         pytest.importorskip("fastapi")
         pytest.importorskip("httpx")
 
-        import httpx
         from uuid import uuid4
         from types import SimpleNamespace
+
+        import httpx
         from fastapi import FastAPI
         from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
 

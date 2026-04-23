@@ -1,0 +1,15 @@
+# Runtime deps for the browser-test harness backend.
+# These mirror the sample's declared compatibility matrix
+# (see samples/copilotkit/README.md).
+
+fastapi>=0.115.0
+uvicorn>=0.30.0
+langgraph>=1.1.0
+langchain-core>=0.3.0
+ag-ui-langgraph>=0.0.34
+pydantic>=2.7.0
+
+# The LayerLens SDK itself; the patch in server.py replaces
+# ``layerlens.Stratix`` with a MagicMock before the evaluator is
+# imported, so no real API key is required for the browser test.
+layerlens>=1.6.0

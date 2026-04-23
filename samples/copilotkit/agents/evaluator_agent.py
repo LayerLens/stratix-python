@@ -21,13 +21,13 @@ from typing import Any, Dict, List, Optional
 from dataclasses import field, dataclass
 
 from pydantic import BaseModel
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
 # CopilotKit helpers -- keep the CopilotKit structure intact
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from layerlens import Stratix
 
@@ -384,6 +384,11 @@ async def error_node(state: EvaluatorState) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# Routing tokens are distinct from node names to avoid a collision with the
+# ``error`` field on ``EvaluatorState``. LangGraph rejects a node whose name
+# matches a state key on older versions (``'error' is already being used as
+# a state key``); the node name ``handle_error`` sidesteps that while the
+# ``error`` routing token remains purely a conditional-edge key.
 def route_step(state: EvaluatorState) -> str:
     step = state.step
     if step == "fetch_traces":
@@ -412,7 +417,7 @@ def build_graph() -> StateGraph:
     graph.add_node("confirm_judge", confirm_judge_node)
     graph.add_node("run_evaluations", run_evaluations_node)
     graph.add_node("poll_results", poll_results_node)
-    graph.add_node("error", error_node)
+    graph.add_node("handle_error", error_node)
 
     graph.set_entry_point("fetch_judges")
 
@@ -421,7 +426,7 @@ def build_graph() -> StateGraph:
         route_step,
         {
             "fetch_traces": "fetch_traces",
-            "error": "error",
+            "error": "handle_error",
             "done": END,
         },
     )
@@ -430,7 +435,7 @@ def build_graph() -> StateGraph:
         route_step,
         {
             "confirm_judge": "confirm_judge",
-            "error": "error",
+            "error": "handle_error",
             "done": END,
         },
     )
@@ -439,7 +444,7 @@ def build_graph() -> StateGraph:
         route_step,
         {
             "run_evaluations": "run_evaluations",
-            "error": "error",
+            "error": "handle_error",
             "done": END,
         },
     )
@@ -448,7 +453,7 @@ def build_graph() -> StateGraph:
         route_step,
         {
             "poll_results": "poll_results",
-            "error": "error",
+            "error": "handle_error",
             "done": END,
         },
     )
@@ -460,7 +465,7 @@ def build_graph() -> StateGraph:
             "done": END,
         },
     )
-    graph.add_edge("error", END)
+    graph.add_edge("handle_error", END)
 
     return graph
 
@@ -496,15 +501,21 @@ def build_graph() -> StateGraph:
 #     evaluator_graph = build_graph().compile(checkpointer=checkpointer)
 #
 # Register the Pydantic DTOs on the checkpoint serializer's msgpack allowlist.
-# Without this, LangGraph emits a ``Deserializing unregistered type`` warning
-# every time the graph resumes from a checkpoint, and future LangGraph
-# releases will refuse to deserialize unregistered types outright.
+# Without this, LangGraph 1.x emits a ``Deserializing unregistered type``
+# warning every time the graph resumes from a checkpoint, and future releases
+# will refuse to deserialize unregistered types outright. The kwarg is
+# langgraph>=1.0 only -- on older versions we fall back to the default serde,
+# which does not enforce the allowlist.
 _DTOS = (
     (__name__, "JudgeInfo"),
     (__name__, "TraceInfo"),
     (__name__, "EvaluationInfo"),
 )
-checkpointer = InMemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=_DTOS))
+try:
+    _serde = JsonPlusSerializer(allowed_msgpack_modules=_DTOS)
+except TypeError:
+    _serde = JsonPlusSerializer()
+checkpointer = InMemorySaver(serde=_serde)
 evaluator_graph = build_graph().compile(checkpointer=checkpointer)
 
 

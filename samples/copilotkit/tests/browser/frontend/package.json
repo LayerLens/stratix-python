@@ -1,0 +1,25 @@
+{
+  "name": "copilotkit-evaluator-browser-harness",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000"
+  },
+  "dependencies": {
+    "@copilotkit/react-core": "1.56.3",
+    "@copilotkit/react-ui": "1.56.3",
+    "@copilotkit/runtime": "1.56.3",
+    "next": "16.2.4",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "@types/node": "22.10.0",
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "typescript": "5.7.2"
+  }
+}
