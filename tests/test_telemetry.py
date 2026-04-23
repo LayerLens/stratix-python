@@ -61,12 +61,24 @@ def test_event_with_telemetry_off_doesnt_import_otel(monkeypatch, _reset_telemet
     assert "opentelemetry" not in sys.modules
 
 
-def test_attributes_allowlist(monkeypatch, _reset_telemetry_module):
-    """Disallowed attribute keys are silently dropped, not raised."""
+def test_counter_labels_match_atlas_app_declaration(
+    monkeypatch, _reset_telemetry_module
+):
+    """The Prometheus counter atlas_sdk_events_total is declared with EXACTLY
+    two labels on the atlas-app server side (surface, event). To keep the
+    two-repo contract aligned, the SDK MUST NOT add any third attribute to
+    the counter — regardless of what the caller passes via ``attributes=``.
+    Any extra attribute WOULD create a divergent label set that server-side
+    dashboards and recording rules don't anticipate.
+
+    This test asserts that even attributes a previous allowlist permitted
+    (command, outcome, etc.) are now dropped. Extra dimensions belong on
+    OTel span attributes, not on the counter — atlas-app is the single
+    source of truth for the counter's label schema.
+    """
     t = _reset_telemetry_module
     monkeypatch.setenv("LAYERLENS_TELEMETRY", "on")
 
-    # Stub OTel SDK so we can observe what reaches add().
     seen_attrs: dict = {}
 
     class _StubCounter:
@@ -82,19 +94,17 @@ def test_attributes_allowlist(monkeypatch, _reset_telemetry_module):
         "cli",
         "cmd_run",
         attributes={
-            "command": "trace ls",
-            "email": "user@example.com",  # MUST be dropped
-            "ip": "10.0.0.1",  # MUST be dropped
-            "outcome": "success",
+            "command": "trace ls",  # dropped by the 2-label contract
+            "email": "user@example.com",  # dropped (PII)
+            "ip": "10.0.0.1",  # dropped (PII)
+            "outcome": "success",  # dropped by the 2-label contract
         },
     )
 
-    assert seen_attrs.get("surface") == "cli"
-    assert seen_attrs.get("event") == "cmd_run"
-    assert seen_attrs.get("command") == "trace ls"
-    assert seen_attrs.get("outcome") == "success"
-    assert "email" not in seen_attrs
-    assert "ip" not in seen_attrs
+    # Exactly surface + event, nothing more.
+    assert set(seen_attrs.keys()) == {"surface", "event"}
+    assert seen_attrs["surface"] == "cli"
+    assert seen_attrs["event"] == "cmd_run"
 
 
 def test_event_swallows_counter_errors(monkeypatch, _reset_telemetry_module):
