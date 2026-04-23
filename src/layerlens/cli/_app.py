@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import atexit
+
 import click
 
+from .. import _telemetry
 from .._version import __version__
 from .commands.ci import ci
 from .commands.auth import login, logout, whoami
@@ -12,6 +15,9 @@ from .commands.trace import trace
 from .commands.scorer import scorer
 from .commands.evaluate import evaluate
 from .commands.integration import integration
+
+# Flush telemetry on interpreter exit so the last `cmd_run` event isn't lost.
+atexit.register(_telemetry.shutdown)
 
 
 @click.group()
@@ -55,6 +61,10 @@ def cli(
     ctx.obj["api_key"] = api_key
     ctx.obj["output_format"] = output_format
     ctx.obj["verbose"] = verbose
+
+    # Opt-in CLI command telemetry. No-op unless LAYERLENS_TELEMETRY=on.
+    invoked = ctx.invoked_subcommand or "no_subcommand"
+    _telemetry.event("cli", "cmd_run", attributes={"command": invoked})
 
     # Build base_url from --host / --port
     base_url = None
