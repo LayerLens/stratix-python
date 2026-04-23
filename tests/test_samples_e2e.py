@@ -1238,6 +1238,8 @@ class TestAllSamplesWithMockedSDK:
                 "langchain_core": MagicMock(),
                 "langchain_core.messages": MagicMock(),
                 "langgraph": MagicMock(),
+                "langgraph.checkpoint": MagicMock(),
+                "langgraph.checkpoint.memory": MagicMock(),
                 "langgraph.graph": MagicMock(),
                 "langgraph.types": MagicMock(),
                 "copilotkit": MagicMock(),
@@ -1252,6 +1254,122 @@ class TestAllSamplesWithMockedSDK:
                         assert hasattr(mod, "main"), f"CopilotKit agent {name} should have main()"
                         # main() just prints usage -- call it
                         mod.main()
+        finally:
+            sys.modules.pop(mod_name, None)
+            if sample_dir in sys.path:
+                sys.path.remove(sample_dir)
+
+    def test_copilotkit_evaluator_interrupt_resume(self):
+        """Regression: evaluator_graph must support interrupt + resume end-to-end.
+
+        The evaluator agent calls ``interrupt()`` in ``confirm_judge_node`` for
+        human-in-the-loop judge confirmation. A checkpointer is mandatory for
+        this to work -- without one, the resume call produces zero events and
+        the AG-UI stream never emits RUN_FINISHED, blocking all subsequent
+        CopilotKit frontend messages with
+        "Cannot send 'RUN_STARTED' while a run is still active".
+
+        Unlike the other CopilotKit tests, this one imports the REAL langgraph
+        (not MagicMock) and drives a full astream -> interrupt -> resume cycle.
+        """
+        pytest.importorskip("langgraph")
+        pytest.importorskip("langchain_core")
+
+        from types import SimpleNamespace
+        from langgraph.types import Command
+
+        fake_judge = SimpleNamespace(
+            id="jdg_1",
+            name="Helpfulness",
+            evaluation_goal="measures helpfulness",
+            created_at="2026-04-23T00:00:00Z",
+        )
+        fake_trace = SimpleNamespace(
+            id="trc_1",
+            filename="sample.jsonl",
+            created_at="2026-04-23T00:00:00Z",
+        )
+        fake_eval = SimpleNamespace(
+            id="ev_1",
+            trace_id="trc_1",
+            judge_id="jdg_1",
+            status=SimpleNamespace(value="pending"),
+        )
+        fake_client = MagicMock()
+        fake_client.judges.get_many.return_value = SimpleNamespace(judges=[fake_judge])
+        fake_client.traces.get_many.return_value = SimpleNamespace(traces=[fake_trace])
+        fake_client.trace_evaluations.create.return_value = fake_eval
+
+        sample_dir = os.path.join(SAMPLES_DIR, "copilotkit", "agents")
+        if sample_dir not in sys.path:
+            sys.path.insert(0, sample_dir)
+
+        mod_name = "copilotkit_evaluator_interrupt_test"
+        try:
+            spec = importlib.util.spec_from_file_location(
+                mod_name,
+                os.path.join(sample_dir, "evaluator_agent.py"),
+            )
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[mod_name] = mod
+
+            with patch.dict("os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}):
+                with patch("layerlens.Stratix", MagicMock(return_value=fake_client)):
+                    spec.loader.exec_module(mod)
+
+            # Confirm the sample is wired correctly: a checkpointer MUST be set.
+            assert mod.evaluator_graph.checkpointer is not None, (
+                "evaluator_graph must be compiled with a checkpointer -- "
+                "interrupt() cannot pause/resume without one"
+            )
+
+            # Replace the module client with our fake (module holds its own ref).
+            mod._client = fake_client
+
+            # Stop before the poll loop to keep the test deterministic.
+            compiled = mod.build_graph().compile(
+                checkpointer=mod.checkpointer.__class__(),
+                interrupt_before=["poll_results"],
+            )
+
+            async def run() -> tuple[list[str], list[str], Any]:
+                cfg = {"configurable": {"thread_id": "test-thread-1"}}
+                phase1: list[str] = []
+                async for ev in compiled.astream({}, config=cfg):
+                    phase1.append(list(ev.keys())[0])
+                phase2: list[str] = []
+                async for ev in compiled.astream(Command(resume="ok"), config=cfg):
+                    phase2.append(list(ev.keys())[0])
+                state = compiled.get_state(cfg)
+                return phase1, phase2, state
+
+            phase1, phase2, state = asyncio.run(run())
+
+            # Phase 1: graph fetches judges/traces then pauses at interrupt().
+            assert "fetch_judges" in phase1, phase1
+            assert "fetch_traces" in phase1, phase1
+            assert "__interrupt__" in phase1, (
+                f"Expected __interrupt__ in phase-1 events, got {phase1}. "
+                "This means confirm_judge_node's interrupt() did not pause "
+                "the graph -- checkpointer is missing or misconfigured."
+            )
+
+            # Phase 2: resume via Command(resume=...) must actually produce
+            # post-interrupt events. If this is empty, the checkpointer
+            # didn't persist state across the pause and the resume is a no-op.
+            assert phase2, (
+                "Resume produced zero events -- checkpointer did not persist "
+                "state across interrupt(). This is the exact failure mode "
+                "that leaves the AG-UI stream without RUN_FINISHED."
+            )
+            assert "confirm_judge" in phase2, phase2
+            assert "run_evaluations" in phase2, phase2
+
+            # State survived the round-trip.
+            confirmed = state.values.get("confirmed_judge")
+            assert confirmed is not None
+            assert confirmed.id == "jdg_1"
+            assert confirmed.name == "Helpfulness"
         finally:
             sys.modules.pop(mod_name, None)
             if sample_dir in sys.path:
@@ -1650,6 +1768,8 @@ class TestMissingDependencies:
                 "langchain_core": MagicMock(),
                 "langchain_core.messages": MagicMock(),
                 "langgraph": MagicMock(),
+                "langgraph.checkpoint": MagicMock(),
+                "langgraph.checkpoint.memory": MagicMock(),
                 "langgraph.graph": MagicMock(),
                 "langgraph.types": MagicMock(),
                 "copilotkit": MagicMock(),

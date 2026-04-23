@@ -20,6 +20,8 @@ import threading
 from typing import Any, Dict, List, Optional
 from dataclasses import field, dataclass
 
+from pydantic import BaseModel
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
@@ -61,8 +63,13 @@ def _get_client() -> Stratix:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class JudgeInfo:
+# These DTOs are Pydantic models (not plain dataclasses) because LangGraph
+# persists ``EvaluatorState`` through the checkpointer whenever the graph
+# hits an ``interrupt()``. The default ``JsonPlusSerializer`` serializes
+# Pydantic models out of the box; plain dataclasses raise
+# ``TypeError: Type is not msgpack serializable`` during checkpointing,
+# which breaks human-in-the-loop resume.
+class JudgeInfo(BaseModel):
     """Minimal representation of a LayerLens judge for the UI."""
 
     id: str
@@ -71,8 +78,7 @@ class JudgeInfo:
     created_at: str
 
 
-@dataclass
-class TraceInfo:
+class TraceInfo(BaseModel):
     """Minimal representation of a LayerLens trace for the UI."""
 
     id: str
@@ -80,8 +86,7 @@ class TraceInfo:
     created_at: str
 
 
-@dataclass
-class EvaluationInfo:
+class EvaluationInfo(BaseModel):
     """Tracks a single trace-evaluation that has been kicked off."""
 
     evaluation_id: str
@@ -459,8 +464,38 @@ def build_graph() -> StateGraph:
     return graph
 
 
-# Pre-compiled graph for import
-evaluator_graph = build_graph().compile()
+# ---------------------------------------------------------------------------
+# Checkpointer
+# ---------------------------------------------------------------------------
+#
+# A checkpointer is MANDATORY for this graph because ``confirm_judge_node``
+# calls ``interrupt()``. LangGraph uses the checkpointer to persist state at
+# the pause boundary so the run can resume from the same thread later.
+#
+# Without a checkpointer, the resume call (``Command(resume=...)``) produces
+# zero events -- the AG-UI stream never emits ``RUN_FINISHED``, and the
+# CopilotKit frontend then rejects subsequent messages with:
+#
+#   "Cannot send 'RUN_STARTED' while a run is still active. The previous
+#    run must be finished with 'RUN_FINISHED' before starting a new run."
+#
+# This sample uses ``InMemorySaver`` so it runs out-of-the-box with no
+# external dependencies. In-memory checkpoints are lost on process restart,
+# so for any deployment beyond a local demo you MUST swap to a durable
+# checkpointer. See ``samples/copilotkit/README.md`` for the full matrix
+# (Postgres / SQLite / Redis / LangGraph Platform).
+#
+# Quick Postgres swap (requires ``pip install langgraph-checkpoint-postgres``):
+#
+#     from langgraph.checkpoint.postgres import PostgresSaver
+#
+#     DB_URI = "postgresql://user:pass@host:5432/langgraph?sslmode=require"
+#     checkpointer = PostgresSaver.from_conn_string(DB_URI)
+#     checkpointer.setup()   # one-time: creates the checkpoint tables
+#     evaluator_graph = build_graph().compile(checkpointer=checkpointer)
+#
+checkpointer = InMemorySaver()
+evaluator_graph = build_graph().compile(checkpointer=checkpointer)
 
 
 # ---------------------------------------------------------------------------
