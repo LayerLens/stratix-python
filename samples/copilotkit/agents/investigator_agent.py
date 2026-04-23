@@ -501,7 +501,12 @@ def build_graph() -> StateGraph:
     return graph
 
 
-# Pre-compiled graph for import
+# Pre-compiled graph for import.
+#
+# No checkpointer is compiled in because this graph has no ``interrupt()``
+# calls and therefore never needs to pause/resume. If you add a human-in-the-
+# loop step to this graph, you MUST also add a checkpointer -- see
+# ``evaluator_agent.py`` and ``samples/copilotkit/README.md`` for the pattern.
 investigator_graph = build_graph().compile()
 
 

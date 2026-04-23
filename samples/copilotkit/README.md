@@ -158,7 +158,7 @@ pattern or convert to `dict` before storing.
 ```python
 # server.py
 from fastapi import FastAPI
-from ag_ui_langgraph.agent import add_langgraph_fastapi_endpoint
+from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
 
 from agents.evaluator_agent import evaluator_graph
 from agents.investigator_agent import investigator_graph
@@ -166,15 +166,26 @@ from agents.investigator_agent import investigator_graph
 app = FastAPI()
 
 # The checkpointer compiled into each graph is what powers interrupt/resume.
-add_langgraph_fastapi_endpoint(app, graph=evaluator_graph, path="/evaluator")
-add_langgraph_fastapi_endpoint(app, graph=investigator_graph, path="/investigator")
+add_langgraph_fastapi_endpoint(
+    app,
+    agent=LangGraphAgent(name="evaluator", graph=evaluator_graph),
+    path="/evaluator",
+)
+add_langgraph_fastapi_endpoint(
+    app,
+    agent=LangGraphAgent(name="investigator", graph=investigator_graph),
+    path="/investigator",
+)
 
 # uvicorn server:app --reload --port 8000
 ```
 
-Each POST to `/evaluator` starts a new run. The adapter handles AG-UI protocol events
-(RUN_STARTED, RUN_FINISHED, text deltas, interrupts, state updates) and assigns a
-`thread_id` per conversation so the checkpointer can find the right state to resume.
+Each POST to `/evaluator` is a `RunAgentInput` carrying `threadId`, `runId`, `messages`,
+and `state`. The adapter reuses the checkpointer to look up prior state for the same
+`threadId`, streams AG-UI protocol events (RUN_STARTED, STEP_STARTED/FINISHED,
+STATE_SNAPSHOT, MESSAGES_SNAPSHOT, CUSTOM, RUN_FINISHED) as SSE, and terminates the stream
+on interrupt or completion. A subsequent POST with the same `threadId` is treated as a
+resume.
 
 ## Frontend wiring (Next.js + CopilotKit runtime)
 

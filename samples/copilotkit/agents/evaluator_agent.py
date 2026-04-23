@@ -22,6 +22,7 @@ from dataclasses import field, dataclass
 
 from pydantic import BaseModel
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
@@ -494,7 +495,16 @@ def build_graph() -> StateGraph:
 #     checkpointer.setup()   # one-time: creates the checkpoint tables
 #     evaluator_graph = build_graph().compile(checkpointer=checkpointer)
 #
-checkpointer = InMemorySaver()
+# Register the Pydantic DTOs on the checkpoint serializer's msgpack allowlist.
+# Without this, LangGraph emits a ``Deserializing unregistered type`` warning
+# every time the graph resumes from a checkpoint, and future LangGraph
+# releases will refuse to deserialize unregistered types outright.
+_DTOS = (
+    (__name__, "JudgeInfo"),
+    (__name__, "TraceInfo"),
+    (__name__, "EvaluationInfo"),
+)
+checkpointer = InMemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=_DTOS))
 evaluator_graph = build_graph().compile(checkpointer=checkpointer)
 
 

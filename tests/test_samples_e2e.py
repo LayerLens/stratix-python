@@ -1240,6 +1240,8 @@ class TestAllSamplesWithMockedSDK:
                 "langgraph": MagicMock(),
                 "langgraph.checkpoint": MagicMock(),
                 "langgraph.checkpoint.memory": MagicMock(),
+                "langgraph.checkpoint.serde": MagicMock(),
+                "langgraph.checkpoint.serde.jsonplus": MagicMock(),
                 "langgraph.graph": MagicMock(),
                 "langgraph.types": MagicMock(),
                 "copilotkit": MagicMock(),
@@ -1370,6 +1372,154 @@ class TestAllSamplesWithMockedSDK:
             assert confirmed is not None
             assert confirmed.id == "jdg_1"
             assert confirmed.name == "Helpfulness"
+        finally:
+            sys.modules.pop(mod_name, None)
+            if sample_dir in sys.path:
+                sys.path.remove(sample_dir)
+
+    def test_copilotkit_evaluator_agui_wire(self):
+        """E2E: evaluator_graph emits RUN_FINISHED even when it hits interrupt().
+
+        This is the reporter's actual failure path: a broken graph lets
+        ``ag-ui-langgraph`` stream terminate without ``RUN_FINISHED``, and the
+        CopilotKit client blocks subsequent messages with "Cannot send
+        'RUN_STARTED' while a run is still active".
+
+        Unlike ``test_copilotkit_evaluator_interrupt_resume`` (which drives the
+        graph via ``astream`` directly), this test wires the graph into a real
+        FastAPI app through ``ag_ui_langgraph.add_langgraph_fastapi_endpoint``
+        and asserts RUN_FINISHED appears on the SSE stream for both the
+        interrupted run and the resume run, and that a third follow-up message
+        is not blocked.
+
+        Skips if ``ag_ui_langgraph`` / ``fastapi`` / ``httpx`` are not
+        installed.
+        """
+        pytest.importorskip("ag_ui_langgraph")
+        pytest.importorskip("fastapi")
+        pytest.importorskip("httpx")
+
+        import httpx
+        from uuid import uuid4
+        from types import SimpleNamespace
+        from fastapi import FastAPI
+        from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
+
+        fake_judge = SimpleNamespace(
+            id="jdg_1",
+            name="Helpfulness",
+            evaluation_goal="measures helpfulness",
+            created_at="2026-04-23T00:00:00Z",
+        )
+        fake_trace = SimpleNamespace(
+            id="trc_1",
+            filename="sample.jsonl",
+            created_at="2026-04-23T00:00:00Z",
+        )
+        fake_eval = SimpleNamespace(
+            id="ev_1",
+            trace_id="trc_1",
+            judge_id="jdg_1",
+            status=SimpleNamespace(value="success"),
+        )
+        fake_results = SimpleNamespace(score=0.9, passed=True, reasoning="ok")
+        fake_client = MagicMock()
+        fake_client.judges.get_many.return_value = SimpleNamespace(judges=[fake_judge])
+        fake_client.traces.get_many.return_value = SimpleNamespace(traces=[fake_trace])
+        fake_client.trace_evaluations.create.return_value = fake_eval
+        fake_client.trace_evaluations.get.return_value = fake_eval
+        fake_client.trace_evaluations.get_results.return_value = fake_results
+
+        sample_dir = os.path.join(SAMPLES_DIR, "copilotkit", "agents")
+        if sample_dir not in sys.path:
+            sys.path.insert(0, sample_dir)
+
+        mod_name = "copilotkit_evaluator_agui_test"
+        try:
+            spec = importlib.util.spec_from_file_location(
+                mod_name, os.path.join(sample_dir, "evaluator_agent.py")
+            )
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[mod_name] = mod
+
+            with patch.dict("os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}):
+                with patch("layerlens.Stratix", MagicMock(return_value=fake_client)):
+                    spec.loader.exec_module(mod)
+
+            mod._client = fake_client
+
+            app = FastAPI()
+            add_langgraph_fastapi_endpoint(
+                app,
+                agent=LangGraphAgent(name="evaluator", graph=mod.evaluator_graph),
+                path="/evaluator",
+            )
+
+            def make_input(thread_id: str, run_id: str, text: str) -> dict:
+                return {
+                    "threadId": thread_id,
+                    "runId": run_id,
+                    "state": {},
+                    "messages": [
+                        {"id": str(uuid4()), "role": "user", "content": text}
+                    ],
+                    "tools": [],
+                    "context": [],
+                    "forwardedProps": {},
+                }
+
+            async def stream_types(client, path: str, body: dict) -> list[str]:
+                events: list[str] = []
+                async with client.stream("POST", path, json=body, timeout=30.0) as resp:
+                    assert resp.status_code == 200, f"status={resp.status_code}"
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data:"):
+                            payload = line[5:].strip()
+                            if not payload:
+                                continue
+                            try:
+                                events.append(json.loads(payload).get("type"))
+                            except json.JSONDecodeError:
+                                pass
+                return events
+
+            async def run():
+                thread_id = f"thr_{uuid4().hex[:8]}"
+                transport = httpx.ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as client:
+                    p1 = await stream_types(
+                        client,
+                        "/evaluator",
+                        make_input(thread_id, f"r1_{uuid4().hex[:8]}", "evaluate"),
+                    )
+                    p2 = await stream_types(
+                        client,
+                        "/evaluator",
+                        make_input(thread_id, f"r2_{uuid4().hex[:8]}", "ok"),
+                    )
+                    p3 = await stream_types(
+                        client,
+                        "/evaluator",
+                        make_input(thread_id, f"r3_{uuid4().hex[:8]}", "thanks"),
+                    )
+                    return p1, p2, p3
+
+            p1, p2, p3 = asyncio.run(run())
+
+            assert "RUN_STARTED" in p1 and "RUN_FINISHED" in p1, (
+                f"Phase 1 missing RUN_FINISHED -- AG-UI stream did not end "
+                f"cleanly on interrupt. Got: {p1}"
+            )
+            assert "RUN_STARTED" in p2 and "RUN_FINISHED" in p2, (
+                f"Phase 2 (resume) missing RUN_FINISHED -- client would be "
+                f"stuck in 'run active' state. Got: {p2}"
+            )
+            assert "RUN_STARTED" in p3 and "RUN_FINISHED" in p3, (
+                f"Phase 3 (follow-up after resume) blocked -- this is the "
+                f"exact symptom the reporter hit. Got: {p3}"
+            )
         finally:
             sys.modules.pop(mod_name, None)
             if sample_dir in sys.path:
@@ -1770,6 +1920,8 @@ class TestMissingDependencies:
                 "langgraph": MagicMock(),
                 "langgraph.checkpoint": MagicMock(),
                 "langgraph.checkpoint.memory": MagicMock(),
+                "langgraph.checkpoint.serde": MagicMock(),
+                "langgraph.checkpoint.serde.jsonplus": MagicMock(),
                 "langgraph.graph": MagicMock(),
                 "langgraph.types": MagicMock(),
                 "copilotkit": MagicMock(),
