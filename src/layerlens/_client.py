@@ -8,7 +8,7 @@ from typing_extensions import Self, override
 
 import httpx
 
-from . import _exceptions
+from . import _exceptions, _telemetry
 from ._utils import is_mapping
 from .models import Organization, OrganizationResponse, OrganizationsListResponse
 from ._constants import DEFAULT_TIMEOUT, DEFAULT_BASE_URL, DIRTY_ROUTER_PREFIX
@@ -87,6 +87,10 @@ class Stratix(BaseClient):
                 f"Organization {self.organization_id} is missing project. Please contact LayerLens Stratix support."
             )
         self.project_id = organization.projects[0].id
+
+        # Opt-in client-side telemetry. No-op unless LAYERLENS_TELEMETRY=on.
+        # Counts SDK initializations so atlas-app can compute SDK adoption.
+        _telemetry.event("sdk_python", "init")
 
     @cached_property
     def benchmarks(self) -> Benchmarks:
@@ -310,6 +314,10 @@ class AsyncStratix(BaseAsyncClient):
                 f"Organization {self.organization_id} is missing project. Please contact LayerLens Stratix support."
             )
         self.project_id = organization.projects[0].id
+
+        # Opt-in client-side telemetry. No-op unless LAYERLENS_TELEMETRY=on.
+        # Counts SDK initializations so atlas-app can compute SDK adoption.
+        _telemetry.event("sdk_python", "init")
 
     @cached_property
     def benchmarks(self) -> AsyncBenchmarks:
