@@ -18,14 +18,16 @@ import asyncio
 import logging
 import threading
 from typing import Any, Dict, List, Optional
-from dataclasses import field, dataclass
 
 from pydantic import BaseModel
 from langgraph.graph import END, StateGraph
-from langgraph.types import interrupt
 
-# CopilotKit helpers -- keep the CopilotKit structure intact
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+# CopilotKit helpers -- match the wiring in CopilotKit's official
+# ``examples/integrations/langgraph-fastapi`` reference sample so the
+# agent speaks the protocol the CopilotKit frontend expects.
+from copilotkit import CopilotKitState
+from copilotkit.langgraph import copilotkit_interrupt
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
@@ -104,19 +106,23 @@ class EvaluationInfo(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class EvaluatorState:
-    """LangGraph state for the evaluator agent."""
+class EvaluatorState(CopilotKitState, total=False):
+    """LangGraph state for the evaluator agent.
 
-    messages: List[BaseMessage] = field(default_factory=list)
-    judges: List[JudgeInfo] = field(default_factory=list)
-    traces: List[TraceInfo] = field(default_factory=list)
-    selected_judge: Optional[JudgeInfo] = None
-    confirmed_judge: Optional[JudgeInfo] = None
-    evaluations: List[EvaluationInfo] = field(default_factory=list)
-    step: str = "start"
-    error: Optional[str] = None
-    poll_count: int = 0
+    Inherits from ``CopilotKitState`` so ``messages`` uses LangGraph's
+    ``add_messages`` reducer (node updates APPEND rather than REPLACE) and
+    the ``copilotkit`` field carries frontend-injected properties. This
+    matches CopilotKit's official ``langgraph-fastapi`` reference sample.
+    """
+
+    judges: List[JudgeInfo]
+    traces: List[TraceInfo]
+    selected_judge: Optional[JudgeInfo]
+    confirmed_judge: Optional[JudgeInfo]
+    evaluations: List[EvaluationInfo]
+    step: str
+    error: Optional[str]
+    poll_count: int
 
 
 # ---------------------------------------------------------------------------
@@ -228,16 +234,15 @@ async def fetch_judges_node(state: EvaluatorState) -> Dict[str, Any]:
             "judges": [],
             "step": "error",
             "error": "No judges found. Create a judge in LayerLens first.",
-            "messages": state.messages
-            + [AIMessage(content="No judges found. Please create a judge in LayerLens first.")],
+            # With add_messages reducer, returning a list APPENDS.
+            "messages": [AIMessage(content="No judges found. Please create a judge in LayerLens first.")],
         }
 
     summary = "\n".join(f"  - **{j.name}** (`{j.id}`): {j.goal}" for j in judges)
-    msg = f"Found {len(judges)} judge(s):\n{summary}"
     return {
         "judges": judges,
         "step": "fetch_traces",
-        "messages": state.messages + [AIMessage(content=msg)],
+        "messages": [AIMessage(content=f"Found {len(judges)} judge(s):\n{summary}")],
     }
 
 
@@ -249,37 +254,40 @@ async def fetch_traces_node(state: EvaluatorState) -> Dict[str, Any]:
             "traces": [],
             "step": "error",
             "error": "No traces found. Upload traces to LayerLens first.",
-            "messages": state.messages + [AIMessage(content="No traces found. Please upload traces first.")],
+            "messages": [AIMessage(content="No traces found. Please upload traces first.")],
         }
 
     summary = "\n".join(f"  - `{t.id}` ({t.filename}, {t.created_at})" for t in traces[:10])
-    msg = f"Found {len(traces)} recent trace(s). Showing first 10:\n{summary}"
     return {
         "traces": traces,
         "step": "confirm_judge",
-        "messages": state.messages + [AIMessage(content=msg)],
+        "messages": [AIMessage(content=f"Found {len(traces)} recent trace(s). Showing first 10:\n{summary}")],
     }
 
 
 async def confirm_judge_node(state: EvaluatorState) -> Dict[str, Any]:
-    """Node: ask the human to confirm which judge to use (interrupt)."""
-    if not state.judges:
+    """Node: ask the human to confirm which judge to use (HITL)."""
+    judges = state.get("judges") or []
+    if not judges:
         return {"step": "error", "error": "No judges available."}
 
-    # Default to the first judge; the user can override
-    default = state.judges[0]
+    # Default to the first judge; the user can override by id or name.
+    default = judges[0]
     prompt = (
         f"Which judge should I use? Default: **{default.name}** (`{default.id}`).\n"
         "Reply with a judge ID or name, or 'ok' to accept the default."
     )
 
-    # LangGraph interrupt -- pauses execution and waits for human input
-    human_input: str = interrupt(prompt)
+    # ``copilotkit_interrupt`` (NOT the raw ``langgraph.types.interrupt``)
+    # emits the prompt as an ``AIMessage`` the CopilotKit chat UI renders.
+    # The bare ``interrupt(prompt)`` pattern emits a CUSTOM event the UI
+    # ignores, so the user never sees the confirmation question.
+    answer, _response = copilotkit_interrupt(message=prompt)
 
     selected = default
-    if human_input and human_input.strip().lower() != "ok":
-        needle = human_input.strip().lower()
-        for j in state.judges:
+    if answer and answer.strip().lower() != "ok":
+        needle = answer.strip().lower()
+        for j in judges:
             if needle in (j.id.lower(), j.name.lower()):
                 selected = j
                 break
@@ -288,22 +296,18 @@ async def confirm_judge_node(state: EvaluatorState) -> Dict[str, Any]:
         "selected_judge": selected,
         "confirmed_judge": selected,
         "step": "run_evaluations",
-        "messages": state.messages
-        + [
-            HumanMessage(content=human_input),
-            AIMessage(content=f"Using judge **{selected.name}** (`{selected.id}`)."),
-        ],
+        "messages": [AIMessage(content=f"Using judge **{selected.name}** (`{selected.id}`).")],
     }
 
 
 async def run_evaluations_node(state: EvaluatorState) -> Dict[str, Any]:
     """Node: kick off evaluations for every trace with the confirmed judge."""
-    judge = state.confirmed_judge
+    judge = state.get("confirmed_judge")
     if judge is None:
         return {"step": "error", "error": "No judge confirmed."}
 
     results: List[EvaluationInfo] = []
-    for trace in state.traces:
+    for trace in state.get("traces") or []:
         info = await asyncio.to_thread(_create_evaluation, trace.id, judge.id)
         if info is not None:
             results.append(info)
@@ -313,21 +317,21 @@ async def run_evaluations_node(state: EvaluatorState) -> Dict[str, Any]:
             "evaluations": [],
             "step": "error",
             "error": "All evaluation requests failed.",
-            "messages": state.messages + [AIMessage(content="Failed to create any evaluations.")],
+            "messages": [AIMessage(content="Failed to create any evaluations.")],
         }
 
-    msg = f"Started {len(results)} evaluation(s) with judge **{judge.name}**."
     return {
         "evaluations": results,
         "step": "poll_results",
-        "messages": state.messages + [AIMessage(content=msg)],
+        "messages": [AIMessage(content=f"Started {len(results)} evaluation(s) with judge **{judge.name}**.")],
     }
 
 
 async def poll_results_node(state: EvaluatorState) -> Dict[str, Any]:
     """Node: poll evaluation results with bounded retries and backoff."""
+    evaluations = state.get("evaluations") or []
     updated: List[EvaluationInfo] = []
-    for ev in state.evaluations:
+    for ev in evaluations:
         refreshed = await asyncio.to_thread(_get_evaluation, ev.evaluation_id)
         updated.append(refreshed if refreshed is not None else ev)
 
@@ -343,23 +347,22 @@ async def poll_results_node(state: EvaluatorState) -> Dict[str, Any]:
 
     summary = "\n".join(lines) if lines else "(no evaluations)"
 
-    poll_count = state.poll_count
+    poll_count = state.get("poll_count", 0)
 
     if not pending or poll_count >= MAX_POLL_ATTEMPTS:
         if pending:
             summary += (
                 f"\n\n(Stopped polling after {MAX_POLL_ATTEMPTS} attempts; {len(pending)} evaluation(s) still pending.)"
             )
-        msg = f"Evaluation results ({len(finished)} done, {len(pending)} pending):\n{summary}"
         return {
             "evaluations": updated,
             "step": "done",
-            "messages": state.messages + [AIMessage(content=msg)],
+            "messages": [AIMessage(
+                content=f"Evaluation results ({len(finished)} done, {len(pending)} pending):\n{summary}"
+            )],
         }
 
-    msg = f"Evaluation results ({len(finished)} done, {len(pending)} pending):\n{summary}"
-
-    # Sleep between polls with exponential backoff to avoid hammering the API
+    # Sleep between polls with exponential backoff to avoid hammering the API.
     poll_delay = min(
         POLL_INITIAL_INTERVAL * (POLL_BACKOFF_FACTOR**poll_count),
         POLL_MAX_INTERVAL,
@@ -370,7 +373,9 @@ async def poll_results_node(state: EvaluatorState) -> Dict[str, Any]:
         "evaluations": updated,
         "step": "poll_results",
         "poll_count": poll_count + 1,
-        "messages": state.messages + [AIMessage(content=msg)],
+        "messages": [AIMessage(
+            content=f"Evaluation results ({len(finished)} done, {len(pending)} pending):\n{summary}"
+        )],
     }
 
 
@@ -390,7 +395,7 @@ async def error_node(state: EvaluatorState) -> Dict[str, Any]:
 # a state key``); the node name ``handle_error`` sidesteps that while the
 # ``error`` routing token remains purely a conditional-edge key.
 def route_step(state: EvaluatorState) -> str:
-    step = state.step
+    step = state.get("step")
     if step == "fetch_traces":
         return "fetch_traces"
     if step == "confirm_judge":
@@ -517,6 +522,66 @@ except TypeError:
     _serde = JsonPlusSerializer()
 checkpointer = InMemorySaver(serde=_serde)
 evaluator_graph = build_graph().compile(checkpointer=checkpointer)
+
+
+# ---------------------------------------------------------------------------
+# RunIdPreservingAgent -- local workaround for ag-ui-protocol/ag-ui#1582
+# ---------------------------------------------------------------------------
+#
+# Upstream bug: ``ag_ui_langgraph.LangGraphAgent._handle_stream_events``
+# (inherited by ``copilotkit.LangGraphAGUIAgent``) overwrites
+# ``self.active_run["id"]`` on every LangGraph event with the event's
+# internal chain ``run_id``. By the time ``RUN_FINISHED`` is dispatched,
+# ``active_run["id"]`` is LangGraph's UUID -- not the ``input.run_id``
+# the client supplied. ``@copilotkit/runtime`` tracks active runs by
+# the client runId, so the mismatch surfaces in the browser as:
+#
+#   RUN_ERROR {code: "INCOMPLETE_STREAM",
+#              message: "Cannot send 'RUN_STARTED' while a run is still
+#                        active. The previous run must be finished with
+#                        'RUN_FINISHED' before starting a new run."}
+#
+# We restore ``input.run_id`` on terminal events so the AG-UI protocol
+# state machine can correlate the stream closure. Remove this subclass
+# once https://github.com/ag-ui-protocol/ag-ui/issues/1582 ships and
+# the fixed ``ag-ui-langgraph`` release is pinned in this sample's
+# requirements.
+
+
+def _build_langgraph_agui_agent(**kwargs):
+    """Factory for the CopilotKit agent wrapper with the runId workaround.
+
+    Kept as a factory (rather than a module-level class import) so the
+    sample imports cleanly even when ``copilotkit`` / ``ag_ui_langgraph``
+    are not installed -- users who only want to inspect the graph don't
+    need the full runtime stack.
+    """
+    from typing import Optional as _Optional
+
+    from ag_ui.core import EventType
+    from copilotkit import LangGraphAGUIAgent
+
+    class RunIdPreservingAgent(LangGraphAGUIAgent):
+        def __init__(self, **inner_kwargs):
+            super().__init__(**inner_kwargs)
+            self._client_run_id: _Optional[str] = None
+
+        async def run(self, input):
+            self._client_run_id = input.run_id
+            async for ev in super().run(input):
+                yield ev
+
+        def _dispatch_event(self, event):
+            event_type = getattr(event, "type", None)
+            if (
+                event_type in (EventType.RUN_FINISHED, EventType.RUN_ERROR)
+                and self._client_run_id
+                and hasattr(event, "run_id")
+            ):
+                event.run_id = self._client_run_id
+            return super()._dispatch_event(event)
+
+    return RunIdPreservingAgent(**kwargs)
 
 
 # ---------------------------------------------------------------------------

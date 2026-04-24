@@ -1246,6 +1246,7 @@ class TestAllSamplesWithMockedSDK:
                 "langgraph.types": MagicMock(),
                 "copilotkit": MagicMock(),
                 "copilotkit.langchain": MagicMock(),
+                "copilotkit.langgraph": MagicMock(),
                 "pydantic": MagicMock(),
             }
 
@@ -1335,13 +1336,22 @@ class TestAllSamplesWithMockedSDK:
                 interrupt_before=["poll_results"],
             )
 
+            # ``copilotkit_interrupt`` (used inside ``confirm_judge_node``)
+            # does ``answer = response[-1].content`` -- it expects the resume
+            # value to be a list of messages, not a bare string. Mirror what
+            # CopilotKit's JS runtime sends on resume.
+            from langchain_core.messages import HumanMessage
+
             async def run() -> tuple[list[str], list[str], Any]:
                 cfg = {"configurable": {"thread_id": "test-thread-1"}}
                 phase1: list[str] = []
                 async for ev in compiled.astream({}, config=cfg):
                     phase1.append(list(ev.keys())[0])
                 phase2: list[str] = []
-                async for ev in compiled.astream(Command(resume="ok"), config=cfg):
+                async for ev in compiled.astream(
+                    Command(resume=[HumanMessage(content="ok")]),
+                    config=cfg,
+                ):
                     phase2.append(list(ev.keys())[0])
                 state = compiled.get_state(cfg)
                 return phase1, phase2, state
@@ -1379,24 +1389,34 @@ class TestAllSamplesWithMockedSDK:
                 sys.path.remove(sample_dir)
 
     def test_copilotkit_evaluator_agui_wire(self):
-        """E2E: evaluator_graph emits RUN_FINISHED even when it hits interrupt().
+        """E2E: evaluator_graph emits RUN_FINISHED with the CLIENT-SUPPLIED runId.
 
-        This is the reporter's actual failure path: a broken graph lets
-        ``ag-ui-langgraph`` stream terminate without ``RUN_FINISHED``, and the
-        CopilotKit client blocks subsequent messages with "Cannot send
-        'RUN_STARTED' while a run is still active".
+        Regression for the upstream ``ag-ui-protocol/ag-ui`` bug
+        (https://github.com/ag-ui-protocol/ag-ui/issues/1582):
+        ``LangGraphAgent._handle_stream_events`` overwrites
+        ``active_run['id']`` with each LangGraph event's internal chain
+        ``run_id``, so ``RUN_FINISHED`` is emitted with the wrong runId
+        and ``@copilotkit/runtime`` raises RUN_ERROR / INCOMPLETE_STREAM.
 
-        Unlike ``test_copilotkit_evaluator_interrupt_resume`` (which drives the
-        graph via ``astream`` directly), this test wires the graph into a real
-        FastAPI app through ``ag_ui_langgraph.add_langgraph_fastapi_endpoint``
-        and asserts RUN_FINISHED appears on the SSE stream for both the
-        interrupted run and the resume run, and that a third follow-up message
-        is not blocked.
+        The earlier version of this test only checked that RUN_FINISHED
+        was emitted at all -- it missed the runId mismatch entirely. This
+        version asserts ``RUN_FINISHED.runId == RUN_STARTED.runId ==
+        input.runId`` so the workaround subclass (``RunIdPreservingAgent``
+        in ``evaluator_agent.py``) is proven to restore protocol
+        invariants.
 
-        Skips if ``ag_ui_langgraph`` / ``fastapi`` / ``httpx`` are not
-        installed.
+        Scope: verifies the first ("hits the interrupt") turn. Multi-turn
+        resume through the FastAPI endpoint requires mirroring CopilotKit
+        JS runtime's exact wire shape for ``forwardedProps.command.resume``
+        -- out of scope for a runId regression. The interrupt/resume
+        round-trip at the LangGraph level is covered by the companion
+        test ``test_copilotkit_evaluator_interrupt_resume``.
+
+        Skips if ``ag_ui_langgraph`` / ``fastapi`` / ``httpx`` / ``copilotkit``
+        are not installed.
         """
         pytest.importorskip("ag_ui_langgraph")
+        pytest.importorskip("copilotkit")
         pytest.importorskip("fastapi")
         pytest.importorskip("httpx")
 
@@ -1405,7 +1425,7 @@ class TestAllSamplesWithMockedSDK:
 
         import httpx
         from fastapi import FastAPI
-        from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
+        from ag_ui_langgraph import add_langgraph_fastapi_endpoint
 
         fake_judge = SimpleNamespace(
             id="jdg_1",
@@ -1418,19 +1438,9 @@ class TestAllSamplesWithMockedSDK:
             filename="sample.jsonl",
             created_at="2026-04-23T00:00:00Z",
         )
-        fake_eval = SimpleNamespace(
-            id="ev_1",
-            trace_id="trc_1",
-            judge_id="jdg_1",
-            status=SimpleNamespace(value="success"),
-        )
-        fake_results = SimpleNamespace(score=0.9, passed=True, reasoning="ok")
         fake_client = MagicMock()
         fake_client.judges.get_many.return_value = SimpleNamespace(judges=[fake_judge])
         fake_client.traces.get_many.return_value = SimpleNamespace(traces=[fake_trace])
-        fake_client.trace_evaluations.create.return_value = fake_eval
-        fake_client.trace_evaluations.get.return_value = fake_eval
-        fake_client.trace_evaluations.get_results.return_value = fake_results
 
         sample_dir = os.path.join(SAMPLES_DIR, "copilotkit", "agents")
         if sample_dir not in sys.path:
@@ -1451,76 +1461,86 @@ class TestAllSamplesWithMockedSDK:
             mod._client = fake_client
 
             app = FastAPI()
+            # Use the sample's factory so we exercise the workaround
+            # subclass (RunIdPreservingAgent), not the bare
+            # ag_ui_langgraph.LangGraphAgent.
             add_langgraph_fastapi_endpoint(
                 app,
-                agent=LangGraphAgent(name="evaluator", graph=mod.evaluator_graph),
-                path="/evaluator",
+                agent=mod._build_langgraph_agui_agent(
+                    name="evaluator", graph=mod.evaluator_graph
+                ),
+                path="/",
             )
 
-            def make_input(thread_id: str, run_id: str, text: str) -> dict:
-                return {
-                    "threadId": thread_id,
-                    "runId": run_id,
-                    "state": {},
-                    "messages": [
-                        {"id": str(uuid4()), "role": "user", "content": text}
-                    ],
-                    "tools": [],
-                    "context": [],
-                    "forwardedProps": {},
-                }
+            client_run_id = f"r1_{uuid4().hex[:8]}"
+            client_thread = f"thr_{uuid4().hex[:8]}"
+            body = {
+                "threadId": client_thread,
+                "runId": client_run_id,
+                "state": {},
+                "messages": [
+                    {"id": str(uuid4()), "role": "user", "content": "evaluate"}
+                ],
+                "tools": [],
+                "context": [],
+                "forwardedProps": {},
+            }
 
-            async def stream_types(client, path: str, body: dict) -> list[str]:
-                events: list[str] = []
-                async with client.stream("POST", path, json=body, timeout=30.0) as resp:
-                    assert resp.status_code == 200, f"status={resp.status_code}"
-                    async for line in resp.aiter_lines():
-                        if line.startswith("data:"):
-                            payload = line[5:].strip()
-                            if not payload:
-                                continue
-                            try:
-                                events.append(json.loads(payload).get("type"))
-                            except json.JSONDecodeError:
-                                pass
-                return events
-
-            async def run():
-                thread_id = f"thr_{uuid4().hex[:8]}"
+            async def run() -> tuple[list[tuple[str, str | None]], bytes]:
                 transport = httpx.ASGITransport(app=app)
                 async with httpx.AsyncClient(
                     transport=transport, base_url="http://test"
                 ) as client:
-                    p1 = await stream_types(
-                        client,
-                        "/evaluator",
-                        make_input(thread_id, f"r1_{uuid4().hex[:8]}", "evaluate"),
-                    )
-                    p2 = await stream_types(
-                        client,
-                        "/evaluator",
-                        make_input(thread_id, f"r2_{uuid4().hex[:8]}", "ok"),
-                    )
-                    p3 = await stream_types(
-                        client,
-                        "/evaluator",
-                        make_input(thread_id, f"r3_{uuid4().hex[:8]}", "thanks"),
-                    )
-                    return p1, p2, p3
+                    buf = bytearray()
+                    async with client.stream(
+                        "POST", "/", json=body, timeout=30.0
+                    ) as resp:
+                        assert resp.status_code == 200, f"status={resp.status_code}"
+                        async for chunk in resp.aiter_bytes():
+                            buf.extend(chunk)
+                text = bytes(buf).decode("utf-8", errors="replace")
+                run_events: list[tuple[str, str | None]] = []
+                # Pull every SSE data line and collect the run-lifecycle events.
+                for line in text.splitlines():
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[len("data:"):].strip()
+                    if not payload:
+                        continue
+                    try:
+                        event = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    t = event.get("type")
+                    if t in ("RUN_STARTED", "RUN_FINISHED", "RUN_ERROR"):
+                        run_events.append((t, event.get("runId")))
+                return run_events, bytes(buf)
 
-            p1, p2, p3 = asyncio.run(run())
+            events, raw = asyncio.run(run())
 
-            assert "RUN_STARTED" in p1 and "RUN_FINISHED" in p1, (
-                f"Phase 1 missing RUN_FINISHED -- AG-UI stream did not end "
-                f"cleanly on interrupt. Got: {p1}"
+            started = [rid for t, rid in events if t == "RUN_STARTED"]
+            finished = [rid for t, rid in events if t == "RUN_FINISHED"]
+            errors = [rid for t, rid in events if t == "RUN_ERROR"]
+
+            assert started, (
+                f"No RUN_STARTED emitted. Raw stream: {raw[:500]!r}"
             )
-            assert "RUN_STARTED" in p2 and "RUN_FINISHED" in p2, (
-                f"Phase 2 (resume) missing RUN_FINISHED -- client would be "
-                f"stuck in 'run active' state. Got: {p2}"
+            assert finished, (
+                f"No RUN_FINISHED emitted -- AG-UI stream did not terminate "
+                f"cleanly. RUN_STARTED={started}, RUN_ERROR={errors}. "
+                f"Raw stream: {raw[:500]!r}"
             )
-            assert "RUN_STARTED" in p3 and "RUN_FINISHED" in p3, (
-                f"Phase 3 (follow-up after resume) blocked -- this is the "
-                f"exact symptom the reporter hit. Got: {p3}"
+            assert all(rid == client_run_id for rid in started), (
+                f"RUN_STARTED.runId mismatch: expected all={client_run_id!r}, "
+                f"got {started}. This would be a new bug -- not the one we "
+                f"workaround."
+            )
+            assert all(rid == client_run_id for rid in finished), (
+                f"RUN_FINISHED.runId mismatch: expected all={client_run_id!r}, "
+                f"got {finished}. This is the ag-ui-protocol/ag-ui#1582 bug. "
+                f"The RunIdPreservingAgent workaround in evaluator_agent.py "
+                f"should preserve input.run_id on terminal events -- either "
+                f"the workaround broke or it was bypassed."
             )
         finally:
             sys.modules.pop(mod_name, None)
@@ -1928,6 +1948,7 @@ class TestMissingDependencies:
                 "langgraph.types": MagicMock(),
                 "copilotkit": MagicMock(),
                 "copilotkit.langchain": MagicMock(),
+                "copilotkit.langgraph": MagicMock(),
                 "pydantic": MagicMock(),
             }
 

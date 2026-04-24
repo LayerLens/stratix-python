@@ -1,13 +1,14 @@
 # Runtime deps for the browser-test harness backend.
-# These mirror the sample's declared compatibility matrix
-# (see samples/copilotkit/README.md).
+# Pinned to match CopilotKit's own examples/integrations/langgraph-fastapi
+# reference sample (the set CopilotKit tests).
 
-fastapi>=0.115.0
-uvicorn>=0.30.0
-langgraph>=1.1.0
-langchain-core>=0.3.0
-ag-ui-langgraph>=0.0.34
-pydantic>=2.7.0
+copilotkit==0.1.74
+langchain==1.0.1
+langgraph==1.0.1
+ag-ui-langgraph==0.0.22
+fastapi==0.115.12
+uvicorn>=0.38.0
+pydantic>=2.0.0,<3.0.0
 
 # The LayerLens SDK itself; the patch in server.py replaces
 # ``layerlens.Stratix`` with a MagicMock before the evaluator is

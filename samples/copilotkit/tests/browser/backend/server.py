@@ -120,10 +120,7 @@ evaluator_graph = _mod.evaluator_graph
 # Build the FastAPI app and wire the AG-UI endpoint.
 # ---------------------------------------------------------------------------
 
-from ag_ui_langgraph import (  # noqa: E402
-    LangGraphAgent,
-    add_langgraph_fastapi_endpoint,
-)
+from ag_ui_langgraph import add_langgraph_fastapi_endpoint  # noqa: E402
 
 app = FastAPI(title="copilotkit-evaluator-browser-harness")
 
@@ -145,9 +142,15 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+# Use the RunIdPreservingAgent factory so the runId workaround for
+# https://github.com/ag-ui-protocol/ag-ui/issues/1582 is active. The bare
+# LangGraphAgent / LangGraphAGUIAgent would reproduce the lockup the
+# browser test is designed to catch.
 add_langgraph_fastapi_endpoint(
     app,
-    agent=LangGraphAgent(name="evaluator", graph=evaluator_graph),
+    agent=_mod._build_langgraph_agui_agent(
+        name="evaluator", graph=evaluator_graph
+    ),
     path="/evaluator",
 )
 

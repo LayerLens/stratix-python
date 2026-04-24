@@ -10,25 +10,43 @@ can review, confirm, and act on AI quality assessments in real time.
 
 ```bash
 pip install layerlens --index-url https://sdk.layerlens.ai/package \
-    copilotkit langgraph pydantic mcp ag-ui-langgraph fastapi uvicorn
-npm install @copilotkit/react-core @copilotkit/runtime
+    "copilotkit==0.1.74" "langchain==1.0.1" "langgraph==1.0.1" \
+    "ag-ui-langgraph==0.0.22" "pydantic>=2,<3" fastapi uvicorn
+npm install @copilotkit/react-core@1.56.3 @copilotkit/react-ui@1.56.3 @copilotkit/runtime@1.56.3
 export LAYERLENS_STRATIX_API_KEY=your-api-key
 ```
 
 ### Version compatibility
 
-The samples are pinned against the matrix below. Later versions often work but are not tested.
+Versions are pinned to match CopilotKit's own
+[`examples/integrations/langgraph-fastapi`](https://github.com/CopilotKit/CopilotKit/tree/main/examples/integrations/langgraph-fastapi)
+reference sample -- that's the set CopilotKit tests. Later versions often work but
+have not been verified against this sample.
 
 | Package | Version |
 |---|---|
 | `layerlens` | `>=1.6.0` |
-| `langgraph` | `>=1.1.0` |
-| `ag-ui-langgraph` | `>=0.0.34` |
-| `copilotkit` (python) | `>=0.1.87` |
-| `@copilotkit/react-core` | `>=1.56.3` |
-| `@copilotkit/runtime` | `>=1.56.3` |
-| Python | `>=3.12` |
+| `copilotkit` (Python SDK) | `==0.1.74` |
+| `langchain` | `==1.0.1` |
+| `langgraph` | `==1.0.1` |
+| `ag-ui-langgraph` | `==0.0.22` |
+| `pydantic` | `>=2,<3` |
+| `@copilotkit/react-core` | `==1.56.3` |
+| `@copilotkit/react-ui` | `==1.56.3` |
+| `@copilotkit/runtime` | `==1.56.3` |
+| Python | `>=3.10,<3.13` |
 | Next.js | `>=15` |
+
+> **Known upstream issue with HITL interrupts**: `ag_ui_langgraph.LangGraphAgent`
+> (inherited by `copilotkit.LangGraphAGUIAgent`) overwrites the client-supplied
+> `runId` on each LangGraph event, so `RUN_FINISHED` is emitted with LangGraph's
+> internal chain UUID instead of the `runId` the frontend sent. `@copilotkit/runtime`
+> then raises `RUN_ERROR / INCOMPLETE_STREAM` and the frontend locks up with
+> "Cannot send 'RUN_STARTED' while a run is still active." This sample ships a
+> ~25-line local workaround (`RunIdPreservingAgent` in `evaluator_agent.py`) that
+> restores `input.run_id` on terminal events. Tracking:
+> [ag-ui-protocol/ag-ui#1582](https://github.com/ag-ui-protocol/ag-ui/issues/1582).
+> Remove the subclass once the upstream fix ships.
 
 ## Quick Start
 
@@ -155,12 +173,25 @@ pattern or convert to `dict` before storing.
 
 ## Backend wiring (FastAPI + ag-ui-langgraph)
 
+This mirrors CopilotKit's reference
+[`examples/integrations/langgraph-fastapi/agent/main.py`](https://github.com/CopilotKit/CopilotKit/blob/main/examples/integrations/langgraph-fastapi/agent/main.py)
+with two deviations: we mount two agents (evaluator, investigator) at distinct paths,
+and `evaluator_agent` uses a `RunIdPreservingAgent` subclass (returned by
+`_build_langgraph_agui_agent`) to work around
+[ag-ui-protocol/ag-ui#1582](https://github.com/ag-ui-protocol/ag-ui/issues/1582).
+Investigator has no `interrupt()`, so it uses CopilotKit's `LangGraphAGUIAgent`
+directly.
+
 ```python
 # server.py
 from fastapi import FastAPI
-from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
+from ag_ui_langgraph import add_langgraph_fastapi_endpoint
+from copilotkit import LangGraphAGUIAgent
 
-from agents.evaluator_agent import evaluator_graph
+from agents.evaluator_agent import (
+    evaluator_graph,
+    _build_langgraph_agui_agent,  # RunIdPreservingAgent factory
+)
 from agents.investigator_agent import investigator_graph
 
 app = FastAPI()
@@ -168,12 +199,14 @@ app = FastAPI()
 # The checkpointer compiled into each graph is what powers interrupt/resume.
 add_langgraph_fastapi_endpoint(
     app,
-    agent=LangGraphAgent(name="evaluator", graph=evaluator_graph),
+    agent=_build_langgraph_agui_agent(
+        name="evaluator", graph=evaluator_graph
+    ),
     path="/evaluator",
 )
 add_langgraph_fastapi_endpoint(
     app,
-    agent=LangGraphAgent(name="investigator", graph=investigator_graph),
+    agent=LangGraphAGUIAgent(name="investigator", graph=investigator_graph),
     path="/investigator",
 )
 
