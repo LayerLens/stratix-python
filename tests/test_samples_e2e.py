@@ -1466,7 +1466,7 @@ class TestAllSamplesWithMockedSDK:
             # ag_ui_langgraph.LangGraphAgent.
             add_langgraph_fastapi_endpoint(
                 app,
-                agent=mod._build_langgraph_agui_agent(
+                agent=mod.build_agui_agent(
                     name="evaluator", graph=mod.evaluator_graph
                 ),
                 path="/",

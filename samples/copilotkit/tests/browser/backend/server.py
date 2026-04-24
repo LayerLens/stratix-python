@@ -148,7 +148,7 @@ def healthz() -> dict[str, str]:
 # browser test is designed to catch.
 add_langgraph_fastapi_endpoint(
     app,
-    agent=_mod._build_langgraph_agui_agent(
+    agent=_mod.build_agui_agent(
         name="evaluator", graph=evaluator_graph
     ),
     path="/evaluator",

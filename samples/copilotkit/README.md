@@ -10,43 +10,57 @@ can review, confirm, and act on AI quality assessments in real time.
 
 ```bash
 pip install layerlens --index-url https://sdk.layerlens.ai/package \
-    "copilotkit==0.1.74" "langchain==1.0.1" "langgraph==1.0.1" \
-    "ag-ui-langgraph==0.0.22" "pydantic>=2,<3" fastapi uvicorn
+    "copilotkit==0.1.87" "langchain==1.2.15" "langgraph==1.1.9" \
+    "ag-ui-langgraph==0.0.34" "pydantic>=2,<3" fastapi uvicorn
 npm install @copilotkit/react-core@1.56.3 @copilotkit/react-ui@1.56.3 @copilotkit/runtime@1.56.3
 export LAYERLENS_STRATIX_API_KEY=your-api-key
 ```
 
-### Version compatibility
+### Version matrix
 
-Versions are pinned to match CopilotKit's own
-[`examples/integrations/langgraph-fastapi`](https://github.com/CopilotKit/CopilotKit/tree/main/examples/integrations/langgraph-fastapi)
-reference sample -- that's the set CopilotKit tests. Later versions often work but
-have not been verified against this sample.
+Pinned to the current published versions of each package. For byte-identical
+reproduction, install from the committed lockfile:
+
+```bash
+pip install -r samples/copilotkit/tests/browser/backend/requirements.lock
+```
 
 | Package | Version |
 |---|---|
 | `layerlens` | `>=1.6.0` |
-| `copilotkit` (Python SDK) | `==0.1.74` |
-| `langchain` | `==1.0.1` |
-| `langgraph` | `==1.0.1` |
-| `ag-ui-langgraph` | `==0.0.22` |
+| `copilotkit` (Python SDK) | `==0.1.87` |
+| `langchain` | `==1.2.15` |
+| `langgraph` | `==1.1.9` |
+| `ag-ui-langgraph` | `==0.0.34` |
 | `pydantic` | `>=2,<3` |
-| `@copilotkit/react-core` | `==1.56.3` |
+| `@copilotkit/react-core` | `==1.56.3` (pulls in `@ag-ui/client==0.0.52`) |
 | `@copilotkit/react-ui` | `==1.56.3` |
 | `@copilotkit/runtime` | `==1.56.3` |
 | Python | `>=3.10,<3.13` |
 | Next.js | `>=15` |
 
-> **Known upstream issue with HITL interrupts**: `ag_ui_langgraph.LangGraphAgent`
-> (inherited by `copilotkit.LangGraphAGUIAgent`) overwrites the client-supplied
-> `runId` on each LangGraph event, so `RUN_FINISHED` is emitted with LangGraph's
-> internal chain UUID instead of the `runId` the frontend sent. `@copilotkit/runtime`
-> then raises `RUN_ERROR / INCOMPLETE_STREAM` and the frontend locks up with
-> "Cannot send 'RUN_STARTED' while a run is still active." This sample ships a
-> ~25-line local workaround (`RunIdPreservingAgent` in `evaluator_agent.py`) that
-> restores `input.run_id` on terminal events. Tracking:
-> [ag-ui-protocol/ag-ui#1582](https://github.com/ag-ui-protocol/ag-ui/issues/1582).
-> Remove the subclass once the upstream fix ships.
+> **Known upstream bugs in `ag-ui-langgraph`**: two bugs in
+> `LangGraphAgent._handle_stream_events` / `prepare_stream` (inherited by
+> `copilotkit.LangGraphAGUIAgent`) manifest as the browser error
+> `RUN_ERROR / INCOMPLETE_STREAM` with the message *"Cannot send 'RUN_STARTED'
+> while a run is still active. The previous run must be finished with
+> 'RUN_FINISHED' before starting a new run."*
+> 1. **runId overwrite**: client-supplied `input.run_id` is overwritten by
+>    each LangGraph event's internal chain `run_id`; `RUN_FINISHED` is then
+>    emitted with the wrong runId.
+> 2. **Duplicate `RUN_STARTED`**: when a request arrives on a thread whose
+>    graph is already paused at `interrupt()` and the request carries no
+>    `forwardedProps.command.resume`, the server emits two `RUN_STARTED`
+>    events in one stream. The server's own AG-UI encoder validator catches
+>    this and converts the violation to `RUN_ERROR / INCOMPLETE_STREAM`,
+>    terminating the stream before `RUN_FINISHED` can fire.
+>
+> This sample ships a small workaround subclass (`build_agui_agent` in
+> `evaluator_agent.py`) that filters the event stream at the agent boundary
+> to drop the duplicate `RUN_STARTED` and restore `input.run_id` on terminal
+> events. Tracking upstream: `ag-ui-protocol/ag-ui#1582` (runId) and
+> `ag-ui-protocol/ag-ui#1584` (duplicate RUN_STARTED). Remove the subclass
+> once both land.
 
 ## Quick Start
 
@@ -176,11 +190,10 @@ pattern or convert to `dict` before storing.
 This mirrors CopilotKit's reference
 [`examples/integrations/langgraph-fastapi/agent/main.py`](https://github.com/CopilotKit/CopilotKit/blob/main/examples/integrations/langgraph-fastapi/agent/main.py)
 with two deviations: we mount two agents (evaluator, investigator) at distinct paths,
-and `evaluator_agent` uses a `RunIdPreservingAgent` subclass (returned by
-`_build_langgraph_agui_agent`) to work around
-[ag-ui-protocol/ag-ui#1582](https://github.com/ag-ui-protocol/ag-ui/issues/1582).
-Investigator has no `interrupt()`, so it uses CopilotKit's `LangGraphAGUIAgent`
-directly.
+and `evaluator_agent` exposes a `build_agui_agent` factory that wraps
+`copilotkit.LangGraphAGUIAgent` with workarounds for two known
+`ag-ui-langgraph` bugs (see the version-matrix callout above). Investigator has no
+`interrupt()`, so it uses `LangGraphAGUIAgent` directly.
 
 ```python
 # server.py
@@ -188,10 +201,7 @@ from fastapi import FastAPI
 from ag_ui_langgraph import add_langgraph_fastapi_endpoint
 from copilotkit import LangGraphAGUIAgent
 
-from agents.evaluator_agent import (
-    evaluator_graph,
-    _build_langgraph_agui_agent,  # RunIdPreservingAgent factory
-)
+from agents.evaluator_agent import evaluator_graph, build_agui_agent
 from agents.investigator_agent import investigator_graph
 
 app = FastAPI()
@@ -199,9 +209,7 @@ app = FastAPI()
 # The checkpointer compiled into each graph is what powers interrupt/resume.
 add_langgraph_fastapi_endpoint(
     app,
-    agent=_build_langgraph_agui_agent(
-        name="evaluator", graph=evaluator_graph
-    ),
+    agent=build_agui_agent(name="evaluator", graph=evaluator_graph),
     path="/evaluator",
 )
 add_langgraph_fastapi_endpoint(

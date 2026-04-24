@@ -546,7 +546,7 @@ evaluator_graph = build_graph().compile(checkpointer=checkpointer)
 #     treat the run as unterminated.
 #
 # (b) duplicate RUN_STARTED in the ``has_active_interrupts`` branch --
-#     tracked at ag-ui-protocol/ag-ui#1583:
+#     tracked at ag-ui-protocol/ag-ui#1584:
 #     When a request arrives on a thread whose graph is already paused at
 #     an ``interrupt()`` and the request does NOT carry
 #     ``forwardedProps.command.resume``, the server emits TWO ``RUN_STARTED``
@@ -567,18 +567,47 @@ evaluator_graph = build_graph().compile(checkpointer=checkpointer)
 # in this sample's requirements.
 
 
-def _build_langgraph_agui_agent(**kwargs):
-    """Factory for the CopilotKit agent wrapper with runId + dedup workarounds.
+# Versions known to exhibit the two workaround-ed bugs. Update this range
+# each time we re-verify against a newer release. Outside the range we emit
+# a warning so silent behavior drift doesn't hide a regression.
+_AG_UI_LANGGRAPH_TESTED_MIN = "0.0.22"
+_AG_UI_LANGGRAPH_TESTED_MAX = "0.0.34"
 
-    Kept as a factory (rather than a module-level class import) so the
-    sample imports cleanly even when ``copilotkit`` / ``ag_ui_langgraph``
-    are not installed -- users who only want to inspect the graph don't
-    need the full runtime stack.
+
+def build_agui_agent(**kwargs):
+    """Build the CopilotKit LangGraph agent wrapper for this evaluator.
+
+    Wraps ``copilotkit.LangGraphAGUIAgent`` with two workarounds for
+    currently-upstream bugs in ``ag-ui-langgraph``:
+
+    1. ``runId`` overwrite -- ``RUN_FINISHED`` is emitted with LangGraph's
+       internal chain ``run_id`` instead of ``input.run_id``. Tracked at
+       ``ag-ui-protocol/ag-ui#1582``.
+    2. Duplicate ``RUN_STARTED`` -- the ``has_active_interrupts`` branch
+       of ``prepare_stream`` appends a second ``RunStartedEvent`` after
+       ``_handle_stream_events`` already emitted one, tripping the AG-UI
+       within-stream invariant and surfacing as
+       ``RUN_ERROR / INCOMPLETE_STREAM`` in the browser. Tracked at
+       ``ag-ui-protocol/ag-ui#1584``.
+
+    Both workarounds filter the event stream at the agent boundary: drop
+    any ``RUN_STARTED`` after the first, and re-stamp ``input.run_id`` on
+    terminal events. Remove this wrapper once both upstream issues ship
+    a fix and the fixed ``ag-ui-langgraph`` release is pinned in
+    ``samples/copilotkit/tests/browser/backend/requirements.txt``.
+
+    The wrapper is built lazily (inside this factory) so the sample module
+    imports cleanly without ``copilotkit`` / ``ag_ui_langgraph`` installed
+    -- users who only want to inspect the graph don't need the full
+    runtime stack.
     """
     from typing import Optional as _Optional
 
+    import ag_ui_langgraph as _ag_ui_langgraph
     from ag_ui.core import EventType
     from copilotkit import LangGraphAGUIAgent
+
+    _version_guard_ag_ui_langgraph(getattr(_ag_ui_langgraph, "__version__", None))
 
     class _StratixAgUiWorkarounds(LangGraphAGUIAgent):
         def __init__(self, **inner_kwargs):
@@ -591,15 +620,15 @@ def _build_langgraph_agui_agent(**kwargs):
             async for event in super().run(input):
                 event_type = getattr(event, "type", None)
 
-                # (b) Drop duplicate RUN_STARTED so the AG-UI protocol
-                # invariant "no second RUN_STARTED without an intervening
+                # (2) Drop duplicate RUN_STARTED so the AG-UI invariant
+                # "no second RUN_STARTED without an intervening
                 # RUN_FINISHED" is preserved within a single stream.
                 if event_type == EventType.RUN_STARTED:
                     if run_started_emitted:
                         continue
                     run_started_emitted = True
 
-                # (a) Restore client-supplied runId on terminal events so
+                # (1) Restore client-supplied runId on terminal events so
                 # downstream consumers that correlate by runId see matched
                 # start/finish pairs.
                 if event_type in (EventType.RUN_FINISHED, EventType.RUN_ERROR):
@@ -609,6 +638,43 @@ def _build_langgraph_agui_agent(**kwargs):
                 yield event
 
     return _StratixAgUiWorkarounds(**kwargs)
+
+
+def _version_guard_ag_ui_langgraph(version: Optional[str]) -> None:
+    """Warn if the installed ``ag-ui-langgraph`` is outside the tested range.
+
+    The workarounds in :func:`build_agui_agent` reach into private-looking
+    internals of the upstream event-dispatch loop. If ``ag-ui-langgraph``
+    restructures those internals, the filter could silently become a
+    no-op. This guard surfaces that risk without breaking imports.
+    """
+    if not version:
+        return
+    try:
+        parsed = tuple(int(p) for p in version.split(".")[:3])
+        tested_min = tuple(int(p) for p in _AG_UI_LANGGRAPH_TESTED_MIN.split("."))
+        tested_max = tuple(int(p) for p in _AG_UI_LANGGRAPH_TESTED_MAX.split("."))
+    except (ValueError, AttributeError):
+        return
+    if parsed < tested_min or parsed > tested_max:
+        import warnings as _warnings
+
+        _warnings.warn(
+            f"ag-ui-langgraph=={version} is outside the range this sample's "
+            f"workarounds were verified against "
+            f"[{_AG_UI_LANGGRAPH_TESTED_MIN}..{_AG_UI_LANGGRAPH_TESTED_MAX}]. "
+            "If you hit RUN_ERROR / INCOMPLETE_STREAM in the browser, the "
+            "upstream bugs may have been fixed (remove the workaround) or "
+            "changed shape (update the workaround).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+
+# Backwards-compatible alias so any in-process callers that imported the
+# old private name keep working during the rename window. No customer
+# has the old sample; this is purely a safety net for internal tests.
+_build_langgraph_agui_agent = build_agui_agent
 
 
 # ---------------------------------------------------------------------------
