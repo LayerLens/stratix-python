@@ -50,49 +50,117 @@ body {
   /* CopilotChat fills whatever height/width its container provides. */
 }
 
-.harness-interrupt {
+/* Judge picker widget rendered by the ``confirm_judge`` frontend tool
+   (useCopilotAction + renderAndWaitForResponse). Appears inline in the
+   chat when the LLM calls the tool; collapses to a compact confirmation
+   once the user selects. */
+
+.judge-picker {
   border: 1px solid #2f3747;
   background: #10151f;
   border-radius: 8px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.judge-picker-prompt {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e6e8ee;
+}
+
+.judge-picker-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.harness-interrupt-prompt {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.4;
-  white-space: pre-wrap;
-}
-
-.harness-interrupt-row {
-  display: flex;
-  gap: 8px;
-}
-
-.harness-interrupt-input {
-  flex: 1;
-  padding: 6px 10px;
+.judge-card {
   border: 1px solid #2f3747;
   background: #0b0d12;
-  color: #e6e8ee;
-  border-radius: 4px;
-  font: inherit;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.harness-interrupt-submit {
-  padding: 6px 14px;
-  border: 1px solid #2f3747;
-  background: #1f2a3a;
+.judge-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.judge-card-name {
+  font-weight: 600;
+  font-size: 14px;
   color: #e6e8ee;
-  border-radius: 4px;
+}
+
+.judge-card-id {
+  font-size: 11px;
+  color: #7f8795;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.judge-card-goal {
+  margin: 0;
+  font-size: 13px;
+  color: #b3b9c5;
+  line-height: 1.4;
+}
+
+.judge-card-select {
+  align-self: flex-start;
+  padding: 5px 14px;
   font: inherit;
+  font-size: 13px;
+  background: #2a4b7e;
+  color: #ffffff;
+  border: 1px solid #3a5c8f;
+  border-radius: 4px;
   cursor: pointer;
 }
 
-.harness-interrupt-submit:hover {
-  background: #2a3a4e;
+.judge-card-select:hover {
+  background: #355a91;
+}
+
+.judge-card-select:focus-visible {
+  outline: 2px solid #6a8fd3;
+  outline-offset: 1px;
+}
+
+.judge-card-select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.judge-picker-complete {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #8ae5a3;
+  background: #10221a;
+  border-color: #234b34;
+}
+
+.judge-picker-check {
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.judge-picker-empty {
+  color: #d48282;
+  background: #201010;
+  border-color: #4b2323;
+  padding: 10px 14px;
+  font-size: 13px;
 }

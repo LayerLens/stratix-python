@@ -1,35 +1,43 @@
 # CopilotKit Samples
 
-Building AI-powered user interfaces requires more than backend evaluation logic -- it requires
-real-time feedback loops between the AI backend and the frontend. These samples provide
-CopilotKit CoAgents (LangGraph-based) and React components that connect LayerLens evaluation
-capabilities to interactive UIs, enabling human-in-the-loop evaluation workflows where users
-can review, confirm, and act on AI quality assessments in real time.
+Production-shaped reference for building CopilotKit-powered UIs on top of
+LayerLens. Two agents ship here:
+
+| Agent | Purpose |
+|---|---|
+| `agents/evaluator_agent.py` | Multi-step evaluation with human-in-the-loop judge selection. |
+| `agents/investigator_agent.py` | Trace investigation (errors, latency, cost hot spots). No HITL. |
+
+The evaluator is the interesting one — it uses CopilotKit's current idiom for
+HITL: an **LLM-driven agent** with **backend tools** for data access and a
+**frontend tool** for human confirmation, rendered as a rich widget in the
+chat.
 
 ## Prerequisites
 
 ```bash
 pip install layerlens --index-url https://sdk.layerlens.ai/package \
-    "copilotkit==0.1.87" "langchain==1.2.15" "langgraph==1.1.9" \
-    "ag-ui-langgraph==0.0.34" "pydantic>=2,<3" fastapi uvicorn
+    "copilotkit==0.1.87" "langchain==1.2.15" "langchain-openai>=1.1.0,<2.0.0" \
+    "langgraph==1.1.9" "ag-ui-langgraph==0.0.34" "pydantic>=2,<3" fastapi uvicorn
 npm install @copilotkit/react-core@1.56.3 @copilotkit/react-ui@1.56.3 @copilotkit/runtime@1.56.3
-export LAYERLENS_STRATIX_API_KEY=your-api-key
+export LAYERLENS_STRATIX_API_KEY=your-layerlens-key
+export OPENAI_API_KEY=your-openai-key   # the evaluator's LLM
 ```
 
-### Version matrix
-
-Pinned to the current published versions of each package. For byte-identical
-reproduction, install from the committed lockfile:
+For byte-identical transitive deps, install from the committed lockfile:
 
 ```bash
 pip install -r samples/copilotkit/tests/browser/backend/requirements.lock
 ```
 
-| Package | Version |
+### Version matrix
+
+| Package | Pin |
 |---|---|
 | `layerlens` | `>=1.6.0` |
 | `copilotkit` (Python SDK) | `==0.1.87` |
 | `langchain` | `==1.2.15` |
+| `langchain-openai` | `>=1.1.0,<2.0.0` |
 | `langgraph` | `==1.1.9` |
 | `ag-ui-langgraph` | `==0.0.34` |
 | `pydantic` | `>=2,<3` |
@@ -39,213 +47,149 @@ pip install -r samples/copilotkit/tests/browser/backend/requirements.lock
 | Python | `>=3.10,<3.13` |
 | Next.js | `>=15` |
 
-> **Known upstream bugs in `ag-ui-langgraph`**: two bugs in
-> `LangGraphAgent._handle_stream_events` / `prepare_stream` (inherited by
-> `copilotkit.LangGraphAGUIAgent`) manifest as the browser error
-> `RUN_ERROR / INCOMPLETE_STREAM` with the message *"Cannot send 'RUN_STARTED'
-> while a run is still active. The previous run must be finished with
-> 'RUN_FINISHED' before starting a new run."*
-> 1. **runId overwrite**: client-supplied `input.run_id` is overwritten by
->    each LangGraph event's internal chain `run_id`; `RUN_FINISHED` is then
->    emitted with the wrong runId.
-> 2. **Duplicate `RUN_STARTED`**: when a request arrives on a thread whose
->    graph is already paused at `interrupt()` and the request carries no
->    `forwardedProps.command.resume`, the server emits two `RUN_STARTED`
->    events in one stream. The server's own AG-UI encoder validator catches
->    this and converts the violation to `RUN_ERROR / INCOMPLETE_STREAM`,
->    terminating the stream before `RUN_FINISHED` can fire.
->
-> This sample ships a small workaround subclass (`build_agui_agent` in
-> `evaluator_agent.py`) that filters the event stream at the agent boundary
-> to drop the duplicate `RUN_STARTED` and restore `input.run_id` on terminal
-> events. Tracking upstream: `ag-ui-protocol/ag-ui#1582` (runId) and
-> `ag-ui-protocol/ag-ui#1584` (duplicate RUN_STARTED). Remove the subclass
-> once both land.
+## Architecture
 
-## Quick Start
-
-Start with the Evaluator Agent to see the core human-in-the-loop pattern:
-
-```bash
-python agents/evaluator_agent.py
+```
++-- Browser (Next.js + CopilotKit UI) ------------------------+
+|                                                             |
+|   <CopilotChat>  +-- useCopilotAction("confirm_judge", ---+ |
+|                  |   renderAndWaitForResponse: picker)   | |
+|                  +----------------------------------------+ |
+|                                |                             |
+|                                v  respond({id, name})        |
+|                                                             |
++-------------------------- /api/copilotkit ------------------+
+                             |
+                             v
++-- FastAPI backend ------------------------------------------+
+|                                                             |
+|   ag_ui_langgraph.add_langgraph_fastapi_endpoint            |
+|             (wraps the graph in LangGraphAGUIAgent)         |
+|                             |                                |
+|                             v                                |
+|   langchain.agents.create_agent                             |
+|     - model: ChatOpenAI(gpt-4o-mini)                        |
+|     - middleware: [CopilotKitMiddleware()]                  |
+|     - tools:                                                |
+|         list_judges          (backend)                      |
+|         list_recent_traces   (backend)                      |
+|         run_trace_evaluation (backend)                      |
+|         get_evaluation_result(backend)                      |
+|         confirm_judge        (frontend, bridged by middleware)
+|                             |                                |
+|                             v                                |
+|   LayerLens Python SDK (Stratix client)                     |
++-------------------------------------------------------------+
 ```
 
-Expected output: the agent parses an evaluation intent, selects appropriate judges, pauses
-for human confirmation, executes the evaluation, and emits AG-UI protocol events at each step.
+The LLM drives the conversation. When its system prompt says to confirm a
+judge with the user, it emits a tool call for `confirm_judge` with the
+list of candidates as arguments. `CopilotKitMiddleware` routes that call
+to the frontend, which renders the picker via `useCopilotAction`. When
+the user selects a judge, the frontend's `respond({id, name})` returns
+the selection as the tool result, and the LLM continues.
 
-## Agents (LangGraph CoAgents)
+## Why this pattern (and not `interrupt()`)
 
-| File | Scenario | Description |
-|------|----------|-------------|
-| `agents/evaluator_agent.py` | Product teams building evaluation dashboards | A multi-step evaluation workflow: parses user intent, selects judges, requests human confirmation before execution, runs evaluations, and summarizes results. Uses LangGraph `interrupt()` for the confirmation step (**requires a checkpointer -- see below**). |
-| `agents/investigator_agent.py` | Operations teams building trace debugging UIs | Fetches a trace by ID, analyzes spans for errors, latency anomalies, and cost outliers, then generates actionable fix suggestions. No `interrupt()`, no checkpointer required. |
+An earlier revision of this sample used a custom `StateGraph` with
+`langgraph.types.interrupt()` for HITL. That path hit two protocol-level
+bugs in `ag-ui-langgraph` (tracked upstream at
+[`ag-ui-protocol/ag-ui#1582`](https://github.com/ag-ui-protocol/ag-ui/issues/1582)
+and [`#1584`](https://github.com/ag-ui-protocol/ag-ui/issues/1584)) and
+required a local workaround subclass that reached into private internals
+of the CopilotKit Python SDK. It worked, but it wasn't the pattern
+CopilotKit themselves ship in their active showcases.
 
-## Human-in-the-loop: checkpointers
+The current pattern — **LLM + frontend tool via `useCopilotAction`** —
+matches CopilotKit's `hitl_in_chat_agent.py` and `interrupt_agent.py`
+starters. It sidesteps the `interrupt()` pipeline entirely:
 
-### Why a checkpointer is mandatory
+- No backend pause/resume boundary, so the two upstream bugs don't
+  apply to this sample.
+- No checkpointer needed (the `create_agent` driver owns state).
+- The HITL prompt is **structured data**, not free-form text — so the
+  frontend can render a real UI widget (a card list, a picker, a form)
+  instead of a text input.
+- The LLM naturally handles follow-ups ("actually, use the other judge")
+  without any extra glue.
 
-`evaluator_agent.py` uses LangGraph's `interrupt()` to pause execution while the user
-confirms which judge to run. LangGraph implements `interrupt()` by persisting the graph's
-state to a **checkpointer** at the pause boundary and resuming from that checkpoint when
-`Command(resume=...)` is sent. **Without a checkpointer there is nothing to resume from.**
+## Agents
 
-Concretely, if you compile with `build_graph().compile()` instead of
-`build_graph().compile(checkpointer=...)`:
+### `evaluator_agent.py`
 
-1. The first run emits `__interrupt__` and stops. Fine so far.
-2. The client sends the user's confirmation, which `ag-ui-langgraph` translates into
-   `graph.astream(Command(resume="..."), config={...})`.
-3. Because no checkpoint exists for this `thread_id`, the resumed stream produces **zero
-   events**. LangGraph has no record of the paused state.
-4. `ag-ui-langgraph` never observes a terminal state on the resume stream, so it never
-   emits `RUN_FINISHED` to the AG-UI wire protocol.
-5. The CopilotKit frontend's protocol state machine is stuck. The next user message fails:
+`langchain.agents.create_agent` with `CopilotKitMiddleware()`, four
+backend `@tool` functions, and a system prompt that guides the LLM
+through the evaluation flow. ~160 lines total, most of it tool
+docstrings and the prompt itself. Requires `OPENAI_API_KEY` (or inject
+your own `ChatModel` via `build_graph(model=...)`).
 
-   ```
-   Cannot send 'RUN_STARTED' while a run is still active.
-   The previous run must be finished with 'RUN_FINISHED' before starting a new run.
-   ```
+Tools:
 
-Any LangGraph graph that uses `interrupt()` has this requirement. The sample code would
-behave identically without CopilotKit in front of it -- the resume would just silently
-return nothing.
+- `list_judges() -> [{id, name, goal}]`
+- `list_recent_traces(limit=20) -> [{id, filename, created_at}]`
+- `run_trace_evaluation(trace_id, judge_id) -> {evaluation_id, status}`
+- `get_evaluation_result(evaluation_id) -> {status, passed, score, reasoning}`
+- `confirm_judge({candidates})` — **frontend tool**; declared in
+  `tests/browser/frontend/app/page.tsx` via `useCopilotAction` and
+  bridged into the LLM's toolbelt by `CopilotKitMiddleware`. Returns
+  `{id, name}` once the user picks.
 
-### Checkpointer options matrix
+### `investigator_agent.py`
 
-| Checkpointer | Durable? | Install | Use case |
-|---|---|---|---|
-| `InMemorySaver` | No -- lost on restart | built into `langgraph` | Local demos, tests, this sample's default |
-| `SqliteSaver` | Single-node file | `pip install langgraph-checkpoint-sqlite` | Single-process apps, dev deployments |
-| `PostgresSaver` | Yes, horizontally scalable | `pip install langgraph-checkpoint-postgres` | Production deployments |
-| `AsyncRedisSaver` | Yes, with TTL | `pip install langgraph-checkpoint-redis` | Ephemeral sessions, existing Redis infra |
-| LangGraph Platform | Managed | hosted by LangChain | No-ops checkpointer management |
+A procedural `StateGraph` that fetches a trace, extracts events,
+and flags errors / slow spans / high token usage. No HITL, no LLM.
+Good reference for a non-conversational agent that still plugs into
+the CopilotKit runtime.
 
-### Migrating from `InMemorySaver` to production
+## Frontend wiring
 
-The sample ships with:
+```tsx
+// app/page.tsx
+"use client";
 
-```python
-# samples/copilotkit/agents/evaluator_agent.py
-from langgraph.checkpoint.memory import InMemorySaver
+import { CopilotChat } from "@copilotkit/react-ui";
+import { useCopilotAction, useCopilotChat } from "@copilotkit/react-core";
+import { TextMessage, Role } from "@copilotkit/runtime-client-gql";
 
-checkpointer = InMemorySaver()
-evaluator_graph = build_graph().compile(checkpointer=checkpointer)
-```
+export default function Page() {
+  const { appendMessage, isLoading } = useCopilotChat();
 
-For production, replace that block with one of the following:
+  useCopilotAction({
+    name: "confirm_judge",
+    description:
+      "Ask the user to choose which judge to apply. Returns {id, name}.",
+    parameters: [
+      {
+        name: "candidates",
+        type: "object[]",
+        required: true,
+        attributes: [
+          { name: "id", type: "string", required: true },
+          { name: "name", type: "string", required: true },
+          { name: "goal", type: "string", required: true },
+        ],
+      },
+    ],
+    renderAndWaitForResponse: ({ args, respond, status }) => {
+      if (status === "complete") return <div>Judge selected.</div>;
+      const candidates = args?.candidates ?? [];
+      return (
+        <ul>
+          {candidates.map((j) => (
+            <li key={j.id}>
+              <strong>{j.name}</strong> — {j.goal}
+              <button onClick={() => respond?.({ id: j.id, name: j.name })}>
+                Select
+              </button>
+            </li>
+          ))}
+        </ul>
+      );
+    },
+  });
 
-**Postgres** (recommended for multi-instance deployments):
-
-```python
-# pip install langgraph-checkpoint-postgres
-from langgraph.checkpoint.postgres import PostgresSaver
-
-DB_URI = os.environ["LANGGRAPH_CHECKPOINT_DB_URI"]
-# e.g. "postgresql://user:pass@host:5432/langgraph?sslmode=require"
-checkpointer = PostgresSaver.from_conn_string(DB_URI)
-checkpointer.setup()  # one-time: creates the checkpoint tables
-evaluator_graph = build_graph().compile(checkpointer=checkpointer)
-```
-
-For fully async code paths use `AsyncPostgresSaver` from
-`langgraph.checkpoint.postgres.aio` instead; its API is identical except `setup()` and
-`from_conn_string()` are awaitable.
-
-**SQLite** (single-process, file-backed):
-
-```python
-# pip install langgraph-checkpoint-sqlite
-from langgraph.checkpoint.sqlite import SqliteSaver
-
-checkpointer = SqliteSaver.from_conn_string("checkpoints.sqlite")
-evaluator_graph = build_graph().compile(checkpointer=checkpointer)
-```
-
-**Redis** (TTL-friendly):
-
-```python
-# pip install langgraph-checkpoint-redis
-from langgraph.checkpoint.redis.aio import AsyncRedisSaver
-
-checkpointer = AsyncRedisSaver(redis_url=os.environ["REDIS_URL"])
-evaluator_graph = build_graph().compile(checkpointer=checkpointer)
-```
-
-**LangGraph Platform** does not require passing a checkpointer to `.compile()` -- the
-platform wires one in automatically when you deploy the graph.
-
-### Pydantic, not dataclasses, in state
-
-Graph state that crosses the checkpoint boundary must be serializable. LangGraph's default
-`JsonPlusSerializer` handles Pydantic models, `TypedDict`, primitives, and LangChain
-message types natively. It does **not** handle plain `@dataclass` types -- they raise
-`TypeError: Type is not msgpack serializable` during checkpointing.
-
-`evaluator_agent.py` uses `pydantic.BaseModel` for `JudgeInfo`, `TraceInfo`, and
-`EvaluationInfo` for that reason. If you add your own state fields, follow the same
-pattern or convert to `dict` before storing.
-
-## Backend wiring (FastAPI + ag-ui-langgraph)
-
-This mirrors CopilotKit's reference
-[`examples/integrations/langgraph-fastapi/agent/main.py`](https://github.com/CopilotKit/CopilotKit/blob/main/examples/integrations/langgraph-fastapi/agent/main.py)
-with two deviations: we mount two agents (evaluator, investigator) at distinct paths,
-and `evaluator_agent` exposes a `build_agui_agent` factory that wraps
-`copilotkit.LangGraphAGUIAgent` with workarounds for two known
-`ag-ui-langgraph` bugs (see the version-matrix callout above). Investigator has no
-`interrupt()`, so it uses `LangGraphAGUIAgent` directly.
-
-```python
-# server.py
-from fastapi import FastAPI
-from ag_ui_langgraph import add_langgraph_fastapi_endpoint
-from copilotkit import LangGraphAGUIAgent
-
-from agents.evaluator_agent import evaluator_graph, build_agui_agent
-from agents.investigator_agent import investigator_graph
-
-app = FastAPI()
-
-# The checkpointer compiled into each graph is what powers interrupt/resume.
-add_langgraph_fastapi_endpoint(
-    app,
-    agent=build_agui_agent(name="evaluator", graph=evaluator_graph),
-    path="/evaluator",
-)
-add_langgraph_fastapi_endpoint(
-    app,
-    agent=LangGraphAGUIAgent(name="investigator", graph=investigator_graph),
-    path="/investigator",
-)
-
-# uvicorn server:app --reload --port 8000
-```
-
-Each POST to `/evaluator` is a `RunAgentInput` carrying `threadId`, `runId`, `messages`,
-and `state`. The adapter reuses the checkpointer to look up prior state for the same
-`threadId`, streams AG-UI protocol events (RUN_STARTED, STEP_STARTED/FINISHED,
-STATE_SNAPSHOT, MESSAGES_SNAPSHOT, CUSTOM, RUN_FINISHED) as SSE, and terminates the stream
-on interrupt or completion. A subsequent POST with the same `threadId` is treated as a
-resume.
-
-## Frontend wiring (Next.js + CopilotKit runtime)
-
-```ts
-// app/api/copilotkit/route.ts
-import { CopilotRuntime, copilotRuntimeNextJSAppRouterEndpoint } from "@copilotkit/runtime";
-import { LangGraphHttpAgent } from "@copilotkit/runtime";
-
-const runtime = new CopilotRuntime({
-  agents: {
-    evaluator: new LangGraphHttpAgent({ url: "http://localhost:8000/evaluator" }),
-    investigator: new LangGraphHttpAgent({ url: "http://localhost:8000/investigator" }),
-  },
-});
-
-export const { POST } = copilotRuntimeNextJSAppRouterEndpoint({
-  runtime,
-  endpoint: "/api/copilotkit",
-});
+  return <CopilotChat />;
+}
 ```
 
 ```tsx
@@ -254,89 +198,113 @@ import { CopilotKit } from "@copilotkit/react-core";
 
 export default function RootLayout({ children }) {
   return (
-    <html>
-      <body>
-        <CopilotKit runtimeUrl="/api/copilotkit" agent="evaluator">
-          {children}
-        </CopilotKit>
-      </body>
-    </html>
+    <CopilotKit runtimeUrl="/api/copilotkit" agent="evaluator">
+      {children}
+    </CopilotKit>
   );
 }
 ```
 
-The `agent` prop tells CopilotKit which registered LangGraph agent to drive. The runtime
-translates chat messages into AG-UI events and relays events from the Python backend back
-to the browser over SSE.
+```ts
+// app/api/copilotkit/route.ts
+import {
+  CopilotRuntime,
+  ExperimentalEmptyAdapter,
+  copilotRuntimeNextJSAppRouterEndpoint,
+} from "@copilotkit/runtime";
+import { LangGraphHttpAgent } from "@copilotkit/runtime/langgraph";
 
-## React Components
+const runtime = new CopilotRuntime({
+  agents: {
+    evaluator: new LangGraphHttpAgent({
+      url: process.env.EVALUATOR_BACKEND_URL ?? "http://127.0.0.1:8123/evaluator",
+    }),
+  },
+});
 
-| File | Description |
-|------|-------------|
-| `components/EvaluationCard.tsx` | Renders evaluation results with score breakdowns and judge verdicts. |
-| `components/TraceCard.tsx` | Displays trace metadata, span hierarchy, and timing information. |
-| `components/JudgeVerdictCard.tsx` | Shows individual judge verdicts with pass/fail indicators. |
-| `components/MetricCard.tsx` | Renders a single metric with trend visualization. |
-| `components/ComplianceCard.tsx` | Displays compliance status with regulation-specific details. |
-| `components/index.ts` | Barrel export for all components. |
-
-## React Hooks
-
-| File | Description |
-|------|-------------|
-| `hooks/useLayerLensActions.ts` | CopilotKit action hooks for triggering evaluations and investigations. |
-| `hooks/useLayerLensContext.ts` | Context hook for sharing LayerLens state across components. |
-| `hooks/index.ts` | Barrel export for all hooks. |
-
-## Architecture
-
-```
-CopilotKit Frontend (React)
-    |
-    v  (AG-UI events over SSE)
-@copilotkit/runtime (Next.js route handler)
-    |
-    v  (LangGraphHttpAgent -> HTTP POST)
-ag-ui-langgraph FastAPI endpoint
-    |
-    v  (graph.astream with checkpointer-backed thread_id)
-LangGraph StateGraph (evaluator_graph / investigator_graph)
-    |
-    v
-LayerLens Python SDK (Stratix client)
-    |
-    v
-LayerLens API
+export const POST = async (req) => {
+  const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
+    runtime,
+    serviceAdapter: new ExperimentalEmptyAdapter(),
+    endpoint: "/api/copilotkit",
+  });
+  return handleRequest(req);
+};
 ```
 
-The agents emit AG-UI protocol events that CopilotKit renders as progress cards,
-confirmation dialogs, and result summaries in the frontend. The React components and
-hooks are provided as reference implementations for building your own LayerLens-powered UI.
-
-## Troubleshooting
-
-### `Cannot send 'RUN_STARTED' while a run is still active`
-
-The most common cause is compiling an `interrupt()`-using graph without a checkpointer.
-Verify `evaluator_graph.checkpointer` is not `None`:
+## Backend wiring
 
 ```python
+# server.py
+from fastapi import FastAPI
+from ag_ui_langgraph import add_langgraph_fastapi_endpoint
+from copilotkit import LangGraphAGUIAgent
+
 from agents.evaluator_agent import evaluator_graph
-assert evaluator_graph.checkpointer is not None
+from agents.investigator_agent import investigator_graph
+
+app = FastAPI()
+
+add_langgraph_fastapi_endpoint(
+    app,
+    agent=LangGraphAGUIAgent(name="evaluator", graph=evaluator_graph),
+    path="/evaluator",
+)
+add_langgraph_fastapi_endpoint(
+    app,
+    agent=LangGraphAGUIAgent(name="investigator", graph=investigator_graph),
+    path="/investigator",
+)
 ```
 
-If your custom graph compiles to `None`, see the "Migrating from `InMemorySaver`" section
-above.
+Run with `uvicorn server:app --reload --port 8123`.
 
-### `Type is not msgpack serializable`
+## Running the sample end-to-end
 
-Your graph state contains a plain `@dataclass` or other non-serializable type. Convert
-nested DTOs to `pydantic.BaseModel` (or `dict`). See the Pydantic section above.
+```bash
+# 1. Backend
+cd samples/copilotkit/tests/browser/backend
+pip install -r requirements.lock
+export LAYERLENS_STRATIX_API_KEY=...
+export OPENAI_API_KEY=...
+python server.py         # listens on http://127.0.0.1:8123
 
-### `Deserializing unregistered type` warning
+# 2. Frontend
+cd samples/copilotkit/tests/browser/frontend
+npm install
+npm run dev              # listens on http://127.0.0.1:3000
+```
 
-LangGraph is hardening type registration for checkpoint reloads across processes. For the
-in-memory sample this warning is informational. In production, register your DTOs via
-LangGraph's `allowed_msgpack_modules` setting or set
-`LANGGRAPH_STRICT_MSGPACK=false` in dev. See the LangGraph docs for the per-version
-specifics.
+Open `http://127.0.0.1:3000`, click **Evaluate my traces** (or type your
+own request into the chat). The agent fetches your traces, fetches your
+judges, renders the judge picker inline in the chat, waits for you to
+choose, then runs the evaluations and summarises the results.
+
+## Tests
+
+```bash
+pytest tests/test_samples_e2e.py -k copilotkit
+```
+
+Exercises the backend tools with a patched Stratix client and verifies
+the graph imports cleanly with mocked heavy deps. The browser harness
+under `samples/copilotkit/tests/browser/` is for manual verification in
+a real Chrome (Playwright cannot reliably drive CopilotChat's textarea
+in headless mode — separate testability issue tracked at
+[`CopilotKit/CopilotKit#4215`](https://github.com/CopilotKit/CopilotKit/issues/4215)).
+
+## Upstream issues (informational)
+
+Two bugs in `ag-ui-langgraph`'s `interrupt()` code path — not exercised
+by this sample but still worth being aware of if you build a custom
+`StateGraph` that uses `langgraph.types.interrupt()`:
+
+- [`ag-ui-protocol/ag-ui#1582`](https://github.com/ag-ui-protocol/ag-ui/issues/1582):
+  `RUN_FINISHED` emitted with LangGraph's internal `run_id` instead of
+  the client-supplied one.
+- [`ag-ui-protocol/ag-ui#1584`](https://github.com/ag-ui-protocol/ag-ui/issues/1584):
+  Duplicate `RUN_STARTED` on the `has_active_interrupts` re-entry path.
+
+Both manifest in the browser as `RUN_ERROR / INCOMPLETE_STREAM`. The
+pattern in this sample (LLM + frontend tool, no `interrupt()`) avoids
+them by construction.

@@ -1,110 +1,120 @@
 "use client";
 
-import { useState } from "react";
 import { CopilotChat } from "@copilotkit/react-ui";
-import {
-  useCopilotChat,
-  useLangGraphInterrupt,
-} from "@copilotkit/react-core";
+import { useCopilotAction, useCopilotChat } from "@copilotkit/react-core";
 import { TextMessage, Role } from "@copilotkit/runtime-client-gql";
 
 /**
  * Sample harness page.
  *
- * Wires ``useLangGraphInterrupt`` so that when the backend evaluator
- * hits its ``copilotkit_interrupt(...)`` HITL pause, the user can reply
- * through a dedicated prompt widget and the frontend sends the answer
- * back as ``forwardedProps.command.resume``. Without this hook, a plain
- * ``<CopilotChat>`` sends the user's reply as an ordinary new chat
- * message, the backend sees no resume command, and the graph stays
- * paused at the ``interrupt()`` boundary. That's the correct AG-UI
- * protocol behavior -- the frontend must explicitly signal a resume.
+ * HITL is wired as a **frontend tool**: the backend's system prompt tells
+ * the LLM to call ``confirm_judge`` when it has the judge candidates, and
+ * this page defines that tool via ``useCopilotAction`` with
+ * ``renderAndWaitForResponse``. When the LLM emits the tool call, the
+ * widget below appears inline in the chat. The user picks a judge; the
+ * component calls ``respond({id, name})`` which completes the tool; the
+ * LLM receives the selection and continues the evaluation flow.
  *
- * ``copilotkit_interrupt`` on the server extracts the answer from
- * ``response[-1].content``, so ``resolve`` must be called with a list of
- * message-shaped objects whose last element has ``.content``.
- *
- * The "Start evaluation" button exists so automated tests (and humans
- * without an LLM-backed chat flow) can kick off the graph without
- * having to type into the CopilotChat textarea. It uses
- * ``useCopilotChat().appendMessage`` -- the same primitive the chat
- * widget uses internally -- so the runtime path is identical.
+ * This pattern is CopilotKit's current idiom for HITL (matches the
+ * ``hitl_in_chat_agent.py`` showcase). It sidesteps the
+ * ``ag-ui-langgraph`` + ``interrupt()`` pipeline entirely, which had two
+ * protocol-level bugs (``ag-ui-protocol/ag-ui#1582`` and ``#1584``) and
+ * required a private-API workaround subclass in an earlier revision of
+ * this sample.
  */
+
+type JudgeCandidate = {
+  id: string;
+  name: string;
+  goal: string;
+};
+
 export default function Page() {
   const { appendMessage, isLoading } = useCopilotChat();
-  const [draft, setDraft] = useState("");
 
-  useLangGraphInterrupt({
-    render: ({ event, resolve }) => {
-      // ``event.value`` is whatever was passed to the server-side
-      // ``copilotkit_interrupt(message=...)``. That helper wraps the
-      // payload as ``{__copilotkit_interrupt_value__, __copilotkit_messages__}``.
-      const raw = (event as { value?: unknown }).value;
-      let prompt: string;
-      if (typeof raw === "string") {
-        prompt = raw;
-      } else if (raw && typeof raw === "object") {
-        const obj = raw as { __copilotkit_interrupt_value__?: string };
-        prompt = obj.__copilotkit_interrupt_value__ ?? JSON.stringify(raw);
-      } else {
-        prompt = "The agent is waiting for a reply.";
+  // Frontend tool: ``confirm_judge``. The backend agent's system prompt
+  // instructs the LLM to call this once it has the list of judges.
+  // ``renderAndWaitForResponse`` pauses the tool call, renders the
+  // widget in the chat, and waits for ``respond(value)`` to continue.
+  useCopilotAction({
+    name: "confirm_judge",
+    description:
+      "Ask the user to choose which judge (evaluation criteria) to apply to their traces. Pass the full list of candidate judges as `candidates`. The user will pick one via an inline widget in the chat. Returns the chosen judge's id and name.",
+    parameters: [
+      {
+        name: "candidates",
+        type: "object[]",
+        required: true,
+        description: "The full list of judges to choose from.",
+        attributes: [
+          { name: "id", type: "string", required: true },
+          { name: "name", type: "string", required: true },
+          { name: "goal", type: "string", required: true },
+        ],
+      },
+    ],
+    renderAndWaitForResponse: ({ args, respond, status }) => {
+      const candidates: JudgeCandidate[] =
+        (args?.candidates as JudgeCandidate[] | undefined) ?? [];
+
+      if (status === "complete") {
+        // Post-selection, compact state. We don't have direct access to
+        // the resolved value here, so show a generic confirmation.
+        return (
+          <div className="judge-picker judge-picker-complete" data-testid="judge-picker-complete">
+            <span className="judge-picker-check" aria-hidden>
+              ✓
+            </span>
+            Judge selected.
+          </div>
+        );
       }
 
-      const submit = () => {
-        const answer = draft.trim() || "ok";
-        setDraft("");
-        // ``copilotkit_interrupt`` does ``answer = response[-1].content``,
-        // so ``resolve`` must receive a list whose last element has
-        // ``.content``.
-        resolve([{ role: "user", content: answer }]);
-      };
+      if (!candidates.length) {
+        return (
+          <div className="judge-picker judge-picker-empty">
+            No judges were provided. Ask LayerLens to list your judges first.
+          </div>
+        );
+      }
 
       return (
-        <div className="harness-interrupt" data-testid="harness-interrupt">
-          <p
-            className="harness-interrupt-prompt"
-            data-testid="harness-interrupt-prompt"
-          >
-            {prompt}
-          </p>
-          <div className="harness-interrupt-row">
-            <input
-              data-testid="harness-interrupt-input"
-              className="harness-interrupt-input"
-              value={draft}
-              placeholder="Type your answer (default: ok)"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-            />
-            <button
-              type="button"
-              data-testid="harness-interrupt-submit"
-              className="harness-interrupt-submit"
-              onClick={submit}
-            >
-              Submit
-            </button>
-          </div>
+        <div className="judge-picker" data-testid="judge-picker">
+          <p className="judge-picker-prompt">Pick a judge for this evaluation:</p>
+          <ul className="judge-picker-list">
+            {candidates.map((judge) => (
+              <li key={judge.id} className="judge-card">
+                <div className="judge-card-head">
+                  <span className="judge-card-name">{judge.name}</span>
+                  <span className="judge-card-id" title="Judge id">
+                    {judge.id}
+                  </span>
+                </div>
+                {judge.goal ? (
+                  <p className="judge-card-goal">{judge.goal}</p>
+                ) : null}
+                <button
+                  type="button"
+                  className="judge-card-select"
+                  data-testid={`judge-card-select-${judge.id}`}
+                  onClick={() => respond?.({ id: judge.id, name: judge.name })}
+                  disabled={!respond}
+                >
+                  Select {judge.name}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       );
     },
   });
 
   const sendEvaluate = () => {
-    // ``appendMessage`` is the non-premium chat-send primitive in
-    // @copilotkit/react-core 1.56.3. It accepts a TextMessage instance;
-    // we use that here rather than ``useCopilotChatHeadless_c`` +
-    // ``sendMessage`` because the headless hook is premium-gated
-    // (requires ``publicApiKey``) and silently no-ops without one.
     void appendMessage(
       new TextMessage({
         role: Role.User,
-        content: "evaluate my traces",
+        content: "Please evaluate my recent traces.",
       })
     );
   };
@@ -112,22 +122,26 @@ export default function Page() {
   return (
     <main className="harness-shell" data-testid="harness-root">
       <header className="harness-header">
-        CopilotKit Evaluator Harness (agent: <code>evaluator</code>)
+        <span>
+          LayerLens Evaluator (agent: <code>evaluator</code>)
+        </span>
         <button
           type="button"
           data-testid="harness-start"
           className="harness-start-button"
           onClick={sendEvaluate}
           disabled={isLoading}
+          title="Send the initial evaluation request"
         >
-          {isLoading ? "Running..." : "Start evaluation"}
+          {isLoading ? "Running..." : "Evaluate my traces"}
         </button>
       </header>
       <div className="harness-chat" data-testid="harness-chat">
         <CopilotChat
           labels={{
             title: "Evaluator",
-            initial: "Ask me to evaluate your traces.",
+            initial:
+              "Hi — I can evaluate your LayerLens traces. Click Evaluate my traces, or ask in your own words.",
           }}
           instructions=""
         />

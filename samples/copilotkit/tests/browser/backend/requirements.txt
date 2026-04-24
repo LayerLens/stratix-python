@@ -11,6 +11,7 @@
 copilotkit==0.1.87
 langchain==1.2.15
 langchain-core==1.3.0
+langchain-openai>=1.1.0,<2.0.0
 langgraph==1.1.9
 ag-ui-langgraph==0.0.34
 fastapi==0.115.12

@@ -1235,8 +1235,13 @@ class TestAllSamplesWithMockedSDK:
 
             # Mock heavy dependencies that may not be installed
             mock_modules = {
+                "langchain": MagicMock(),
+                "langchain.agents": MagicMock(),
+                "langchain.tools": MagicMock(),
                 "langchain_core": MagicMock(),
                 "langchain_core.messages": MagicMock(),
+                "langchain_core.tools": MagicMock(),
+                "langchain_openai": MagicMock(),
                 "langgraph": MagicMock(),
                 "langgraph.checkpoint": MagicMock(),
                 "langgraph.checkpoint.memory": MagicMock(),
@@ -1262,25 +1267,22 @@ class TestAllSamplesWithMockedSDK:
             if sample_dir in sys.path:
                 sys.path.remove(sample_dir)
 
-    def test_copilotkit_evaluator_interrupt_resume(self):
-        """Regression: evaluator_graph must support interrupt + resume end-to-end.
+    def test_copilotkit_evaluator_tools(self):
+        """Each backend tool on the evaluator agent produces the expected shape
+        against a patched Stratix client.
 
-        The evaluator agent calls ``interrupt()`` in ``confirm_judge_node`` for
-        human-in-the-loop judge confirmation. A checkpointer is mandatory for
-        this to work -- without one, the resume call produces zero events and
-        the AG-UI stream never emits RUN_FINISHED, blocking all subsequent
-        CopilotKit frontend messages with
-        "Cannot send 'RUN_STARTED' while a run is still active".
-
-        Unlike the other CopilotKit tests, this one imports the REAL langgraph
-        (not MagicMock) and drives a full astream -> interrupt -> resume cycle.
+        This is the regression for the current HITL architecture: the
+        evaluator is a ``create_agent`` + ``CopilotKitMiddleware`` graph with
+        four backend tools (``list_judges``, ``list_recent_traces``,
+        ``run_trace_evaluation``, ``get_evaluation_result``) and one
+        frontend tool (``confirm_judge``, declared in the browser harness
+        via ``useCopilotAction``). No ``interrupt()``, so no ag-ui-langgraph
+        protocol bugs to work around.
         """
-        pytest.importorskip("langgraph")
+        pytest.importorskip("langchain")
         pytest.importorskip("langchain_core")
 
         from types import SimpleNamespace
-
-        from langgraph.types import Command
 
         fake_judge = SimpleNamespace(
             id="jdg_1",
@@ -1293,274 +1295,117 @@ class TestAllSamplesWithMockedSDK:
             filename="sample.jsonl",
             created_at="2026-04-23T00:00:00Z",
         )
-        fake_eval = SimpleNamespace(
+        fake_eval_pending = SimpleNamespace(
             id="ev_1",
             trace_id="trc_1",
             judge_id="jdg_1",
             status=SimpleNamespace(value="pending"),
         )
+        fake_eval_done = SimpleNamespace(
+            id="ev_1",
+            trace_id="trc_1",
+            judge_id="jdg_1",
+            status=SimpleNamespace(value="success"),
+        )
+        fake_results = SimpleNamespace(score=0.9, passed=True, reasoning="ok")
+
         fake_client = MagicMock()
-        fake_client.judges.get_many.return_value = SimpleNamespace(judges=[fake_judge])
-        fake_client.traces.get_many.return_value = SimpleNamespace(traces=[fake_trace])
-        fake_client.trace_evaluations.create.return_value = fake_eval
+        fake_client.judges.get_many.return_value = SimpleNamespace(
+            judges=[fake_judge]
+        )
+        fake_client.traces.get_many.return_value = SimpleNamespace(
+            traces=[fake_trace]
+        )
+        fake_client.trace_evaluations.create.return_value = fake_eval_pending
 
         sample_dir = os.path.join(SAMPLES_DIR, "copilotkit", "agents")
         if sample_dir not in sys.path:
             sys.path.insert(0, sample_dir)
 
-        mod_name = "copilotkit_evaluator_interrupt_test"
+        mod_name = "copilotkit_evaluator_tools_test"
         try:
-            spec = importlib.util.spec_from_file_location(
-                mod_name,
-                os.path.join(sample_dir, "evaluator_agent.py"),
-            )
-            mod = importlib.util.module_from_spec(spec)
-            sys.modules[mod_name] = mod
-
-            with patch.dict("os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}):
-                with patch("layerlens.Stratix", MagicMock(return_value=fake_client)):
-                    spec.loader.exec_module(mod)
-
-            # Confirm the sample is wired correctly: a checkpointer MUST be set.
-            assert mod.evaluator_graph.checkpointer is not None, (
-                "evaluator_graph must be compiled with a checkpointer -- "
-                "interrupt() cannot pause/resume without one"
-            )
-
-            # Replace the module client with our fake (module holds its own ref).
-            mod._client = fake_client
-
-            # Stop before the poll loop to keep the test deterministic.
-            compiled = mod.build_graph().compile(
-                checkpointer=mod.checkpointer.__class__(),
-                interrupt_before=["poll_results"],
-            )
-
-            # ``copilotkit_interrupt`` (used inside ``confirm_judge_node``)
-            # does ``answer = response[-1].content`` -- it expects the resume
-            # value to be a list of messages, not a bare string. Mirror what
-            # CopilotKit's JS runtime sends on resume.
-            from langchain_core.messages import HumanMessage
-
-            async def run() -> tuple[list[str], list[str], Any]:
-                cfg = {"configurable": {"thread_id": "test-thread-1"}}
-                phase1: list[str] = []
-                async for ev in compiled.astream({}, config=cfg):
-                    phase1.append(list(ev.keys())[0])
-                phase2: list[str] = []
-                async for ev in compiled.astream(
-                    Command(resume=[HumanMessage(content="ok")]),
-                    config=cfg,
+            # Stub OPENAI_API_KEY so import-time build_graph() doesn't fail;
+            # we won't invoke the LLM in this test.
+            with patch.dict(
+                "os.environ",
+                {
+                    "LAYERLENS_STRATIX_API_KEY": "test-key",
+                    "OPENAI_API_KEY": "test-openai",
+                },
+            ):
+                with patch(
+                    "layerlens.Stratix", MagicMock(return_value=fake_client)
                 ):
-                    phase2.append(list(ev.keys())[0])
-                state = compiled.get_state(cfg)
-                return phase1, phase2, state
-
-            phase1, phase2, state = asyncio.run(run())
-
-            # Phase 1: graph fetches judges/traces then pauses at interrupt().
-            assert "fetch_judges" in phase1, phase1
-            assert "fetch_traces" in phase1, phase1
-            assert "__interrupt__" in phase1, (
-                f"Expected __interrupt__ in phase-1 events, got {phase1}. "
-                "This means confirm_judge_node's interrupt() did not pause "
-                "the graph -- checkpointer is missing or misconfigured."
-            )
-
-            # Phase 2: resume via Command(resume=...) must actually produce
-            # post-interrupt events. If this is empty, the checkpointer
-            # didn't persist state across the pause and the resume is a no-op.
-            assert phase2, (
-                "Resume produced zero events -- checkpointer did not persist "
-                "state across interrupt(). This is the exact failure mode "
-                "that leaves the AG-UI stream without RUN_FINISHED."
-            )
-            assert "confirm_judge" in phase2, phase2
-            assert "run_evaluations" in phase2, phase2
-
-            # State survived the round-trip.
-            confirmed = state.values.get("confirmed_judge")
-            assert confirmed is not None
-            assert confirmed.id == "jdg_1"
-            assert confirmed.name == "Helpfulness"
-        finally:
-            sys.modules.pop(mod_name, None)
-            if sample_dir in sys.path:
-                sys.path.remove(sample_dir)
-
-    def test_copilotkit_evaluator_agui_wire(self):
-        """E2E: evaluator_graph emits RUN_FINISHED with the CLIENT-SUPPLIED runId.
-
-        Regression for the upstream ``ag-ui-protocol/ag-ui`` bug
-        (https://github.com/ag-ui-protocol/ag-ui/issues/1582):
-        ``LangGraphAgent._handle_stream_events`` overwrites
-        ``active_run['id']`` with each LangGraph event's internal chain
-        ``run_id``, so ``RUN_FINISHED`` is emitted with the wrong runId
-        and ``@copilotkit/runtime`` raises RUN_ERROR / INCOMPLETE_STREAM.
-
-        The earlier version of this test only checked that RUN_FINISHED
-        was emitted at all -- it missed the runId mismatch entirely. This
-        version asserts ``RUN_FINISHED.runId == RUN_STARTED.runId ==
-        input.runId`` so the workaround subclass (``RunIdPreservingAgent``
-        in ``evaluator_agent.py``) is proven to restore protocol
-        invariants.
-
-        Scope: verifies the first ("hits the interrupt") turn. Multi-turn
-        resume through the FastAPI endpoint requires mirroring CopilotKit
-        JS runtime's exact wire shape for ``forwardedProps.command.resume``
-        -- out of scope for a runId regression. The interrupt/resume
-        round-trip at the LangGraph level is covered by the companion
-        test ``test_copilotkit_evaluator_interrupt_resume``.
-
-        Skips if ``ag_ui_langgraph`` / ``fastapi`` / ``httpx`` / ``copilotkit``
-        are not installed.
-        """
-        pytest.importorskip("ag_ui_langgraph")
-        pytest.importorskip("copilotkit")
-        pytest.importorskip("fastapi")
-        pytest.importorskip("httpx")
-
-        from uuid import uuid4
-        from types import SimpleNamespace
-
-        import httpx
-        from fastapi import FastAPI
-        from ag_ui_langgraph import add_langgraph_fastapi_endpoint
-
-        fake_judge = SimpleNamespace(
-            id="jdg_1",
-            name="Helpfulness",
-            evaluation_goal="measures helpfulness",
-            created_at="2026-04-23T00:00:00Z",
-        )
-        fake_trace = SimpleNamespace(
-            id="trc_1",
-            filename="sample.jsonl",
-            created_at="2026-04-23T00:00:00Z",
-        )
-        fake_client = MagicMock()
-        fake_client.judges.get_many.return_value = SimpleNamespace(judges=[fake_judge])
-        fake_client.traces.get_many.return_value = SimpleNamespace(traces=[fake_trace])
-
-        sample_dir = os.path.join(SAMPLES_DIR, "copilotkit", "agents")
-        if sample_dir not in sys.path:
-            sys.path.insert(0, sample_dir)
-
-        mod_name = "copilotkit_evaluator_agui_test"
-        try:
-            spec = importlib.util.spec_from_file_location(
-                mod_name, os.path.join(sample_dir, "evaluator_agent.py")
-            )
-            mod = importlib.util.module_from_spec(spec)
-            sys.modules[mod_name] = mod
-
-            with patch.dict("os.environ", {"LAYERLENS_STRATIX_API_KEY": "test-key"}):
-                with patch("layerlens.Stratix", MagicMock(return_value=fake_client)):
+                    spec = importlib.util.spec_from_file_location(
+                        mod_name,
+                        os.path.join(sample_dir, "evaluator_agent.py"),
+                    )
+                    mod = importlib.util.module_from_spec(spec)
+                    sys.modules[mod_name] = mod
                     spec.loader.exec_module(mod)
+                    mod._client = fake_client
 
-            mod._client = fake_client
+                    # The evaluator exposes its backend tools as a module-level
+                    # BACKEND_TOOLS list. Each one is a LangChain ``@tool``
+                    # with a canonical ``.invoke(args)`` entry point.
+                    tools_by_name = {t.name: t for t in mod.BACKEND_TOOLS}
+                    assert set(tools_by_name) == {
+                        "list_judges",
+                        "list_recent_traces",
+                        "run_trace_evaluation",
+                        "get_evaluation_result",
+                    }, f"unexpected tool set: {set(tools_by_name)}"
 
-            app = FastAPI()
-            # Use the sample's factory so we exercise the workaround
-            # subclass (RunIdPreservingAgent), not the bare
-            # ag_ui_langgraph.LangGraphAgent.
-            add_langgraph_fastapi_endpoint(
-                app,
-                agent=mod.build_agui_agent(
-                    name="evaluator", graph=mod.evaluator_graph
-                ),
-                path="/",
-            )
+                    judges = tools_by_name["list_judges"].invoke({})
+                    assert judges == [
+                        {
+                            "id": "jdg_1",
+                            "name": "Helpfulness",
+                            "goal": "measures helpfulness",
+                        }
+                    ]
 
-            client_run_id = f"r1_{uuid4().hex[:8]}"
-            client_thread = f"thr_{uuid4().hex[:8]}"
-            body = {
-                "threadId": client_thread,
-                "runId": client_run_id,
-                "state": {},
-                "messages": [
-                    {"id": str(uuid4()), "role": "user", "content": "evaluate"}
-                ],
-                "tools": [],
-                "context": [],
-                "forwardedProps": {},
-            }
+                    traces = tools_by_name["list_recent_traces"].invoke(
+                        {"limit": 5}
+                    )
+                    assert traces == [
+                        {
+                            "id": "trc_1",
+                            "filename": "sample.jsonl",
+                            "created_at": "2026-04-23T00:00:00Z",
+                        }
+                    ]
 
-            async def run() -> tuple[list[tuple[str, str | None]], bytes]:
-                transport = httpx.ASGITransport(app=app)
-                async with httpx.AsyncClient(
-                    transport=transport, base_url="http://test"
-                ) as client:
-                    buf = bytearray()
-                    async with client.stream(
-                        "POST", "/", json=body, timeout=30.0
-                    ) as resp:
-                        assert resp.status_code == 200, f"status={resp.status_code}"
-                        async for chunk in resp.aiter_bytes():
-                            buf.extend(chunk)
-                text = bytes(buf).decode("utf-8", errors="replace")
-                run_events: list[tuple[str, str | None]] = []
-                # Pull every SSE data line and collect the run-lifecycle events.
-                for line in text.splitlines():
-                    if not line.startswith("data:"):
-                        continue
-                    payload = line[len("data:"):].strip()
-                    if not payload:
-                        continue
-                    try:
-                        event = json.loads(payload)
-                    except json.JSONDecodeError:
-                        continue
-                    t = event.get("type")
-                    if t in ("RUN_STARTED", "RUN_FINISHED", "RUN_ERROR"):
-                        run_events.append((t, event.get("runId")))
-                return run_events, bytes(buf)
+                    started = tools_by_name["run_trace_evaluation"].invoke(
+                        {"trace_id": "trc_1", "judge_id": "jdg_1"}
+                    )
+                    assert started["evaluation_id"] == "ev_1"
+                    assert started["status"] == "pending"
 
-            events, raw = asyncio.run(run())
+                    fake_client.trace_evaluations.get.return_value = (
+                        fake_eval_done
+                    )
+                    fake_client.trace_evaluations.get_results.return_value = (
+                        fake_results
+                    )
+                    result = tools_by_name["get_evaluation_result"].invoke(
+                        {"evaluation_id": "ev_1"}
+                    )
+                    assert result["status"] == "success"
+                    assert result["passed"] is True
+                    assert result["score"] == 0.9
 
-            started = [rid for t, rid in events if t == "RUN_STARTED"]
-            finished = [rid for t, rid in events if t == "RUN_FINISHED"]
-            errors = [rid for t, rid in events if t == "RUN_ERROR"]
-
-            assert started, (
-                f"No RUN_STARTED emitted. Raw stream: {raw[:500]!r}"
-            )
-            # Regression for upstream bug (b): has_active_interrupts path
-            # emits a duplicate RUN_STARTED which trips @ag-ui/client's
-            # within-stream invariant and converts to RUN_ERROR /
-            # INCOMPLETE_STREAM before RUN_FINISHED can be dispatched.
-            assert len(started) == 1, (
-                f"Expected exactly one RUN_STARTED per stream, got "
-                f"{len(started)}: {started}. Duplicate RUN_STARTED violates "
-                f"the AG-UI within-stream invariant and trips "
-                f"@ag-ui/client@>=0.0.52's validator. The workaround in "
-                f"evaluator_agent.py should drop duplicates at the agent "
-                f"boundary -- either the workaround broke or it was bypassed."
-            )
-            assert not errors, (
-                f"RUN_ERROR emitted: {errors}. Raw stream: {raw[:500]!r}"
-            )
-            assert finished, (
-                f"No RUN_FINISHED emitted -- AG-UI stream did not terminate "
-                f"cleanly. RUN_STARTED={started}, RUN_ERROR={errors}. "
-                f"Raw stream: {raw[:500]!r}"
-            )
-            # Regression for upstream bug (a), ag-ui-protocol/ag-ui#1582.
-            assert all(rid == client_run_id for rid in started), (
-                f"RUN_STARTED.runId mismatch: expected all={client_run_id!r}, "
-                f"got {started}."
-            )
-            assert all(rid == client_run_id for rid in finished), (
-                f"RUN_FINISHED.runId mismatch: expected all={client_run_id!r}, "
-                f"got {finished}. This is the ag-ui-protocol/ag-ui#1582 bug. "
-                f"The runId workaround should preserve input.run_id on "
-                f"terminal events -- either the workaround broke or it "
-                f"was bypassed."
-            )
+                    # Confirm the prompt references the frontend HITL tool by
+                    # the exact name the browser's useCopilotAction uses, and
+                    # includes the key flow steps. Sanity, not exhaustive.
+                    assert "confirm_judge" in mod.SYSTEM_PROMPT
+                    assert "list_recent_traces" in mod.SYSTEM_PROMPT
+                    assert "list_judges" in mod.SYSTEM_PROMPT
         finally:
             sys.modules.pop(mod_name, None)
             if sample_dir in sys.path:
                 sys.path.remove(sample_dir)
+
 
 
 # ===========================================================================
@@ -1952,8 +1797,13 @@ class TestMissingDependencies:
             sys.modules[mod_name] = mod
 
             mock_modules = {
+                "langchain": MagicMock(),
+                "langchain.agents": MagicMock(),
+                "langchain.tools": MagicMock(),
                 "langchain_core": MagicMock(),
                 "langchain_core.messages": MagicMock(),
+                "langchain_core.tools": MagicMock(),
+                "langchain_openai": MagicMock(),
                 "langgraph": MagicMock(),
                 "langgraph.checkpoint": MagicMock(),
                 "langgraph.checkpoint.memory": MagicMock(),

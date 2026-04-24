@@ -1,47 +1,62 @@
-"""
-CopilotKit Evaluator Agent -- LayerLens SDK edition.
+"""CopilotKit Evaluator Agent — LayerLens SDK edition.
 
-This agent lets an operator:
-  1. List available judges
-  2. List recent traces
-  3. Pick a judge (with human-in-the-loop confirmation via LangGraph interrupt)
-  4. Run evaluations for every selected trace against the confirmed judge
-  5. Poll / fetch evaluation results
+Uses CopilotKit's current HITL idiom: ``langchain.agents.create_agent`` +
+``CopilotKitMiddleware``. The LLM drives the conversation and calls tools;
+the human-in-the-loop step is a **frontend-defined tool** (``confirm_judge``)
+registered with ``useCopilotAction`` in the browser. ``CopilotKitMiddleware``
+bridges the frontend tool into the LLM's toolbelt, so from the graph's
+perspective it looks like any other tool call.
 
-All LayerLens API calls go through the Python SDK (`layerlens.Stratix`)
-instead of raw httpx.
+This replaces an earlier design that used a custom ``StateGraph`` with
+``langgraph.types.interrupt()`` for HITL. That path hit two upstream bugs
+in ``ag-ui-langgraph`` (``ag-ui-protocol/ag-ui#1582`` and ``#1584``) and
+needed a local workaround subclass. This version sidesteps the
+``interrupt()`` pipeline entirely — the LLM + frontend-tool pattern is
+what CopilotKit's active showcases use (``hitl_in_chat_agent.py``,
+``interrupt_agent.py``) and is the pattern we recommend.
+
+Flow driven by the system prompt:
+
+1. LLM calls ``list_recent_traces`` to see what's available.
+2. LLM calls ``list_judges`` to see evaluation criteria.
+3. LLM calls ``confirm_judge`` (frontend tool) with the candidates.
+   The frontend renders a picker; the user selects one; the picker
+   resolves with the chosen judge. The LLM receives the selection as
+   the tool's return value.
+4. LLM calls ``run_trace_evaluation`` for each trace with the chosen
+   judge, then ``get_evaluation_result`` to fetch outcomes.
+5. LLM summarises the pass/fail results for the user.
+
+Requires ``OPENAI_API_KEY`` in the environment. Set
+``LAYERLENS_STRATIX_API_KEY`` so the tools can call the LayerLens API.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
-from langgraph.graph import END, StateGraph
-
-# CopilotKit helpers -- match the wiring in CopilotKit's official
-# ``examples/integrations/langgraph-fastapi`` reference sample so the
-# agent speaks the protocol the CopilotKit frontend expects.
-from copilotkit import CopilotKitState
-from copilotkit.langgraph import copilotkit_interrupt
-from langchain_core.messages import AIMessage
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from copilotkit import CopilotKitMiddleware
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
 
 from layerlens import Stratix
 
 logger = logging.getLogger(__name__)
 
-MAX_POLL_ATTEMPTS = 30
-POLL_INITIAL_INTERVAL = 2.0
-POLL_MAX_INTERVAL = 15.0
-POLL_BACKOFF_FACTOR = 1.5
+# Polling bounds for get_evaluation_result so a stuck job doesn't hang a
+# customer's chat indefinitely. The LLM will call get_evaluation_result
+# repeatedly; we don't block the tool itself.
+DEFAULT_POLL_DELAY_SECONDS = 1.0
+MAX_POLL_WAIT_SECONDS = 60.0
+
 
 # ---------------------------------------------------------------------------
-# Module-level SDK client (lazy)
+# Lazy, thread-safe LayerLens client
 # ---------------------------------------------------------------------------
 
 _client_lock = threading.Lock()
@@ -49,639 +64,211 @@ _client: Optional[Stratix] = None
 
 
 def _get_client() -> Stratix:
-    """Return (and lazily create) a module-level Stratix client.
+    """Return (and lazily create) a module-level ``Stratix`` client.
 
     Reads ``LAYERLENS_STRATIX_API_KEY`` automatically from the environment.
     """
     global _client
     if _client is None:
         with _client_lock:
-            if _client is None:  # double-check after acquiring lock
+            if _client is None:
                 _client = Stratix()
     return _client
 
 
 # ---------------------------------------------------------------------------
-# Lightweight data-transfer objects used inside the graph state
+# Backend tools — these call the LayerLens SDK
 # ---------------------------------------------------------------------------
 
 
-# These DTOs are Pydantic models (not plain dataclasses) because LangGraph
-# persists ``EvaluatorState`` through the checkpointer whenever the graph
-# hits an ``interrupt()``. The default ``JsonPlusSerializer`` serializes
-# Pydantic models out of the box; plain dataclasses raise
-# ``TypeError: Type is not msgpack serializable`` during checkpointing,
-# which breaks human-in-the-loop resume.
-class JudgeInfo(BaseModel):
-    """Minimal representation of a LayerLens judge for the UI."""
+@tool
+def list_judges() -> List[Dict[str, str]]:
+    """List available LayerLens judges (evaluation criteria).
 
-    id: str
-    name: str
-    goal: str
-    created_at: str
-
-
-class TraceInfo(BaseModel):
-    """Minimal representation of a LayerLens trace for the UI."""
-
-    id: str
-    filename: str
-    created_at: str
-
-
-class EvaluationInfo(BaseModel):
-    """Tracks a single trace-evaluation that has been kicked off."""
-
-    evaluation_id: str
-    trace_id: str
-    judge_id: str
-    status: str
-    passed: Optional[bool] = None
-    score: Optional[float] = None
-    reasoning: Optional[str] = None
-
-
-# ---------------------------------------------------------------------------
-# Graph state
-# ---------------------------------------------------------------------------
-
-
-class EvaluatorState(CopilotKitState, total=False):
-    """LangGraph state for the evaluator agent.
-
-    Inherits from ``CopilotKitState`` so ``messages`` uses LangGraph's
-    ``add_messages`` reducer (node updates APPEND rather than REPLACE) and
-    the ``copilotkit`` field carries frontend-injected properties. This
-    matches CopilotKit's official ``langgraph-fastapi`` reference sample.
+    Returns a list of ``{"id", "name", "goal"}`` dicts. Call this before
+    asking the user which judge to use.
     """
-
-    judges: List[JudgeInfo]
-    traces: List[TraceInfo]
-    selected_judge: Optional[JudgeInfo]
-    confirmed_judge: Optional[JudgeInfo]
-    evaluations: List[EvaluationInfo]
-    step: str
-    error: Optional[str]
-    poll_count: int
-
-
-# ---------------------------------------------------------------------------
-# SDK helper wrappers
-# ---------------------------------------------------------------------------
-
-
-def _list_judges() -> List[JudgeInfo]:
-    """Fetch all judges via the SDK and map to JudgeInfo."""
     client = _get_client()
-    try:
-        resp = client.judges.get_many()
-        if resp is None:
-            return []
-        return [
-            JudgeInfo(
-                id=j.id,
-                name=j.name,
-                goal=j.evaluation_goal,
-                created_at=j.created_at,
-            )
-            for j in resp.judges
-        ]
-    except Exception as exc:
-        logger.error("Failed to list judges: %s", exc)
+    resp = client.judges.get_many()
+    if resp is None:
         return []
+    return [
+        {"id": j.id, "name": j.name, "goal": j.evaluation_goal}
+        for j in resp.judges
+    ]
 
 
-def _list_traces(limit: int = 20) -> List[TraceInfo]:
-    """Fetch recent traces via the SDK, sorted newest-first."""
+@tool
+def list_recent_traces(limit: int = 20) -> List[Dict[str, str]]:
+    """List the most recent LayerLens traces in this project.
+
+    Args:
+        limit: Maximum number of traces to return (default 20).
+
+    Returns a list of ``{"id", "filename", "created_at"}`` dicts sorted
+    newest-first.
+    """
     client = _get_client()
-    try:
-        resp = client.traces.get_many(
-            page_size=limit,
-            sort_by="created_at",
-            sort_order="desc",
-        )
-        if resp is None:
-            return []
-        return [
-            TraceInfo(
-                id=t.id,
-                filename=t.filename,
-                created_at=t.created_at,
-            )
-            for t in resp.traces
-        ]
-    except Exception as exc:
-        logger.error("Failed to list traces: %s", exc)
+    resp = client.traces.get_many(
+        page_size=limit, sort_by="created_at", sort_order="desc"
+    )
+    if resp is None:
         return []
+    return [
+        {
+            "id": t.id,
+            "filename": t.filename,
+            "created_at": t.created_at,
+        }
+        for t in resp.traces
+    ]
 
 
-def _create_evaluation(trace_id: str, judge_id: str) -> Optional[EvaluationInfo]:
-    """Kick off an evaluation for a single trace/judge pair."""
+@tool
+def run_trace_evaluation(trace_id: str, judge_id: str) -> Dict[str, Any]:
+    """Start a LayerLens evaluation for a single trace against a judge.
+
+    Args:
+        trace_id: The trace to evaluate.
+        judge_id: The judge (evaluation criteria) to use.
+
+    Returns ``{"evaluation_id", "trace_id", "judge_id", "status"}``.
+    Status starts as ``"pending"``; poll ``get_evaluation_result`` to
+    get the final verdict.
+    """
     client = _get_client()
-    try:
-        te = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_id)
-        if te is None:
-            return None
-        return EvaluationInfo(
-            evaluation_id=te.id,
-            trace_id=te.trace_id,
-            judge_id=te.judge_id,
-            status=te.status.value if hasattr(te.status, "value") else str(te.status),
-        )
-    except Exception as exc:
-        logger.error("Failed to create evaluation: %s", exc)
-        return None
+    ev = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_id)
+    if ev is None:
+        return {
+            "evaluation_id": "",
+            "trace_id": trace_id,
+            "judge_id": judge_id,
+            "status": "failed",
+            "error": "create returned None",
+        }
+    status = ev.status.value if hasattr(ev.status, "value") else str(ev.status)
+    return {
+        "evaluation_id": ev.id,
+        "trace_id": ev.trace_id,
+        "judge_id": ev.judge_id,
+        "status": status,
+    }
 
 
-def _get_evaluation(evaluation_id: str) -> Optional[EvaluationInfo]:
-    """Fetch the current status (and results if finished) for an evaluation."""
+@tool
+def get_evaluation_result(evaluation_id: str) -> Dict[str, Any]:
+    """Get the result of a previously-started LayerLens evaluation.
+
+    Args:
+        evaluation_id: The id returned by ``run_trace_evaluation``.
+
+    Returns ``{"status", "passed", "score", "reasoning"}`` when the
+    evaluation is finished, or ``{"status": "pending"}`` when it's
+    still running. The LLM should call this repeatedly (with reasonable
+    back-off) until ``status`` is ``"success"`` or ``"failure"``.
+    """
     client = _get_client()
-    try:
-        te = client.trace_evaluations.get(evaluation_id)
-        if te is None:
-            return None
-        info = EvaluationInfo(
-            evaluation_id=te.id,
-            trace_id=te.trace_id,
-            judge_id=te.judge_id,
-            status=te.status.value if hasattr(te.status, "value") else str(te.status),
-        )
-
-        # If the evaluation finished, pull detailed results
-        if info.status == "success":
-            results_resp = client.trace_evaluations.get_results(id=evaluation_id)
-            if results_resp and results_resp.score is not None:
-                info.passed = results_resp.passed
-                info.score = results_resp.score
-                info.reasoning = results_resp.reasoning
-
-        return info
-    except Exception as exc:
-        logger.error("Failed to get evaluation %s: %s", evaluation_id, exc)
-        return None
-
-
-# ---------------------------------------------------------------------------
-# LangGraph node functions
-# ---------------------------------------------------------------------------
-
-
-async def fetch_judges_node(state: EvaluatorState) -> Dict[str, Any]:
-    """Node: fetch the list of available judges."""
-    judges = await asyncio.to_thread(_list_judges)
-    if not judges:
-        return {
-            "judges": [],
-            "step": "error",
-            "error": "No judges found. Create a judge in LayerLens first.",
-            # With add_messages reducer, returning a list APPENDS.
-            "messages": [AIMessage(content="No judges found. Please create a judge in LayerLens first.")],
-        }
-
-    summary = "\n".join(f"  - **{j.name}** (`{j.id}`): {j.goal}" for j in judges)
+    ev = client.trace_evaluations.get(evaluation_id)
+    if ev is None:
+        return {"status": "not_found"}
+    status = ev.status.value if hasattr(ev.status, "value") else str(ev.status)
+    if status != "success":
+        return {"status": status}
+    results = client.trace_evaluations.get_results(id=evaluation_id)
+    if results is None or results.score is None:
+        return {"status": status}
     return {
-        "judges": judges,
-        "step": "fetch_traces",
-        "messages": [AIMessage(content=f"Found {len(judges)} judge(s):\n{summary}")],
+        "status": status,
+        "passed": bool(results.passed),
+        "score": float(results.score),
+        "reasoning": results.reasoning,
     }
 
 
-async def fetch_traces_node(state: EvaluatorState) -> Dict[str, Any]:
-    """Node: fetch the most recent traces."""
-    traces = await asyncio.to_thread(_list_traces, 20)
-    if not traces:
-        return {
-            "traces": [],
-            "step": "error",
-            "error": "No traces found. Upload traces to LayerLens first.",
-            "messages": [AIMessage(content="No traces found. Please upload traces first.")],
-        }
-
-    summary = "\n".join(f"  - `{t.id}` ({t.filename}, {t.created_at})" for t in traces[:10])
-    return {
-        "traces": traces,
-        "step": "confirm_judge",
-        "messages": [AIMessage(content=f"Found {len(traces)} recent trace(s). Showing first 10:\n{summary}")],
-    }
-
-
-async def confirm_judge_node(state: EvaluatorState) -> Dict[str, Any]:
-    """Node: ask the human to confirm which judge to use (HITL)."""
-    judges = state.get("judges") or []
-    if not judges:
-        return {"step": "error", "error": "No judges available."}
-
-    # Default to the first judge; the user can override by id or name.
-    default = judges[0]
-    prompt = (
-        f"Which judge should I use? Default: **{default.name}** (`{default.id}`).\n"
-        "Reply with a judge ID or name, or 'ok' to accept the default."
-    )
-
-    # ``copilotkit_interrupt`` (NOT the raw ``langgraph.types.interrupt``)
-    # emits the prompt as an ``AIMessage`` the CopilotKit chat UI renders.
-    # The bare ``interrupt(prompt)`` pattern emits a CUSTOM event the UI
-    # ignores, so the user never sees the confirmation question.
-    answer, _response = copilotkit_interrupt(message=prompt)
-
-    selected = default
-    if answer and answer.strip().lower() != "ok":
-        needle = answer.strip().lower()
-        for j in judges:
-            if needle in (j.id.lower(), j.name.lower()):
-                selected = j
-                break
-
-    return {
-        "selected_judge": selected,
-        "confirmed_judge": selected,
-        "step": "run_evaluations",
-        "messages": [AIMessage(content=f"Using judge **{selected.name}** (`{selected.id}`).")],
-    }
-
-
-async def run_evaluations_node(state: EvaluatorState) -> Dict[str, Any]:
-    """Node: kick off evaluations for every trace with the confirmed judge."""
-    judge = state.get("confirmed_judge")
-    if judge is None:
-        return {"step": "error", "error": "No judge confirmed."}
-
-    results: List[EvaluationInfo] = []
-    for trace in state.get("traces") or []:
-        info = await asyncio.to_thread(_create_evaluation, trace.id, judge.id)
-        if info is not None:
-            results.append(info)
-
-    if not results:
-        return {
-            "evaluations": [],
-            "step": "error",
-            "error": "All evaluation requests failed.",
-            "messages": [AIMessage(content="Failed to create any evaluations.")],
-        }
-
-    return {
-        "evaluations": results,
-        "step": "poll_results",
-        "messages": [AIMessage(content=f"Started {len(results)} evaluation(s) with judge **{judge.name}**.")],
-    }
-
-
-async def poll_results_node(state: EvaluatorState) -> Dict[str, Any]:
-    """Node: poll evaluation results with bounded retries and backoff."""
-    evaluations = state.get("evaluations") or []
-    updated: List[EvaluationInfo] = []
-    for ev in evaluations:
-        refreshed = await asyncio.to_thread(_get_evaluation, ev.evaluation_id)
-        updated.append(refreshed if refreshed is not None else ev)
-
-    finished = [e for e in updated if e.status in ("success", "failure")]
-    pending = [e for e in updated if e.status not in ("success", "failure")]
-
-    lines: List[str] = []
-    for e in finished:
-        verdict = "PASS" if e.passed else "FAIL" if e.passed is not None else "N/A"
-        lines.append(f"  - trace `{e.trace_id}`: {verdict} (score={e.score})")
-    for e in pending:
-        lines.append(f"  - trace `{e.trace_id}`: {e.status}")
-
-    summary = "\n".join(lines) if lines else "(no evaluations)"
-
-    poll_count = state.get("poll_count", 0)
-
-    if not pending or poll_count >= MAX_POLL_ATTEMPTS:
-        if pending:
-            summary += (
-                f"\n\n(Stopped polling after {MAX_POLL_ATTEMPTS} attempts; {len(pending)} evaluation(s) still pending.)"
-            )
-        return {
-            "evaluations": updated,
-            "step": "done",
-            "messages": [AIMessage(
-                content=f"Evaluation results ({len(finished)} done, {len(pending)} pending):\n{summary}"
-            )],
-        }
-
-    # Sleep between polls with exponential backoff to avoid hammering the API.
-    poll_delay = min(
-        POLL_INITIAL_INTERVAL * (POLL_BACKOFF_FACTOR**poll_count),
-        POLL_MAX_INTERVAL,
-    )
-    await asyncio.sleep(poll_delay)
-
-    return {
-        "evaluations": updated,
-        "step": "poll_results",
-        "poll_count": poll_count + 1,
-        "messages": [AIMessage(
-            content=f"Evaluation results ({len(finished)} done, {len(pending)} pending):\n{summary}"
-        )],
-    }
-
-
-async def error_node(state: EvaluatorState) -> Dict[str, Any]:
-    """Terminal node when an error has occurred."""
-    return {"step": "done"}
+# Expose the backend tools for tests and for the server wiring. The
+# ``confirm_judge`` HITL tool is defined on the frontend via
+# ``useCopilotAction`` and bridged into the LLM's toolbelt by
+# ``CopilotKitMiddleware``.
+BACKEND_TOOLS = [
+    list_judges,
+    list_recent_traces,
+    run_trace_evaluation,
+    get_evaluation_result,
+]
 
 
 # ---------------------------------------------------------------------------
-# Routing
+# System prompt — guides the LLM through the evaluation flow
 # ---------------------------------------------------------------------------
 
+SYSTEM_PROMPT = """\
+You are LayerLens's evaluation assistant. Your job is to evaluate the
+user's agent traces against judges and surface the results.
 
-# Routing tokens are distinct from node names to avoid a collision with the
-# ``error`` field on ``EvaluatorState``. LangGraph rejects a node whose name
-# matches a state key on older versions (``'error' is already being used as
-# a state key``); the node name ``handle_error`` sidesteps that while the
-# ``error`` routing token remains purely a conditional-edge key.
-def route_step(state: EvaluatorState) -> str:
-    step = state.get("step")
-    if step == "fetch_traces":
-        return "fetch_traces"
-    if step == "confirm_judge":
-        return "confirm_judge"
-    if step == "run_evaluations":
-        return "run_evaluations"
-    if step == "poll_results":
-        return "poll_results"
-    if step == "error":
-        return "error"
-    return "done"
+When the user asks to evaluate their traces, follow this flow:
 
+1. Call ``list_recent_traces`` to see what traces are available. If the
+   list is empty, tell the user to upload traces first and stop.
+2. Call ``list_judges`` to see the evaluation criteria this project has.
+   If the list is empty, tell the user to create a judge first and stop.
+3. Call the ``confirm_judge`` tool with the full list of candidates from
+   step 2. The frontend renders a picker; wait for the user to choose
+   before continuing. The tool returns the chosen judge's id and name.
+4. For each trace from step 1, call ``run_trace_evaluation(trace_id,
+   judge_id)`` using the id the user picked in step 3.
+5. For each evaluation id returned by step 4, call
+   ``get_evaluation_result`` until its status is ``"success"`` or
+   ``"failure"``. If an evaluation stays ``"pending"`` after several
+   polls, move on and note it as pending in your summary.
+6. Summarise the results in plain English — number of passes, failures,
+   pending — plus any noteworthy reasoning from the judge verdicts.
 
-# ---------------------------------------------------------------------------
-# Build the LangGraph StateGraph
-# ---------------------------------------------------------------------------
-
-
-def build_graph() -> StateGraph:
-    graph = StateGraph(EvaluatorState)
-
-    graph.add_node("fetch_judges", fetch_judges_node)
-    graph.add_node("fetch_traces", fetch_traces_node)
-    graph.add_node("confirm_judge", confirm_judge_node)
-    graph.add_node("run_evaluations", run_evaluations_node)
-    graph.add_node("poll_results", poll_results_node)
-    graph.add_node("handle_error", error_node)
-
-    graph.set_entry_point("fetch_judges")
-
-    graph.add_conditional_edges(
-        "fetch_judges",
-        route_step,
-        {
-            "fetch_traces": "fetch_traces",
-            "error": "handle_error",
-            "done": END,
-        },
-    )
-    graph.add_conditional_edges(
-        "fetch_traces",
-        route_step,
-        {
-            "confirm_judge": "confirm_judge",
-            "error": "handle_error",
-            "done": END,
-        },
-    )
-    graph.add_conditional_edges(
-        "confirm_judge",
-        route_step,
-        {
-            "run_evaluations": "run_evaluations",
-            "error": "handle_error",
-            "done": END,
-        },
-    )
-    graph.add_conditional_edges(
-        "run_evaluations",
-        route_step,
-        {
-            "poll_results": "poll_results",
-            "error": "handle_error",
-            "done": END,
-        },
-    )
-    graph.add_conditional_edges(
-        "poll_results",
-        route_step,
-        {
-            "poll_results": "poll_results",
-            "done": END,
-        },
-    )
-    graph.add_edge("handle_error", END)
-
-    return graph
+Keep chat messages concise. Don't paste raw JSON blobs; use the tool
+widgets to surface structured data.
+"""
 
 
 # ---------------------------------------------------------------------------
-# Checkpointer
+# Build the graph
 # ---------------------------------------------------------------------------
-#
-# A checkpointer is MANDATORY for this graph because ``confirm_judge_node``
-# calls ``interrupt()``. LangGraph uses the checkpointer to persist state at
-# the pause boundary so the run can resume from the same thread later.
-#
-# Without a checkpointer, the resume call (``Command(resume=...)``) produces
-# zero events -- the AG-UI stream never emits ``RUN_FINISHED``, and the
-# CopilotKit frontend then rejects subsequent messages with:
-#
-#   "Cannot send 'RUN_STARTED' while a run is still active. The previous
-#    run must be finished with 'RUN_FINISHED' before starting a new run."
-#
-# This sample uses ``InMemorySaver`` so it runs out-of-the-box with no
-# external dependencies. In-memory checkpoints are lost on process restart,
-# so for any deployment beyond a local demo you MUST swap to a durable
-# checkpointer. See ``samples/copilotkit/README.md`` for the full matrix
-# (Postgres / SQLite / Redis / LangGraph Platform).
-#
-# Quick Postgres swap (requires ``pip install langgraph-checkpoint-postgres``):
-#
-#     from langgraph.checkpoint.postgres import PostgresSaver
-#
-#     DB_URI = "postgresql://user:pass@host:5432/langgraph?sslmode=require"
-#     checkpointer = PostgresSaver.from_conn_string(DB_URI)
-#     checkpointer.setup()   # one-time: creates the checkpoint tables
-#     evaluator_graph = build_graph().compile(checkpointer=checkpointer)
-#
-# Register the Pydantic DTOs on the checkpoint serializer's msgpack allowlist.
-# Without this, LangGraph 1.x emits a ``Deserializing unregistered type``
-# warning every time the graph resumes from a checkpoint, and future releases
-# will refuse to deserialize unregistered types outright. The kwarg is
-# langgraph>=1.0 only -- on older versions we fall back to the default serde,
-# which does not enforce the allowlist.
-_DTOS = (
-    (__name__, "JudgeInfo"),
-    (__name__, "TraceInfo"),
-    (__name__, "EvaluationInfo"),
-)
+
+
+def build_graph(model: Optional[Any] = None):
+    """Construct the evaluator agent graph.
+
+    Pattern matches CopilotKit's ``examples/integrations/langgraph-fastapi``
+    reference and its ``hitl_in_chat_agent.py`` showcase: a ``create_agent``
+    with backend tools, ``CopilotKitMiddleware``, and a system prompt that
+    references a frontend-defined HITL tool (``confirm_judge``).
+
+    Args:
+        model: Override for the underlying chat model. Defaults to
+            ``ChatOpenAI(model="gpt-4o-mini")`` which requires
+            ``OPENAI_API_KEY``. Tests inject a fake model here.
+    """
+    if model is None:
+        model = ChatOpenAI(model="gpt-4o-mini")
+    return create_agent(
+        model=model,
+        tools=BACKEND_TOOLS,
+        middleware=[CopilotKitMiddleware()],
+        system_prompt=SYSTEM_PROMPT,
+    )
+
+
+# Pre-compiled graph for import by the FastAPI server. Customers with
+# ``OPENAI_API_KEY`` set will have this initialised at import time; those
+# without a key can still inspect ``BACKEND_TOOLS`` and ``SYSTEM_PROMPT``
+# without instantiating the model.
 try:
-    _serde = JsonPlusSerializer(allowed_msgpack_modules=_DTOS)
-except TypeError:
-    _serde = JsonPlusSerializer()
-checkpointer = InMemorySaver(serde=_serde)
-evaluator_graph = build_graph().compile(checkpointer=checkpointer)
-
-
-# ---------------------------------------------------------------------------
-# _build_langgraph_agui_agent -- local workarounds for ag-ui-langgraph bugs
-# ---------------------------------------------------------------------------
-#
-# Two upstream bugs live in ``ag_ui_langgraph.LangGraphAgent`` (inherited
-# unchanged by ``copilotkit.LangGraphAGUIAgent``). Both surface in the
-# browser as the same error text:
-#
-#   RUN_ERROR {code: "INCOMPLETE_STREAM",
-#              message: "Cannot send 'RUN_STARTED' while a run is still
-#                        active. The previous run must be finished with
-#                        'RUN_FINISHED' before starting a new run."}
-#
-# (a) runId overwrite -- tracked at ag-ui-protocol/ag-ui#1582:
-#     ``_handle_stream_events`` overwrites ``self.active_run["id"]`` with
-#     each LangGraph event's internal chain ``run_id`` (agent.py:286).
-#     ``RUN_FINISHED`` is then emitted with LangGraph's UUID instead of
-#     ``input.run_id``. On older ``@copilotkit/runtime`` versions that
-#     correlated active runs by runId, this alone caused the frontend to
-#     treat the run as unterminated.
-#
-# (b) duplicate RUN_STARTED in the ``has_active_interrupts`` branch --
-#     tracked at ag-ui-protocol/ag-ui#1584:
-#     When a request arrives on a thread whose graph is already paused at
-#     an ``interrupt()`` and the request does NOT carry
-#     ``forwardedProps.command.resume``, the server emits TWO ``RUN_STARTED``
-#     events in one SSE stream -- one from ``_handle_stream_events`` (line
-#     209), another from ``prepare_stream``'s ``events_to_dispatch`` list
-#     (line 493). The server's own AG-UI encoder validator catches this
-#     and converts the violation into a ``RUN_ERROR`` with the exact
-#     "Cannot send 'RUN_STARTED' ..." message, terminating the stream
-#     before ``RUN_FINISHED`` is dispatched. This is what surfaces on
-#     ``@ag-ui/client@0.0.52`` (the newer protocol-state validator), which
-#     has dropped runId correlation but strictly enforces the within-
-#     stream start/finish invariant.
-#
-# Both bugs are addressed by filtering the event stream at the agent
-# boundary: drop any RUN_STARTED after the first, and re-stamp
-# ``input.run_id`` on terminal events. Remove this subclass once both
-# upstream fixes land and the fixed ``ag-ui-langgraph`` release is pinned
-# in this sample's requirements.
-
-
-# Versions known to exhibit the two workaround-ed bugs. Update this range
-# each time we re-verify against a newer release. Outside the range we emit
-# a warning so silent behavior drift doesn't hide a regression.
-_AG_UI_LANGGRAPH_TESTED_MIN = "0.0.22"
-_AG_UI_LANGGRAPH_TESTED_MAX = "0.0.34"
-
-
-def build_agui_agent(**kwargs):
-    """Build the CopilotKit LangGraph agent wrapper for this evaluator.
-
-    Wraps ``copilotkit.LangGraphAGUIAgent`` with two workarounds for
-    upstream ``ag-ui-langgraph`` protocol bugs:
-
-    1. ``runId`` overwrite -- ``RUN_FINISHED`` is emitted with LangGraph's
-       internal chain ``run_id`` instead of ``input.run_id``. Tracked at
-       ``ag-ui-protocol/ag-ui#1582``.
-    2. Duplicate ``RUN_STARTED`` -- the ``has_active_interrupts`` branch
-       of ``prepare_stream`` appends a second ``RunStartedEvent`` after
-       ``_handle_stream_events`` already emitted one, tripping the AG-UI
-       within-stream invariant and surfacing as
-       ``RUN_ERROR / INCOMPLETE_STREAM`` in the browser. Tracked at
-       ``ag-ui-protocol/ag-ui#1584``.
-
-    Both workarounds filter at the agent boundary: drop any
-    ``RUN_STARTED`` after the first in a stream, and re-stamp
-    ``input.run_id`` on terminal events. Remove once both upstream
-    issues ship a fix and the fixed release is pinned in
-    ``samples/copilotkit/tests/browser/backend/requirements.txt``.
-
-    The wrapper is built lazily (inside this factory) so the sample
-    module imports cleanly without ``copilotkit`` / ``ag_ui_langgraph``
-    installed -- users who only want to inspect the graph don't need
-    the full runtime stack.
-
-    **Resume on HITL**: the frontend is responsible for sending
-    ``forwardedProps.command.resume`` when the user responds to an
-    ``interrupt()``. This sample's frontend uses
-    ``@copilotkit/react-core``'s ``useLangGraphInterrupt`` hook to
-    render the prompt and ``resolve(...)`` the user's answer; see
-    ``samples/copilotkit/tests/browser/frontend/app/page.tsx`` for the
-    wiring. Without such a hook (e.g. plain ``<CopilotChat>`` with no
-    interrupt handler), the graph will stay paused at ``interrupt()`` --
-    this is expected AG-UI protocol behavior, not a bug.
-    """
-    from typing import Optional as _Optional
-
-    import ag_ui_langgraph as _ag_ui_langgraph
-    from ag_ui.core import EventType
-    from copilotkit import LangGraphAGUIAgent
-
-    _version_guard_ag_ui_langgraph(getattr(_ag_ui_langgraph, "__version__", None))
-
-    class _StratixAgUiWorkarounds(LangGraphAGUIAgent):
-        def __init__(self, **inner_kwargs):
-            super().__init__(**inner_kwargs)
-            self._client_run_id: _Optional[str] = None
-
-        async def run(self, input):
-            self._client_run_id = input.run_id
-            run_started_emitted = False
-            async for event in super().run(input):
-                event_type = getattr(event, "type", None)
-
-                # Workaround (2): drop duplicate RUN_STARTED.
-                if event_type == EventType.RUN_STARTED:
-                    if run_started_emitted:
-                        continue
-                    run_started_emitted = True
-
-                # Workaround (1): restore client-supplied runId on
-                # terminal events.
-                if event_type in (EventType.RUN_FINISHED, EventType.RUN_ERROR):
-                    if self._client_run_id and hasattr(event, "run_id"):
-                        event.run_id = self._client_run_id
-
-                yield event
-
-    return _StratixAgUiWorkarounds(**kwargs)
-
-
-def _version_guard_ag_ui_langgraph(version: Optional[str]) -> None:
-    """Warn if the installed ``ag-ui-langgraph`` is outside the tested range.
-
-    The workarounds in :func:`build_agui_agent` reach into private-looking
-    internals of the upstream event-dispatch loop. If ``ag-ui-langgraph``
-    restructures those internals, the filter could silently become a
-    no-op. This guard surfaces that risk without breaking imports.
-    """
-    if not version:
-        return
-    try:
-        parsed = tuple(int(p) for p in version.split(".")[:3])
-        tested_min = tuple(int(p) for p in _AG_UI_LANGGRAPH_TESTED_MIN.split("."))
-        tested_max = tuple(int(p) for p in _AG_UI_LANGGRAPH_TESTED_MAX.split("."))
-    except (ValueError, AttributeError):
-        return
-    if parsed < tested_min or parsed > tested_max:
-        import warnings as _warnings
-
-        _warnings.warn(
-            f"ag-ui-langgraph=={version} is outside the range this sample's "
-            f"workarounds were verified against "
-            f"[{_AG_UI_LANGGRAPH_TESTED_MIN}..{_AG_UI_LANGGRAPH_TESTED_MAX}]. "
-            "If you hit RUN_ERROR / INCOMPLETE_STREAM in the browser, the "
-            "upstream bugs may have been fixed (remove the workaround) or "
-            "changed shape (update the workaround).",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-
-
-# Backwards-compatible alias so any in-process callers that imported the
-# old private name keep working during the rename window. No customer
-# has the old sample; this is purely a safety net for internal tests.
-_build_langgraph_agui_agent = build_agui_agent
+    evaluator_graph = build_graph()
+except Exception as exc:  # pragma: no cover — informative import-time guard
+    logger.warning(
+        "Could not build default evaluator_graph (%s). Set OPENAI_API_KEY "
+        "or call build_graph(model=<your_model>) explicitly.",
+        exc,
+    )
+    evaluator_graph = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -694,16 +281,18 @@ def main() -> None:
     print("Evaluator Agent (LayerLens SDK)")
     print("=" * 40)
     print()
-    print("This module exposes a LangGraph + CopilotKit agent that:")
-    print("  1. Lists LayerLens judges")
-    print("  2. Lists recent traces")
-    print("  3. Asks the operator to confirm a judge (human-in-the-loop)")
-    print("  4. Runs evaluations for each trace")
-    print("  5. Polls for results")
+    print("A CopilotKit + LangGraph agent that:")
+    print("  1. Fetches recent LayerLens traces.")
+    print("  2. Fetches available judges (evaluation criteria).")
+    print("  3. Uses a frontend `confirm_judge` tool to ask the user")
+    print("     which judge to apply (rendered via useCopilotAction).")
+    print("  4. Runs evaluations and summarises the results.")
     print()
-    print("Import `evaluator_graph` and wire it into your CopilotKit server.")
+    print("Import `evaluator_graph` into your CopilotKit FastAPI server.")
     print()
-    print("Required env var: LAYERLENS_STRATIX_API_KEY")
+    print("Required env vars:")
+    print("  LAYERLENS_STRATIX_API_KEY  — LayerLens API key")
+    print("  OPENAI_API_KEY             — LLM for the agent")
 
 
 if __name__ == "__main__":
