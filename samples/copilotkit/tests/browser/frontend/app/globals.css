@@ -24,10 +24,75 @@ body {
   border-bottom: 1px solid #1d222d;
   font-size: 14px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.harness-start-button {
+  padding: 4px 12px;
+  border: 1px solid #2f3747;
+  background: #1f2a3a;
+  color: #e6e8ee;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.harness-start-button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .harness-chat {
   flex: 1;
   min-height: 0;
   /* CopilotChat fills whatever height/width its container provides. */
+}
+
+.harness-interrupt {
+  border: 1px solid #2f3747;
+  background: #10151f;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.harness-interrupt-prompt {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.harness-interrupt-row {
+  display: flex;
+  gap: 8px;
+}
+
+.harness-interrupt-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #2f3747;
+  background: #0b0d12;
+  color: #e6e8ee;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.harness-interrupt-submit {
+  padding: 6px 14px;
+  border: 1px solid #2f3747;
+  background: #1f2a3a;
+  color: #e6e8ee;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.harness-interrupt-submit:hover {
+  background: #2a3a4e;
 }

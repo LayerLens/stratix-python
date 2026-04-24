@@ -578,7 +578,7 @@ def build_agui_agent(**kwargs):
     """Build the CopilotKit LangGraph agent wrapper for this evaluator.
 
     Wraps ``copilotkit.LangGraphAGUIAgent`` with two workarounds for
-    currently-upstream bugs in ``ag-ui-langgraph``:
+    upstream ``ag-ui-langgraph`` protocol bugs:
 
     1. ``runId`` overwrite -- ``RUN_FINISHED`` is emitted with LangGraph's
        internal chain ``run_id`` instead of ``input.run_id``. Tracked at
@@ -590,16 +590,26 @@ def build_agui_agent(**kwargs):
        ``RUN_ERROR / INCOMPLETE_STREAM`` in the browser. Tracked at
        ``ag-ui-protocol/ag-ui#1584``.
 
-    Both workarounds filter the event stream at the agent boundary: drop
-    any ``RUN_STARTED`` after the first, and re-stamp ``input.run_id`` on
-    terminal events. Remove this wrapper once both upstream issues ship
-    a fix and the fixed ``ag-ui-langgraph`` release is pinned in
+    Both workarounds filter at the agent boundary: drop any
+    ``RUN_STARTED`` after the first in a stream, and re-stamp
+    ``input.run_id`` on terminal events. Remove once both upstream
+    issues ship a fix and the fixed release is pinned in
     ``samples/copilotkit/tests/browser/backend/requirements.txt``.
 
-    The wrapper is built lazily (inside this factory) so the sample module
-    imports cleanly without ``copilotkit`` / ``ag_ui_langgraph`` installed
-    -- users who only want to inspect the graph don't need the full
-    runtime stack.
+    The wrapper is built lazily (inside this factory) so the sample
+    module imports cleanly without ``copilotkit`` / ``ag_ui_langgraph``
+    installed -- users who only want to inspect the graph don't need
+    the full runtime stack.
+
+    **Resume on HITL**: the frontend is responsible for sending
+    ``forwardedProps.command.resume`` when the user responds to an
+    ``interrupt()``. This sample's frontend uses
+    ``@copilotkit/react-core``'s ``useLangGraphInterrupt`` hook to
+    render the prompt and ``resolve(...)`` the user's answer; see
+    ``samples/copilotkit/tests/browser/frontend/app/page.tsx`` for the
+    wiring. Without such a hook (e.g. plain ``<CopilotChat>`` with no
+    interrupt handler), the graph will stay paused at ``interrupt()`` --
+    this is expected AG-UI protocol behavior, not a bug.
     """
     from typing import Optional as _Optional
 
@@ -620,17 +630,14 @@ def build_agui_agent(**kwargs):
             async for event in super().run(input):
                 event_type = getattr(event, "type", None)
 
-                # (2) Drop duplicate RUN_STARTED so the AG-UI invariant
-                # "no second RUN_STARTED without an intervening
-                # RUN_FINISHED" is preserved within a single stream.
+                # Workaround (2): drop duplicate RUN_STARTED.
                 if event_type == EventType.RUN_STARTED:
                     if run_started_emitted:
                         continue
                     run_started_emitted = True
 
-                # (1) Restore client-supplied runId on terminal events so
-                # downstream consumers that correlate by runId see matched
-                # start/finish pairs.
+                # Workaround (1): restore client-supplied runId on
+                # terminal events.
                 if event_type in (EventType.RUN_FINISHED, EventType.RUN_ERROR):
                     if self._client_run_id and hasattr(event, "run_id"):
                         event.run_id = self._client_run_id
