@@ -1525,22 +1525,37 @@ class TestAllSamplesWithMockedSDK:
             assert started, (
                 f"No RUN_STARTED emitted. Raw stream: {raw[:500]!r}"
             )
+            # Regression for upstream bug (b): has_active_interrupts path
+            # emits a duplicate RUN_STARTED which trips @ag-ui/client's
+            # within-stream invariant and converts to RUN_ERROR /
+            # INCOMPLETE_STREAM before RUN_FINISHED can be dispatched.
+            assert len(started) == 1, (
+                f"Expected exactly one RUN_STARTED per stream, got "
+                f"{len(started)}: {started}. Duplicate RUN_STARTED violates "
+                f"the AG-UI within-stream invariant and trips "
+                f"@ag-ui/client@>=0.0.52's validator. The workaround in "
+                f"evaluator_agent.py should drop duplicates at the agent "
+                f"boundary -- either the workaround broke or it was bypassed."
+            )
+            assert not errors, (
+                f"RUN_ERROR emitted: {errors}. Raw stream: {raw[:500]!r}"
+            )
             assert finished, (
                 f"No RUN_FINISHED emitted -- AG-UI stream did not terminate "
                 f"cleanly. RUN_STARTED={started}, RUN_ERROR={errors}. "
                 f"Raw stream: {raw[:500]!r}"
             )
+            # Regression for upstream bug (a), ag-ui-protocol/ag-ui#1582.
             assert all(rid == client_run_id for rid in started), (
                 f"RUN_STARTED.runId mismatch: expected all={client_run_id!r}, "
-                f"got {started}. This would be a new bug -- not the one we "
-                f"workaround."
+                f"got {started}."
             )
             assert all(rid == client_run_id for rid in finished), (
                 f"RUN_FINISHED.runId mismatch: expected all={client_run_id!r}, "
                 f"got {finished}. This is the ag-ui-protocol/ag-ui#1582 bug. "
-                f"The RunIdPreservingAgent workaround in evaluator_agent.py "
-                f"should preserve input.run_id on terminal events -- either "
-                f"the workaround broke or it was bypassed."
+                f"The runId workaround should preserve input.run_id on "
+                f"terminal events -- either the workaround broke or it "
+                f"was bypassed."
             )
         finally:
             sys.modules.pop(mod_name, None)

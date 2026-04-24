@@ -525,31 +525,50 @@ evaluator_graph = build_graph().compile(checkpointer=checkpointer)
 
 
 # ---------------------------------------------------------------------------
-# RunIdPreservingAgent -- local workaround for ag-ui-protocol/ag-ui#1582
+# _build_langgraph_agui_agent -- local workarounds for ag-ui-langgraph bugs
 # ---------------------------------------------------------------------------
 #
-# Upstream bug: ``ag_ui_langgraph.LangGraphAgent._handle_stream_events``
-# (inherited by ``copilotkit.LangGraphAGUIAgent``) overwrites
-# ``self.active_run["id"]`` on every LangGraph event with the event's
-# internal chain ``run_id``. By the time ``RUN_FINISHED`` is dispatched,
-# ``active_run["id"]`` is LangGraph's UUID -- not the ``input.run_id``
-# the client supplied. ``@copilotkit/runtime`` tracks active runs by
-# the client runId, so the mismatch surfaces in the browser as:
+# Two upstream bugs live in ``ag_ui_langgraph.LangGraphAgent`` (inherited
+# unchanged by ``copilotkit.LangGraphAGUIAgent``). Both surface in the
+# browser as the same error text:
 #
 #   RUN_ERROR {code: "INCOMPLETE_STREAM",
 #              message: "Cannot send 'RUN_STARTED' while a run is still
 #                        active. The previous run must be finished with
 #                        'RUN_FINISHED' before starting a new run."}
 #
-# We restore ``input.run_id`` on terminal events so the AG-UI protocol
-# state machine can correlate the stream closure. Remove this subclass
-# once https://github.com/ag-ui-protocol/ag-ui/issues/1582 ships and
-# the fixed ``ag-ui-langgraph`` release is pinned in this sample's
-# requirements.
+# (a) runId overwrite -- tracked at ag-ui-protocol/ag-ui#1582:
+#     ``_handle_stream_events`` overwrites ``self.active_run["id"]`` with
+#     each LangGraph event's internal chain ``run_id`` (agent.py:286).
+#     ``RUN_FINISHED`` is then emitted with LangGraph's UUID instead of
+#     ``input.run_id``. On older ``@copilotkit/runtime`` versions that
+#     correlated active runs by runId, this alone caused the frontend to
+#     treat the run as unterminated.
+#
+# (b) duplicate RUN_STARTED in the ``has_active_interrupts`` branch --
+#     tracked at ag-ui-protocol/ag-ui#1583:
+#     When a request arrives on a thread whose graph is already paused at
+#     an ``interrupt()`` and the request does NOT carry
+#     ``forwardedProps.command.resume``, the server emits TWO ``RUN_STARTED``
+#     events in one SSE stream -- one from ``_handle_stream_events`` (line
+#     209), another from ``prepare_stream``'s ``events_to_dispatch`` list
+#     (line 493). The server's own AG-UI encoder validator catches this
+#     and converts the violation into a ``RUN_ERROR`` with the exact
+#     "Cannot send 'RUN_STARTED' ..." message, terminating the stream
+#     before ``RUN_FINISHED`` is dispatched. This is what surfaces on
+#     ``@ag-ui/client@0.0.52`` (the newer protocol-state validator), which
+#     has dropped runId correlation but strictly enforces the within-
+#     stream start/finish invariant.
+#
+# Both bugs are addressed by filtering the event stream at the agent
+# boundary: drop any RUN_STARTED after the first, and re-stamp
+# ``input.run_id`` on terminal events. Remove this subclass once both
+# upstream fixes land and the fixed ``ag-ui-langgraph`` release is pinned
+# in this sample's requirements.
 
 
 def _build_langgraph_agui_agent(**kwargs):
-    """Factory for the CopilotKit agent wrapper with the runId workaround.
+    """Factory for the CopilotKit agent wrapper with runId + dedup workarounds.
 
     Kept as a factory (rather than a module-level class import) so the
     sample imports cleanly even when ``copilotkit`` / ``ag_ui_langgraph``
@@ -561,27 +580,35 @@ def _build_langgraph_agui_agent(**kwargs):
     from ag_ui.core import EventType
     from copilotkit import LangGraphAGUIAgent
 
-    class RunIdPreservingAgent(LangGraphAGUIAgent):
+    class _StratixAgUiWorkarounds(LangGraphAGUIAgent):
         def __init__(self, **inner_kwargs):
             super().__init__(**inner_kwargs)
             self._client_run_id: _Optional[str] = None
 
         async def run(self, input):
             self._client_run_id = input.run_id
-            async for ev in super().run(input):
-                yield ev
+            run_started_emitted = False
+            async for event in super().run(input):
+                event_type = getattr(event, "type", None)
 
-        def _dispatch_event(self, event):
-            event_type = getattr(event, "type", None)
-            if (
-                event_type in (EventType.RUN_FINISHED, EventType.RUN_ERROR)
-                and self._client_run_id
-                and hasattr(event, "run_id")
-            ):
-                event.run_id = self._client_run_id
-            return super()._dispatch_event(event)
+                # (b) Drop duplicate RUN_STARTED so the AG-UI protocol
+                # invariant "no second RUN_STARTED without an intervening
+                # RUN_FINISHED" is preserved within a single stream.
+                if event_type == EventType.RUN_STARTED:
+                    if run_started_emitted:
+                        continue
+                    run_started_emitted = True
 
-    return RunIdPreservingAgent(**kwargs)
+                # (a) Restore client-supplied runId on terminal events so
+                # downstream consumers that correlate by runId see matched
+                # start/finish pairs.
+                if event_type in (EventType.RUN_FINISHED, EventType.RUN_ERROR):
+                    if self._client_run_id and hasattr(event, "run_id"):
+                        event.run_id = self._client_run_id
+
+                yield event
+
+    return _StratixAgUiWorkarounds(**kwargs)
 
 
 # ---------------------------------------------------------------------------
