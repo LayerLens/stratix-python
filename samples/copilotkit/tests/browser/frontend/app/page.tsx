@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CopilotChat } from "@copilotkit/react-ui";
 import { useCopilotAction, useCopilotChat } from "@copilotkit/react-core";
 import { TextMessage, Role } from "@copilotkit/runtime-client-gql";
@@ -119,23 +120,171 @@ export default function Page() {
     );
   };
 
+  // Diagnostic panel: probes the runtime, the textarea state, and any
+  // error banners, then renders a JSON dump on the page so it can be
+  // read without copy/paste from DevTools. Click "Run diagnostic" to
+  // populate it.
+  const [diag, setDiag] = useState<string>("");
+  const runDiagnostic = async () => {
+    setDiag("running...");
+    try {
+      const info = await fetch("/api/copilotkit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ method: "info", params: {}, id: 1 }),
+      })
+        .then((r) => r.json())
+        .catch((e) => ({ error: String(e) }));
+
+      const ta = document.querySelector(
+        'textarea[placeholder*="message" i]'
+      ) as HTMLTextAreaElement | null;
+      const send = (
+        Array.from(document.querySelectorAll("button")) as HTMLButtonElement[]
+      ).find((b) => b.getAttribute("aria-label") === "Send");
+
+      const banners = (
+        Array.from(
+          document.querySelectorAll(
+            '[role=alert],[class*="banner" i],[class*="error" i]'
+          )
+        ) as HTMLElement[]
+      )
+        .map((el) => ({
+          cls: el.className,
+          txt: (el.textContent || "").trim().slice(0, 200),
+        }))
+        .filter((b) => b.txt);
+
+      const taBox = ta ? ta.getBoundingClientRect() : null;
+      const sendBox = send ? send.getBoundingClientRect() : null;
+
+      // Try sending a real message via the hook to see what the runtime
+      // returns. We intercept fetch to capture the body and response.
+      const captured: Array<{ url: string; status: number; body: string }> = [];
+      const origFetch = window.fetch;
+      window.fetch = async (...args) => {
+        const resp = await origFetch.apply(window, args as Parameters<typeof fetch>);
+        const url =
+          typeof args[0] === "string"
+            ? args[0]
+            : (args[0] as Request | URL).toString();
+        if (url.includes("/api/copilotkit")) {
+          const clone = resp.clone();
+          const body = await clone
+            .text()
+            .catch(() => "<unreadable>");
+          captured.push({
+            url,
+            status: clone.status,
+            body: body.slice(0, 600),
+          });
+        }
+        return resp;
+      };
+      try {
+        await appendMessage(
+          new TextMessage({
+            role: Role.User,
+            content: "Diagnostic: hello.",
+          })
+        );
+      } catch (err) {
+        captured.push({
+          url: "<exception>",
+          status: 0,
+          body: String(err).slice(0, 400),
+        });
+      }
+      // Give it a moment to fire
+      await new Promise((r) => setTimeout(r, 1500));
+      window.fetch = origFetch;
+
+      const report = {
+        runtime_info: info,
+        textarea: ta
+          ? {
+              disabled: ta.disabled,
+              readonly: ta.readOnly,
+              pointer_events: getComputedStyle(ta).pointerEvents,
+              display: getComputedStyle(ta).display,
+              visibility: getComputedStyle(ta).visibility,
+              size: taBox && {
+                w: Math.round(taBox.width),
+                h: Math.round(taBox.height),
+              },
+            }
+          : "NO TEXTAREA",
+        send_button: send
+          ? {
+              disabled: send.disabled,
+              testid: send.getAttribute("data-test-id"),
+              size: sendBox && {
+                w: Math.round(sendBox.width),
+                h: Math.round(sendBox.height),
+              },
+            }
+          : "NO SEND",
+        banners,
+        appendMessage_state: {
+          isLoading,
+        },
+        post_calls_during_appendMessage: captured,
+      };
+      setDiag(JSON.stringify(report, null, 2));
+    } catch (err) {
+      setDiag("ERROR: " + String(err));
+    }
+  };
+
   return (
     <main className="harness-shell" data-testid="harness-root">
       <header className="harness-header">
         <span>
           LayerLens Evaluator (agent: <code>evaluator</code>)
         </span>
-        <button
-          type="button"
-          data-testid="harness-start"
-          className="harness-start-button"
-          onClick={sendEvaluate}
-          disabled={isLoading}
-          title="Send the initial evaluation request"
-        >
-          {isLoading ? "Running..." : "Evaluate my traces"}
-        </button>
+        <span style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            data-testid="harness-diag"
+            className="harness-start-button"
+            onClick={runDiagnostic}
+            title="Run a diagnostic and show results below"
+          >
+            Run diagnostic
+          </button>
+          <button
+            type="button"
+            data-testid="harness-start"
+            className="harness-start-button"
+            onClick={sendEvaluate}
+            disabled={isLoading}
+            title="Send the initial evaluation request"
+          >
+            {isLoading ? "Running..." : "Evaluate my traces"}
+          </button>
+        </span>
       </header>
+      {diag ? (
+        <pre
+          data-testid="harness-diag-output"
+          style={{
+            background: "#0b0d12",
+            color: "#b3b9c5",
+            padding: "12px 16px",
+            margin: 0,
+            fontSize: 12,
+            lineHeight: 1.4,
+            maxHeight: "40vh",
+            overflow: "auto",
+            borderBottom: "1px solid #1d222d",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {diag}
+        </pre>
+      ) : null}
       <div className="harness-chat" data-testid="harness-chat">
         <CopilotChat
           labels={{
