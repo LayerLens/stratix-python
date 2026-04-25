@@ -43,6 +43,7 @@ from copilotkit import CopilotKitMiddleware
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
 
 from layerlens import Stratix
 
@@ -233,6 +234,35 @@ widgets to surface structured data.
 # ---------------------------------------------------------------------------
 
 
+def _default_model() -> Any:
+    """Build the default chat model from environment variables.
+
+    The sample accepts any OpenAI-compatible endpoint, not just OpenAI
+    itself. Set the env vars below to point ``ChatOpenAI`` at your
+    provider of choice:
+
+    | Provider              | env vars                                         |
+    | --------------------- | ------------------------------------------------ |
+    | OpenAI (default)      | ``OPENAI_API_KEY``                               |
+    | OpenRouter            | ``OPENAI_API_KEY``, ``OPENAI_BASE_URL=https://openrouter.ai/api/v1``, ``OPENAI_MODEL=openai/gpt-4o-mini`` |
+    | Ollama (local)        | ``OPENAI_BASE_URL=http://localhost:11434/v1``, ``OPENAI_MODEL=llama3.1``, ``OPENAI_API_KEY=ollama`` |
+    | LM Studio (local)     | ``OPENAI_BASE_URL=http://localhost:1234/v1``, ``OPENAI_MODEL=<your loaded model>``, ``OPENAI_API_KEY=lm-studio`` |
+    | vLLM, llama.cpp, etc. | Same shape -- any OpenAI-compatible base URL.    |
+
+    For non-OpenAI-compatible models (Anthropic, Google, etc.) pass the
+    relevant LangChain ``BaseChatModel`` directly via
+    ``build_graph(model=ChatAnthropic(...))``.
+    """
+    kwargs: Dict[str, Any] = {
+        "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+    }
+    if api_key := os.environ.get("OPENAI_API_KEY"):
+        kwargs["api_key"] = api_key
+    if base_url := os.environ.get("OPENAI_BASE_URL"):
+        kwargs["base_url"] = base_url
+    return ChatOpenAI(**kwargs)
+
+
 def build_graph(model: Optional[Any] = None):
     """Construct the evaluator agent graph.
 
@@ -243,16 +273,26 @@ def build_graph(model: Optional[Any] = None):
 
     Args:
         model: Override for the underlying chat model. Defaults to
-            ``ChatOpenAI(model="gpt-4o-mini")`` which requires
-            ``OPENAI_API_KEY``. Tests inject a fake model here.
+            ``_default_model()`` which honours ``OPENAI_API_KEY``,
+            ``OPENAI_BASE_URL``, and ``OPENAI_MODEL`` so any
+            OpenAI-compatible endpoint works (Ollama, LM Studio,
+            OpenRouter, vLLM, ...). Tests inject a fake model here.
     """
     if model is None:
-        model = ChatOpenAI(model="gpt-4o-mini")
+        model = _default_model()
     return create_agent(
         model=model,
         tools=BACKEND_TOOLS,
         middleware=[CopilotKitMiddleware()],
         system_prompt=SYSTEM_PROMPT,
+        # ag-ui-langgraph's endpoint calls ``graph.aget_state(config)``
+        # to look up per-thread state on each request -- which fails
+        # with "No checkpointer set" if the graph wasn't compiled with
+        # one. Even though this sample doesn't use ``interrupt()``, the
+        # checkpointer is required for the AG-UI wire path. Production
+        # deployments should swap to a durable saver (Postgres, SQLite,
+        # Redis, LangGraph Platform).
+        checkpointer=InMemorySaver(),
     )
 
 
@@ -269,6 +309,61 @@ except Exception as exc:  # pragma: no cover — informative import-time guard
         exc,
     )
     evaluator_graph = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# build_agui_agent — minimal runId workaround for ag-ui-langgraph#1582
+# ---------------------------------------------------------------------------
+#
+# ``ag_ui_langgraph.LangGraphAgent._handle_stream_events`` (inherited by
+# ``copilotkit.LangGraphAGUIAgent``) overwrites ``self.active_run["id"]``
+# with each LangGraph event's internal chain ``run_id``, so the eventual
+# ``RUN_FINISHED`` is emitted with LangGraph's UUID instead of
+# ``input.run_id``. Tracked at
+# https://github.com/ag-ui-protocol/ag-ui/issues/1582.
+#
+# The current ``@ag-ui/client@0.0.52`` validator does NOT enforce runId
+# continuity (only within-stream start/finish ordering), so this
+# mismatch isn't user-visible today. But: older clients did enforce it,
+# future strict ones likely will, and a paying customer's logs
+# shouldn't carry an obvious protocol violation. So this thin subclass
+# restores ``input.run_id`` on terminal events.
+#
+# This is the ONLY workaround needed for the current evaluator
+# architecture. Bug #1584 (duplicate RUN_STARTED in the
+# ``has_active_interrupts`` path) is not reachable here because the
+# evaluator does not call ``langgraph.types.interrupt()`` -- HITL is
+# handled by a frontend tool (``confirm_judge``) instead.
+#
+# Remove this subclass once #1582 ships and the fixed
+# ``ag-ui-langgraph`` release is pinned in ``requirements.lock``.
+
+
+def build_agui_agent(**kwargs):
+    """Build a ``LangGraphAGUIAgent`` with the runId workaround applied."""
+    from typing import Optional as _Optional
+
+    from ag_ui.core import EventType
+    from copilotkit import LangGraphAGUIAgent
+
+    class _RunIdPreserving(LangGraphAGUIAgent):
+        def __init__(self, **inner_kwargs):
+            super().__init__(**inner_kwargs)
+            self._client_run_id: _Optional[str] = None
+
+        async def run(self, input):
+            self._client_run_id = input.run_id
+            async for event in super().run(input):
+                event_type = getattr(event, "type", None)
+                if (
+                    event_type in (EventType.RUN_FINISHED, EventType.RUN_ERROR)
+                    and self._client_run_id
+                    and hasattr(event, "run_id")
+                ):
+                    event.run_id = self._client_run_id
+                yield event
+
+    return _RunIdPreserving(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -291,8 +386,16 @@ def main() -> None:
     print("Import `evaluator_graph` into your CopilotKit FastAPI server.")
     print()
     print("Required env vars:")
-    print("  LAYERLENS_STRATIX_API_KEY  — LayerLens API key")
-    print("  OPENAI_API_KEY             — LLM for the agent")
+    print("  LAYERLENS_STRATIX_API_KEY  -- LayerLens API key")
+    print("  OPENAI_API_KEY             -- credentials for the LLM")
+    print()
+    print("Optional (for non-OpenAI endpoints):")
+    print("  OPENAI_BASE_URL  -- any OpenAI-compatible base URL")
+    print("                      (Ollama, LM Studio, OpenRouter, vLLM, ...)")
+    print("  OPENAI_MODEL     -- model name override (default: gpt-4o-mini)")
+    print()
+    print("For non-OpenAI-compatible models, call build_graph(model=...)")
+    print("with any LangChain BaseChatModel (ChatAnthropic, ChatGoogle, ...).")
 
 
 if __name__ == "__main__":

@@ -283,15 +283,37 @@ choose, then runs the evaluations and summarises the results.
 ## Tests
 
 ```bash
+# Mocked tests (no API keys needed)
 pytest tests/test_samples_e2e.py -k copilotkit
+
+# Live LLM test (real OpenAI-compatible endpoint exercises the agent
+# end-to-end through the AG-UI FastAPI endpoint and asserts the
+# documented tool-call sequence)
+cp tests/.env.example tests/.env   # then fill in OPENAI_API_KEY (or
+                                   # OPENROUTER_API_KEY for OpenRouter)
+pytest tests/test_samples_e2e.py -k copilotkit -m live
 ```
 
-Exercises the backend tools with a patched Stratix client and verifies
-the graph imports cleanly with mocked heavy deps. The browser harness
-under `samples/copilotkit/tests/browser/` is for manual verification in
-a real Chrome (Playwright cannot reliably drive CopilotChat's textarea
-in headless mode — separate testability issue tracked at
-[`CopilotKit/CopilotKit#4215`](https://github.com/CopilotKit/CopilotKit/issues/4215)).
+The mocked tests exercise each backend tool with a patched Stratix
+client and verify the graph imports cleanly with mocked heavy deps.
+
+The live test (`test_copilotkit_evaluator_live_llm`) drives the real
+LLM through the FastAPI endpoint and asserts:
+
+- The agent calls `list_recent_traces` -> `list_judges` ->
+  `confirm_judge` in order.
+- It pauses at `confirm_judge` (doesn't proceed to
+  `run_trace_evaluation` until the frontend resolves it).
+- Run lifecycle is clean: one `RUN_STARTED`, one `RUN_FINISHED` with
+  matching `runId`, no `RUN_ERROR`.
+
+The test loads credentials from a gitignored `.env` so local devs and
+CI both work without leaking keys. Skipped when no key is available.
+
+The browser harness under `samples/copilotkit/tests/browser/` is for
+manual verification in a real Chrome (Playwright cannot reliably drive
+CopilotChat's textarea in headless mode — separate testability issue
+tracked at [`CopilotKit/CopilotKit#4215`](https://github.com/CopilotKit/CopilotKit/issues/4215)).
 
 ## Upstream issues (informational)
 
