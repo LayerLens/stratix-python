@@ -18,14 +18,18 @@ export default function RootLayout({
   children: ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body>
         {/*
           ``agent="evaluator"`` matches the key used when wiring the
           LangGraphHttpAgent in ``app/api/copilotkit/route.ts``:
             new CopilotRuntime({ agents: { evaluator: ... } })
         */}
-        <CopilotKit runtimeUrl="/api/copilotkit" agent="evaluator">
+        <CopilotKit
+          runtimeUrl="/api/copilotkit"
+          agent="evaluator"
+          showDevConsole={false}
+        >
           {children}
         </CopilotKit>
       </body>

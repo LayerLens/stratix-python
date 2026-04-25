@@ -23,9 +23,9 @@
       }
     ],
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"],
+      "@layerlens/copilotkit-cards": ["../../../components/index.ts"],
+      "@layerlens/copilotkit-cards/*": ["../../../components/*"]
     }
   },
   "include": [
@@ -33,7 +33,9 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "../../../components/**/*.ts",
+    "../../../components/**/*.tsx"
   ],
   "exclude": [
     "node_modules"
