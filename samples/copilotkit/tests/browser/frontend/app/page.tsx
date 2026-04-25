@@ -83,28 +83,46 @@ export default function Page() {
         <div className="judge-picker" data-testid="judge-picker">
           <p className="judge-picker-prompt">Pick a judge for this evaluation:</p>
           <ul className="judge-picker-list">
-            {candidates.map((judge) => (
-              <li key={judge.id} className="judge-card">
-                <div className="judge-card-head">
-                  <span className="judge-card-name">{judge.name}</span>
-                  <span className="judge-card-id" title="Judge id">
-                    {judge.id}
-                  </span>
-                </div>
-                {judge.goal ? (
-                  <p className="judge-card-goal">{judge.goal}</p>
-                ) : null}
-                <button
-                  type="button"
-                  className="judge-card-select"
-                  data-testid={`judge-card-select-${judge.id}`}
-                  onClick={() => respond?.({ id: judge.id, name: judge.name })}
-                  disabled={!respond}
-                >
-                  Select {judge.name}
-                </button>
-              </li>
-            ))}
+            {candidates.map((judge, index) => {
+              // The LLM occasionally streams partial tool-call args before
+              // the full payload lands (CopilotKit's renderAndWaitForResponse
+              // re-renders progressively as JSON streams in). During that
+              // window ``judge.id`` may be undefined for one tick, which
+              // tripped React's "unique key" warning. Fall back to index
+              // so the warning stays quiet and the row stays stable enough
+              // for the user to click once the args finalise.
+              const id = judge?.id ?? `pending-${index}`;
+              const name = judge?.name ?? "Loading...";
+              const goal = judge?.goal;
+              const ready = Boolean(judge?.id && judge?.name && respond);
+              return (
+                <li key={id} className="judge-card">
+                  <div className="judge-card-head">
+                    <span className="judge-card-name">{name}</span>
+                    {judge?.id ? (
+                      <span className="judge-card-id" title="Judge id">
+                        {judge.id}
+                      </span>
+                    ) : null}
+                  </div>
+                  {goal ? <p className="judge-card-goal">{goal}</p> : null}
+                  <button
+                    type="button"
+                    className="judge-card-select"
+                    data-testid={
+                      judge?.id ? `judge-card-select-${judge.id}` : undefined
+                    }
+                    onClick={() =>
+                      ready &&
+                      respond?.({ id: judge!.id, name: judge!.name })
+                    }
+                    disabled={!ready}
+                  >
+                    {ready ? `Select ${name}` : "Loading..."}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       );
