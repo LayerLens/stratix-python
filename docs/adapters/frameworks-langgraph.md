@@ -110,5 +110,17 @@ For platform-managed BYOK see `docs/adapters/byok.md` (atlas-app M1.B).
 from layerlens.instrument.adapters.frameworks.langgraph import STRATIXLangGraphAdapter
 ```
 
-`STRATIXLangGraphAdapter` is an alias for `LayerLensLangGraphAdapter` and will
-be removed in v2.0.
+`STRATIXLangGraphAdapter` is a deprecated alias for `LayerLensLangGraphAdapter`.
+Accessing the alias raises a `DeprecationWarning` (visible under
+`pytest -W error::DeprecationWarning`) and the symbol will be removed in
+LayerLens v2.0. Update imports to `LayerLensLangGraphAdapter`.
+
+## Pydantic compatibility
+
+LangGraph >= 0.2 inherits `langchain-core`'s **Pydantic v2-only** requirement.
+The adapter declares `requires_pydantic = PydanticCompat.V2_ONLY` on both the
+class attribute and the `info()` / `get_adapter_info()` manifest payload, so
+the catalog UI can warn users before they pin an incompatible runtime.
+Importing `layerlens.instrument.adapters.frameworks.langgraph` under Pydantic
+v1 raises a clear `RuntimeError` rather than letting LangChain raise an
+opaque `ImportError` mid-callback.
