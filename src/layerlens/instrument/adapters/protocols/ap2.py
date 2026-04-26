@@ -20,6 +20,13 @@ from datetime import timezone
 
 UTC = timezone.utc  # Python 3.11+ has datetime.UTC; alias for 3.9/3.10 compat.
 
+from layerlens.instrument.adapters._base.adapter import (
+    AdapterInfo,
+    AdapterStatus,
+    ReplayableTrace,
+    AdapterCapability,
+)
+from layerlens.instrument.adapters.protocols.base import BaseProtocolAdapter
 from layerlens.instrument.adapters.protocols._commerce import (
     IntentMandateInfo,
     PaymentMandateInfo,
@@ -31,14 +38,6 @@ from layerlens.instrument.adapters.protocols._commerce import (
     PaymentReceiptIssuedEvent,
     IntentMandateValidatedEvent,
 )
-
-from layerlens.instrument.adapters._base.adapter import (
-    AdapterInfo,
-    AdapterStatus,
-    ReplayableTrace,
-    AdapterCapability,
-)
-from layerlens.instrument.adapters.protocols.base import BaseProtocolAdapter
 
 logger = logging.getLogger(__name__)
 

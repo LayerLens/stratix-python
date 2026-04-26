@@ -8,7 +8,8 @@ UCP (Universal Commerce Protocol), and A2UI (Agent-to-User Interface).
 from __future__ import annotations
 
 from typing import Optional
-from pydantic import BaseModel, Field
+
+from pydantic import Field, BaseModel
 
 # ---------------------------------------------------------------------------
 # Sub-models
