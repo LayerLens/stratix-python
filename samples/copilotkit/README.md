@@ -51,9 +51,9 @@ cd samples/copilotkit/app/frontend && npm install
 # Credentials — real LayerLens Stratix only; no fake fixture path
 export LAYERLENS_STRATIX_API_KEY=your-stratix-key
 export OPENAI_API_KEY=your-openai-key
-# optional — point at OpenRouter, Ollama, LM Studio, etc.
-export OPENAI_BASE_URL=https://openrouter.ai/api/v1
-export OPENAI_MODEL=openai/gpt-4o-mini
+# optional overrides for any OpenAI-compatible endpoint
+export OPENAI_BASE_URL=https://your-openai-compatible-host/v1
+export OPENAI_MODEL=gpt-4o-mini
 ```
 
 ### Version matrix

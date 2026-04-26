@@ -408,20 +408,19 @@ def _default_model() -> Any:
     """Build the default chat model from environment variables.
 
     The sample accepts any OpenAI-compatible endpoint, not just OpenAI
-    itself. Set the env vars below to point ``ChatOpenAI`` at your
-    provider of choice:
+    itself. Three environment variables shape the call:
 
-    | Provider              | env vars                                         |
-    | --------------------- | ------------------------------------------------ |
-    | OpenAI (default)      | ``OPENAI_API_KEY``                               |
-    | OpenRouter            | ``OPENAI_API_KEY``, ``OPENAI_BASE_URL=https://openrouter.ai/api/v1``, ``OPENAI_MODEL=openai/gpt-4o-mini`` |
-    | Ollama (local)        | ``OPENAI_BASE_URL=http://localhost:11434/v1``, ``OPENAI_MODEL=llama3.1``, ``OPENAI_API_KEY=ollama`` |
-    | LM Studio (local)     | ``OPENAI_BASE_URL=http://localhost:1234/v1``, ``OPENAI_MODEL=<your loaded model>``, ``OPENAI_API_KEY=lm-studio`` |
-    | vLLM, llama.cpp, etc. | Same shape -- any OpenAI-compatible base URL.    |
+    - ``OPENAI_API_KEY`` (required) — credential for the endpoint.
+    - ``OPENAI_BASE_URL`` (optional) — full base URL of an
+      OpenAI-compatible server. Leave unset for OpenAI itself.
+    - ``OPENAI_MODEL`` (optional) — model name to send. Defaults to
+      ``gpt-4o-mini``.
 
-    For non-OpenAI-compatible models (Anthropic, Google, etc.) pass the
-    relevant LangChain ``BaseChatModel`` directly via
-    ``build_graph(model=ChatAnthropic(...))``.
+    Anything that speaks OpenAI's HTTP shape works: hosted gateways,
+    self-hosted inference (Ollama, LM Studio, vLLM, llama.cpp), or
+    private deployments. For non-OpenAI-compatible models (Anthropic,
+    Google, etc.) pass the relevant LangChain ``BaseChatModel``
+    directly via ``build_graph(model=ChatAnthropic(...))``.
     """
     kwargs: Dict[str, Any] = {
         "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
@@ -451,8 +450,8 @@ def build_graph(model: Optional[Any] = None):
         model: Override for the underlying chat model. Defaults to
             ``_default_model()`` which honours ``OPENAI_API_KEY``,
             ``OPENAI_BASE_URL``, and ``OPENAI_MODEL`` so any
-            OpenAI-compatible endpoint works (Ollama, LM Studio,
-            OpenRouter, vLLM, ...). Tests inject a fake model here.
+            OpenAI-compatible endpoint works. Tests inject a fake
+            model here.
     """
     if model is None:
         model = _default_model()
@@ -581,7 +580,7 @@ def main() -> None:
     print()
     print("Optional (for non-OpenAI endpoints):")
     print("  OPENAI_BASE_URL  -- any OpenAI-compatible base URL")
-    print("                      (Ollama, LM Studio, OpenRouter, vLLM, ...)")
+    print("                      (any OpenAI-compatible server)")
     print("  OPENAI_MODEL     -- model name override (default: gpt-4o-mini)")
     print()
     print("For non-OpenAI-compatible models, call build_graph(model=...)")

@@ -1399,9 +1399,9 @@ class TestAllSamplesWithMockedSDK:
         Skipped unless an OpenAI-compatible API key is available. The
         test loader checks (in order):
           - ``OPENAI_API_KEY`` env var (and ``OPENAI_BASE_URL`` /
-            ``OPENAI_MODEL`` overrides for non-OpenAI endpoints)
-          - ``OPENROUTER_API_KEY`` env var (auto-points base URL at
-            OpenRouter)
+            ``OPENAI_MODEL`` overrides for non-OpenAI endpoints — any
+            OpenAI-compatible server works: hosted, on-prem, or local
+            inference)
           - ``.env`` next to this test file
           - ``samples/copilotkit/.env``
 
@@ -1442,18 +1442,12 @@ class TestAllSamplesWithMockedSDK:
                     k, _, v = line.partition("=")
                     os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
-        # Auto-configure OpenRouter if that's the only key we have.
-        openrouter = os.environ.get("OPENROUTER_API_KEY")
-        if not os.environ.get("OPENAI_API_KEY") and openrouter:
-            os.environ["OPENAI_API_KEY"] = openrouter
-            os.environ.setdefault("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
-            os.environ.setdefault("OPENAI_MODEL", "openai/gpt-4o-mini")
-
         if not os.environ.get("OPENAI_API_KEY"):
             pytest.skip(
-                "no OPENAI_API_KEY / OPENROUTER_API_KEY available -- "
-                "drop one in tests/.env or samples/copilotkit/.env to "
-                "enable this test locally"
+                "no OPENAI_API_KEY available -- drop one in tests/.env "
+                "or samples/copilotkit/.env to enable this test locally. "
+                "Set OPENAI_BASE_URL / OPENAI_MODEL too if pointing at a "
+                "non-OpenAI OpenAI-compatible endpoint."
             )
 
         from uuid import uuid4
