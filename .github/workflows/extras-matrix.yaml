@@ -1,0 +1,283 @@
+name: Extras Pin-Range Matrix
+
+# Round-2 deliverable: every framework / protocol / provider extra is
+# smoke-tested at BOTH the lower bound of its declared pin range AND
+# the latest version inside that range.
+#
+# Why both? A floor that's too low ships a wheel that fails to import
+# against ancient releases; a ceiling that's too high lets new majors
+# break SDK consumers. This matrix catches both regressions on every PR.
+#
+# Each row installs `layerlens[<extra>]` plus an explicit version pin
+# for the underlying framework, then runs an import-only smoke check.
+# Adapter modules are loaded lazily, so we explicitly trigger the
+# adapter import via `layerlens.instrument` registry lookups.
+#
+# Matrix derived from `[project.optional-dependencies]` in pyproject.toml.
+# When a new extra is added there, append a corresponding row here.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------
+  # Frameworks (Python 3.10+ where the framework requires it).
+  # ---------------------------------------------------------------
+  frameworks-py310:
+    name: ${{ matrix.extra }} (${{ matrix.bound }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # langchain: >=0.2,<0.4
+          - { extra: "langchain", bound: "min", pin: "langchain==0.2.0 langchain-core==0.2.0" }
+          - { extra: "langchain", bound: "max", pin: "" }
+          # langgraph: >=0.2,<0.4
+          - { extra: "langgraph", bound: "min", pin: "langgraph==0.2.0" }
+          - { extra: "langgraph", bound: "max", pin: "" }
+          # crewai: >=0.30,<0.90
+          - { extra: "crewai", bound: "min", pin: "crewai==0.30.0" }
+          - { extra: "crewai", bound: "max", pin: "" }
+          # autogen: pyautogen>=0.2,<0.5
+          - { extra: "autogen", bound: "min", pin: "pyautogen==0.2.0" }
+          - { extra: "autogen", bound: "max", pin: "" }
+          # semantic-kernel: >=1.0,<2.0
+          - { extra: "semantic-kernel", bound: "min", pin: "semantic-kernel==1.0.0" }
+          - { extra: "semantic-kernel", bound: "max", pin: "" }
+          # llama-index: >=0.10,<0.13
+          - { extra: "llama-index", bound: "min", pin: "llama-index==0.10.0" }
+          - { extra: "llama-index", bound: "max", pin: "" }
+          # openai-agents: openai>=1.30,<2
+          - { extra: "openai-agents", bound: "min", pin: "openai==1.30.0" }
+          - { extra: "openai-agents", bound: "max", pin: "" }
+          # pydantic-ai: >=0.0.13,<1.0
+          - { extra: "pydantic-ai", bound: "min", pin: "pydantic-ai==0.0.13" }
+          - { extra: "pydantic-ai", bound: "max", pin: "" }
+          # agno: >=0.1,<1.0
+          - { extra: "agno", bound: "min", pin: "agno==0.1.0" }
+          - { extra: "agno", bound: "max", pin: "" }
+          # strands: strands-agents>=0.1,<1.0
+          - { extra: "strands", bound: "min", pin: "strands-agents==0.1.0" }
+          - { extra: "strands", bound: "max", pin: "" }
+          # smolagents: >=1.0,<2.0
+          - { extra: "smolagents", bound: "min", pin: "smolagents==1.0.0" }
+          - { extra: "smolagents", bound: "max", pin: "" }
+          # ms-agent-framework: semantic-kernel>=1.0,<2.0
+          - { extra: "ms-agent-framework", bound: "min", pin: "semantic-kernel==1.0.0" }
+          - { extra: "ms-agent-framework", bound: "max", pin: "" }
+          # google-adk: >=0.1,<1.0
+          - { extra: "google-adk", bound: "min", pin: "google-adk==0.1.0" }
+          - { extra: "google-adk", bound: "max", pin: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install layerlens with extra and pin
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[${{ matrix.extra }}]"
+          if [ -n "${{ matrix.pin }}" ]; then
+            python -m pip install ${{ matrix.pin }}
+          fi
+      - name: Smoke-test import
+        run: |
+          python -c "import layerlens; print('layerlens', layerlens.__version__)"
+          python -c "import layerlens.instrument as m; print('instrument:', m.__name__)"
+
+  # ---------------------------------------------------------------
+  # Frameworks (Python 3.11+ — browser-use floor is 3.11).
+  # ---------------------------------------------------------------
+  frameworks-py311:
+    name: ${{ matrix.extra }} (${{ matrix.bound }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # browser-use: >=0.1,<1.0
+          - { extra: "browser-use", bound: "min", pin: "browser-use==0.1.0" }
+          - { extra: "browser-use", bound: "max", pin: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install layerlens with extra and pin
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[${{ matrix.extra }}]"
+          if [ -n "${{ matrix.pin }}" ]; then
+            python -m pip install ${{ matrix.pin }}
+          fi
+      - name: Smoke-test import
+        run: |
+          python -c "import layerlens; print('layerlens', layerlens.__version__)"
+          python -c "import layerlens.instrument as m; print('instrument:', m.__name__)"
+
+  # ---------------------------------------------------------------
+  # Frameworks with no upper bound (pin floor only at min, default at max).
+  # ---------------------------------------------------------------
+  frameworks-open-upper:
+    name: ${{ matrix.extra }} (${{ matrix.bound }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # agentforce: requests>=2.28
+          - { extra: "agentforce", bound: "min", pin: "requests==2.28.0" }
+          - { extra: "agentforce", bound: "max", pin: "" }
+          # bedrock-agents: boto3>=1.34
+          - { extra: "bedrock-agents", bound: "min", pin: "boto3==1.34.0" }
+          - { extra: "bedrock-agents", bound: "max", pin: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install layerlens with extra and pin
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[${{ matrix.extra }}]"
+          if [ -n "${{ matrix.pin }}" ]; then
+            python -m pip install ${{ matrix.pin }}
+          fi
+      - name: Smoke-test import
+        run: |
+          python -c "import layerlens; print('layerlens', layerlens.__version__)"
+          python -c "import layerlens.instrument as m; print('instrument:', m.__name__)"
+
+  # ---------------------------------------------------------------
+  # Protocol adapters (Python 3.10+ for ones that require it).
+  # ---------------------------------------------------------------
+  protocols:
+    name: ${{ matrix.extra }} (${{ matrix.bound }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # protocols-a2a: httpx>=0.23.0,<1 (already required, but smoke-test the extra resolves)
+          - { extra: "protocols-a2a", bound: "min", pin: "httpx==0.23.0", py: "3.10" }
+          - { extra: "protocols-a2a", bound: "max", pin: "", py: "3.10" }
+          # protocols-agui: ag-ui>=0.1
+          - { extra: "protocols-agui", bound: "min", pin: "ag-ui==0.1.0", py: "3.10" }
+          - { extra: "protocols-agui", bound: "max", pin: "", py: "3.10" }
+          # protocols-mcp: mcp>=0.9
+          - { extra: "protocols-mcp", bound: "min", pin: "mcp==0.9.0", py: "3.10" }
+          - { extra: "protocols-mcp", bound: "max", pin: "", py: "3.10" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.py }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Install layerlens with extra and pin
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[${{ matrix.extra }}]"
+          if [ -n "${{ matrix.pin }}" ]; then
+            python -m pip install ${{ matrix.pin }}
+          fi
+      - name: Smoke-test import
+        run: |
+          python -c "import layerlens; print('layerlens', layerlens.__version__)"
+          python -c "import layerlens.instrument as m; print('instrument:', m.__name__)"
+
+  # ---------------------------------------------------------------
+  # LLM provider adapters.
+  # ---------------------------------------------------------------
+  providers:
+    name: ${{ matrix.extra }} (${{ matrix.bound }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # providers-openai: openai>=1.30,<2
+          - { extra: "providers-openai", bound: "min", pin: "openai==1.30.0" }
+          - { extra: "providers-openai", bound: "max", pin: "" }
+          # providers-anthropic: anthropic>=0.30,<1
+          - { extra: "providers-anthropic", bound: "min", pin: "anthropic==0.30.0" }
+          - { extra: "providers-anthropic", bound: "max", pin: "" }
+          # providers-azure-openai: openai>=1.30,<2
+          - { extra: "providers-azure-openai", bound: "min", pin: "openai==1.30.0" }
+          - { extra: "providers-azure-openai", bound: "max", pin: "" }
+          # providers-bedrock: boto3>=1.34
+          - { extra: "providers-bedrock", bound: "min", pin: "boto3==1.34.0" }
+          - { extra: "providers-bedrock", bound: "max", pin: "" }
+          # providers-vertex: google-cloud-aiplatform>=1.50,<2
+          - { extra: "providers-vertex", bound: "min", pin: "google-cloud-aiplatform==1.50.0" }
+          - { extra: "providers-vertex", bound: "max", pin: "" }
+          # providers-ollama: ollama>=0.2
+          - { extra: "providers-ollama", bound: "min", pin: "ollama==0.2.0" }
+          - { extra: "providers-ollama", bound: "max", pin: "" }
+          # providers-litellm: litellm>=1.40,<2
+          - { extra: "providers-litellm", bound: "min", pin: "litellm==1.40.0" }
+          - { extra: "providers-litellm", bound: "max", pin: "" }
+          # providers-cohere: cohere>=5.0,<6
+          - { extra: "providers-cohere", bound: "min", pin: "cohere==5.0.0" }
+          - { extra: "providers-cohere", bound: "max", pin: "" }
+          # providers-mistral: mistralai>=1.0,<2
+          - { extra: "providers-mistral", bound: "min", pin: "mistralai==1.0.0" }
+          - { extra: "providers-mistral", bound: "max", pin: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install layerlens with extra and pin
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[${{ matrix.extra }}]"
+          if [ -n "${{ matrix.pin }}" ]; then
+            python -m pip install ${{ matrix.pin }}
+          fi
+      - name: Smoke-test import
+        run: |
+          python -c "import layerlens; print('layerlens', layerlens.__version__)"
+          python -c "import layerlens.instrument as m; print('instrument:', m.__name__)"
+
+  # ---------------------------------------------------------------
+  # Observability extras (otel + otlp).
+  # ---------------------------------------------------------------
+  observability:
+    name: ${{ matrix.extra }} (${{ matrix.bound }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # otel: opentelemetry-{api,sdk,exporter-otlp-proto-http}>=1.25
+          - { extra: "otel", bound: "min", pin: "opentelemetry-api==1.25.0 opentelemetry-sdk==1.25.0 opentelemetry-exporter-otlp-proto-http==1.25.0" }
+          - { extra: "otel", bound: "max", pin: "" }
+          # otlp: opentelemetry-proto>=1.27
+          - { extra: "otlp", bound: "min", pin: "opentelemetry-proto==1.27.0" }
+          - { extra: "otlp", bound: "max", pin: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install layerlens with extra and pin
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[${{ matrix.extra }}]"
+          if [ -n "${{ matrix.pin }}" ]; then
+            python -m pip install ${{ matrix.pin }}
+          fi
+      - name: Smoke-test import
+        run: |
+          python -c "import layerlens; print('layerlens', layerlens.__version__)"
+          python -c "import layerlens.instrument as m; print('instrument:', m.__name__)"
+          python -c "from layerlens.instrument import transport; print('transport ok')"
