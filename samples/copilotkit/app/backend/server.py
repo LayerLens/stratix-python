@@ -24,14 +24,13 @@ The Next.js frontend at ``samples/copilotkit/app/frontend/`` proxies
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import sys
+import importlib.util
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 
 # ---------------------------------------------------------------------------
 # Auto-load credentials from gitignored .env files so a developer running
@@ -69,9 +68,7 @@ if not _real_key:
         "ship a fake/fixture mode — it exercises the real LayerLens API."
     )
 
-masked = (
-    _real_key[:4] + "…" + _real_key[-4:] if len(_real_key) > 10 else "<short>"
-)
+masked = _real_key[:4] + "…" + _real_key[-4:] if len(_real_key) > 10 else "<short>"
 print(f"[harness] Stratix client: REAL (key={masked}).", flush=True)
 
 

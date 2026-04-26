@@ -31,26 +31,25 @@ Requires ``OPENAI_API_KEY`` in the environment. Set
 ``LAYERLENS_STRATIX_API_KEY`` so the tools can call the LayerLens API.
 """
 
-import asyncio
+import os
 import json
 import logging
 import operator
-import os
 import threading
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Any, Dict, Optional, Annotated
 
 from copilotkit import CopilotKitMiddleware
-from copilotkit.langgraph import copilotkit_emit_state
+from langgraph.types import Command
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentState
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import InjectedState
+from copilotkit.langgraph import copilotkit_emit_state
+from langchain_core.tools import tool
 from langchain_core.messages import ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
 from langchain_core.tools.base import InjectedToolCallId
-from langchain_openai import ChatOpenAI
+from langchain.agents.middleware import AgentState
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.prebuilt import InjectedState
-from langgraph.types import Command
 
 from layerlens import Stratix
 
@@ -133,10 +132,7 @@ async def list_judges(
     resp = client.judges.get_many()
     judges: list[dict[str, Any]] = []
     if resp is not None:
-        judges = [
-            {"id": j.id, "name": j.name, "goal": j.evaluation_goal}
-            for j in resp.judges
-        ]
+        judges = [{"id": j.id, "name": j.name, "goal": j.evaluation_goal} for j in resp.judges]
     # Push state to the frontend immediately so the canvas updates as
     # this tool completes — without this, ag-ui-langgraph batches state
     # snapshots until the LLM's tool-calling round wraps up, which makes
@@ -175,9 +171,7 @@ async def list_recent_traces(
     frontend's ``TraceCard`` can render real per-trace metrics.
     """
     client = _get_client()
-    resp = client.traces.get_many(
-        page_size=limit, sort_by="created_at", sort_order="desc"
-    )
+    resp = client.traces.get_many(page_size=limit, sort_by="created_at", sort_order="desc")
     traces: list[dict[str, Any]] = []
     if resp is not None:
         for t in resp.traces:
@@ -190,10 +184,7 @@ async def list_recent_traces(
                     "filename": t.filename,
                     "created_at": t.created_at,
                     "model": (data.get("model") if isinstance(data, dict) else None) or "",
-                    "duration_ms": (
-                        data.get("latency_ms") if isinstance(data, dict) else None
-                    )
-                    or 0,
+                    "duration_ms": (data.get("latency_ms") if isinstance(data, dict) else None) or 0,
                     "tokens": (data.get("tokens") if isinstance(data, dict) else None) or 0,
                     "evaluations_count": getattr(t, "evaluations_count", 0) or 0,
                 }
