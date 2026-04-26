@@ -195,7 +195,7 @@ class PlatformEventSubscriber:
         Requires the ``grpcio`` and ``avro`` packages.
         """
         # Import gRPC dependencies (optional)
-        import grpc  # type: ignore[import-untyped,unused-ignore]  # noqa: F401
+        import grpc  # type: ignore[import-not-found,import-untyped,unused-ignore]  # noqa: F401
 
         if self._connection.credentials.is_expired:
             self._connection.authenticate()

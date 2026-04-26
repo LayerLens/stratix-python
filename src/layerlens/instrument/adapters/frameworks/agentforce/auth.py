@@ -262,7 +262,7 @@ class SalesforceConnection:
                     response.raise_for_status()
 
                     # Check Salesforce API rate limits
-                    self._check_rate_limit(response.headers)  # type: ignore[arg-type]
+                    self._check_rate_limit(response.headers)
 
                     data = response.json()
 
