@@ -1,0 +1,1 @@
+"""LiteLLM provider adapter sample."""
