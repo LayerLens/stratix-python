@@ -154,6 +154,10 @@ _MATURE: set = {
     "cohere",
     "mistral",
     "smolagents",
+    # Frameworks promoted from ``lifecycle_preview`` once they ship a
+    # dedicated unit-test suite, a reference doc in ``docs/adapters/``,
+    # and a runnable mocked sample under ``samples/instrument/``.
+    "langfuse",
 }
 
 
