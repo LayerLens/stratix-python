@@ -191,6 +191,33 @@ def test_on_handoff_emits_event_with_context_hash() -> None:
     assert evt["payload"]["context_hash"] is not None
 
 
+def test_handoff_emits_standardized_metadata_across_paths() -> None:
+    """Group-chat-turn detection AND manual on_handoff share one seq counter."""
+    stratix = _RecordingStratix()
+    adapter = MSAgentAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    # Group-chat path.
+    msg = SimpleNamespace(agent_name="bob", items=[], metadata={}, content="hello")
+    adapter._process_message(_FakeChat(), msg, current_agent="alice")
+    # Manual path.
+    adapter.on_handoff(from_agent="bob", to_agent="charlie", context={"task": "review"})
+
+    handoffs = [e for e in stratix.events if e["event_type"] == "agent.handoff"]
+    assert len(handoffs) == 2
+
+    for h in handoffs:
+        assert h["payload"]["context_hash"].startswith("sha256:")
+        assert "context_preview" in h["payload"]
+        assert "timestamp" in h["payload"]
+        assert h["payload"]["framework"] == "ms_agent_framework"
+        assert h["payload"]["reason"] == "group_chat_turn"
+
+    # Single shared sequencer → monotonic seqs across detection paths.
+    assert handoffs[0]["payload"]["handoff_seq"] == 1
+    assert handoffs[1]["payload"]["handoff_seq"] == 2
+
+
 def test_instrument_agent_helper() -> None:
     chat = _FakeChat(name="helper")
     adapter = instrument_agent(chat)
