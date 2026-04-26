@@ -13,7 +13,6 @@ Mechanical transforms identical to scripts/port_adapter.py.
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
 ATEAM_ROOT = Path("A:/github/layerlens/ateam")
