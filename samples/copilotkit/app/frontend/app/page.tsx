@@ -64,6 +64,11 @@ type EvaluationRecord = {
 type ResultRecord = {
   evaluation_id: string;
   status: string;
+  /** Backend signals ``done: true`` once an evaluation has reached a
+   *  terminal state (success / failure / error / cancelled / not_found).
+   *  Optional because ``state.results`` entries from the agent itself
+   *  don't carry it — they're only added on success today. */
+  done?: boolean;
   trace_id?: string;
   judge_id?: string;
   passed?: boolean;
@@ -572,9 +577,13 @@ export default function Page() {
         }),
       );
       if (cancelled) return;
+      // Accept anything the backend marks ``done`` — that includes
+      // ``status: success``, ``failure``, ``error``, ``cancelled``, and
+      // ``not_found``. Without this, an evaluation that terminated as
+      // anything other than a clean success would loop the poller
+      // indefinitely (the symptom: "the 5th eval is always stuck").
       const completed = updates.filter(
-        (u): u is ResultRecord =>
-          !!u && u.status === "success" && typeof u.score === "number",
+        (u): u is ResultRecord => !!u && u.done === true,
       );
       if (completed.length > 0) {
         setPolledResults((prev) => {

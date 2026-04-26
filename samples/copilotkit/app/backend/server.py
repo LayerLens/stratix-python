@@ -121,6 +121,9 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+_TERMINAL_STATUSES = {"success", "failure", "error", "cancelled", "not_found"}
+
+
 @app.get("/evaluations/{evaluation_id}")
 def get_evaluation(evaluation_id: str) -> dict:
     """Out-of-band polling endpoint for the frontend.
@@ -129,33 +132,92 @@ def get_evaluation(evaluation_id: str) -> dict:
     to complete (real LayerLens evaluations take 30+ seconds, far
     longer than a chat turn should block). The frontend then polls
     this endpoint every few seconds and folds completed verdicts into
-    the canvas — so the user sees "pending" become "passed/failed" as
-    each evaluation finishes, without the agent burning recursion or
-    hallucinating about state it can't observe.
+    the canvas as each evaluation finishes.
+
+    Response shape::
+
+        {
+          "evaluation_id": "...",
+          "status": "in_progress" | "success" | "failure" | "error"
+                  | "cancelled" | "not_found",
+          "done": bool,                  # true for any terminal state
+          "trace_id": "...",
+          "judge_id": "...",
+          # only present when ``done`` is true:
+          "passed": bool,
+          "score": float,                # 0..1 (best-effort default if
+                                         # the judge didn't emit one)
+          "reasoning": str,
+        }
+
+    The ``done`` flag lets the frontend stop polling regardless of
+    success/failure shape — without it a verdict that comes back as
+    e.g. ``status="failure"`` or ``status="success"`` with a null
+    score would loop forever.
     """
     from layerlens import Stratix
 
     client = Stratix()
-    ev = client.trace_evaluations.get(evaluation_id)
+    try:
+        ev = client.trace_evaluations.get(evaluation_id)
+    except Exception as exc:
+        # ``trace_evaluations.get`` raises on malformed / unauthorized
+        # ids. We don't want the polling loop to 500-spin on the
+        # frontend; surface a terminal "error" verdict instead.
+        return {
+            "evaluation_id": evaluation_id,
+            "status": "error",
+            "done": True,
+            "passed": False,
+            "score": 0.0,
+            "reasoning": f"Could not fetch evaluation: {exc.__class__.__name__}.",
+        }
     if ev is None:
-        return {"evaluation_id": evaluation_id, "status": "not_found"}
+        return {
+            "evaluation_id": evaluation_id,
+            "status": "not_found",
+            "done": True,
+            "passed": False,
+            "score": 0.0,
+            "reasoning": "Evaluation not found.",
+        }
     status = ev.status.value if hasattr(ev.status, "value") else str(ev.status)
     base = {
         "evaluation_id": evaluation_id,
         "status": status,
+        "done": status in _TERMINAL_STATUSES,
         "trace_id": getattr(ev, "trace_id", "") or "",
         "judge_id": getattr(ev, "judge_id", "") or "",
     }
-    if status != "success":
+    if not base["done"]:
         return base
+
+    # Terminal — try to surface the verdict. Non-success terminal
+    # states (failure / error / cancelled) get sensible defaults so
+    # the frontend has something concrete to render.
+    if status != "success":
+        return {
+            **base,
+            "passed": False,
+            "score": 0.0,
+            "reasoning": f"Evaluation ended with status='{status}'.",
+        }
     details = client.trace_evaluations.get_results(id=evaluation_id)
     if details is None or details.score is None:
-        return base
+        return {
+            **base,
+            "passed": bool(getattr(details, "passed", False)) if details else False,
+            "score": 0.0,
+            "reasoning": (
+                getattr(details, "reasoning", None) if details else None
+            )
+            or "Evaluation completed without a numerical score.",
+        }
     return {
         **base,
         "passed": bool(details.passed),
         "score": float(details.score),
-        "reasoning": details.reasoning,
+        "reasoning": details.reasoning or "",
     }
 
 
