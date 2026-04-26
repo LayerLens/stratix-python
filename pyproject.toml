@@ -34,6 +34,23 @@ classifiers = [
 [project.optional-dependencies]
 cli = ["click>=8.0.0"]
 
+# --- Instrument layer: observability transport ---
+# Adding any extra below MUST keep the default `pip install layerlens`
+# install set unchanged. Verified by `tests/instrument/test_default_install.py`.
+otel = [
+  "opentelemetry-api>=1.25",
+  "opentelemetry-sdk>=1.25",
+  "opentelemetry-exporter-otlp-proto-http>=1.25",
+]
+
+# OTLP HTTP sink (OTLPHttpSink). Hand-rolled protobuf marshalling
+# against opentelemetry-proto so we don't pull in opentelemetry-sdk
+# just to ship bytes to a Collector. Use this extra to enable
+# `layerlens.instrument.transport.OTLPHttpSink`.
+otlp = [
+  "opentelemetry-proto>=1.27",
+]
+
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
 Repository = "https://github.com/LayerLens/stratix-python"
