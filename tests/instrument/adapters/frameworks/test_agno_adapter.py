@@ -212,3 +212,118 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "agno"
     assert rt.adapter_name == "AgnoAdapter"
     assert "capture_config" in rt.config
+
+
+# ---------------------------------------------------------------------------
+# Streaming tests (cross-pollination #9: shared SSE parser integration)
+# ---------------------------------------------------------------------------
+
+
+class _StreamingAgent:
+    """Agno agent stub that returns an iterator when ``stream=True``."""
+
+    def __init__(self, name: str, chunks: List[Any]) -> None:
+        self.name = name
+        self.tools = None
+        self.model = "gpt-5"
+        self.description = None
+        self.instructions = None
+        self.team = None
+        self.knowledge = None
+        self._chunks = chunks
+
+    def run(self, message: str, **kwargs: Any) -> Any:
+        if kwargs.get("stream"):
+            return iter(self._chunks)
+        return SimpleNamespace(content=f"out:{message}")
+
+
+def test_stream_emits_one_event_per_object_chunk() -> None:
+    """Object chunks (typical agno path) emit one model.stream.chunk each."""
+    stratix = _RecordingStratix()
+    adapter = AgnoAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    chunks = [
+        SimpleNamespace(content="Hello"),
+        SimpleNamespace(content=" "),
+        SimpleNamespace(content="world"),
+    ]
+    agent = _StreamingAgent(name="streamer", chunks=chunks)
+    adapter.instrument_agent(agent)
+
+    stream = agent.run("hi", stream=True)
+    consumed = list(stream)
+
+    assert len(consumed) == 3
+    chunk_events = [e for e in stratix.events if e["event_type"] == "model.stream.chunk"]
+    assert len(chunk_events) == 3
+    assert chunk_events[0]["payload"]["agent_name"] == "streamer"
+    # Final on_run_end fires after iterator exhaustion.
+    assert any(e["event_type"] == "agent.output" for e in stratix.events)
+
+
+def test_stream_emits_multiple_events_per_sse_chunk() -> None:
+    """A single bytes chunk containing multiple SSE events emits multiple events."""
+    stratix = _RecordingStratix()
+    adapter = AgnoAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    # One network chunk holds two complete SSE events.
+    chunks = [b"data: first\n\ndata: second\n\n"]
+    agent = _StreamingAgent(name="sse-streamer", chunks=chunks)
+    adapter.instrument_agent(agent)
+
+    list(agent.run("go", stream=True))
+
+    chunk_events = [e for e in stratix.events if e["event_type"] == "model.stream.chunk"]
+    # Two SSE events extracted from one network chunk -> two emitted events.
+    assert len(chunk_events) == 2
+    assert chunk_events[0]["payload"]["chunk"] == "first"
+    assert chunk_events[1]["payload"]["chunk"] == "second"
+
+
+def test_stream_handles_partial_sse_across_chunks() -> None:
+    """A single SSE event split across two network chunks emits one event."""
+    stratix = _RecordingStratix()
+    adapter = AgnoAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    chunks = [b"data: hel", b"lo\n\n"]
+    agent = _StreamingAgent(name="partial", chunks=chunks)
+    adapter.instrument_agent(agent)
+
+    list(agent.run("go", stream=True))
+
+    chunk_events = [e for e in stratix.events if e["event_type"] == "model.stream.chunk"]
+    assert len(chunk_events) == 1
+    assert chunk_events[0]["payload"]["chunk"] == "hello"
+
+
+def test_stream_passthrough_does_not_break_iterator() -> None:
+    """The wrapped stream still yields the original chunks to the caller."""
+    stratix = _RecordingStratix()
+    adapter = AgnoAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    chunks = [SimpleNamespace(content="a"), SimpleNamespace(content="b")]
+    agent = _StreamingAgent(name="pt", chunks=chunks)
+    adapter.instrument_agent(agent)
+
+    stream = agent.run("hi", stream=True)
+    consumed = [getattr(c, "content", c) for c in stream]
+    assert consumed == ["a", "b"]
+
+
+def test_non_stream_path_unchanged() -> None:
+    """When stream=True is NOT passed, no model.stream.chunk events fire."""
+    stratix = _RecordingStratix()
+    adapter = AgnoAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    agent = _StreamingAgent(name="nostream", chunks=[])
+    adapter.instrument_agent(agent)
+    agent.run("hi")  # no stream kwarg
+
+    chunk_events = [e for e in stratix.events if e["event_type"] == "model.stream.chunk"]
+    assert chunk_events == []

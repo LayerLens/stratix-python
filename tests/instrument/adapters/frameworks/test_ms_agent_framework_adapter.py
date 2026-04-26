@@ -208,3 +208,114 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "ms_agent_framework"
     assert rt.adapter_name == "MSAgentAdapter"
     assert "capture_config" in rt.config
+
+
+# ---------------------------------------------------------------------------
+# Streaming tests (cross-pollination #9: shared SSE parser integration)
+# ---------------------------------------------------------------------------
+
+
+import asyncio  # noqa: E402  (positioned with the streaming tests it serves)
+
+
+class _StreamingChat:
+    """Chat stub whose ``invoke_stream`` yields a configurable list of chunks."""
+
+    def __init__(self, name: str, chunks: List[Any]) -> None:
+        self.name = name
+        self.agents = None
+        self.agent = None
+        self._chunks = chunks
+
+    async def invoke(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
+        if False:
+            yield None  # type: ignore[unreachable]
+
+    async def invoke_stream(self, *args: Any, **kwargs: Any) -> Any:
+        for chunk in self._chunks:
+            yield chunk
+
+
+def _drain_async(gen: Any) -> List[Any]:
+    """Drain an async generator into a list synchronously."""
+
+    async def runner() -> List[Any]:
+        out: List[Any] = []
+        async for item in gen:
+            out.append(item)
+        return out
+
+    return asyncio.run(runner())
+
+
+def test_invoke_stream_emits_one_event_per_object_chunk() -> None:
+    """Object chunks (typical Microsoft Agent Framework path) emit one event each."""
+    stratix = _RecordingStratix()
+    adapter = MSAgentAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    chunks = [
+        SimpleNamespace(content="Hi"),
+        SimpleNamespace(content=" "),
+        SimpleNamespace(content="there"),
+    ]
+    chat = _StreamingChat(name="ms-stream", chunks=chunks)
+    adapter.instrument_chat(chat)
+
+    consumed = _drain_async(chat.invoke_stream())
+    assert len(consumed) == 3
+
+    chunk_events = [e for e in stratix.events if e["event_type"] == "model.stream.chunk"]
+    assert len(chunk_events) == 3
+    assert chunk_events[0]["payload"]["framework"] == "ms_agent_framework"
+    assert chunk_events[0]["payload"]["agent_name"] == "ms-stream"
+    # on_run_end fires after iterator exhaustion.
+    assert any(e["event_type"] == "agent.output" for e in stratix.events)
+
+
+def test_invoke_stream_emits_multiple_events_per_sse_chunk() -> None:
+    """One bytes chunk holding multiple SSE events emits multiple per-event events."""
+    stratix = _RecordingStratix()
+    adapter = MSAgentAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    chunks = [b"data: alpha\n\ndata: beta\n\n"]
+    chat = _StreamingChat(name="ms-sse", chunks=chunks)
+    adapter.instrument_chat(chat)
+
+    _drain_async(chat.invoke_stream())
+
+    chunk_events = [e for e in stratix.events if e["event_type"] == "model.stream.chunk"]
+    assert len(chunk_events) == 2
+    assert [e["payload"]["chunk"] for e in chunk_events] == ["alpha", "beta"]
+
+
+def test_invoke_stream_handles_partial_sse_across_chunks() -> None:
+    """One SSE event split across two network chunks emits exactly one event."""
+    stratix = _RecordingStratix()
+    adapter = MSAgentAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    chunks = [b"data: par", b"tial\n\n"]
+    chat = _StreamingChat(name="ms-partial", chunks=chunks)
+    adapter.instrument_chat(chat)
+
+    _drain_async(chat.invoke_stream())
+
+    chunk_events = [e for e in stratix.events if e["event_type"] == "model.stream.chunk"]
+    assert len(chunk_events) == 1
+    assert chunk_events[0]["payload"]["chunk"] == "partial"
+
+
+def test_invoke_stream_passthrough_yields_original_chunks() -> None:
+    """The wrapped invoke_stream still yields the original chunks to the caller."""
+    stratix = _RecordingStratix()
+    adapter = MSAgentAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    chunks = [SimpleNamespace(content="x"), SimpleNamespace(content="y")]
+    chat = _StreamingChat(name="ms-pt", chunks=chunks)
+    adapter.instrument_chat(chat)
+
+    consumed = [getattr(c, "content", c) for c in _drain_async(chat.invoke_stream())]
+    assert consumed == ["x", "y"]

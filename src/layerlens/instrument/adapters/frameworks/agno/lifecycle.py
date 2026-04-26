@@ -27,6 +27,7 @@ from layerlens.instrument.adapters._base.adapter import (
     ReplayableTrace,
     AdapterCapability,
 )
+from layerlens.instrument.adapters._base.sse_parser import SSEParser
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
 logger = logging.getLogger(__name__)
@@ -153,7 +154,16 @@ class AgnoAdapter(BaseAdapter):
         return agent
 
     def _create_traced_run(self, agent: Any, original_run: Any) -> Any:
-        """Create an async traced wrapper for agent.arun()."""
+        """Create an async traced wrapper for agent.arun().
+
+        If the call requested streaming (``stream=True``) and the result
+        is an iterable / async-iterable of chunks, the wrapper yields a
+        traced replacement iterator that emits one ``model.stream.chunk``
+        event per chunk via :meth:`_emit_stream_chunk`. This preserves
+        the streaming UX for the caller while ensuring each chunk shows
+        up as a discrete event in the trace (rather than being collapsed
+        into one accumulated event).
+        """
         adapter = self
 
         async def traced_run(*args: Any, **kwargs: Any) -> Any:
@@ -167,19 +177,37 @@ class AgnoAdapter(BaseAdapter):
             except Exception as exc:
                 error = exc
                 raise
+            else:
+                # Streaming path: agno returns an (async) iterator when
+                # ``stream=True``. Wrap it so each chunk emits a stream
+                # event, but defer ``on_run_end`` to the iterator's
+                # exhaustion so duration measurement is accurate.
+                if kwargs.get("stream") and adapter._is_iterable_stream(result):
+                    return adapter._wrap_stream_async(
+                        result, agent=agent, agent_name=agent_name
+                    )
             finally:
-                output = None
-                if result is not None:
-                    output = getattr(result, "content", result)
-                adapter.on_run_end(agent_name=agent_name, output=output, error=error)
-                adapter._extract_run_details(agent, result)
+                # Non-streaming finalisation. For the streaming path
+                # above, ``return`` short-circuits this block; the
+                # wrapped iterator handles its own finalisation.
+                if not (kwargs.get("stream") and adapter._is_iterable_stream(result)):
+                    output = None
+                    if result is not None:
+                        output = getattr(result, "content", result)
+                    adapter.on_run_end(agent_name=agent_name, output=output, error=error)
+                    adapter._extract_run_details(agent, result)
             return result
 
         traced_run._layerlens_original = original_run  # type: ignore[attr-defined]
         return traced_run
 
     def _create_traced_run_sync(self, agent: Any, original_run: Any) -> Any:
-        """Create a sync traced wrapper for agent.run()."""
+        """Create a sync traced wrapper for agent.run().
+
+        Mirror of :meth:`_create_traced_run` for the sync path; if the
+        result is a sync iterator and ``stream=True`` was requested, a
+        wrapping generator emits one ``model.stream.chunk`` per chunk.
+        """
         adapter = self
 
         def traced_run_sync(*args: Any, **kwargs: Any) -> Any:
@@ -193,16 +221,150 @@ class AgnoAdapter(BaseAdapter):
             except Exception as exc:
                 error = exc
                 raise
+            else:
+                if kwargs.get("stream") and adapter._is_iterable_stream(result):
+                    return adapter._wrap_stream_sync(
+                        result, agent=agent, agent_name=agent_name
+                    )
             finally:
-                output = None
-                if result is not None:
-                    output = getattr(result, "content", result)
-                adapter.on_run_end(agent_name=agent_name, output=output, error=error)
-                adapter._extract_run_details(agent, result)
+                if not (kwargs.get("stream") and adapter._is_iterable_stream(result)):
+                    output = None
+                    if result is not None:
+                        output = getattr(result, "content", result)
+                    adapter.on_run_end(agent_name=agent_name, output=output, error=error)
+                    adapter._extract_run_details(agent, result)
             return result
 
         traced_run_sync._layerlens_original = original_run  # type: ignore[attr-defined]
         return traced_run_sync
+
+    # --- Streaming support ---
+
+    @staticmethod
+    def _is_iterable_stream(result: Any) -> bool:
+        """Return True if ``result`` is something we can iterate as a stream.
+
+        Accepts sync iterables (``__iter__``), async iterables
+        (``__aiter__``), and generator-like objects. Excludes plain
+        strings/bytes (which technically iterate but represent atomic
+        outputs, not streams).
+        """
+        if result is None:
+            return False
+        if isinstance(result, (str, bytes, bytearray, dict)):
+            return False
+        return hasattr(result, "__iter__") or hasattr(result, "__aiter__")
+
+    def _wrap_stream_sync(self, stream: Any, agent: Any, agent_name: str) -> Any:
+        """Return a generator that yields stream chunks while emitting per-chunk events.
+
+        For chunks that arrive as raw bytes or strings (the SSE wire
+        format), the chunks are decoded through a shared
+        :class:`SSEParser` and one ``model.stream.chunk`` event is
+        emitted per parsed SSE event. For object chunks (the typical
+        agno return shape), one event is emitted per chunk verbatim.
+        """
+        adapter = self
+
+        def gen() -> Any:
+            ssp = SSEParser()
+            last_chunk: Any = None
+            error: Exception | None = None
+            try:
+                for chunk in stream:
+                    last_chunk = chunk
+                    adapter._dispatch_chunk(chunk, agent_name, ssp)
+                    yield chunk
+                # Drain any trailing partial event from the parser.
+                for event in ssp.flush():
+                    adapter._emit_stream_chunk(agent_name, event.data, event.event)
+            except Exception as exc:
+                error = exc
+                raise
+            finally:
+                output = getattr(last_chunk, "content", last_chunk) if last_chunk else None
+                adapter.on_run_end(agent_name=agent_name, output=output, error=error)
+                adapter._extract_run_details(agent, last_chunk)
+
+        return gen()
+
+    def _wrap_stream_async(self, stream: Any, agent: Any, agent_name: str) -> Any:
+        """Async equivalent of :meth:`_wrap_stream_sync`.
+
+        Handles both ``async for`` (``__aiter__``) and ``for``
+        (``__iter__``) sources — agno's async path may return either
+        depending on backend.
+        """
+        adapter = self
+
+        async def agen() -> Any:
+            # Lazily allocated on the first bytes/str chunk we see, so
+            # object-only streams skip the parser entirely.
+            ssp: SSEParser = SSEParser()
+            last_chunk: Any = None
+            error: Exception | None = None
+            try:
+                if hasattr(stream, "__aiter__"):
+                    async for chunk in stream:
+                        last_chunk = chunk
+                        adapter._dispatch_chunk(chunk, agent_name, ssp)
+                        yield chunk
+                else:
+                    for chunk in stream:
+                        last_chunk = chunk
+                        adapter._dispatch_chunk(chunk, agent_name, ssp)
+                        yield chunk
+                # Drain any trailing partial event from the parser.
+                for event in ssp.flush():
+                    adapter._emit_stream_chunk(agent_name, event.data, event.event)
+            except Exception as exc:
+                error = exc
+                raise
+            finally:
+                output = getattr(last_chunk, "content", last_chunk) if last_chunk else None
+                adapter.on_run_end(agent_name=agent_name, output=output, error=error)
+                adapter._extract_run_details(agent, last_chunk)
+
+        return agen()
+
+    def _dispatch_chunk(
+        self, chunk: Any, agent_name: str, sse_parser: SSEParser
+    ) -> None:
+        """Emit a single chunk as ``model.stream.chunk``.
+
+        Reused by both sync and async stream wrappers. Bytes/text chunks
+        are routed through the supplied :class:`SSEParser` so a chunk
+        containing multiple framed events emits multiple discrete
+        ``model.stream.chunk`` events instead of one accumulated blob.
+        Object chunks (the typical agno return shape) are emitted
+        verbatim, one event per object.
+        """
+        if isinstance(chunk, (bytes, bytearray)):
+            for event in sse_parser.feed(bytes(chunk)):
+                self._emit_stream_chunk(agent_name, event.data, event.event)
+        elif isinstance(chunk, str):
+            for event in sse_parser.feed_text(chunk):
+                self._emit_stream_chunk(agent_name, event.data, event.event)
+        else:
+            self._emit_stream_chunk(agent_name, self._safe_serialize(chunk), None)
+
+    def _emit_stream_chunk(
+        self, agent_name: str, content: Any, event_name: str | None
+    ) -> None:
+        """Emit one ``model.stream.chunk`` event for a streamed token / SSE event."""
+        if not self._connected:
+            return
+        try:
+            payload: dict[str, Any] = {
+                "framework": "agno",
+                "agent_name": agent_name,
+                "chunk": content,
+            }
+            if event_name:
+                payload["event_name"] = event_name
+            self.emit_dict_event("model.stream.chunk", payload)
+        except Exception:
+            logger.warning("Error emitting stream chunk", exc_info=True)
 
     def _extract_run_details(self, agent: Any, result: Any) -> None:
         """Extract tool calls, model invocations, and team handoffs from run result."""

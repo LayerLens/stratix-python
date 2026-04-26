@@ -26,6 +26,12 @@ from layerlens.instrument.adapters._base.capture import (
     CaptureConfig,
 )
 from layerlens.instrument.adapters._base.registry import AdapterRegistry
+from layerlens.instrument.adapters._base.sse_parser import (
+    SSEEvent,
+    SSEParser,
+    parse_event,
+    parse_stream,
+)
 from layerlens.instrument.adapters._base.pydantic_compat import (
     PydanticCompat,
     requires_pydantic,
@@ -44,6 +50,10 @@ __all__ = [
     "IngestionPipelineSink",
     "PydanticCompat",
     "ReplayableTrace",
+    "SSEEvent",
+    "SSEParser",
     "TraceStoreSink",
+    "parse_event",
+    "parse_stream",
     "requires_pydantic",
 ]

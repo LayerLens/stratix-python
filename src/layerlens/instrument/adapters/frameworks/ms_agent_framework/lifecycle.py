@@ -27,6 +27,7 @@ from layerlens.instrument.adapters._base.adapter import (
     ReplayableTrace,
     AdapterCapability,
 )
+from layerlens.instrument.adapters._base.sse_parser import SSEParser
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
 logger = logging.getLogger(__name__)
@@ -190,7 +191,17 @@ class MSAgentAdapter(BaseAdapter):
         return traced_invoke
 
     def _create_traced_invoke_stream(self, chat: Any, original_invoke_stream: Any) -> Any:
-        """Create a traced wrapper for chat.invoke_stream()."""
+        """Create a traced wrapper for chat.invoke_stream().
+
+        Each yielded streaming chunk is emitted as a discrete
+        ``model.stream.chunk`` event. Bytes/str chunks (raw SSE wire
+        format from an HTTP backend) are decoded through a shared
+        :class:`SSEParser` so a single network chunk containing
+        multiple framed events emits multiple discrete events instead
+        of one accumulated blob. Object chunks (the typical
+        ``StreamingChatMessageContent`` shape) are emitted verbatim,
+        one event per object.
+        """
         adapter = self
 
         async def traced_invoke_stream(*args: Any, **kwargs: Any) -> Any:
@@ -200,10 +211,17 @@ class MSAgentAdapter(BaseAdapter):
             adapter.on_run_start(agent_name=agent_name, input_data=None)
             error: Exception | None = None
             last_message = None
+            sse_parser = SSEParser()
             try:
                 async for message in original_invoke_stream(*args, **kwargs):
                     last_message = message
+                    adapter._emit_invoke_stream_chunk(agent_name, message, sse_parser)
                     yield message
+                # Drain any trailing partial event from the parser.
+                for event in sse_parser.flush():
+                    adapter._emit_stream_chunk_event(
+                        agent_name, event.data, event.event
+                    )
             except Exception as exc:
                 error = exc
                 raise
@@ -213,6 +231,46 @@ class MSAgentAdapter(BaseAdapter):
 
         traced_invoke_stream._layerlens_original = original_invoke_stream  # type: ignore[attr-defined]
         return traced_invoke_stream
+
+    # --- Streaming support ---
+
+    def _emit_invoke_stream_chunk(
+        self, agent_name: str, chunk: Any, sse_parser: SSEParser
+    ) -> None:
+        """Emit a streaming chunk as ``model.stream.chunk``.
+
+        For bytes/str chunks, the chunk is fed through the supplied
+        :class:`SSEParser` and each parsed SSE event becomes its own
+        emitted event. For object chunks (the typical Microsoft
+        Agent Framework ``StreamingChatMessageContent``), the chunk
+        is emitted verbatim as a single event.
+        """
+        if isinstance(chunk, (bytes, bytearray)):
+            for event in sse_parser.feed(bytes(chunk)):
+                self._emit_stream_chunk_event(agent_name, event.data, event.event)
+        elif isinstance(chunk, str):
+            for event in sse_parser.feed_text(chunk):
+                self._emit_stream_chunk_event(agent_name, event.data, event.event)
+        else:
+            self._emit_stream_chunk_event(agent_name, self._safe_serialize(chunk), None)
+
+    def _emit_stream_chunk_event(
+        self, agent_name: str, content: Any, event_name: str | None
+    ) -> None:
+        """Emit one ``model.stream.chunk`` event for a streamed token / SSE event."""
+        if not self._connected:
+            return
+        try:
+            payload: dict[str, Any] = {
+                "framework": "ms_agent_framework",
+                "agent_name": agent_name,
+                "chunk": content,
+            }
+            if event_name:
+                payload["event_name"] = event_name
+            self.emit_dict_event("model.stream.chunk", payload)
+        except Exception:
+            logger.warning("Error emitting stream chunk", exc_info=True)
 
     def _process_message(self, chat: Any, message: Any, current_agent: str) -> None:
         """Process a chat message to extract tool calls, model info, and handoffs."""

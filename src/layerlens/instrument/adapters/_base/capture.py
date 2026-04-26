@@ -207,6 +207,11 @@ class CaptureConfig(BaseModel):
             "agent.interaction": "l1_agent_io",
             "agent.code": "l2_agent_code",
             "model.invoke": "l3_model_metadata",
+            # Per-chunk streaming events from frameworks that expose
+            # token-level / SSE-event-level streaming. Gated by the
+            # same capture-config layer as ``model.invoke`` so a user
+            # who disables L3 also disables stream chunks.
+            "model.stream.chunk": "l3_model_metadata",
             "environment.config": "l4a_environment_config",
             "environment.metrics": "l4b_environment_metrics",
             "tool.call": "l5a_tool_calls",
