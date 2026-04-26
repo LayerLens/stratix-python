@@ -1310,12 +1310,8 @@ class TestAllSamplesWithMockedSDK:
         fake_results = SimpleNamespace(score=0.9, passed=True, reasoning="ok")
 
         fake_client = MagicMock()
-        fake_client.judges.get_many.return_value = SimpleNamespace(
-            judges=[fake_judge]
-        )
-        fake_client.traces.get_many.return_value = SimpleNamespace(
-            traces=[fake_trace]
-        )
+        fake_client.judges.get_many.return_value = SimpleNamespace(judges=[fake_judge])
+        fake_client.traces.get_many.return_value = SimpleNamespace(traces=[fake_trace])
         fake_client.trace_evaluations.create.return_value = fake_eval_pending
 
         sample_dir = os.path.join(SAMPLES_DIR, "copilotkit", "agents")
@@ -1333,9 +1329,7 @@ class TestAllSamplesWithMockedSDK:
                     "OPENAI_API_KEY": "test-openai",
                 },
             ):
-                with patch(
-                    "layerlens.Stratix", MagicMock(return_value=fake_client)
-                ):
+                with patch("layerlens.Stratix", MagicMock(return_value=fake_client)):
                     spec = importlib.util.spec_from_file_location(
                         mod_name,
                         os.path.join(sample_dir, "evaluator_agent.py"),
@@ -1365,9 +1359,7 @@ class TestAllSamplesWithMockedSDK:
                         }
                     ]
 
-                    traces = tools_by_name["list_recent_traces"].invoke(
-                        {"limit": 5}
-                    )
+                    traces = tools_by_name["list_recent_traces"].invoke({"limit": 5})
                     assert traces == [
                         {
                             "id": "trc_1",
@@ -1376,21 +1368,13 @@ class TestAllSamplesWithMockedSDK:
                         }
                     ]
 
-                    started = tools_by_name["run_trace_evaluation"].invoke(
-                        {"trace_id": "trc_1", "judge_id": "jdg_1"}
-                    )
+                    started = tools_by_name["run_trace_evaluation"].invoke({"trace_id": "trc_1", "judge_id": "jdg_1"})
                     assert started["evaluation_id"] == "ev_1"
                     assert started["status"] == "pending"
 
-                    fake_client.trace_evaluations.get.return_value = (
-                        fake_eval_done
-                    )
-                    fake_client.trace_evaluations.get_results.return_value = (
-                        fake_results
-                    )
-                    result = tools_by_name["get_evaluation_result"].invoke(
-                        {"evaluation_id": "ev_1"}
-                    )
+                    fake_client.trace_evaluations.get.return_value = fake_eval_done
+                    fake_client.trace_evaluations.get_results.return_value = fake_results
+                    result = tools_by_name["get_evaluation_result"].invoke({"evaluation_id": "ev_1"})
                     assert result["status"] == "success"
                     assert result["passed"] is True
                     assert result["score"] == 0.9
@@ -1456,18 +1440,13 @@ class TestAllSamplesWithMockedSDK:
                     if not line or line.startswith("#") or "=" not in line:
                         continue
                     k, _, v = line.partition("=")
-                    os.environ.setdefault(
-                        k.strip(), v.strip().strip('"').strip("'")
-                    )
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
         # Auto-configure OpenRouter if that's the only key we have.
-        if not os.environ.get("OPENAI_API_KEY") and (
-            openrouter := os.environ.get("OPENROUTER_API_KEY")
-        ):
+        openrouter = os.environ.get("OPENROUTER_API_KEY")
+        if not os.environ.get("OPENAI_API_KEY") and openrouter:
             os.environ["OPENAI_API_KEY"] = openrouter
-            os.environ.setdefault(
-                "OPENAI_BASE_URL", "https://openrouter.ai/api/v1"
-            )
+            os.environ.setdefault("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
             os.environ.setdefault("OPENAI_MODEL", "openai/gpt-4o-mini")
 
         if not os.environ.get("OPENAI_API_KEY"):
@@ -1477,8 +1456,8 @@ class TestAllSamplesWithMockedSDK:
                 "enable this test locally"
             )
 
-        from types import SimpleNamespace
         from uuid import uuid4
+        from types import SimpleNamespace
 
         import httpx
         from fastapi import FastAPI
@@ -1510,16 +1489,10 @@ class TestAllSamplesWithMockedSDK:
             judge_id="jdg_1",
             status=SimpleNamespace(value="success"),
         )
-        fake_results = SimpleNamespace(
-            score=0.9, passed=True, reasoning="answers were on-target"
-        )
+        fake_results = SimpleNamespace(score=0.9, passed=True, reasoning="answers were on-target")
         fake_client = MagicMock()
-        fake_client.judges.get_many.return_value = SimpleNamespace(
-            judges=fake_judges
-        )
-        fake_client.traces.get_many.return_value = SimpleNamespace(
-            traces=[fake_trace]
-        )
+        fake_client.judges.get_many.return_value = SimpleNamespace(judges=fake_judges)
+        fake_client.traces.get_many.return_value = SimpleNamespace(traces=[fake_trace])
         fake_client.trace_evaluations.create.return_value = fake_eval_done
         fake_client.trace_evaluations.get.return_value = fake_eval_done
         fake_client.trace_evaluations.get_results.return_value = fake_results
@@ -1550,9 +1523,7 @@ class TestAllSamplesWithMockedSDK:
             app = FastAPI()
             add_langgraph_fastapi_endpoint(
                 app=app,
-                agent=mod.build_agui_agent(
-                    name="evaluator", graph=mod.evaluator_graph
-                ),
+                agent=mod.build_agui_agent(name="evaluator", graph=mod.evaluator_graph),
                 path="/",
             )
 
@@ -1575,10 +1546,7 @@ class TestAllSamplesWithMockedSDK:
                 "tools": [
                     {
                         "name": "confirm_judge",
-                        "description": (
-                            "Ask the user to choose which judge to apply. "
-                            "Returns id and name."
-                        ),
+                        "description": ("Ask the user to choose which judge to apply. Returns id and name."),
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1605,16 +1573,10 @@ class TestAllSamplesWithMockedSDK:
 
             async def run_stream() -> tuple[list[dict], bytes]:
                 transport = httpx.ASGITransport(app=app)
-                async with httpx.AsyncClient(
-                    transport=transport, base_url="http://test"
-                ) as client:
+                async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
                     buf = bytearray()
-                    async with client.stream(
-                        "POST", "/", json=body, timeout=120.0
-                    ) as resp:
-                        assert resp.status_code == 200, (
-                            "status=" + str(resp.status_code)
-                        )
+                    async with client.stream("POST", "/", json=body, timeout=120.0) as resp:
+                        assert resp.status_code == 200, "status=" + str(resp.status_code)
                         async for chunk in resp.aiter_bytes():
                             buf.extend(chunk)
                 text = bytes(buf).decode("utf-8", errors="replace")
@@ -1636,56 +1598,39 @@ class TestAllSamplesWithMockedSDK:
             started = [e for e in events if e.get("type") == "RUN_STARTED"]
             finished = [e for e in events if e.get("type") == "RUN_FINISHED"]
             errors = [e for e in events if e.get("type") == "RUN_ERROR"]
-            tool_calls = [
-                e.get("toolCallName")
-                for e in events
-                if e.get("type") == "TOOL_CALL_START"
-            ]
+            tool_calls = [e.get("toolCallName") for e in events if e.get("type") == "TOOL_CALL_START"]
 
             assert started, "no RUN_STARTED in stream: " + repr(raw[:300])
             assert finished, "no RUN_FINISHED -- INCOMPLETE_STREAM"
-            assert not errors, "RUN_ERROR: " + str(
-                [e.get("message") for e in errors]
-            )
+            assert not errors, "RUN_ERROR: " + str([e.get("message") for e in errors])
 
             # The LLM must call the documented tool sequence.
-            assert "list_recent_traces" in tool_calls, (
-                "agent did not call list_recent_traces; tools called: "
-                + str(tool_calls)
+            assert "list_recent_traces" in tool_calls, "agent did not call list_recent_traces; tools called: " + str(
+                tool_calls
             )
-            assert "list_judges" in tool_calls, (
-                "agent did not call list_judges; tools called: "
-                + str(tool_calls)
-            )
+            assert "list_judges" in tool_calls, "agent did not call list_judges; tools called: " + str(tool_calls)
             assert "confirm_judge" in tool_calls, (
-                "agent did not call frontend HITL tool 'confirm_judge'; "
-                "tools called: " + str(tool_calls)
+                "agent did not call frontend HITL tool 'confirm_judge'; tools called: " + str(tool_calls)
             )
 
             # And it must NOT have proceeded past confirm_judge -- it
             # should be paused waiting for the frontend's resolve.
             assert "run_trace_evaluation" not in tool_calls, (
-                "agent ran evaluations BEFORE confirm_judge resolved; "
-                "tools called: " + str(tool_calls)
+                "agent ran evaluations BEFORE confirm_judge resolved; tools called: " + str(tool_calls)
             )
 
             # Run-id continuity (regression for ag-ui-protocol/ag-ui#1582).
-            assert all(e.get("runId") == client_run_id for e in started), (
-                "RUN_STARTED runId mismatch: "
-                + str([e.get("runId") for e in started])
+            assert all(e.get("runId") == client_run_id for e in started), "RUN_STARTED runId mismatch: " + str(
+                [e.get("runId") for e in started]
             )
-            assert all(
-                e.get("runId") == client_run_id for e in finished
-            ), (
+            assert all(e.get("runId") == client_run_id for e in finished), (
                 "RUN_FINISHED runId mismatch (regression of "
-                "ag-ui-protocol/ag-ui#1582): "
-                + str([e.get("runId") for e in finished])
+                "ag-ui-protocol/ag-ui#1582): " + str([e.get("runId") for e in finished])
             )
         finally:
             sys.modules.pop(mod_name, None)
             if sample_dir in sys.path:
                 sys.path.remove(sample_dir)
-
 
 
 # ===========================================================================
