@@ -29,7 +29,11 @@ export interface TraceCardProps {
   traceId: string;
   framework: string;
   agentName: string;
-  status: TraceStatus;
+  /** Trace lifecycle status. Optional — when the data source doesn't
+   *  expose this (e.g. ``traces.get_many`` snapshots without a
+   *  ``status`` column), omit it rather than ship a misleading
+   *  default. The status pill is hidden when undefined. */
+  status?: TraceStatus;
   duration_ms: number;
   tokenCount: number;
   costUsd: number;
@@ -135,7 +139,7 @@ export const TraceCard: React.FC<TraceCardProps> = ({
   tags = [],
   dashboardBaseUrl,
 }) => {
-  const st = STATUS_STYLES[status];
+  const st = status ? STATUS_STYLES[status] : null;
   const base = dashboardBaseUrl ? dashboardBaseUrl.replace(/\/$/, "") : null;
   const traceUrl = base ? `${base}/traces/${traceId}` : null;
   const graphUrl = base ? `${base}/agentgraph/${traceId}` : null;
@@ -149,10 +153,12 @@ export const TraceCard: React.FC<TraceCardProps> = ({
               <Badge variant={frameworkBadgeVariant(framework)} className="font-medium">
                 {framework}
               </Badge>
-              <Badge variant="outline" className="gap-1.5 font-medium">
-                <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />
-                {st.label}
-              </Badge>
+              {st ? (
+                <Badge variant="outline" className="gap-1.5 font-medium">
+                  <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />
+                  {st.label}
+                </Badge>
+              ) : null}
             </div>
             <CardTitle className="truncate text-base">{agentName}</CardTitle>
             <p className="truncate font-mono text-[11px] text-muted-foreground">

@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* The SDK card library lives outside this Next.js app's source tree.
+   Tailwind 4's automatic source detection only scans the project
+   root, so without an explicit ``@source`` directive the utility
+   classes used inside ``samples/copilotkit/components/*.tsx`` get
+   tree-shaken out of the generated CSS — colored severity pills
+   silently flatten to plain text. Pin the path. */
+@source "../../../components/**/*.{ts,tsx}";
+
 /* shadcn/ui design tokens (Tailwind 4 syntax). The variables here come
    from `npx shadcn@latest add` with `baseColor: neutral` and match the
    conventions used across CopilotKit's own samples (research-canvas,
@@ -132,18 +140,30 @@
 
 /* CopilotChat token bridge.
    CopilotKit's chat widget reads its own ``--copilot-kit-*`` palette
-   (see ``packages/react-ui/src/css/colors.css``). To make the chat
-   feel native to the host page in both light and dark mode, we mirror
-   it onto the shadcn neutral tokens. The brand accent
-   (--copilot-kit-secondary-color) stays a fixed indigo across both
-   themes — same pattern research-canvas uses for its #6766FC accent. */
+   (see ``packages/react-ui/src/css/colors.css``). The semantics from
+   that file:
+
+     primary-color           = user message bubble + interactive accents
+     contrast-color          = text on primary
+     secondary-color         = assistant message / card background
+     secondary-contrast-color= main content text on secondary
+     background-color        = chat page background
+     muted-color             = disabled / placeholder
+     separator-color         = borders / dividers
+     input-background-color  = textarea bg
+
+   We map each onto the shadcn neutral token with the matching role
+   so the chat feels native in both light and dark. Brand accent
+   (#6766FC) is applied separately on actual CTA buttons via Tailwind
+   classes — not by hijacking ``secondary-color``, which would make
+   assistant messages render as solid indigo bubbles. */
 
 :root {
   --copilot-kit-background-color: var(--background);
-  --copilot-kit-primary-color: var(--secondary);
-  --copilot-kit-contrast-color: var(--secondary-foreground);
-  --copilot-kit-secondary-color: #6766FC;
-  --copilot-kit-secondary-contrast-color: #ffffff;
+  --copilot-kit-primary-color: var(--primary);
+  --copilot-kit-contrast-color: var(--primary-foreground);
+  --copilot-kit-secondary-color: var(--card);
+  --copilot-kit-secondary-contrast-color: var(--card-foreground);
   --copilot-kit-separator-color: var(--border);
   --copilot-kit-muted-color: var(--muted-foreground);
   --copilot-kit-input-background-color: var(--background);
@@ -151,10 +171,10 @@
 
 .dark {
   --copilot-kit-background-color: var(--background);
-  --copilot-kit-primary-color: var(--secondary);
-  --copilot-kit-contrast-color: var(--secondary-foreground);
-  --copilot-kit-secondary-color: #6766FC;
-  --copilot-kit-secondary-contrast-color: #ffffff;
+  --copilot-kit-primary-color: var(--primary);
+  --copilot-kit-contrast-color: var(--primary-foreground);
+  --copilot-kit-secondary-color: var(--card);
+  --copilot-kit-secondary-contrast-color: var(--card-foreground);
   --copilot-kit-separator-color: var(--border);
   --copilot-kit-muted-color: var(--muted-foreground);
   --copilot-kit-input-background-color: var(--input);

@@ -45,32 +45,64 @@ export interface JudgeVerdictCardProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const SEVERITY_DOT: Record<Severity, string> = {
-  critical: "bg-red-500",
-  high: "bg-orange-500",
-  medium: "bg-amber-500",
-  low: "bg-muted-foreground",
+const SEVERITY_STYLES: Record<
+  Severity,
+  { cls: string; label: string }
+> = {
+  critical: {
+    cls: "bg-red-600 text-white dark:bg-red-500/90",
+    label: "Critical",
+  },
+  high: {
+    cls: "bg-orange-500 text-white dark:bg-orange-500/90",
+    label: "High",
+  },
+  medium: {
+    cls: "bg-amber-500 text-white dark:bg-amber-500/90",
+    label: "Medium",
+  },
+  low: {
+    cls: "bg-muted text-muted-foreground",
+    label: "Low",
+  },
 };
+
+/** Triangle "alert" glyph — communicates severity-as-warning, not
+ *  severity-as-direction (chevrons would imply trend). */
+const AlertIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+    {...props}
+  >
+    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
 
 function verdictBadge(verdict: Verdict) {
   if (verdict === "pass") {
     return (
-      <Badge
-        variant="secondary"
-        className="bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
-      >
+      <Badge className="bg-green-600 px-2.5 py-0.5 text-white shadow-sm hover:bg-green-600 dark:bg-green-500/90">
         Pass
       </Badge>
     );
   }
   if (verdict === "fail") {
-    return <Badge variant="destructive">Fail</Badge>;
+    return (
+      <Badge className="bg-red-600 px-2.5 py-0.5 text-white shadow-sm hover:bg-red-600 dark:bg-red-500/90">
+        Fail
+      </Badge>
+    );
   }
   return (
-    <Badge
-      variant="secondary"
-      className="bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
-    >
+    <Badge className="bg-amber-600 px-2.5 py-0.5 text-white shadow-sm hover:bg-amber-600 dark:bg-amber-500/90">
       Error
     </Badge>
   );
@@ -83,6 +115,99 @@ function scoreBarColor(score: number): string {
 }
 
 const REASONING_COLLAPSE_THRESHOLD = 180; // characters
+
+// ---------------------------------------------------------------------------
+// MarkdownLite — a tiny inline-markdown renderer.
+//
+// LayerLens judge reasoning comes back with markdown — paragraph breaks
+// (``\n\n``), line breaks (``\n``), and inline ``**bold**`` /
+// ``*italic*`` segments. Rendering it as a single ``<p>{text}</p>``
+// collapses the structure into one wall of text.
+//
+// We don't pull ``react-markdown`` because the SDK card library lives
+// outside the Next.js app's node_modules and Node's resolution doesn't
+// reach down into ``app/frontend/node_modules``. A tiny built-in
+// renderer covers the cases the LayerLens API actually emits, without
+// a runtime dep, and using only React fragments + element trees so no
+// raw HTML is ever injected.
+// ---------------------------------------------------------------------------
+
+function renderItalic(text: string, keyPrefix: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const matches = Array.from(text.matchAll(/(?<!\*)\*([^*]+)\*(?!\*)/g));
+  let lastIndex = 0;
+  matches.forEach((m, i) => {
+    const idx = m.index ?? 0;
+    if (idx > lastIndex) {
+      parts.push(
+        <React.Fragment key={`${keyPrefix}-t${i}`}>
+          {text.slice(lastIndex, idx)}
+        </React.Fragment>,
+      );
+    }
+    parts.push(
+      <em key={`${keyPrefix}-i${i}`} className="italic">
+        {m[1]}
+      </em>,
+    );
+    lastIndex = idx + m[0].length;
+  });
+  if (lastIndex < text.length) {
+    parts.push(
+      <React.Fragment key={`${keyPrefix}-tail`}>
+        {text.slice(lastIndex)}
+      </React.Fragment>,
+    );
+  }
+  return parts;
+}
+
+function renderInline(line: string, keyPrefix: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const matches = Array.from(line.matchAll(/\*\*([^*]+)\*\*/g));
+  let lastIndex = 0;
+  matches.forEach((m, i) => {
+    const idx = m.index ?? 0;
+    if (idx > lastIndex) {
+      parts.push(
+        ...renderItalic(line.slice(lastIndex, idx), `${keyPrefix}-t${i}`),
+      );
+    }
+    parts.push(
+      <strong key={`${keyPrefix}-b${i}`} className="font-semibold text-foreground">
+        {m[1]}
+      </strong>,
+    );
+    lastIndex = idx + m[0].length;
+  });
+  if (lastIndex < line.length) {
+    parts.push(
+      ...renderItalic(line.slice(lastIndex), `${keyPrefix}-tail`),
+    );
+  }
+  return parts;
+}
+
+function MarkdownLite({ text }: { text: string }) {
+  const paragraphs = text.split(/\n\s*\n/);
+  return (
+    <div className="space-y-2 text-sm leading-relaxed text-foreground">
+      {paragraphs.map((para, pi) => {
+        const lines = para.split("\n");
+        return (
+          <p key={pi}>
+            {lines.map((line, li) => (
+              <React.Fragment key={li}>
+                {renderInline(line, `p${pi}l${li}`)}
+                {li < lines.length - 1 ? <br /> : null}
+              </React.Fragment>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -103,19 +228,29 @@ export const JudgeVerdictCard: React.FC<JudgeVerdictCardProps> = ({
       ? reasoning.slice(0, REASONING_COLLAPSE_THRESHOLD) + "…"
       : reasoning;
 
+  // Hide the severity chip when there's nothing meaningful to flag —
+  // a passed verdict with "low" severity has no concerns to surface.
+  const showSeverity = !(verdict === "pass" && severity === "low");
+  const sev = SEVERITY_STYLES[severity];
+
   return (
     <Card className="gap-0 py-0 transition-shadow duration-200 hover:shadow-md">
       <CardHeader className="px-6 py-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1">
+          <div className="min-w-0 space-y-1.5">
             <CardTitle className="truncate text-base">{judgeName}</CardTitle>
-            <span
-              className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground"
-              title={`Severity: ${severity}`}
-            >
-              <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", SEVERITY_DOT[severity])} />
-              {severity}
-            </span>
+            {showSeverity ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                  sev.cls,
+                )}
+                title={`Severity: ${sev.label}`}
+              >
+                <AlertIcon className="h-3 w-3" />
+                {sev.label}
+              </span>
+            ) : null}
           </div>
           {verdictBadge(verdict)}
         </div>
@@ -139,9 +274,9 @@ export const JudgeVerdictCard: React.FC<JudgeVerdictCardProps> = ({
           </div>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">Reasoning</p>
-          <p className="text-sm leading-relaxed text-foreground">{displayedReasoning}</p>
+          <MarkdownLite text={displayedReasoning} />
           {needsCollapse ? (
             <Button
               variant="link"

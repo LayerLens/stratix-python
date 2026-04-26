@@ -149,7 +149,11 @@ function TracesCard({
               traceId={t.id}
               framework={t.model ? "openai" : "stratix"}
               agentName={t.filename || "trace"}
-              status="ok"
+              // ``status`` intentionally omitted — the
+              // ``traces.get_many`` LayerLens API response doesn't
+              // expose a per-trace lifecycle status today, so we don't
+              // fabricate one here. When the API exposes it, pass it
+              // through and the card will render the pill.
               duration_ms={t.duration_ms ?? 0}
               tokenCount={t.tokens ?? 0}
               costUsd={0}
@@ -303,11 +307,11 @@ function JudgePicker({
   if (status === "complete") {
     return (
       <div
-        className="my-2 inline-flex items-center gap-2 rounded-lg border border-emerald-700/60 bg-emerald-900/30 px-3 py-1.5 text-sm text-emerald-200"
+        className="my-2 inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-sm font-medium text-green-700 dark:border-green-900/60 dark:bg-green-900/20 dark:text-green-300"
         data-testid="judge-picker-complete"
       >
         <span aria-hidden>✓</span>
-        Judge selected.
+        Judge selected
       </div>
     );
   }
