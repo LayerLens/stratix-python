@@ -34,6 +34,23 @@ classifiers = [
 [project.optional-dependencies]
 cli = ["click>=8.0.0"]
 
+# --- Instrument layer: protocol adapters ---
+# Adding any extra below MUST keep the default `pip install layerlens`
+# install set unchanged. Verified by `tests/instrument/test_default_install.py`.
+protocols-a2a = ["httpx>=0.23.0, <1"]  # base SDK already pulls httpx
+# AG-UI: the adapter is self-contained today; once an upstream client SDK
+# is published on PyPI, pin it here. Until then, this extra is an
+# allow-listed empty group so consumers can still install
+# `layerlens[protocols-agui]` for forward-compatibility.
+protocols-agui = []
+protocols-mcp = ["mcp>=0.9; python_version >= '3.10'"]
+protocols-ap2 = []
+protocols-a2ui = []
+protocols-ucp = []
+protocols-all = [
+  "mcp>=0.9; python_version >= '3.10'",
+]
+
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
 Repository = "https://github.com/LayerLens/stratix-python"
@@ -139,14 +156,20 @@ known-first-party = ["openai", "tests"]
 "tests/**.py" = ["T201", "T203", "ARG", "B007"]
 "examples/**.py" = ["T201", "T203"]
 "src/layerlens/cli/**" = ["T201", "T203"]
+# Protocol adapters have callback-shape constraints dictated by upstream.
+"src/layerlens/instrument/adapters/protocols/**.py" = ["ARG002"]
 
 [tool.pyright]
 include = ["src", "tests"]
 exclude = ["**/__pycache__"]
 reportMissingTypeStubs = false
 
-# Less strict settings for tests and cli
+# Less strict settings for tests, cli, and the dynamic-monkey-patching
+# protocol adapter code. mypy --strict stays strict for these dirs;
+# pyright is relaxed here because it can't follow runtime attribute
+# mutation that the protocol instrumentation relies on.
 executionEnvironments = [
   { root = "src/layerlens/cli", reportMissingImports = false, reportFunctionMemberAccess = false, reportCallIssue = false, reportArgumentType = false, reportAttributeAccessIssue = false },
+  { root = "src/layerlens/instrument/adapters/protocols", reportPossiblyUnbound = false, reportPossiblyUnboundVariable = false, reportCallIssue = false, reportAttributeAccessIssue = false, reportArgumentType = false, reportMissingImports = false, reportFunctionMemberAccess = false },
   { root = "tests", reportGeneralTypeIssues = false, reportOptionalSubscript = false, reportOptionalMemberAccess = false, reportUntypedFunctionDecorator = false, reportUnknownArgumentType = false, reportUnknownMemberType = false, reportUnknownVariableType = false, reportUnnecessaryIsInstance = false, reportUnnecessaryComparison = false, reportArgumentType = false, reportCallIssue = false },
 ]
