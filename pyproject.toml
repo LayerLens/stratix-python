@@ -34,6 +34,17 @@ classifiers = [
 [project.optional-dependencies]
 cli = ["click>=8.0.0"]
 
+# --- Instrument layer: framework adapters ---
+# Adding any extra below MUST keep the default `pip install layerlens`
+# install set unchanged. The Salesforce Agentforce adapter is import-mode
+# only (it talks to a remote REST surface, not an in-process Python SDK)
+# so the extra resolves to the HTTP transport plus the JWT signing
+# library used by the OAuth 2.0 JWT Bearer flow.
+agentforce = [
+  "requests>=2.28",
+  "PyJWT[crypto]>=2.8",
+]
+
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
 Repository = "https://github.com/LayerLens/stratix-python"
