@@ -36,14 +36,29 @@ cli = ["click>=8.0.0"]
 
 # --- Instrument layer: framework adapters ---
 # Adding any extra below MUST keep the default `pip install layerlens`
-# install set unchanged. The Salesforce Agentforce adapter is import-mode
-# only (it talks to a remote REST surface, not an in-process Python SDK)
-# so the extra resolves to the HTTP transport plus the JWT signing
-# library used by the OAuth 2.0 JWT Bearer flow.
+# install set unchanged. Verified by `tests/instrument/test_default_install.py`.
+#
+# The Salesforce Agentforce adapter is import-mode only (it talks to a
+# remote REST surface, not an in-process Python SDK) so the extra
+# resolves to the HTTP transport plus the JWT signing library used by
+# the OAuth 2.0 JWT Bearer flow.
 agentforce = [
   "requests>=2.28",
   "PyJWT[crypto]>=2.8",
 ]
+# --- Agent-tier framework adapters ---
+semantic-kernel = ["semantic-kernel>=1.0,<2.0; python_version >= '3.10'"]
+llama-index = ["llama-index>=0.10,<0.13; python_version >= '3.10'"]
+openai-agents = ["openai>=1.30,<2"]
+pydantic-ai = ["pydantic-ai>=0.0.13,<1.0; python_version >= '3.10'"]
+agno = ["agno>=0.1,<1.0; python_version >= '3.10'"]
+strands = ["strands-agents>=0.1,<1.0; python_version >= '3.10'"]
+smolagents = ["smolagents>=1.0,<2.0; python_version >= '3.10'"]
+ms-agent-framework = ["semantic-kernel>=1.0,<2.0; python_version >= '3.10'"]
+google-adk = ["google-adk>=0.1,<1.0; python_version >= '3.10'"]
+bedrock-agents = ["boto3>=1.34"]
+embedding = []  # vector store hooks; deps come from the underlying store
+benchmark-import = []  # replay-based; no extra deps
 
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
@@ -150,14 +165,21 @@ known-first-party = ["openai", "tests"]
 "tests/**.py" = ["T201", "T203", "ARG", "B007"]
 "examples/**.py" = ["T201", "T203"]
 "src/layerlens/cli/**" = ["T201", "T203"]
+# Framework callbacks have signatures dictated by upstream — unused
+# arguments are part of the contract, not a code smell.
+"src/layerlens/instrument/adapters/frameworks/**.py" = ["ARG002"]
 
 [tool.pyright]
 include = ["src", "tests"]
 exclude = ["**/__pycache__"]
 reportMissingTypeStubs = false
 
-# Less strict settings for tests and cli
+# Less strict settings for tests, cli, and the dynamic-monkey-patching
+# framework adapter code. mypy --strict stays strict for these dirs;
+# pyright is relaxed here because it can't follow runtime attribute
+# mutation that the framework instrumentation relies on.
 executionEnvironments = [
   { root = "src/layerlens/cli", reportMissingImports = false, reportFunctionMemberAccess = false, reportCallIssue = false, reportArgumentType = false, reportAttributeAccessIssue = false },
+  { root = "src/layerlens/instrument/adapters/frameworks", reportPossiblyUnbound = false, reportPossiblyUnboundVariable = false, reportCallIssue = false, reportAttributeAccessIssue = false, reportArgumentType = false, reportMissingImports = false, reportFunctionMemberAccess = false },
   { root = "tests", reportGeneralTypeIssues = false, reportOptionalSubscript = false, reportOptionalMemberAccess = false, reportUntypedFunctionDecorator = false, reportUnknownArgumentType = false, reportUnknownMemberType = false, reportUnknownVariableType = false, reportUnnecessaryIsInstance = false, reportUnnecessaryComparison = false, reportArgumentType = false, reportCallIssue = false },
 ]
