@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import time
 import uuid
-import hashlib
 import logging
 import threading
 from typing import Any
@@ -30,6 +29,10 @@ from layerlens.instrument.adapters._base.adapter import (
     AdapterStatus,
     ReplayableTrace,
     AdapterCapability,
+)
+from layerlens.instrument.adapters._base.handoff import (
+    HandoffSequencer,
+    build_handoff_payload,
 )
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
@@ -61,6 +64,10 @@ class OpenAIAgentsAdapter(BaseAdapter):
         self._framework_version: str | None = None
         self._trace_processor: Any | None = None
         self._run_starts: dict[int, int] = {}  # thread_id -> start_ns
+        # Standardised handoff sequence counter (cross-pollination #7).
+        # Both the SDK-span path and the manual ``on_handoff`` hook
+        # draw from this single instance so seqs stay monotonic.
+        self._handoff_sequencer = HandoffSequencer()
 
     def connect(self) -> None:
         """Import openai-agents SDK and register trace processor."""
@@ -322,15 +329,20 @@ class OpenAIAgentsAdapter(BaseAdapter):
     def _on_handoff_span_end(self, span: Any, data: Any) -> None:
         from_agent = getattr(data, "from_agent", None) or "unknown"
         to_agent = getattr(data, "to_agent", None) or "unknown"
-        self.emit_dict_event(
-            "agent.handoff",
-            {
-                "from_agent": from_agent,
-                "to_agent": to_agent,
-                "reason": "handoff",
-                "framework": "openai_agents",
-            },
+        # Pull whatever context the SDK exposes on the span for hashing.
+        context: dict[str, Any] = {}
+        for attr in ("input", "output", "context", "reason"):
+            value = getattr(data, attr, None)
+            if value is not None:
+                context[attr] = value
+        payload = build_handoff_payload(
+            sequencer=self._handoff_sequencer,
+            from_agent=from_agent,
+            to_agent=to_agent,
+            context=context if context else None,
+            extra={"reason": "handoff", "framework": "openai_agents"},
         )
+        self.emit_dict_event("agent.handoff", payload)
 
     def _on_guardrail_span_end(self, span: Any, data: Any) -> None:
         guardrail_name = getattr(data, "name", None) or "unknown"
@@ -456,20 +468,18 @@ class OpenAIAgentsAdapter(BaseAdapter):
         if not self._connected:
             return
         try:
-            context_str = str(context) if context else ""
-            context_hash = (
-                hashlib.sha256(context_str.encode("utf-8")).hexdigest() if context_str else None
+            ctx_dict = context if isinstance(context, dict) else (
+                {"context": str(context)} if context is not None else None
             )
-            self.emit_dict_event(
-                "agent.handoff",
-                {
-                    "from_agent": from_agent,
-                    "to_agent": to_agent,
-                    "reason": "handoff",
-                    "context_hash": context_hash,
-                    "context_preview": context_str[:500] if context_str else None,
-                },
+            payload = build_handoff_payload(
+                sequencer=self._handoff_sequencer,
+                from_agent=from_agent,
+                to_agent=to_agent,
+                context=ctx_dict,
+                preview_text=str(context) if context is not None else None,
+                extra={"reason": "handoff", "framework": "openai_agents"},
             )
+            self.emit_dict_event("agent.handoff", payload)
         except Exception:
             logger.warning("Error in on_handoff", exc_info=True)
 

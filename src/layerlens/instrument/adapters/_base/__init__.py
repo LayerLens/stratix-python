@@ -25,6 +25,14 @@ from layerlens.instrument.adapters._base.capture import (
     ALWAYS_ENABLED_EVENT_TYPES,
     CaptureConfig,
 )
+from layerlens.instrument.adapters._base.handoff import (
+    DEFAULT_PREVIEW_MAX_CHARS,
+    HandoffMetadata,
+    HandoffSequencer,
+    make_preview,
+    compute_context_hash,
+    build_handoff_payload,
+)
 from layerlens.instrument.adapters._base.registry import AdapterRegistry
 from layerlens.instrument.adapters._base.pydantic_compat import (
     PydanticCompat,
@@ -40,10 +48,16 @@ __all__ = [
     "AdapterStatus",
     "BaseAdapter",
     "CaptureConfig",
+    "DEFAULT_PREVIEW_MAX_CHARS",
     "EventSink",
+    "HandoffMetadata",
+    "HandoffSequencer",
     "IngestionPipelineSink",
     "PydanticCompat",
     "ReplayableTrace",
     "TraceStoreSink",
+    "build_handoff_payload",
+    "compute_context_hash",
+    "make_preview",
     "requires_pydantic",
 ]

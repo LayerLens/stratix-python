@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import time
 import uuid
-import hashlib
 import logging
 import threading
 from typing import Any
@@ -27,6 +26,10 @@ from layerlens.instrument.adapters._base.adapter import (
     AdapterStatus,
     ReplayableTrace,
     AdapterCapability,
+)
+from layerlens.instrument.adapters._base.handoff import (
+    HandoffSequencer,
+    build_handoff_payload,
 )
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
@@ -58,6 +61,8 @@ class LlamaIndexAdapter(BaseAdapter):
         self._framework_version: str | None = None
         self._event_handler: Any | None = None
         self._agent_starts: dict[int, int] = {}  # thread_id -> start_ns
+        # Standardised handoff sequence counter (cross-pollination #7).
+        self._handoff_sequencer = HandoffSequencer()
 
     def connect(self) -> None:
         try:
@@ -396,18 +401,21 @@ class LlamaIndexAdapter(BaseAdapter):
         if not self._connected:
             return
         try:
-            context_str = str(context) if context else ""
-            self.emit_dict_event(
-                "agent.handoff",
-                {
-                    "from_agent": from_agent,
-                    "to_agent": to_agent,
+            ctx_dict = context if isinstance(context, dict) else (
+                {"context": str(context)} if context is not None else None
+            )
+            payload = build_handoff_payload(
+                sequencer=self._handoff_sequencer,
+                from_agent=from_agent,
+                to_agent=to_agent,
+                context=ctx_dict,
+                preview_text=str(context) if context is not None else None,
+                extra={
                     "reason": "agent_workflow_handoff",
-                    "context_hash": hashlib.sha256(context_str.encode()).hexdigest()
-                    if context_str
-                    else None,
+                    "framework": "llama_index",
                 },
             )
+            self.emit_dict_event("agent.handoff", payload)
         except Exception:
             logger.warning("Error in on_handoff", exc_info=True)
 

@@ -151,6 +151,36 @@ def test_handoff_span_emits_agent_handoff() -> None:
     assert evt["payload"]["to_agent"] == "b"
 
 
+def test_handoff_emits_standardized_metadata() -> None:
+    """Span and manual handoff paths both produce seq+hash+preview."""
+    stratix = _RecordingStratix()
+    adapter = OpenAIAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    # Span path.
+    adapter._on_span_end(_Span(HandoffSpanData(from_agent="a", to_agent="b")))
+    # Manual path.
+    adapter.on_handoff("b", "c", context={"task": "summarise"})
+
+    handoffs = [e for e in stratix.events if e["event_type"] == "agent.handoff"]
+    assert len(handoffs) == 2
+
+    # Both share the standard contract.
+    for h in handoffs:
+        assert "handoff_seq" in h["payload"]
+        assert h["payload"]["context_hash"].startswith("sha256:")
+        assert "context_preview" in h["payload"]
+        assert "timestamp" in h["payload"]
+        assert h["payload"]["framework"] == "openai_agents"
+
+    # Seqs are monotonic across detection paths.
+    assert handoffs[0]["payload"]["handoff_seq"] == 1
+    assert handoffs[1]["payload"]["handoff_seq"] == 2
+
+    # Manual path's preview reflects the explicit context.
+    assert "summarise" in handoffs[1]["payload"]["context_preview"]
+
+
 def test_guardrail_span_emits_policy_violation() -> None:
     stratix = _RecordingStratix()
     adapter = OpenAIAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())

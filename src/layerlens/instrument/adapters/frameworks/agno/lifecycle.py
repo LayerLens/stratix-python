@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import time
 import uuid
-import hashlib
 import logging
 import threading
 from typing import Any
@@ -26,6 +25,10 @@ from layerlens.instrument.adapters._base.adapter import (
     AdapterStatus,
     ReplayableTrace,
     AdapterCapability,
+)
+from layerlens.instrument.adapters._base.handoff import (
+    HandoffSequencer,
+    build_handoff_payload,
 )
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
@@ -57,6 +60,9 @@ class AgnoAdapter(BaseAdapter):
         self._seen_agents: set[str] = set()
         self._framework_version: str | None = None
         self._run_starts: dict[int, int] = {}  # thread_id -> start_ns
+        # Standardised handoff sequence counter (cross-pollination #7).
+        # Thread-safe — concurrent agent runs draw from one instance.
+        self._handoff_sequencer = HandoffSequencer()
 
     def connect(self) -> None:
         """Verify Agno availability and prepare the adapter."""
@@ -262,16 +268,17 @@ class AgnoAdapter(BaseAdapter):
             team = getattr(agent, "team", None)
             if team:
                 members = getattr(team, "members", None) or getattr(team, "agents", None) or []
+                leader_name = getattr(agent, "name", "leader")
                 for member in members:
                     member_name = getattr(member, "name", None) or str(member)
-                    self.emit_dict_event(
-                        "agent.handoff",
-                        {
-                            "from_agent": getattr(agent, "name", "leader"),
-                            "to_agent": member_name,
-                            "reason": "team_delegation",
-                        },
+                    payload = build_handoff_payload(
+                        sequencer=self._handoff_sequencer,
+                        from_agent=leader_name,
+                        to_agent=member_name,
+                        context={"leader": leader_name, "member": member_name},
+                        extra={"reason": "team_delegation", "framework": "agno"},
                     )
+                    self.emit_dict_event("agent.handoff", payload)
         except Exception:
             logger.debug("Could not extract run details", exc_info=True)
 
@@ -390,22 +397,27 @@ class AgnoAdapter(BaseAdapter):
             logger.warning("Error in on_llm_call", exc_info=True)
 
     def on_handoff(self, from_agent: str, to_agent: str, context: Any = None) -> None:
-        """Emit agent.handoff event for team delegation."""
+        """Emit agent.handoff event for team delegation.
+
+        Uses the shared :class:`HandoffSequencer` + canonical context
+        hash + bounded preview so agno handoffs follow the same
+        contract as the mature LangGraph / CrewAI / AutoGen adapters.
+        """
         if not self._connected:
             return
         try:
-            context_str = str(context) if context else ""
-            self.emit_dict_event(
-                "agent.handoff",
-                {
-                    "from_agent": from_agent,
-                    "to_agent": to_agent,
-                    "reason": "agno_team_delegation",
-                    "context_hash": hashlib.sha256(context_str.encode()).hexdigest()
-                    if context_str
-                    else None,
-                },
+            ctx_dict = context if isinstance(context, dict) else (
+                {"context": str(context)} if context is not None else None
             )
+            payload = build_handoff_payload(
+                sequencer=self._handoff_sequencer,
+                from_agent=from_agent,
+                to_agent=to_agent,
+                context=ctx_dict,
+                preview_text=str(context) if context is not None else None,
+                extra={"reason": "agno_team_delegation", "framework": "agno"},
+            )
+            self.emit_dict_event("agent.handoff", payload)
         except Exception:
             logger.warning("Error in on_handoff", exc_info=True)
 

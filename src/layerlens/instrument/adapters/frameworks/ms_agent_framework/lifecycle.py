@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import time
 import uuid
-import hashlib
 import logging
 import threading
 from typing import Any
@@ -26,6 +25,10 @@ from layerlens.instrument.adapters._base.adapter import (
     AdapterStatus,
     ReplayableTrace,
     AdapterCapability,
+)
+from layerlens.instrument.adapters._base.handoff import (
+    HandoffSequencer,
+    build_handoff_payload,
 )
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
@@ -58,6 +61,11 @@ class MSAgentAdapter(BaseAdapter):
         self._seen_agents: set[str] = set()
         self._framework_version: str | None = None
         self._run_starts: dict[int, int] = {}  # thread_id -> start_ns
+        # Standardised handoff sequence counter (cross-pollination #7).
+        # Both group-chat-turn detection in ``_process_message`` and the
+        # manual ``on_handoff`` hook draw from this single instance so
+        # seqs stay monotonic across detection paths.
+        self._handoff_sequencer = HandoffSequencer()
 
     def connect(self) -> None:
         """Verify Microsoft Agent Framework availability and prepare the adapter."""
@@ -220,14 +228,20 @@ class MSAgentAdapter(BaseAdapter):
             # Detect agent turn transitions (handoffs in group chat)
             msg_agent_name = getattr(message, "agent_name", None) or getattr(message, "name", None)
             if msg_agent_name and msg_agent_name != current_agent:
-                self.emit_dict_event(
-                    "agent.handoff",
-                    {
+                msg_content = getattr(message, "content", None)
+                payload = build_handoff_payload(
+                    sequencer=self._handoff_sequencer,
+                    from_agent=current_agent,
+                    to_agent=msg_agent_name,
+                    context={
                         "from_agent": current_agent,
                         "to_agent": msg_agent_name,
-                        "reason": "group_chat_turn",
+                        "message_content": msg_content,
                     },
+                    preview_text=str(msg_content) if msg_content is not None else None,
+                    extra={"reason": "group_chat_turn", "framework": "ms_agent_framework"},
                 )
+                self.emit_dict_event("agent.handoff", payload)
 
             # Extract tool calls from message
             items = getattr(message, "items", None) or []
@@ -404,18 +418,21 @@ class MSAgentAdapter(BaseAdapter):
         if not self._connected:
             return
         try:
-            context_str = str(context) if context else ""
-            self.emit_dict_event(
-                "agent.handoff",
-                {
-                    "from_agent": from_agent,
-                    "to_agent": to_agent,
+            ctx_dict = context if isinstance(context, dict) else (
+                {"context": str(context)} if context is not None else None
+            )
+            payload = build_handoff_payload(
+                sequencer=self._handoff_sequencer,
+                from_agent=from_agent,
+                to_agent=to_agent,
+                context=ctx_dict,
+                preview_text=str(context) if context is not None else None,
+                extra={
                     "reason": "group_chat_turn",
-                    "context_hash": hashlib.sha256(context_str.encode()).hexdigest()
-                    if context_str
-                    else None,
+                    "framework": "ms_agent_framework",
                 },
             )
+            self.emit_dict_event("agent.handoff", payload)
         except Exception:
             logger.warning("Error in on_handoff", exc_info=True)
 

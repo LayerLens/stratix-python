@@ -156,6 +156,30 @@ def test_on_handoff_emits_event_with_context_hash() -> None:
     assert evt["payload"]["context_hash"] is not None
 
 
+def test_on_handoff_emits_standardized_metadata() -> None:
+    """Standardised contract: seq + sha256 hash + bounded preview + timestamp."""
+    stratix = _RecordingStratix()
+    adapter = LlamaIndexAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_handoff(from_agent="researcher", to_agent="writer", context={"task": "draft"})
+    adapter.on_handoff(from_agent="writer", to_agent="editor", context={"task": "review"})
+
+    handoffs = [e for e in stratix.events if e["event_type"] == "agent.handoff"]
+    assert len(handoffs) == 2
+
+    for h in handoffs:
+        assert h["payload"]["context_hash"].startswith("sha256:")
+        assert "context_preview" in h["payload"]
+        assert "timestamp" in h["payload"]
+        assert h["payload"]["framework"] == "llama_index"
+        assert h["payload"]["reason"] == "agent_workflow_handoff"
+
+    assert handoffs[0]["payload"]["handoff_seq"] == 1
+    assert handoffs[1]["payload"]["handoff_seq"] == 2
+    assert handoffs[0]["payload"]["context_hash"] != handoffs[1]["payload"]["context_hash"]
+
+
 def test_capture_config_gates_l5a_tool_calls() -> None:
     stratix = _RecordingStratix()
     cfg = CaptureConfig(l5a_tool_calls=False)

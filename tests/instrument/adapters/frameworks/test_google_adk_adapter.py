@@ -164,6 +164,30 @@ def test_on_handoff_emits_event_with_context_hash() -> None:
     assert evt["payload"]["context_hash"] is not None
 
 
+def test_on_handoff_emits_standardized_metadata() -> None:
+    """transfer_to_agent path follows the same standardised contract."""
+    stratix = _RecordingStratix()
+    adapter = GoogleADKAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_handoff(from_agent="root_agent", to_agent="search_agent", context={"query": "weather"})
+    adapter.on_handoff(from_agent="root_agent", to_agent="planner_agent", context={"query": "trip"})
+
+    handoffs = [e for e in stratix.events if e["event_type"] == "agent.handoff"]
+    assert len(handoffs) == 2
+
+    for h in handoffs:
+        assert h["payload"]["context_hash"].startswith("sha256:")
+        assert "context_preview" in h["payload"]
+        assert "timestamp" in h["payload"]
+        assert h["payload"]["framework"] == "google_adk"
+        assert h["payload"]["reason"] == "transfer_to_agent"
+
+    assert handoffs[0]["payload"]["handoff_seq"] == 1
+    assert handoffs[1]["payload"]["handoff_seq"] == 2
+    assert handoffs[0]["payload"]["context_hash"] != handoffs[1]["payload"]["context_hash"]
+
+
 def test_capture_config_gates_l3_model_metadata() -> None:
     """When l3_model_metadata is disabled, model.invoke does NOT fire (handoff still does)."""
     stratix = _RecordingStratix()

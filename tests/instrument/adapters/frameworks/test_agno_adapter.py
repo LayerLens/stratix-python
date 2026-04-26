@@ -177,6 +177,54 @@ def test_on_handoff_emits_event_with_context_hash() -> None:
     assert evt["payload"]["context_hash"] is not None
 
 
+def test_on_handoff_emits_standardized_metadata() -> None:
+    """Standardised contract: seq + sha256 hash + bounded preview + timestamp."""
+    stratix = _RecordingStratix()
+    adapter = AgnoAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_handoff(from_agent="leader", to_agent="worker_a", context={"task": "fetch"})
+    adapter.on_handoff(from_agent="leader", to_agent="worker_b", context={"task": "summarise"})
+
+    handoffs = [e for e in stratix.events if e["event_type"] == "agent.handoff"]
+    assert len(handoffs) == 2
+
+    for h in handoffs:
+        assert h["payload"]["context_hash"].startswith("sha256:")
+        assert "context_preview" in h["payload"]
+        assert "timestamp" in h["payload"]
+        assert h["payload"]["framework"] == "agno"
+
+    # Monotonic seqs.
+    assert handoffs[0]["payload"]["handoff_seq"] == 1
+    assert handoffs[1]["payload"]["handoff_seq"] == 2
+    # Different contexts → different hashes.
+    assert handoffs[0]["payload"]["context_hash"] != handoffs[1]["payload"]["context_hash"]
+
+
+def test_team_delegation_emits_standardized_metadata() -> None:
+    """Team-delegation handoffs follow the same contract."""
+    stratix = _RecordingStratix()
+    adapter = AgnoAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    team = SimpleNamespace(members=[SimpleNamespace(name="m1"), SimpleNamespace(name="m2")])
+    agent = _FakeAgent(name="leader", team=team)
+    adapter.instrument_agent(agent)
+    agent.run("go")
+
+    handoffs = [e for e in stratix.events if e["event_type"] == "agent.handoff"]
+    # Two members -> two handoffs.
+    assert len(handoffs) == 2
+    seqs = [h["payload"]["handoff_seq"] for h in handoffs]
+    assert seqs == sorted(seqs)
+    assert all(s > 0 for s in seqs)
+    for h in handoffs:
+        assert h["payload"]["context_hash"].startswith("sha256:")
+        assert h["payload"]["from_agent"] == "leader"
+        assert h["payload"]["reason"] == "team_delegation"
+
+
 def test_capture_config_gates_l5a_tool_calls() -> None:
     """When l5a_tool_calls is disabled, tool.call events do NOT fire."""
     stratix = _RecordingStratix()
