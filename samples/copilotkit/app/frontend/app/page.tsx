@@ -380,6 +380,49 @@ function severityFromScore(score: number): Severity {
   return "critical";
 }
 
+/** Skeleton card shown for evaluations that have been kicked off but
+ *  haven't returned a verdict yet. Matches ``JudgeVerdictCard`` chrome
+ *  (same shadcn ``Card`` shell) so the grid stays visually balanced
+ *  while results stream in. */
+function PendingVerdictCard({
+  judgeName,
+  traceId,
+  status,
+}: {
+  judgeName: string;
+  traceId: string;
+  status: string;
+}) {
+  return (
+    <div
+      className="flex flex-col gap-4 rounded-xl border bg-card px-6 py-5 text-card-foreground shadow-sm"
+      data-testid="pending-verdict-card"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5">
+          <h3 className="truncate text-base font-semibold">{judgeName}</h3>
+          <p className="truncate font-mono text-[11px] text-muted-foreground">
+            trace {traceId}
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+          <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
+          {status === "in_progress" || status === "pending" ? "Running" : status}
+        </span>
+      </div>
+      <div className="space-y-2">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500/40" />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          LayerLens is evaluating this trace. Real evaluations can take a
+          minute or two — the verdict will appear here as soon as it lands.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function ResultsSection({
   results,
   evaluations,
@@ -389,22 +432,17 @@ function ResultsSection({
   evaluations: EvaluationRecord[];
   judges: JudgeRecord[];
 }) {
-  const completed = results.length;
-  if (completed === 0) {
-    if (evaluations.length === 0) return null;
-    // We have evaluations in flight but no completed results yet.
-    return (
-      <CanvasSection title="Evaluation results" count={0}>
-        <p className="rounded-md border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">
-          {evaluations.length} evaluation{evaluations.length === 1 ? "" : "s"}{" "}
-          running — verdicts will appear here as they complete.
-        </p>
-      </CanvasSection>
-    );
-  }
-
   const judgeName = (judgeId: string | undefined) =>
     judges.find((j) => j.id === judgeId)?.name ?? judgeId ?? "Judge";
+
+  const completedIds = new Set(results.map((r) => r.evaluation_id));
+  const pendingEvals = evaluations.filter(
+    (e) => !completedIds.has(e.evaluation_id),
+  );
+
+  if (results.length === 0 && evaluations.length === 0) return null;
+
+  const completed = results.length;
   const passed = results.filter((r) => r.passed === true).length;
   const failed = results.filter((r) => r.passed === false).length;
   const totalScore = results.reduce((acc, r) => acc + (r.score ?? 0), 0);
@@ -412,15 +450,17 @@ function ResultsSection({
   const passRate =
     completed > 0 ? Math.round((passed / completed) * 100) : 0;
   const summaryJudgeName =
-    new Set(results.map((r) => r.judge_id)).size === 1
+    new Set(results.map((r) => r.judge_id)).size === 1 && completed > 0
       ? judgeName(results[0]?.judge_id)
-      : "Mixed judges";
+      : evaluations[0]
+        ? judgeName(evaluations[0].judge_id)
+        : "Evaluation";
 
   return (
     <>
       <CanvasSection title="Run summary">
         <EvaluationCard
-          evaluationId={`run-${results[0]?.evaluation_id ?? "summary"}`}
+          evaluationId={`run-${results[0]?.evaluation_id ?? evaluations[0]?.evaluation_id ?? "summary"}`}
           name={summaryJudgeName}
           passRate={passRate}
           totalCases={completed}
@@ -428,10 +468,13 @@ function ResultsSection({
           failedCases={failed}
           errorCases={0}
           scores={[{ label: "Average score", value: avgScore }]}
-          status={evaluations.length > completed ? "running" : "completed"}
+          status={pendingEvals.length > 0 ? "running" : "completed"}
         />
       </CanvasSection>
-      <CanvasSection title="Verdicts" count={completed}>
+      <CanvasSection
+        title="Verdicts"
+        count={evaluations.length || completed}
+      >
         <div className="grid gap-3 lg:grid-cols-2" data-testid="state-results-cards">
           {results.map((r) => {
             const score = typeof r.score === "number" ? r.score : 0;
@@ -449,6 +492,14 @@ function ResultsSection({
               />
             );
           })}
+          {pendingEvals.map((e) => (
+            <PendingVerdictCard
+              key={e.evaluation_id || `${e.trace_id}-${e.judge_id}`}
+              judgeName={judgeName(e.judge_id)}
+              traceId={e.trace_id ? e.trace_id.slice(-8) : "—"}
+              status={e.status}
+            />
+          ))}
         </div>
       </CanvasSection>
     </>
