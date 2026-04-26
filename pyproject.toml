@@ -34,6 +34,11 @@ classifiers = [
 [project.optional-dependencies]
 cli = ["click>=8.0.0"]
 
+# --- Instrument layer: framework adapters ---
+# Adding any extra below MUST keep the default `pip install layerlens`
+# install set unchanged. Verified by `tests/instrument/test_default_install.py`.
+crewai = ["crewai>=0.30,<0.90; python_version >= '3.10'"]
+
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
 Repository = "https://github.com/LayerLens/stratix-python"
@@ -139,6 +144,9 @@ known-first-party = ["openai", "tests"]
 "tests/**.py" = ["T201", "T203", "ARG", "B007"]
 "examples/**.py" = ["T201", "T203"]
 "src/layerlens/cli/**" = ["T201", "T203"]
+# Framework callbacks have signatures dictated by upstream — unused
+# arguments are part of the contract, not a code smell.
+"src/layerlens/instrument/adapters/frameworks/**.py" = ["ARG002"]
 
 [tool.pyright]
 include = ["src", "tests"]
