@@ -12,6 +12,7 @@ import { TextMessage, Role } from "@copilotkit/runtime-client-gql";
 import {
   EvaluationCard,
   JudgeVerdictCard,
+  MarkdownLite,
   MetricCard,
   TraceCard,
   type Severity,
@@ -204,9 +205,9 @@ function JudgesCard({ judges }: { judges: JudgeRecord[] }) {
               </code>
             </div>
             {j.goal ? (
-              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                {j.goal}
-              </p>
+              <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                <MarkdownLite text={j.goal} className="text-xs leading-snug text-muted-foreground [&_p]:m-0" />
+              </div>
             ) : null}
           </li>
         ))}
@@ -350,7 +351,10 @@ function JudgePicker({
                 </code>
               </div>
               {judge.goal ? (
-                <p className="mt-1 text-xs text-muted-foreground">{judge.goal}</p>
+                <MarkdownLite
+                  text={judge.goal}
+                  className="mt-1 text-xs leading-snug text-muted-foreground"
+                />
               ) : null}
               <button
                 type="button"

@@ -42,3 +42,6 @@ export type {
   MetricCardProps,
   TrendDirection,
 } from "./MetricCard";
+
+export { MarkdownLite } from "./markdown-lite";
+export type { MarkdownLiteProps } from "./markdown-lite";
