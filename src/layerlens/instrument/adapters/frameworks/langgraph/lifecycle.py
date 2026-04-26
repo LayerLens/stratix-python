@@ -158,6 +158,11 @@ class LayerLensLangGraphAdapter(BaseAdapter):
         )
 
     def get_adapter_info(self) -> AdapterInfo:
+        # Round-2 deliberation item 20: surface the v2-only requirement on
+        # both ``info()`` (the manifest wrapper that re-applies the class
+        # attribute) and ``get_adapter_info()`` (the subclass override) so
+        # the atlas-app catalog UI shows the correct compat badge regardless
+        # of which entrypoint the manifest emitter ends up calling.
         return AdapterInfo(
             name="LayerLensLangGraphAdapter",
             version=self.VERSION,
@@ -171,6 +176,7 @@ class LayerLensLangGraphAdapter(BaseAdapter):
                 AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for LangGraph agent framework",
+            requires_pydantic=PydanticCompat.V2_ONLY,
         )
 
     def serialize_for_replay(self) -> ReplayableTrace:

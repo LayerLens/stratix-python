@@ -54,5 +54,41 @@ __all__ = [
 ]
 
 
-# Backward-compat aliases for users coming from ateam.
-STRATIXLangGraphAdapter = LayerLensLangGraphAdapter  # noqa: N816 - backward-compat alias for ateam users
+# ---------------------------------------------------------------------------
+# Backward-compat aliases (Round-2 deliberation item 23)
+# ---------------------------------------------------------------------------
+# Users porting from the ``ateam`` reference implementation imported the
+# adapter under the ``STRATIX*`` name. We keep the symbol resolvable but
+# raise a ``DeprecationWarning`` on access so callers see the v2.0 removal
+# notice in their existing test runs without us breaking import-time
+# behaviour. The warning fires via PEP 562 module-level ``__getattr__`` so
+# it is emitted at *attribute access* time only — a bare module-level
+# assignment would warn at every package import even when the alias is
+# never referenced.
+
+import warnings as _warnings
+from typing import Any as _Any
+
+_DEPRECATED_ALIASES: dict[str, tuple[str, _Any]] = {
+    "STRATIXLangGraphAdapter": ("LayerLensLangGraphAdapter", LayerLensLangGraphAdapter),
+}
+
+
+def __getattr__(name: str) -> _Any:
+    """Resolve deprecated ``STRATIX*`` aliases with a ``DeprecationWarning``.
+
+    PEP 562 module-level ``__getattr__`` is invoked for attributes not
+    found via normal lookup. Aliases are kept out of ``__all__`` and out
+    of static binding so star-imports do not pull them and so the warning
+    fires only when a caller explicitly references the old name.
+    """
+    if name in _DEPRECATED_ALIASES:
+        new_name, target = _DEPRECATED_ALIASES[name]
+        _warnings.warn(
+            f"`{name}` is deprecated and will be removed in layerlens v2.0; "
+            f"use `{new_name}` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return target
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
