@@ -210,3 +210,35 @@ def test_serialize_for_replay() -> None:
     rt = adapter.serialize_for_replay()
     assert rt.framework == "smolagents"
     assert "capture_config" in rt.config
+
+
+def test_legacy_stratix_alias_warns_and_resolves() -> None:
+    """Legacy ``STRATIXSmolAgentsAdapter`` name still imports with a DeprecationWarning."""
+    import warnings
+    import importlib
+
+    smolagents_mod = importlib.import_module(
+        "layerlens.instrument.adapters.frameworks.smolagents"
+    )
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        legacy = smolagents_mod.STRATIXSmolAgentsAdapter
+
+    assert legacy is SmolAgentsAdapter
+    assert any(issubclass(w.category, DeprecationWarning) for w in captured)
+    assert any("STRATIXSmolAgentsAdapter" in str(w.message) for w in captured)
+
+
+def test_unknown_attribute_still_raises_attribute_error() -> None:
+    """Module ``__getattr__`` must not swallow real misses."""
+    import importlib
+
+    smolagents_mod = importlib.import_module(
+        "layerlens.instrument.adapters.frameworks.smolagents"
+    )
+
+    import pytest
+
+    with pytest.raises(AttributeError):
+        getattr(smolagents_mod, "NopeNotARealName")  # noqa: B009 — exercising __getattr__
