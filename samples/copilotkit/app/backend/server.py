@@ -168,7 +168,12 @@ add_langgraph_fastapi_endpoint(
 )
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point: boot uvicorn against the FastAPI app.
+
+    Honours ``HARNESS_HOST`` / ``HARNESS_PORT`` / ``HARNESS_LOG_LEVEL``
+    env vars; defaults are 127.0.0.1:8123 and ``info``-level logging.
+    """
     import uvicorn
 
     uvicorn.run(
@@ -178,3 +183,7 @@ if __name__ == "__main__":
         log_level=os.environ.get("HARNESS_LOG_LEVEL", "info"),
         reload=False,
     )
+
+
+if __name__ == "__main__":
+    main()
