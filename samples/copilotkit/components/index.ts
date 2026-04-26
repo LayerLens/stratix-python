@@ -2,7 +2,12 @@
  * CopilotKit component library for LayerLens Stratix.
  *
  * Re-exports all card components that can be rendered inline
- * inside CopilotKit chat messages.
+ * inside CopilotKit chat messages or in a side canvas via
+ * ``useCoAgent``.
+ *
+ * Cards compose shadcn/ui primitives shipped under ``./ui/*``.
+ * Consumers can import the cards alone, or pull the underlying
+ * primitives directly from ``@layerlens/copilotkit-cards/ui/*``.
  */
 
 export { EvaluationCard } from "./EvaluationCard";

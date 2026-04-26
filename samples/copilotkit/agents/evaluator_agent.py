@@ -31,23 +31,33 @@ Requires ``OPENAI_API_KEY`` in the environment. Set
 ``LAYERLENS_STRATIX_API_KEY`` so the tools can call the LayerLens API.
 """
 
-from __future__ import annotations
-
 import asyncio
+import json
 import logging
+import operator
 import os
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from copilotkit import CopilotKitMiddleware
+from copilotkit.langgraph import copilotkit_emit_state
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentState
+from langchain_core.messages import ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
+from langchain_core.tools.base import InjectedToolCallId
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.prebuilt import InjectedState
+from langgraph.types import Command
 
 from layerlens import Stratix
 
 logger = logging.getLogger(__name__)
+# When run under uvicorn the root logger is configured at INFO; make sure
+# our messages propagate so tool activity is visible in the harness log.
+logger.setLevel(logging.INFO)
 
 # Polling bounds for get_evaluation_result so a stuck job doesn't hang a
 # customer's chat indefinitely. The LLM will call get_evaluation_result
@@ -78,112 +88,254 @@ def _get_client() -> Stratix:
 
 
 # ---------------------------------------------------------------------------
+# Agent state schema
+#
+# Extending ``AgentState`` lets each tool return a ``Command(update={...})``
+# that mutates these fields. The frontend's ``useCoAgentStateRender`` then
+# renders progressive cards (recent traces, available judges, running
+# evaluations, completed results) keyed off the state — the canonical
+# CopilotKit pattern from ``coagents-research-canvas``.
+#
+# ``Annotated[..., operator.add]`` makes a field accumulate across tool
+# calls (we use this for ``evaluations`` and ``results`` since the LLM
+# fires one ``run_trace_evaluation`` per trace and one
+# ``get_evaluation_result`` per evaluation). The non-annotated fields
+# replace on update.
+# ---------------------------------------------------------------------------
+
+
+class EvaluatorState(AgentState):
+    """Extended state schema surfaced to the frontend via STATE_SNAPSHOT."""
+
+    traces: list[dict[str, Any]]
+    judges: list[dict[str, Any]]
+    evaluations: Annotated[list[dict[str, Any]], operator.add]
+    results: Annotated[list[dict[str, Any]], operator.add]
+
+
+# ---------------------------------------------------------------------------
 # Backend tools — these call the LayerLens SDK
 # ---------------------------------------------------------------------------
 
 
 @tool
-def list_judges() -> List[Dict[str, str]]:
+async def list_judges(
+    tool_call_id: Annotated[str, InjectedToolCallId] = "",
+    state: Annotated[dict, InjectedState] = None,
+    config: RunnableConfig = None,
+) -> Command:
     """List available LayerLens judges (evaluation criteria).
 
-    Returns a list of ``{"id", "name", "goal"}`` dicts. Call this before
-    asking the user which judge to use.
+    Updates ``state.judges`` with ``{"id", "name", "goal"}`` dicts so the
+    frontend can render the available-judges card.
     """
     client = _get_client()
     resp = client.judges.get_many()
-    if resp is None:
-        return []
-    return [
-        {"id": j.id, "name": j.name, "goal": j.evaluation_goal}
-        for j in resp.judges
-    ]
+    judges: list[dict[str, Any]] = []
+    if resp is not None:
+        judges = [
+            {"id": j.id, "name": j.name, "goal": j.evaluation_goal}
+            for j in resp.judges
+        ]
+    # Push state to the frontend immediately so the canvas updates as
+    # this tool completes — without this, ag-ui-langgraph batches state
+    # snapshots until the LLM's tool-calling round wraps up, which makes
+    # ``MetricCard`` / ``JudgesCard`` lag the actual data.
+    if config is not None:
+        merged = {**(state or {}), "judges": judges}
+        await copilotkit_emit_state(config, merged)
+    return Command(
+        update={
+            "judges": judges,
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(judges),
+                    tool_call_id=tool_call_id,
+                    name="list_judges",
+                )
+            ],
+        }
+    )
 
 
 @tool
-def list_recent_traces(limit: int = 20) -> List[Dict[str, str]]:
+async def list_recent_traces(
+    limit: int = 20,
+    tool_call_id: Annotated[str, InjectedToolCallId] = "",
+    state: Annotated[dict, InjectedState] = None,
+    config: RunnableConfig = None,
+) -> Command:
     """List the most recent LayerLens traces in this project.
 
     Args:
         limit: Maximum number of traces to return (default 20).
 
-    Returns a list of ``{"id", "filename", "created_at"}`` dicts sorted
-    newest-first.
+    Updates ``state.traces`` with rich trace dicts (id, filename,
+    created_at, model, duration_ms, tokens, evaluations_count) so the
+    frontend's ``TraceCard`` can render real per-trace metrics.
     """
     client = _get_client()
     resp = client.traces.get_many(
         page_size=limit, sort_by="created_at", sort_order="desc"
     )
-    if resp is None:
-        return []
-    return [
-        {
-            "id": t.id,
-            "filename": t.filename,
-            "created_at": t.created_at,
+    traces: list[dict[str, Any]] = []
+    if resp is not None:
+        for t in resp.traces:
+            data = getattr(t, "data", None) or {}
+            if hasattr(data, "model_dump"):
+                data = data.model_dump()
+            traces.append(
+                {
+                    "id": t.id,
+                    "filename": t.filename,
+                    "created_at": t.created_at,
+                    "model": (data.get("model") if isinstance(data, dict) else None) or "",
+                    "duration_ms": (
+                        data.get("latency_ms") if isinstance(data, dict) else None
+                    )
+                    or 0,
+                    "tokens": (data.get("tokens") if isinstance(data, dict) else None) or 0,
+                    "evaluations_count": getattr(t, "evaluations_count", 0) or 0,
+                }
+            )
+    if config is not None:
+        merged = {**(state or {}), "traces": traces}
+        await copilotkit_emit_state(config, merged)
+    return Command(
+        update={
+            "traces": traces,
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(traces),
+                    tool_call_id=tool_call_id,
+                    name="list_recent_traces",
+                )
+            ],
         }
-        for t in resp.traces
-    ]
+    )
 
 
 @tool
-def run_trace_evaluation(trace_id: str, judge_id: str) -> Dict[str, Any]:
+async def run_trace_evaluation(
+    trace_id: str,
+    judge_id: str,
+    tool_call_id: Annotated[str, InjectedToolCallId] = "",
+    state: Annotated[dict, InjectedState] = None,
+    config: RunnableConfig = None,
+) -> Command:
     """Start a LayerLens evaluation for a single trace against a judge.
 
     Args:
         trace_id: The trace to evaluate.
         judge_id: The judge (evaluation criteria) to use.
 
-    Returns ``{"evaluation_id", "trace_id", "judge_id", "status"}``.
-    Status starts as ``"pending"``; poll ``get_evaluation_result`` to
-    get the final verdict.
+    Appends an ``{"evaluation_id", "trace_id", "judge_id", "status"}``
+    entry to ``state.evaluations`` so the frontend can render a
+    "running" card. Status starts as ``"pending"`` (or whatever the
+    backend reports); poll ``get_evaluation_result`` for the verdict.
     """
     client = _get_client()
     ev = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_id)
     if ev is None:
-        return {
+        ev_data = {
             "evaluation_id": "",
             "trace_id": trace_id,
             "judge_id": judge_id,
             "status": "failed",
             "error": "create returned None",
         }
-    status = ev.status.value if hasattr(ev.status, "value") else str(ev.status)
-    return {
-        "evaluation_id": ev.id,
-        "trace_id": ev.trace_id,
-        "judge_id": ev.judge_id,
-        "status": status,
-    }
+    else:
+        status = ev.status.value if hasattr(ev.status, "value") else str(ev.status)
+        ev_data = {
+            "evaluation_id": ev.id,
+            "trace_id": ev.trace_id,
+            "judge_id": ev.judge_id,
+            "status": status,
+        }
+    if config is not None:
+        prev_evals = (state or {}).get("evaluations", []) or []
+        merged = {**(state or {}), "evaluations": [*prev_evals, ev_data]}
+        await copilotkit_emit_state(config, merged)
+    return Command(
+        update={
+            "evaluations": [ev_data],
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(ev_data),
+                    tool_call_id=tool_call_id,
+                    name="run_trace_evaluation",
+                )
+            ],
+        }
+    )
 
 
 @tool
-def get_evaluation_result(evaluation_id: str) -> Dict[str, Any]:
+async def get_evaluation_result(
+    evaluation_id: str,
+    tool_call_id: Annotated[str, InjectedToolCallId] = "",
+    state: Annotated[dict, InjectedState] = None,
+    config: RunnableConfig = None,
+) -> Command:
     """Get the result of a previously-started LayerLens evaluation.
 
     Args:
         evaluation_id: The id returned by ``run_trace_evaluation``.
 
-    Returns ``{"status", "passed", "score", "reasoning"}`` when the
-    evaluation is finished, or ``{"status": "pending"}`` when it's
-    still running. The LLM should call this repeatedly (with reasonable
-    back-off) until ``status`` is ``"success"`` or ``"failure"``.
+    Returns ``{"status", "passed", "score", "reasoning"}`` once the
+    evaluation completes, or ``{"status": <state>}`` when still running.
+    On success, also appends an entry to ``state.results`` so the
+    frontend can render an EvaluationCard for it.
     """
     client = _get_client()
     ev = client.trace_evaluations.get(evaluation_id)
     if ev is None:
-        return {"status": "not_found"}
-    status = ev.status.value if hasattr(ev.status, "value") else str(ev.status)
-    if status != "success":
-        return {"status": status}
-    results = client.trace_evaluations.get_results(id=evaluation_id)
-    if results is None or results.score is None:
-        return {"status": status}
-    return {
-        "status": status,
-        "passed": bool(results.passed),
-        "score": float(results.score),
-        "reasoning": results.reasoning,
+        result_data: Dict[str, Any] = {
+            "evaluation_id": evaluation_id,
+            "status": "not_found",
+        }
+    else:
+        status = ev.status.value if hasattr(ev.status, "value") else str(ev.status)
+        # ``trace_id`` and ``judge_id`` come straight off the evaluation
+        # record so the frontend can resolve them against ``state.judges``
+        # (judge name) without a second round-trip.
+        base = {
+            "evaluation_id": evaluation_id,
+            "status": status,
+            "trace_id": getattr(ev, "trace_id", "") or "",
+            "judge_id": getattr(ev, "judge_id", "") or "",
+        }
+        if status != "success":
+            result_data = base
+        else:
+            details = client.trace_evaluations.get_results(id=evaluation_id)
+            if details is None or details.score is None:
+                result_data = base
+            else:
+                result_data = {
+                    **base,
+                    "passed": bool(details.passed),
+                    "score": float(details.score),
+                    "reasoning": details.reasoning,
+                }
+    update: Dict[str, Any] = {
+        "messages": [
+            ToolMessage(
+                content=json.dumps(result_data),
+                tool_call_id=tool_call_id,
+                name="get_evaluation_result",
+            )
+        ],
     }
+    # Only append to ``results`` once we have a real verdict — pending
+    # polls shouldn't pile cards onto the UI.
+    if result_data.get("status") == "success" and "score" in result_data:
+        update["results"] = [result_data]
+        if config is not None:
+            prev_results = (state or {}).get("results", []) or []
+            merged = {**(state or {}), "results": [*prev_results, result_data]}
+            await copilotkit_emit_state(config, merged)
+    return Command(update=update)
 
 
 # Expose the backend tools for tests and for the server wiring. The
@@ -203,29 +355,56 @@ BACKEND_TOOLS = [
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are LayerLens's evaluation assistant. Your job is to evaluate the
-user's agent traces against judges and surface the results.
+You are LayerLens's evaluation assistant. The frontend renders a rich
+canvas showing traces, judges, and evaluation results from agent
+state. Your chat messages are NOT the primary UI — keep them short,
+factual, and forward-looking.
 
-When the user asks to evaluate their traces, follow this flow:
+Flow (call tools in this order, do not skip or reorder):
 
-1. Call ``list_recent_traces`` to see what traces are available. If the
-   list is empty, tell the user to upload traces first and stop.
-2. Call ``list_judges`` to see the evaluation criteria this project has.
-   If the list is empty, tell the user to create a judge first and stop.
-3. Call the ``confirm_judge`` tool with the full list of candidates from
-   step 2. The frontend renders a picker; wait for the user to choose
-   before continuing. The tool returns the chosen judge's id and name.
-4. For each trace from step 1, call ``run_trace_evaluation(trace_id,
-   judge_id)`` using the id the user picked in step 3.
-5. For each evaluation id returned by step 4, call
-   ``get_evaluation_result`` until its status is ``"success"`` or
-   ``"failure"``. If an evaluation stays ``"pending"`` after several
-   polls, move on and note it as pending in your summary.
-6. Summarise the results in plain English — number of passes, failures,
-   pending — plus any noteworthy reasoning from the judge verdicts.
+1. ``list_recent_traces`` with the DEFAULT limit (do not pass any
+   ``limit`` argument). The canvas needs the full trace list.
+2. ``list_judges``
+3. ``confirm_judge`` with NO arguments — the frontend reads candidates
+   from state and shows a picker. Wait for the user's selection.
+4. From the trace list returned in step 1, take the FIRST FIVE traces
+   only and call ``run_trace_evaluation(trace_id, judge_id)`` once for
+   each, using the judge_id the user picked. Do not call
+   run_trace_evaluation for more than five traces.
+5. Real LayerLens evaluations take 30+ seconds to complete, longer
+   than a chat turn should block. Do NOT poll. The frontend polls
+   the backend's ``/evaluations/{id}`` endpoint and folds completed
+   verdicts into the canvas as each one finishes.
+   - You MAY call ``get_evaluation_result(evaluation_id)`` ONCE per
+     evaluation to capture any that already happen to be done.
+     Do not call it more than once for the same id.
+6. End with ONE short message. Choose the variant that matches what
+   you actually observed (do NOT include zero-counts or stale clauses):
 
-Keep chat messages concise. Don't paste raw JSON blobs; use the tool
-widgets to surface structured data.
+   - If K = 0 (no evaluations are done yet):
+     "Started <N> evaluations against <judge>. They will appear in
+     the canvas as they finish."
+
+   - If 0 < K < N (some done, some pending):
+     "Started <N> evaluations against <judge>. <K> already complete
+     (<K-passed> passed, <K-failed> failed). The rest will appear in
+     the canvas as they finish."
+
+   - If K == N (all done already):
+     "Evaluated <N> traces against <judge>: <K-passed> passed,
+     <K-failed> failed."
+
+   K = number of get_evaluation_result calls that returned
+   status="success". Do NOT classify pending evaluations as failed,
+   and never include "0 already complete" or similar zero-clauses.
+
+Chat narration rules:
+- Do NOT echo what the canvas already shows (counts, judge name,
+  per-trace verdicts, scores).
+- Do NOT repeat steps you have already completed ("now I'll load the
+  judges" after you've already listed them).
+- One short status sentence per phase is enough; silence is fine.
+- NEVER mention internal field names like ``state.traces``.
 """
 
 
@@ -260,6 +439,12 @@ def _default_model() -> Any:
         kwargs["api_key"] = api_key
     if base_url := os.environ.get("OPENAI_BASE_URL"):
         kwargs["base_url"] = base_url
+    # Parallel tool calls are enabled (the default) so the LLM can fan
+    # out ``run_trace_evaluation`` and ``get_evaluation_result`` across
+    # many traces in a single turn. The HITL picker race that motivated
+    # disabling this is no longer a concern: ``JudgePicker`` subscribes
+    # to ``useCoAgent`` directly and re-renders when ``state.judges``
+    # populates, so a same-turn emission of ``confirm_judge`` is fine.
     return ChatOpenAI(**kwargs)
 
 
@@ -285,15 +470,19 @@ def build_graph(model: Optional[Any] = None):
         tools=BACKEND_TOOLS,
         middleware=[CopilotKitMiddleware()],
         system_prompt=SYSTEM_PROMPT,
+        state_schema=EvaluatorState,
         # ag-ui-langgraph's endpoint calls ``graph.aget_state(config)``
         # to look up per-thread state on each request -- which fails
         # with "No checkpointer set" if the graph wasn't compiled with
-        # one. Even though this sample doesn't use ``interrupt()``, the
-        # checkpointer is required for the AG-UI wire path. Production
-        # deployments should swap to a durable saver (Postgres, SQLite,
-        # Redis, LangGraph Platform).
+        # one. Production deployments should swap to a durable saver
+        # (Postgres, SQLite, Redis, LangGraph Platform).
         checkpointer=InMemorySaver(),
     )
+    # NOTE: recursion_limit is set on ``LangGraphAGUIAgent`` (in
+    # ``build_agui_agent`` below) rather than via ``graph.with_config``
+    # because ag-ui-langgraph constructs its own RunnableConfig from
+    # ``self.config`` per request — ``with_config`` bindings don't
+    # propagate through that path.
 
 
 # Pre-compiled graph for import by the FastAPI server. Customers with
@@ -340,11 +529,21 @@ except Exception as exc:  # pragma: no cover — informative import-time guard
 
 
 def build_agui_agent(**kwargs):
-    """Build a ``LangGraphAGUIAgent`` with the runId workaround applied."""
+    """Build a ``LangGraphAGUIAgent`` with the runId workaround applied.
+
+    Caller-supplied ``config`` is merged onto our defaults — in
+    particular ``recursion_limit`` is bumped from LangGraph's default
+    (25) to 200 so a 20-trace evaluation run with parallel tool calls
+    has plenty of headroom for the chat / tool / chat / poll cycle.
+    """
     from typing import Optional as _Optional
 
     from ag_ui.core import EventType
     from copilotkit import LangGraphAGUIAgent
+
+    default_config = {"recursion_limit": 200}
+    merged_config = {**default_config, **(kwargs.pop("config", None) or {})}
+    kwargs["config"] = merged_config
 
     class _RunIdPreserving(LangGraphAGUIAgent):
         def __init__(self, **inner_kwargs):

@@ -7,9 +7,9 @@ import type { ReactNode } from "react";
 import { CopilotKit } from "@copilotkit/react-core";
 
 export const metadata: Metadata = {
-  title: "CopilotKit Evaluator Browser Harness",
+  title: "LayerLens Evaluator — CopilotKit Sample",
   description:
-    "End-to-end browser test harness for the LayerLens CopilotKit evaluator agent.",
+    "CopilotKit + LangGraph + LayerLens sample: evaluate agent traces against judges.",
 };
 
 export default function RootLayout({
@@ -17,8 +17,12 @@ export default function RootLayout({
 }: {
   children: ReactNode;
 }) {
+  // Default to light to match CopilotKit's official samples
+  // (``coagents-research-canvas``, ``travel``, ``with-shadcn-ui``).
+  // The ``ThemeToggle`` client component hydrates the user's
+  // persisted preference from localStorage on mount.
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <body>
         {/*
           ``agent="evaluator"`` matches the key used when wiring the
@@ -29,6 +33,7 @@ export default function RootLayout({
           runtimeUrl="/api/copilotkit"
           agent="evaluator"
           showDevConsole={false}
+          enableInspector={false}
         >
           {children}
         </CopilotKit>

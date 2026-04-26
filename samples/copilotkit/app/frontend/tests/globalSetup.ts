@@ -11,7 +11,7 @@ import { spawn, type ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 
-// Tests now live at frontend/tests/; backend/ is two levels up at browser/backend/.
+// Tests live at app/frontend/tests/; backend/ is a sibling of frontend/.
 const BACKEND_DIR = path.resolve(__dirname, "..", "..", "backend");
 const PID_FILE = path.resolve(__dirname, ".backend.pid");
 

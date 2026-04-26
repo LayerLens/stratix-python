@@ -27,7 +27,7 @@ export OPENAI_API_KEY=your-openai-key   # the evaluator's LLM
 For byte-identical transitive deps, install from the committed lockfile:
 
 ```bash
-pip install -r samples/copilotkit/tests/browser/backend/requirements.lock
+pip install -r samples/copilotkit/app/backend/requirements.lock
 ```
 
 ### Version matrix
@@ -130,7 +130,7 @@ Tools:
 - `run_trace_evaluation(trace_id, judge_id) -> {evaluation_id, status}`
 - `get_evaluation_result(evaluation_id) -> {status, passed, score, reasoning}`
 - `confirm_judge({candidates})` — **frontend tool**; declared in
-  `tests/browser/frontend/app/page.tsx` via `useCopilotAction` and
+  `app/frontend/app/page.tsx` via `useCopilotAction` and
   bridged into the LLM's toolbelt by `CopilotKitMiddleware`. Returns
   `{id, name}` once the user picks.
 
@@ -263,14 +263,14 @@ Run with `uvicorn server:app --reload --port 8123`.
 
 ```bash
 # 1. Backend
-cd samples/copilotkit/tests/browser/backend
+cd samples/copilotkit/app/backend
 pip install -r requirements.lock
 export LAYERLENS_STRATIX_API_KEY=...
 export OPENAI_API_KEY=...
 python server.py         # listens on http://127.0.0.1:8123
 
 # 2. Frontend
-cd samples/copilotkit/tests/browser/frontend
+cd samples/copilotkit/app/frontend
 npm install
 npm run dev              # listens on http://127.0.0.1:3000
 ```
@@ -310,10 +310,11 @@ LLM through the FastAPI endpoint and asserts:
 The test loads credentials from a gitignored `.env` so local devs and
 CI both work without leaking keys. Skipped when no key is available.
 
-The browser harness under `samples/copilotkit/tests/browser/` is for
-manual verification in a real Chrome (Playwright cannot reliably drive
-CopilotChat's textarea in headless mode — separate testability issue
-tracked at [`CopilotKit/CopilotKit#4215`](https://github.com/CopilotKit/CopilotKit/issues/4215)).
+Playwright tests under `samples/copilotkit/app/frontend/tests/` are
+for manual verification in a real Chrome (Playwright cannot reliably
+drive CopilotChat's textarea in headless mode — separate testability
+issue tracked at
+[`CopilotKit/CopilotKit#4215`](https://github.com/CopilotKit/CopilotKit/issues/4215)).
 
 ## Upstream issues (informational)
 

@@ -1,11 +1,23 @@
 /**
- * TraceCard — Renders a trace summary inline in CopilotKit chat.
+ * TraceCard — Inline summary of a single agent trace.
  *
- * Displays framework badge, status, duration/cost/tokens metrics, tag chips,
- * and links to the trace explorer and agent graph views.
+ * Built on shadcn/ui ``Card`` + ``Badge``; status and framework pills
+ * use the ``bg-{color}-50 text-{color}-600 dark:bg-{color}-900/20``
+ * pattern that CopilotKit's banking and travel samples use for
+ * tinted status surfaces.
  */
 
-import React from "react";
+import * as React from "react";
+
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,7 +37,8 @@ export interface TraceCardProps {
   agentCount: number;
   timestamp: string; // ISO-8601
   tags?: string[];
-  /** Base URL of the LayerLens Stratix dashboard. Defaults to "/" */
+  /** Base URL of the Stratix dashboard for "Trace Explorer" / "Agent
+   *  Graph" deep-links. When omitted, the footer is hidden. */
   dashboardBaseUrl?: string;
 }
 
@@ -33,60 +46,51 @@ export interface TraceCardProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const STATUS_STYLES: Record<TraceStatus, { dot: string; label: string; cls: string }> = {
-  ok: {
-    dot: "bg-emerald-500",
-    label: "OK",
-    cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  },
-  error: {
-    dot: "bg-red-500",
-    label: "Error",
-    cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  },
-  timeout: {
-    dot: "bg-amber-500",
-    label: "Timeout",
-    cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  },
-  running: {
-    dot: "bg-blue-500 animate-pulse",
-    label: "Running",
-    cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  },
+const STATUS_STYLES: Record<TraceStatus, { dot: string; label: string }> = {
+  ok: { dot: "bg-green-500", label: "OK" },
+  error: { dot: "bg-red-500", label: "Error" },
+  timeout: { dot: "bg-amber-500", label: "Timeout" },
+  running: { dot: "bg-blue-500 animate-pulse", label: "Running" },
 };
 
-const FRAMEWORK_COLORS: Record<string, string> = {
-  langchain: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
-  langgraph: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
-  crewai: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
-  autogen: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
-  openai: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
-  anthropic: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
-  haystack: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300",
-  semantic_kernel: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300",
-};
+function frameworkBadgeVariant(framework: string): "secondary" | "outline" {
+  // Stratix-known frameworks get the slightly more emphatic
+  // ``secondary`` variant; everything else falls back to ``outline``
+  // to keep the visual noise low.
+  const known = new Set([
+    "langchain",
+    "langgraph",
+    "crewai",
+    "autogen",
+    "openai",
+    "anthropic",
+    "stratix",
+  ]);
+  return known.has(framework.toLowerCase()) ? "secondary" : "outline";
+}
 
 function formatDuration(ms: number): string {
-  if (ms < 1_000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1_000).toFixed(1)}s`;
-  return `${(ms / 60_000).toFixed(1)}m`;
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
+}
+
+function formatTokens(t: number): string {
+  if (t < 1000) return String(t);
+  if (t < 1_000_000) return `${(t / 1000).toFixed(1)}k`;
+  return `${(t / 1_000_000).toFixed(2)}m`;
 }
 
 function formatCost(usd: number): string {
-  if (usd < 0.01) return `$${(usd * 100).toFixed(2)}c`;
-  return `$${usd.toFixed(4)}`;
-}
-
-function formatTokens(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
-  return String(count);
+  if (usd === 0) return "$0";
+  if (usd < 0.01) return `${(usd * 100).toFixed(2)}¢`;
+  return `$${usd.toFixed(2)}`;
 }
 
 function formatTimestamp(iso: string): string {
   try {
     const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
     return d.toLocaleString(undefined, {
       month: "short",
       day: "numeric",
@@ -104,11 +108,9 @@ function formatTimestamp(iso: string): string {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col items-center">
-      <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-        {value}
-      </span>
-      <span className="text-[10px] uppercase tracking-wide text-gray-400">
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-sm font-semibold tabular-nums">{value}</span>
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
     </div>
@@ -131,87 +133,85 @@ export const TraceCard: React.FC<TraceCardProps> = ({
   agentCount,
   timestamp,
   tags = [],
-  dashboardBaseUrl = "/",
+  dashboardBaseUrl,
 }) => {
-  const base = dashboardBaseUrl.replace(/\/$/, "");
-  const traceUrl = `${base}/traces/${traceId}`;
-  const graphUrl = `${base}/agentgraph/${traceId}`;
   const st = STATUS_STYLES[status];
-  const fwCls =
-    FRAMEWORK_COLORS[framework.toLowerCase()] ??
-    "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300";
+  const base = dashboardBaseUrl ? dashboardBaseUrl.replace(/\/$/, "") : null;
+  const traceUrl = base ? `${base}/traces/${traceId}` : null;
+  const graphUrl = base ? `${base}/agentgraph/${traceId}` : null;
 
   return (
-    <div className="w-full max-w-md overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-      {/* Header */}
-      <div className="flex items-start justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-700">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span
-              className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ${fwCls}`}
-            >
-              {framework}
-            </span>
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
-              {st.label}
-            </span>
+    <Card className="gap-0 py-0 transition-shadow duration-200 hover:shadow-md">
+      <CardHeader className="px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant={frameworkBadgeVariant(framework)} className="font-medium">
+                {framework}
+              </Badge>
+              <Badge variant="outline" className="gap-1.5 font-medium">
+                <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />
+                {st.label}
+              </Badge>
+            </div>
+            <CardTitle className="truncate text-base">{agentName}</CardTitle>
+            <p className="truncate font-mono text-[11px] text-muted-foreground">
+              {traceId}
+            </p>
           </div>
-          <h3 className="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
-            {agentName}
-          </h3>
-          <p className="mt-0.5 truncate text-xs font-mono text-gray-400">
-            {traceId}
-          </p>
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {formatTimestamp(timestamp)}
+          </span>
         </div>
-        <span className="shrink-0 text-xs text-gray-400">
-          {formatTimestamp(timestamp)}
-        </span>
-      </div>
+      </CardHeader>
 
-      {/* Metric row */}
-      <div className="grid grid-cols-5 gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-700">
+      <Separator />
+
+      <CardContent className="grid grid-cols-5 gap-2 px-5 py-4">
         <Metric label="Duration" value={formatDuration(duration_ms)} />
         <Metric label="Tokens" value={formatTokens(tokenCount)} />
         <Metric label="Cost" value={formatCost(costUsd)} />
         <Metric label="Events" value={String(eventCount)} />
         <Metric label="Agents" value={String(agentCount)} />
-      </div>
+      </CardContent>
 
-      {/* Tags */}
-      {tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 border-b border-gray-100 px-4 py-2 dark:border-gray-700">
-          {tags.map((tag) => (
-            <span
-              key={tag}
-              className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+      {tags.length > 0 ? (
+        <>
+          <Separator />
+          <div className="flex flex-wrap gap-1.5 px-5 py-3">
+            {tags.map((tag) => (
+              <Badge key={tag} variant="secondary" className="font-normal">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {traceUrl && graphUrl ? (
+        <>
+          <Separator />
+          <div className="flex items-center gap-4 px-5 py-3 text-xs">
+            <a
+              href={traceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-[#6766FC] transition hover:underline"
             >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Footer links */}
-      <div className="flex items-center gap-4 px-4 py-2">
-        <a
-          href={traceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-        >
-          Trace Explorer &rarr;
-        </a>
-        <a
-          href={graphUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-        >
-          Agent Graph &rarr;
-        </a>
-      </div>
-    </div>
+              Trace Explorer →
+            </a>
+            <a
+              href={graphUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-[#6766FC] transition hover:underline"
+            >
+              Agent Graph →
+            </a>
+          </div>
+        </>
+      ) : null}
+    </Card>
   );
 };
 
