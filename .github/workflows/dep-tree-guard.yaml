@@ -1,0 +1,95 @@
+name: Dependency Tree Guard
+
+# This workflow protects the SDK's install footprint:
+#
+#   1. The DIRECT dependencies advertised by `pip install layerlens`
+#      must equal the baseline at
+#      `tests/instrument/_baselines/default_dependencies.txt`. New
+#      direct deps require explicit baseline updates in the same PR.
+#
+#   2. The TRANSITIVELY-RESOLVED package set must equal the baseline
+#      at `tests/instrument/_baselines/resolved_dependencies.txt`.
+#      A direct dep with permissive lower bounds can balloon the
+#      install size — this gate catches that.
+#
+# Both baselines are regenerable via:
+#     python scripts/regen_dep_baselines.py
+#
+# Run locally with `LAYERLENS_RESOLVE_DEPS=1 pytest tests/instrument/`.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  default-install-guard:
+    name: Default install matches baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install layerlens (no extras) and pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest
+
+      - name: Run default-install guard tests
+        run: |
+          python -m pytest tests/instrument/test_default_install.py -v
+
+  resolved-tree-guard:
+    name: Resolved tree matches baseline
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install pytest and tomli
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest tomli
+
+      - name: Resolve transitive tree (diagnostic)
+        run: |
+          # Show the actual resolved tree in the workflow log so PR
+          # authors can see exactly what changed.
+          set -euo pipefail
+          {
+            echo "httpx>=0.23.0,<1"
+            echo "pydantic>=1.9.0,<3"
+          } | uv pip compile --python-version 3.9 -q --no-header --no-annotate \
+                --no-strip-extras --universal - || true
+
+      - name: Run resolved-tree guard tests
+        env:
+          LAYERLENS_RESOLVE_DEPS: "1"
+        run: |
+          python -m pytest tests/instrument/test_resolved_dep_tree.py -v
+
+      - name: Resolved-tree drift hint (on failure)
+        if: failure()
+        run: |
+          echo "::warning::If the failure is from a NEW transitive dep, decide:"
+          echo "::warning::  (a) tighten the version specifier on the offending direct dep,"
+          echo "::warning::  (b) regenerate the baseline if the new dep is acceptable:"
+          echo "::warning::      python scripts/regen_dep_baselines.py"
+          echo "::warning::  Commit the baseline update in the same PR."

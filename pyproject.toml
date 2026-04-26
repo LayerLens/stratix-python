@@ -34,6 +34,29 @@ classifiers = [
 [project.optional-dependencies]
 cli = ["click>=8.0.0"]
 
+# --- Instrument layer: LLM provider adapters ---
+# Adding any extra below MUST keep the default `pip install layerlens`
+# install set unchanged. Verified by `tests/instrument/test_default_install.py`.
+providers-openai = ["openai>=1.30,<2"]
+providers-anthropic = ["anthropic>=0.30,<1"]
+providers-azure-openai = ["openai>=1.30,<2"]
+providers-bedrock = ["boto3>=1.34"]
+providers-vertex = ["google-cloud-aiplatform>=1.50,<2"]
+providers-ollama = ["ollama>=0.2"]
+providers-litellm = ["litellm>=1.40,<2"]
+providers-cohere = ["cohere>=5.0,<6"]
+providers-mistral = ["mistralai>=1.0,<2"]
+providers-all = [
+  "openai>=1.30,<2",
+  "anthropic>=0.30,<1",
+  "boto3>=1.34",
+  "google-cloud-aiplatform>=1.50,<2",
+  "ollama>=0.2",
+  "litellm>=1.40,<2",
+  "cohere>=5.0,<6",
+  "mistralai>=1.0,<2",
+]
+
 [project.urls]
 Homepage = "https://github.com/LayerLens/stratix-python"
 Repository = "https://github.com/LayerLens/stratix-python"
