@@ -28,12 +28,27 @@ Manifest schema (each entry):
 Maturity tier rules:
 
 * ``mature`` — has dedicated unit-test file in ``tests/instrument/`` AND a
-  reference doc in ``docs/adapters/``.
+  reference doc in ``docs/adapters/`` AND a sample under
+  ``samples/instrument/`` AND a STRATIX→LayerLens deprecation alias in
+  the package ``__init__.py``. Surface to users as fully supported.
+* ``lifecycle_preview`` — adapter ships the complete lifecycle hook
+  surface (``on_run_start`` / ``on_run_end`` / ``on_tool_use`` /
+  ``on_llm_call`` / etc.) and emits the canonical L1/L3/L5a event set,
+  but it has not yet reached the artifact bar required for ``mature``
+  (typically: doc + sample under construction, or one of the four
+  artifact slots still missing). The catalog UI should render these as
+  "Preview" so customers know they can opt into the runtime today and
+  expect graduation soon. **Important:** do not silently downgrade these
+  to ``smoke_only`` — that hides the lifecycle coverage from the
+  catalog and contradicts what the SDK actually ships.
 * ``smoke_only`` — only covered by the bulk smoke-test suite.
-* ``lifecycle_preview`` — adapter exists but its runtime hooks are
-  intentionally minimal (e.g., the source `ateam` lifecycle.py is < 100
-  LOC and only wraps lifecycle, no deep instrumentation). None apply
-  today — all 33 ported adapters have at least lifecycle-shape tests.
+
+Audit context: prior to commit-of-this-file the emitter only emitted
+``mature`` or ``smoke_only`` and never set ``lifecycle_preview``. The
+``lifecycle_preview`` value was documented in this schema for months but
+never written, so the atlas-app catalog UI rendered every adapter as
+either fully mature or untested — hiding the "preview" tier customers
+should be opting into. This module now writes all three tiers.
 
 Usage::
 
@@ -140,10 +155,11 @@ _EXTRAS: Dict[str, List[str]] = {
     "ucp": ["protocols-ucp"],
 }
 
-# Adapters with dedicated unit-test files + reference docs (full coverage).
-# All others fall back to ``smoke_only`` (bulk smoke-test coverage only).
-# Updated as more adapters reach full-coverage status in the M7 track.
-_MATURE: set = {
+# Adapters with every artifact (test file >= 12 funcs, sample, doc, and
+# STRATIX→LayerLens deprecation alias) that earn the "fully supported"
+# badge in the catalog. ``tests/instrument/adapters/test_manifest_consistency.py``
+# enforces every item in this set actually has all four artifacts.
+_MATURE: set[str] = {
     "openai",
     "anthropic",
     "azure_openai",
@@ -153,19 +169,80 @@ _MATURE: set = {
     "litellm",
     "cohere",
     "mistral",
-    "smolagents",
+    # ``smolagents`` was previously listed here despite missing both its
+    # reference doc (``docs/adapters/frameworks-smolagents.md``) and its
+    # sample (``samples/instrument/smolagents/main.py``). The audit that
+    # introduced ``_LIFECYCLE_PREVIEW`` caught the mismatch — the
+    # adapter actually has the lifecycle hook surface but not the
+    # graduation artifacts. Keep it under ``_LIFECYCLE_PREVIEW`` until
+    # the sibling artifact PR lands, then move it back here in the same
+    # PR that adds the doc + sample.
 }
+
+# Adapters that ship a full lifecycle hook surface and emit the canonical
+# L1/L3/L5a event set today, but are short of one or more "mature"
+# artifacts (doc, sample, alias). The catalog should render these as
+# "Preview" — the runtime works, the surrounding artifacts are still
+# being authored.
+#
+# Audit note: pre-this-commit the emitter ignored this list entirely and
+# every entry here landed as ``smoke_only``, which contradicts what the
+# SDK actually ships (these adapters do far more than the smoke suite
+# covers). This is why the ``lifecycle_preview`` value existed in the
+# schema for months without ever being emitted.
+#
+# When an adapter graduates (sample + doc + alias all merged) move the
+# key from this set into ``_MATURE`` in the SAME PR that adds the
+# missing artifacts. The CI lint will catch the case where you forget.
+_LIFECYCLE_PREVIEW: set[str] = {
+    "agno",
+    "ms_agent_framework",
+    "openai_agents",
+    "llama_index",
+    "google_adk",
+    "strands",
+    "benchmark_import",
+    "pydantic_ai",
+    "bedrock_agents",
+    "embedding",
+    # ``smolagents`` lives here UNTIL its sibling artifact PR (sample +
+    # doc) lands; at that point it moves to ``_MATURE`` and is removed
+    # from this set. The lint at
+    # ``tests/instrument/adapters/test_manifest_consistency.py`` xfails
+    # on the missing artifacts in the meantime so the deficiency stays
+    # visible without blocking CI.
+    "smolagents",
+    # ``browser_use`` will join this set once its lifecycle adapter PR
+    # lands. Listed in ``_CATEGORY`` / ``_EXTRAS`` already so the
+    # registration story is consistent across both sides.
+    "browser_use",
+}
+
+# Sanity: a single adapter cannot be both "mature" (has all artifacts)
+# and "lifecycle_preview" (missing some artifacts). This guards future
+# maintainers from copy/pasting an entry into both sets.
+_OVERLAP = _MATURE & _LIFECYCLE_PREVIEW
+assert not _OVERLAP, (
+    f"Adapters cannot be both _MATURE and _LIFECYCLE_PREVIEW; conflicts: {sorted(_OVERLAP)}"
+)
 
 
 def _load_registry_modules() -> Dict[str, str]:
     """Import the registry to get the canonical ``key → module path`` map."""
-    from layerlens.instrument.adapters._base.registry import _ADAPTER_MODULES
+    # ``import-untyped`` ignore handles the case where layerlens is
+    # installed without a ``py.typed`` marker; the ``unused-ignore``
+    # ride-along keeps the comment valid once the marker is added.
+    from layerlens.instrument.adapters._base.registry import (  # type: ignore[import-untyped,unused-ignore]
+        _ADAPTER_MODULES,
+    )
 
     return dict(_ADAPTER_MODULES)
 
 
 def _load_framework_packages() -> Dict[str, str]:
-    from layerlens.instrument.adapters._base.registry import _FRAMEWORK_PACKAGES
+    from layerlens.instrument.adapters._base.registry import (  # type: ignore[import-untyped,unused-ignore]
+        _FRAMEWORK_PACKAGES,
+    )
 
     return dict(_FRAMEWORK_PACKAGES)
 
@@ -184,6 +261,22 @@ def _resolve_adapter_class(module_path: str) -> Optional[type]:
         return None
     cls = getattr(module, "ADAPTER_CLASS", None)
     return cls if isinstance(cls, type) else None
+
+
+def _maturity_for(key: str) -> str:
+    """Return the catalog maturity tier for ``key``.
+
+    Order matters: ``_MATURE`` wins over ``_LIFECYCLE_PREVIEW`` because
+    a fully-graduated adapter (every artifact present) supersedes the
+    "preview" classification even if a stale entry is still present in
+    ``_LIFECYCLE_PREVIEW``. The module-level ``_OVERLAP`` assertion
+    prevents that case from existing in committed code.
+    """
+    if key in _MATURE:
+        return "mature"
+    if key in _LIFECYCLE_PREVIEW:
+        return "lifecycle_preview"
+    return "smoke_only"
 
 
 def _entry(key: str, module_path: str) -> Dict[str, Any]:
@@ -207,7 +300,7 @@ def _entry(key: str, module_path: str) -> Dict[str, Any]:
         if compat is not None:
             requires_pydantic_value = compat.value if hasattr(compat, "value") else str(compat)
         try:
-            tmp = cls()  # type: ignore[call-arg]
+            tmp = cls()
             # ``info()`` overlays the class-level ``requires_pydantic``
             # onto whatever the subclass returned from
             # ``get_adapter_info`` so the manifest stays in sync with the
@@ -231,7 +324,7 @@ def _entry(key: str, module_path: str) -> Dict[str, Any]:
         "version": version,
         "framework_pip_package": pkg,
         "extras": _EXTRAS.get(key, []),
-        "maturity": "mature" if key in _MATURE else "smoke_only",
+        "maturity": _maturity_for(key),
         "requires_pydantic": requires_pydantic_value,
         "capabilities": capabilities,
         "description": description,
@@ -248,6 +341,10 @@ def build_manifest() -> Dict[str, Any]:
         "by_category": {
             cat: sum(1 for e in entries if e["category"] == cat) for cat in ("framework", "provider", "protocol")
         },
+        "by_maturity": {
+            tier: sum(1 for e in entries if e["maturity"] == tier)
+            for tier in ("mature", "lifecycle_preview", "smoke_only")
+        },
         "adapters": entries,
     }
 
@@ -260,7 +357,8 @@ def _default_output_path() -> Path:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    doc = __doc__ or ""
+    parser = argparse.ArgumentParser(description=doc.split("\n\n")[0])
     parser.add_argument(
         "--out",
         type=Path,
