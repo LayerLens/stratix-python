@@ -1,0 +1,22 @@
+# Baseline of REQUIRED runtime dependencies for `pip install layerlens`.
+#
+# Format: one PEP 508 requirement per line, sorted alphabetically by
+# package name (PEP 503 normalized). Comments (lines starting with `#`)
+# and blank lines are ignored.
+#
+# This file is consumed by tests/instrument/test_default_install.py to
+# guard against accidental dependency additions in the SDK's default
+# install set. Adding a line here represents a deliberate, reviewer-
+# acknowledged decision to require a new transitive dependency for
+# every `pip install layerlens` user.
+#
+# Adding a new heavy dependency? Put it behind an extra in
+# `[project.optional-dependencies]` instead. Only widely-used,
+# lightweight, dependency-stable packages belong in the default set.
+#
+# To regenerate after an intentional change:
+#   1. Edit `[project] dependencies` in pyproject.toml.
+#   2. Run: python scripts/regen_dep_baselines.py
+#   3. Commit both pyproject.toml and this file in the same PR.
+httpx>=0.23.0, <1
+pydantic>=1.9.0, <3
