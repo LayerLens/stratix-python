@@ -1,0 +1,184 @@
+"""LLM Model Pricing.
+
+Maintains pricing tables (per-1K-token rates) for all supported models
+and provides cost calculation with cached-token adjustments.
+
+Ported verbatim from ``ateam/stratix/sdk/python/adapters/llm_providers/pricing.py``.
+The pricing JSON is the canonical platform-wide source-of-truth and is
+hash-checked between ``ateam`` and ``stratix-python`` in CI to prevent
+drift.
+"""
+
+from __future__ import annotations
+
+from typing import Dict, Optional
+
+from layerlens.instrument.adapters.providers._base.tokens import NormalizedTokenUsage
+
+# ---------------------------------------------------------------------------
+# Pricing tables (per-1K-token rates, USD)
+# ---------------------------------------------------------------------------
+
+PRICING: Dict[str, Dict[str, float]] = {
+    # OpenAI
+    "gpt-4o": {"input": 0.0025, "output": 0.0100},
+    "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
+    "gpt-4o-2024-11-20": {"input": 0.0025, "output": 0.0100},
+    "gpt-4.1": {"input": 0.002, "output": 0.008},
+    "gpt-4.1-mini": {"input": 0.0004, "output": 0.0016},
+    "gpt-4.1-nano": {"input": 0.0001, "output": 0.0004},
+    "gpt-4-turbo": {"input": 0.01, "output": 0.03},
+    "gpt-4": {"input": 0.03, "output": 0.06},
+    "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
+    "o1": {"input": 0.015, "output": 0.060},
+    "o1-mini": {"input": 0.003, "output": 0.012},
+    "o3": {"input": 0.010, "output": 0.040},
+    "o3-mini": {"input": 0.0011, "output": 0.0044},
+    "o4-mini": {"input": 0.0011, "output": 0.0044},
+    # Anthropic
+    "claude-sonnet-4-5-20250929": {"input": 0.003, "output": 0.015},
+    "claude-opus-4-20250115": {"input": 0.015, "output": 0.075},
+    "claude-opus-4-6": {"input": 0.015, "output": 0.075},
+    "claude-haiku-4-5-20251001": {"input": 0.0008, "output": 0.004},
+    "claude-haiku-3-5-20241022": {"input": 0.0008, "output": 0.004},
+    "claude-3-5-sonnet-20241022": {"input": 0.003, "output": 0.015},
+    "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
+    "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
+    # Google
+    "gemini-2.5-pro": {"input": 0.00125, "output": 0.01},
+    "gemini-2.5-flash": {"input": 0.000075, "output": 0.0003},
+    "gemini-2.0-flash": {"input": 0.0001, "output": 0.0004},
+    "gemini-1.5-pro": {"input": 0.00125, "output": 0.005},
+    "gemini-1.5-flash": {"input": 0.000075, "output": 0.0003},
+    # Meta (hosted: Bedrock / Together / Replicate). For LOCAL Ollama
+    # inference of these same model families, see the explicit zero-cost
+    # entries below — Ollama's `model` parameter is matched verbatim and
+    # bypasses the hosted rates.
+    "llama-3.3-70b": {"input": 0.00099, "output": 0.00099},
+    "llama-3.1-70b": {"input": 0.00099, "output": 0.00099},
+    "llama-3.1-8b": {"input": 0.00022, "output": 0.00022},
+    # ----- Ollama (local / self-hosted) -----
+    # Ollama runs the model on the operator's own hardware, so the
+    # platform never charges for tokens — `api_cost_usd` is always
+    # exactly 0.0. These entries exist so that `calculate_cost` returns
+    # 0.0 (a real number) rather than None (pricing-unavailable) when
+    # the canonical Ollama model tag is supplied. The OllamaAdapter
+    # additionally emits an optional `infra_cost_usd` derived from
+    # compute duration when `cost_per_second` is configured by the
+    # caller — that path bypasses this table entirely.
+    "llama3.3": {"input": 0.0, "output": 0.0},
+    "llama3.2": {"input": 0.0, "output": 0.0},
+    "llama3.2:1b": {"input": 0.0, "output": 0.0},
+    "llama3.2:3b": {"input": 0.0, "output": 0.0},
+    "llama3.1": {"input": 0.0, "output": 0.0},
+    "llama3.1:8b": {"input": 0.0, "output": 0.0},
+    "llama3.1:70b": {"input": 0.0, "output": 0.0},
+    "llama3.1:405b": {"input": 0.0, "output": 0.0},
+    "llama3": {"input": 0.0, "output": 0.0},
+    "llama2": {"input": 0.0, "output": 0.0},
+    "mistral": {"input": 0.0, "output": 0.0},
+    "mistral-nemo": {"input": 0.0, "output": 0.0},
+    "mixtral": {"input": 0.0, "output": 0.0},
+    "phi3": {"input": 0.0, "output": 0.0},
+    "phi3.5": {"input": 0.0, "output": 0.0},
+    "qwen2.5": {"input": 0.0, "output": 0.0},
+    "qwen2.5-coder": {"input": 0.0, "output": 0.0},
+    "gemma2": {"input": 0.0, "output": 0.0},
+    "gemma2:2b": {"input": 0.0, "output": 0.0},
+    "deepseek-r1": {"input": 0.0, "output": 0.0},
+    "deepseek-coder": {"input": 0.0, "output": 0.0},
+    "codellama": {"input": 0.0, "output": 0.0},
+    "nomic-embed-text": {"input": 0.0, "output": 0.0},
+    "mxbai-embed-large": {"input": 0.0, "output": 0.0},
+    "all-minilm": {"input": 0.0, "output": 0.0},
+    # Mistral (direct API; Bedrock has its own table)
+    "mistral-large": {"input": 0.002, "output": 0.006},
+    "mistral-large-latest": {"input": 0.002, "output": 0.006},
+    "mistral-small": {"input": 0.0002, "output": 0.0006},
+    "mistral-small-latest": {"input": 0.0002, "output": 0.0006},
+    "mistral-medium": {"input": 0.0027, "output": 0.0081},
+    "open-mistral-7b": {"input": 0.00025, "output": 0.00025},
+    "open-mixtral-8x7b": {"input": 0.0007, "output": 0.0007},
+    "open-mixtral-8x22b": {"input": 0.002, "output": 0.006},
+    # Cohere (direct API; Bedrock-routed Cohere uses BEDROCK_PRICING)
+    "command-r-plus": {"input": 0.003, "output": 0.015},
+    "command-r": {"input": 0.0005, "output": 0.0015},
+    "command-r-plus-08-2024": {"input": 0.0025, "output": 0.01},
+    "command-r-08-2024": {"input": 0.00015, "output": 0.0006},
+    "command-light": {"input": 0.0003, "output": 0.0006},
+    "command": {"input": 0.001, "output": 0.002},
+}
+
+AZURE_PRICING: Dict[str, Dict[str, float]] = {
+    "gpt-4o": {"input": 0.00275, "output": 0.011},
+    "gpt-4o-mini": {"input": 0.000165, "output": 0.00066},
+    "gpt-4-turbo": {"input": 0.011, "output": 0.033},
+    "gpt-4": {"input": 0.033, "output": 0.066},
+    "gpt-35-turbo": {"input": 0.00055, "output": 0.00165},
+}
+
+BEDROCK_PRICING: Dict[str, Dict[str, float]] = {
+    "anthropic.claude-3-5-sonnet-20241022-v2:0": {"input": 0.003, "output": 0.015},
+    "anthropic.claude-3-opus-20240229-v1:0": {"input": 0.015, "output": 0.075},
+    "anthropic.claude-3-haiku-20240307-v1:0": {"input": 0.00025, "output": 0.00125},
+    "meta.llama3-1-70b-instruct-v1:0": {"input": 0.00099, "output": 0.00099},
+    "meta.llama3-1-8b-instruct-v1:0": {"input": 0.00022, "output": 0.00022},
+    "cohere.command-r-plus-v1:0": {"input": 0.003, "output": 0.015},
+    "cohere.command-r-v1:0": {"input": 0.0005, "output": 0.0015},
+}
+
+
+def _cached_token_discount(model: str) -> float:
+    """Determine the cached-token rate as a fraction of input price.
+
+    Different providers offer different cache discounts:
+
+    * Anthropic — 90% discount (pay 10% of input rate).
+    * Google — 75% discount (pay 25% of input rate).
+    * OpenAI and others — 50% discount (pay 50% of input rate).
+    """
+    lower = model.lower()
+    if lower.startswith("claude"):
+        return 0.1
+    if lower.startswith("gemini"):
+        return 0.25
+    return 0.5
+
+
+def calculate_cost(
+    model: str,
+    usage: NormalizedTokenUsage,
+    pricing_table: Optional[Dict[str, Dict[str, float]]] = None,
+) -> Optional[float]:
+    """Calculate the API cost in USD for a model invocation.
+
+    Args:
+        model: Model name (e.g., ``"gpt-4o"``, ``"claude-sonnet-4-5-20250929"``).
+        usage: Normalized token usage from the provider response.
+        pricing_table: Override pricing table (for Azure / Bedrock).
+            Defaults to :data:`PRICING`.
+
+    Returns:
+        Cost in USD, or ``None`` if the model is not in the pricing table.
+    """
+    table = pricing_table or PRICING
+    rates = table.get(model)
+    if rates is None:
+        return None
+
+    input_rate = rates.get("input", 0.0)
+    output_rate = rates.get("output", 0.0)
+
+    prompt_tokens = usage.prompt_tokens
+    cached = usage.cached_tokens or 0
+
+    non_cached = max(prompt_tokens - cached, 0)
+    cached_rate = input_rate * _cached_token_discount(model)
+
+    cost = (
+        (non_cached * input_rate / 1000)
+        + (cached * cached_rate / 1000)
+        + (usage.completion_tokens * output_rate / 1000)
+    )
+
+    return round(cost, 8)
