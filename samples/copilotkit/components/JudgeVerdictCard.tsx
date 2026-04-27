@@ -1,11 +1,24 @@
 /**
- * JudgeVerdictCard — Renders an individual judge verdict inline in CopilotKit chat.
+ * JudgeVerdictCard — Single judge's verdict on a single case.
  *
- * Displays pass/fail badge, score bar, reasoning (collapsible), evidence table,
- * and severity indicator.
+ * Built on shadcn/ui ``Card`` + ``Badge``. Severity is rendered as a
+ * colored dot + label combo (the same pattern CopilotKit's banking
+ * sample uses for transaction direction indicators).
  */
 
-import React, { useState } from "react";
+import * as React from "react";
+
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { MarkdownLite } from "./markdown-lite";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,42 +46,71 @@ export interface JudgeVerdictCardProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const VERDICT_STYLES: Record<Verdict, { label: string; cls: string }> = {
-  pass: {
-    label: "Pass",
-    cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  },
-  fail: {
-    label: "Fail",
-    cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  },
-  error: {
-    label: "Error",
-    cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  },
-};
-
-const SEVERITY_STYLES: Record<Severity, { icon: string; cls: string }> = {
+const SEVERITY_STYLES: Record<
+  Severity,
+  { cls: string; label: string }
+> = {
   critical: {
-    icon: "\u25C6", // diamond
-    cls: "text-red-600 dark:text-red-400",
+    cls: "bg-red-600 text-white dark:bg-red-500/90",
+    label: "Critical",
   },
   high: {
-    icon: "\u25B2", // triangle up
-    cls: "text-orange-600 dark:text-orange-400",
+    cls: "bg-orange-500 text-white dark:bg-orange-500/90",
+    label: "High",
   },
   medium: {
-    icon: "\u25CF", // circle
-    cls: "text-amber-500 dark:text-amber-400",
+    cls: "bg-amber-500 text-white dark:bg-amber-500/90",
+    label: "Medium",
   },
   low: {
-    icon: "\u25CB", // circle outline
-    cls: "text-gray-400 dark:text-gray-500",
+    cls: "bg-muted text-muted-foreground",
+    label: "Low",
   },
 };
 
+/** Triangle "alert" glyph — communicates severity-as-warning, not
+ *  severity-as-direction (chevrons would imply trend). */
+const AlertIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+    {...props}
+  >
+    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+
+function verdictBadge(verdict: Verdict) {
+  if (verdict === "pass") {
+    return (
+      <Badge className="bg-green-600 px-2.5 py-0.5 text-white shadow-sm hover:bg-green-600 dark:bg-green-500/90">
+        Pass
+      </Badge>
+    );
+  }
+  if (verdict === "fail") {
+    return (
+      <Badge className="bg-red-600 px-2.5 py-0.5 text-white shadow-sm hover:bg-red-600 dark:bg-red-500/90">
+        Fail
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="bg-amber-600 px-2.5 py-0.5 text-white shadow-sm hover:bg-amber-600 dark:bg-amber-500/90">
+      Error
+    </Badge>
+  );
+}
+
 function scoreBarColor(score: number): string {
-  if (score >= 0.8) return "bg-emerald-500";
+  if (score >= 0.8) return "bg-green-500";
   if (score >= 0.6) return "bg-amber-500";
   return "bg-red-500";
 }
@@ -87,119 +129,101 @@ export const JudgeVerdictCard: React.FC<JudgeVerdictCardProps> = ({
   evidence,
   severity,
 }) => {
-  const [expanded, setExpanded] = useState(false);
-  const vStyle = VERDICT_STYLES[verdict];
-  const sStyle = SEVERITY_STYLES[severity];
+  const [expanded, setExpanded] = React.useState(false);
   const needsCollapse = reasoning.length > REASONING_COLLAPSE_THRESHOLD;
   const displayedReasoning =
     needsCollapse && !expanded
-      ? reasoning.slice(0, REASONING_COLLAPSE_THRESHOLD) + "\u2026"
+      ? reasoning.slice(0, REASONING_COLLAPSE_THRESHOLD) + "…"
       : reasoning;
 
-  return (
-    <div className="w-full max-w-md overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-700">
-        <div className="flex items-center gap-2 min-w-0">
-          <h3 className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
-            {judgeName}
-          </h3>
-          <span className={`inline-flex items-center gap-1 ${sStyle.cls}`} title={`Severity: ${severity}`}>
-            <span className="text-xs">{sStyle.icon}</span>
-            <span className="text-[10px] font-medium uppercase">{severity}</span>
-          </span>
-        </div>
-        <span
-          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${vStyle.cls}`}
-        >
-          {vStyle.label}
-        </span>
-      </div>
+  // Hide the severity chip when there's nothing meaningful to flag —
+  // a passed verdict with "low" severity has no concerns to surface.
+  const showSeverity = !(verdict === "pass" && severity === "low");
+  const sev = SEVERITY_STYLES[severity];
 
-      {/* Body */}
-      <div className="px-4 py-3 space-y-3">
-        {/* Score bar */}
-        <div>
-          <div className="mb-1 flex items-baseline justify-between">
-            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Score
-            </span>
-            <span className="text-sm font-bold tabular-nums text-gray-900 dark:text-gray-100">
+  return (
+    <Card className="gap-0 py-0 transition-shadow duration-200 hover:shadow-md">
+      <CardHeader className="px-6 py-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <CardTitle className="truncate text-base">{judgeName}</CardTitle>
+            {showSeverity ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                  sev.cls,
+                )}
+                title={`Severity: ${sev.label}`}
+              >
+                <AlertIcon className="h-3 w-3" />
+                {sev.label}
+              </span>
+            ) : null}
+          </div>
+          {verdictBadge(verdict)}
+        </div>
+      </CardHeader>
+
+      <Separator />
+
+      <CardContent className="space-y-4 px-6 py-5">
+        <div className="space-y-1.5">
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Score</span>
+            <span className="text-sm font-semibold tabular-nums">
               {(score * 100).toFixed(0)}%
             </span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className={`h-full rounded-full transition-all ${scoreBarColor(score)}`}
+              className={cn("h-full rounded-full transition-all duration-500", scoreBarColor(score))}
               style={{ width: `${score * 100}%` }}
             />
           </div>
         </div>
 
-        {/* Reasoning */}
-        <div>
-          <p className="mb-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-            Reasoning
-          </p>
-          <p className="text-xs leading-relaxed text-gray-700 dark:text-gray-300">
-            {displayedReasoning}
-          </p>
-          {needsCollapse && (
-            <button
-              type="button"
-              onClick={() => setExpanded((prev) => !prev)}
-              className="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Reasoning</p>
+          <MarkdownLite text={displayedReasoning} />
+          {needsCollapse ? (
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => setExpanded((p) => !p)}
+              className="h-auto px-0 text-xs"
             >
               {expanded ? "Show less" : "Show more"}
-            </button>
-          )}
+            </Button>
+          ) : null}
         </div>
 
-        {/* Evidence table */}
-        {evidence.length > 0 && (
-          <div>
-            <p className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
-              Evidence
-            </p>
-            <div className="overflow-x-auto">
+        {evidence.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Evidence</p>
+            <div className="overflow-x-auto rounded-md border">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-gray-100 dark:border-gray-700">
-                    <th className="pb-1 pr-3 text-left font-medium text-gray-500 dark:text-gray-400">
-                      Field
-                    </th>
-                    <th className="pb-1 pr-3 text-left font-medium text-gray-500 dark:text-gray-400">
-                      Expected
-                    </th>
-                    <th className="pb-1 text-left font-medium text-gray-500 dark:text-gray-400">
-                      Actual
-                    </th>
+                  <tr className="border-b bg-muted/40">
+                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Field</th>
+                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Expected</th>
+                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Actual</th>
                   </tr>
                 </thead>
                 <tbody>
                   {evidence.map((e, i) => (
-                    <tr
-                      key={i}
-                      className="border-b border-gray-50 last:border-0 dark:border-gray-700/50"
-                    >
-                      <td className="py-1.5 pr-3 font-mono text-gray-600 dark:text-gray-300">
-                        {e.field}
-                      </td>
-                      <td className="py-1.5 pr-3 text-emerald-600 dark:text-emerald-400">
-                        {e.expected}
-                      </td>
-                      <td className="py-1.5 text-red-600 dark:text-red-400">
-                        {e.actual}
-                      </td>
+                    <tr key={i} className="border-b last:border-0">
+                      <td className="px-2 py-1.5 font-mono text-foreground">{e.field}</td>
+                      <td className="px-2 py-1.5 text-green-700 dark:text-green-400">{e.expected}</td>
+                      <td className="px-2 py-1.5 text-red-700 dark:text-red-400">{e.actual}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-        )}
-      </div>
-    </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 };
 
