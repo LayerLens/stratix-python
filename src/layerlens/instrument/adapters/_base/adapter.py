@@ -32,7 +32,24 @@ from layerlens.instrument.adapters._base.capture import (
     ALWAYS_ENABLED_EVENT_TYPES,
     CaptureConfig,
 )
+from layerlens.instrument.adapters._base.genai_semconv import (
+    OPERATION_EMBED,
+    detect_gen_ai_system,
+    stamp_genai_attributes,
+)
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
+
+# Event types that carry an LLM-call payload and therefore deserve to be
+# additively stamped with the OTel GenAI semantic-convention attributes
+# (spec ``07-otel-genai-semantic-conventions.md``). The mapping value is
+# the ``gen_ai.operation.name`` for that event type (or ``None`` to let
+# the helper auto-detect from the payload shape).
+_GEN_AI_EVENT_OPERATIONS: Dict[str, Optional[str]] = {
+    "model.invoke": None,  # detect from request_kwargs (chat / embed)
+    "embedding.create": OPERATION_EMBED,
+    "model.response": None,
+    "model.request": None,
+}
 
 # Forward reference: EventSink is defined in sinks.py, which itself does not
 # import from this module, but adapter.py is imported by sinks.py via the
@@ -531,12 +548,58 @@ class BaseAdapter(ABC):
             return
 
         payload = self._stamp_org_id(payload)
+        self._stamp_gen_ai_attributes(event_type, payload)
 
         try:
             self._stratix.emit(event_type, payload)
             self._post_emit_success(event_type, payload)
         except Exception:
             self._post_emit_failure()
+
+    def _stamp_gen_ai_attributes(
+        self,
+        event_type: Optional[str],
+        payload: Dict[str, Any],
+    ) -> None:
+        """Stamp OTel GenAI semantic-convention attributes onto LLM-call payloads.
+
+        Centralised hook (CLAUDE.md elegance: one stamp site instead of
+        N adapter call sites) that runs immediately before dispatch and
+        guarantees every ``model.invoke`` / ``embedding.create`` / model
+        request / model response event carries the upstream-defined
+        ``gen_ai.*`` attribute set in addition to LayerLens's existing
+        custom keys. Adapters MAY also call
+        :func:`stamp_genai_attributes` directly when they have richer
+        request / response context (e.g. the original SDK kwargs and the
+        provider response object) — re-stamping is safe because the
+        helper writes the SAME keys idempotently.
+
+        The hook is intentionally tolerant of every failure mode — the
+        circuit-breaker path must keep running even if a payload has an
+        unexpected shape — but logs at DEBUG so test suites can detect
+        regressions.
+        """
+        if event_type is None:
+            return
+        if event_type not in _GEN_AI_EVENT_OPERATIONS:
+            return
+        try:
+            operation = _GEN_AI_EVENT_OPERATIONS[event_type]
+            adapter_system = detect_gen_ai_system(self.FRAMEWORK)
+            stamp_genai_attributes(
+                payload,
+                request_kwargs=None,
+                response_obj=None,
+                system=adapter_system,
+                operation=operation,
+            )
+        except Exception:
+            logger.debug(
+                "gen_ai.* stamping failed for event_type=%s on adapter %s",
+                event_type,
+                type(self).__name__,
+                exc_info=True,
+            )
 
     # --- Circuit breaker internals ---
 

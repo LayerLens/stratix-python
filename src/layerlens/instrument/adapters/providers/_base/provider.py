@@ -29,6 +29,12 @@ from layerlens.instrument.adapters._base.adapter import (
     AdapterCapability,
 )
 from layerlens.instrument.adapters._base.capture import CaptureConfig
+from layerlens.instrument.adapters._base.genai_semconv import (
+    GEN_AI_TOOL_NAME,
+    GEN_AI_TOOL_CALL_ID,
+    detect_gen_ai_system,
+    stamp_genai_attributes,
+)
 from layerlens.instrument.adapters.providers._base.tokens import NormalizedTokenUsage
 from layerlens.instrument.adapters.providers._base.pricing import calculate_cost
 
@@ -248,6 +254,24 @@ class LLMProviderAdapter(BaseAdapter):
             if output_message:
                 payload["output_message"] = output_message
 
+        # Per-adapter OTel GenAI semconv wiring (spec
+        # ``07-otel-genai-semantic-conventions.md``). Stamp gen_ai.*
+        # attributes additively — the helper preserves every existing
+        # custom key. Provider name resolution uses the concrete
+        # ``provider`` argument passed at the call site (``"openai"``
+        # etc.) which maps to the canonical OTel ``gen_ai.system`` value
+        # via :func:`detect_gen_ai_system`. The centralized hook in
+        # :meth:`BaseAdapter.emit_dict_event` runs as a safety net for
+        # any adapter that bypasses this helper, but stamping here gives
+        # the most accurate system / operation context.
+        stamp_genai_attributes(
+            payload,
+            request_kwargs=None,
+            response_obj=None,
+            system=detect_gen_ai_system(provider) if provider else None,
+            operation=None,
+        )
+
         self.emit_dict_event("model.invoke", payload)
 
     @staticmethod
@@ -370,15 +394,19 @@ class LLMProviderAdapter(BaseAdapter):
     ) -> None:
         """Emit ``tool.call`` (L5a) events for function / tool calls in a response."""
         for tc in tool_calls:
+            tool_name = tc.get("name", "unknown")
             payload: Dict[str, Any] = {
-                "tool_name": tc.get("name", "unknown"),
+                "tool_name": tool_name,
                 "tool_input": tc.get("arguments") or tc.get("input"),
                 "provider": self.FRAMEWORK,
+                # Spec §2.x — additive gen_ai.* attributes for tool calls.
+                GEN_AI_TOOL_NAME: tool_name,
             }
             if parent_model:
                 payload["model"] = parent_model
             if "id" in tc:
                 payload["tool_call_id"] = tc["id"]
+                payload[GEN_AI_TOOL_CALL_ID] = tc["id"]
 
             self.emit_dict_event("tool.call", payload)
 
