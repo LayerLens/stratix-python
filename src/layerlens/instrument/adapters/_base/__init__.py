@@ -26,6 +26,14 @@ from layerlens.instrument.adapters._base.capture import (
     CaptureConfig,
 )
 from layerlens.instrument.adapters._base.registry import AdapterRegistry
+from layerlens.instrument.adapters._base.truncation import (
+    DROP,
+    DEFAULT_POLICY,
+    DEFAULT_FIELD_CAPS,
+    FieldTruncationPolicy,
+    truncate_field,
+    truncate_payload,
+)
 from layerlens.instrument.adapters._base.pydantic_compat import (
     PydanticCompat,
     requires_pydantic,
@@ -40,10 +48,16 @@ __all__ = [
     "AdapterStatus",
     "BaseAdapter",
     "CaptureConfig",
+    "DEFAULT_FIELD_CAPS",
+    "DEFAULT_POLICY",
+    "DROP",
     "EventSink",
+    "FieldTruncationPolicy",
     "IngestionPipelineSink",
     "PydanticCompat",
     "ReplayableTrace",
     "TraceStoreSink",
     "requires_pydantic",
+    "truncate_field",
+    "truncate_payload",
 ]

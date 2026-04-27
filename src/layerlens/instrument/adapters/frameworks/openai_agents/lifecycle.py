@@ -31,6 +31,7 @@ from layerlens.instrument.adapters._base.adapter import (
     ReplayableTrace,
     AdapterCapability,
 )
+from layerlens.instrument.adapters._base.truncation import DEFAULT_POLICY
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,14 @@ class OpenAIAgentsAdapter(BaseAdapter):
     ) -> None:
         resolved = stratix or stratix_instance
         super().__init__(stratix=resolved, capture_config=capture_config)
+        # Per-adapter wiring of the field-specific truncation policy
+        # (cross-pollination audit §2.4). Routes every event payload
+        # through ``truncate_payload`` before emit so unbounded prompts /
+        # tool I/O / state values cannot blow past the ingestion sink
+        # limits. The audit list is attached to each emitted event as
+        # ``_truncated_fields`` so observability surfaces what was
+        # clipped.
+        self._truncation_policy = DEFAULT_POLICY
         self._adapter_lock = threading.Lock()
         self._seen_agents: set[str] = set()
         self._framework_version: str | None = None

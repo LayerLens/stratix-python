@@ -16,6 +16,7 @@ import pytest
 
 from layerlens._compat.pydantic import model_dump
 from layerlens.instrument.adapters._base import (
+    DEFAULT_POLICY,
     ALWAYS_ENABLED_EVENT_TYPES,
     EventSink,
     AdapterInfo,
@@ -262,6 +263,134 @@ class TestBaseAdapterEmission:
         # Must not raise.
         adapter.emit_dict_event("model.invoke", {"model": "gpt-4o"})
         adapter._close_sinks()  # Must not raise even with broken sink.
+
+
+class TestBaseAdapterTruncation:
+    """The truncation policy is opt-in per-adapter (cross-poll audit §2.4).
+
+    These tests assert the BaseAdapter wiring contract: when an
+    adapter sets ``self._truncation_policy``, the dict-emit path must
+    rewrite the payload and attach a ``_truncated_fields`` audit
+    list. When no policy is set, payloads pass through unchanged.
+    """
+
+    def _make_adapter(
+        self, stratix: _FakeStratix, policy: Any = None
+    ) -> _MinimalAdapter:
+        adapter = _MinimalAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+        if policy is not None:
+            adapter._truncation_policy = policy
+        return adapter
+
+    def test_no_policy_passes_payload_through_unchanged(self) -> None:
+        """Without a policy set, payloads are emitted byte-for-byte."""
+        stratix = _FakeStratix()
+        adapter = self._make_adapter(stratix, policy=None)
+        large = "z" * 50000
+        adapter.emit_dict_event("model.invoke", {"prompt": large})
+        # Stratix received the full payload.
+        emitted = stratix.calls[0][0][1]
+        assert emitted["prompt"] == large
+        assert "_truncated_fields" not in emitted
+
+    def test_policy_truncates_long_prompt(self) -> None:
+        """With DEFAULT_POLICY, ``prompt`` longer than 4096 is truncated."""
+        stratix = _FakeStratix()
+        adapter = self._make_adapter(stratix, policy=DEFAULT_POLICY)
+        adapter.emit_dict_event("model.invoke", {"prompt": "p" * 10000})
+        emitted = stratix.calls[0][0][1]
+        assert emitted["prompt"].startswith("p" * 4096)
+        assert "more chars truncated" in emitted["prompt"]
+        # Audit list MUST be attached.
+        audit = emitted["_truncated_fields"]
+        assert isinstance(audit, list)
+        assert any("prompt:chars-10000->4096" in entry for entry in audit)
+
+    def test_policy_drops_screenshot_with_hash_reference(self) -> None:
+        """Binary-ish fields are replaced with deterministic hash refs."""
+        stratix = _FakeStratix()
+        adapter = self._make_adapter(stratix, policy=DEFAULT_POLICY)
+        adapter.emit_dict_event(
+            "tool.call",
+            {"tool_name": "browser_use", "screenshot": b"PNG_BYTES" * 1000},
+        )
+        emitted = stratix.calls[0][0][1]
+        assert isinstance(emitted["screenshot"], str)
+        assert emitted["screenshot"].startswith("<dropped:screenshot:sha256:")
+        audit = emitted["_truncated_fields"]
+        assert any("screenshot:dropped" in entry for entry in audit)
+
+    def test_policy_short_payload_no_audit_attached(self) -> None:
+        """If no field exceeds its cap, no ``_truncated_fields`` is attached."""
+        stratix = _FakeStratix()
+        adapter = self._make_adapter(stratix, policy=DEFAULT_POLICY)
+        adapter.emit_dict_event(
+            "model.invoke", {"prompt": "short", "tool_output": "ok"}
+        )
+        emitted = stratix.calls[0][0][1]
+        assert emitted == {"prompt": "short", "tool_output": "ok"}
+        assert "_truncated_fields" not in emitted
+
+    def test_policy_does_not_mutate_caller_payload(self) -> None:
+        """The original payload dict supplied by the adapter MUST NOT be mutated."""
+        stratix = _FakeStratix()
+        adapter = self._make_adapter(stratix, policy=DEFAULT_POLICY)
+        payload = {"prompt": "p" * 10000, "tokens_prompt": 1234}
+        snapshot = dict(payload)
+        snapshot["prompt"] = payload["prompt"]
+        adapter.emit_dict_event("model.invoke", payload)
+        assert payload == snapshot
+
+    def test_custom_policy_overrides_caps(self) -> None:
+        """Adapters can pass a stricter policy via ``with_overrides``."""
+        stratix = _FakeStratix()
+        strict = DEFAULT_POLICY.with_overrides(field_caps={"prompt": 16})
+        adapter = self._make_adapter(stratix, policy=strict)
+        adapter.emit_dict_event("model.invoke", {"prompt": "p" * 100})
+        emitted = stratix.calls[0][0][1]
+        assert emitted["prompt"].startswith("p" * 16)
+        assert "more chars truncated" in emitted["prompt"]
+
+    def test_policy_applies_to_nested_dict(self) -> None:
+        """Nested dicts: each field is checked against the policy."""
+        stratix = _FakeStratix()
+        adapter = self._make_adapter(stratix, policy=DEFAULT_POLICY)
+        adapter.emit_dict_event(
+            "agent.input",
+            {
+                "framework": "test",
+                "metadata": {"completion": "c" * 10000},
+            },
+        )
+        emitted = stratix.calls[0][0][1]
+        assert emitted["metadata"]["completion"].startswith("c" * 4096)
+
+    def test_truncation_failure_falls_back_to_raw_payload(self) -> None:
+        """If the policy raises (defensive), emit the raw payload."""
+
+        class _BrokenPolicy:
+            def cap_for(self, _name: str) -> int:
+                raise RuntimeError("simulated policy failure")
+
+        stratix = _FakeStratix()
+        adapter = self._make_adapter(stratix, policy=_BrokenPolicy())
+        adapter.emit_dict_event("model.invoke", {"prompt": "p" * 100})
+        # Stratix received the original payload despite policy failure.
+        emitted = stratix.calls[0][0][1]
+        assert emitted == {"prompt": "p" * 100}
+
+    def test_policy_truncates_html_for_browser_use_pattern(self) -> None:
+        """Browser_use HTML/DOM payloads get a 16 KiB cap."""
+        stratix = _FakeStratix()
+        adapter = self._make_adapter(stratix, policy=DEFAULT_POLICY)
+        big_html = "<div>x</div>" * 10000  # > 100 KB
+        adapter.emit_dict_event("tool.call", {"tool_name": "browse", "html": big_html})
+        emitted = stratix.calls[0][0][1]
+        assert isinstance(emitted["html"], str)
+        # Capped at 16384.
+        assert len(emitted["html"]) <= 16384 + 100  # cap + suffix
+        audit = emitted["_truncated_fields"]
+        assert any("html:chars-" in entry for entry in audit)
 
 
 class TestCircuitBreaker:

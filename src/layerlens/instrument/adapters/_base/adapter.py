@@ -32,6 +32,10 @@ from layerlens.instrument.adapters._base.capture import (
     ALWAYS_ENABLED_EVENT_TYPES,
     CaptureConfig,
 )
+from layerlens.instrument.adapters._base.truncation import (
+    FieldTruncationPolicy,
+    truncate_payload,
+)
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
 # Forward reference: EventSink is defined in sinks.py, which itself does not
@@ -222,6 +226,17 @@ class BaseAdapter(ABC):
         # the public API and may change in v2.
         self._event_sinks: List["EventSink"] = list(event_sinks) if event_sinks else []
 
+        # Field-specific truncation policy. None = pass payloads through
+        # unchanged (preserves legacy behaviour for any adapter that
+        # has not opted in). Lighter framework adapters set this to
+        # ``DEFAULT_POLICY`` (or a customised variant) in their
+        # constructors — see cross-pollination audit §2.4. When set,
+        # :meth:`emit_dict_event` rewrites the payload via
+        # :func:`truncate_payload` and attaches the audit list as
+        # ``_truncated_fields`` so observability can see what was
+        # clipped.
+        self._truncation_policy: Optional[FieldTruncationPolicy] = None
+
     # --- Sink management (public API) ---
 
     def add_sink(self, sink: "EventSink") -> None:
@@ -399,6 +414,14 @@ class BaseAdapter(ABC):
         used by the legacy adapter emission path. This avoids bypassing
         the BaseAdapter protections.
 
+        When the adapter has set ``self._truncation_policy``, the
+        payload is rewritten via
+        :func:`layerlens.instrument.adapters._base.truncation.truncate_payload`
+        before emission. The list of truncated field paths is attached
+        to the emitted payload as ``_truncated_fields`` so downstream
+        observability can surface what was clipped (CLAUDE.md forbids
+        silent truncation).
+
         Args:
             event_type: Event type string (e.g., ``"model.invoke"``).
             payload: Raw event payload dict.
@@ -406,11 +429,56 @@ class BaseAdapter(ABC):
         if not self._pre_emit_check(event_type):
             return
 
+        emit_payload = self._apply_truncation(payload)
+
         try:
-            self._stratix.emit(event_type, payload)
-            self._post_emit_success(event_type, payload)
+            self._stratix.emit(event_type, emit_payload)
+            self._post_emit_success(event_type, emit_payload)
         except Exception:
             self._post_emit_failure()
+
+    def _apply_truncation(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply the adapter's truncation policy to ``payload``.
+
+        If no policy is set, the payload is returned unchanged. When a
+        policy is set and the payload contains fields that exceed the
+        policy's caps, a NEW dict is returned with truncated values
+        and a ``_truncated_fields`` audit list. The original payload
+        is never mutated.
+
+        Args:
+            payload: The event payload to (potentially) truncate.
+
+        Returns:
+            Either the original ``payload`` (no policy or no
+            truncation needed) or a truncated copy with an
+            ``_truncated_fields`` key. If the input is not a dict
+            (defensive), it is returned unchanged.
+        """
+        policy = self._truncation_policy
+        if policy is None or not isinstance(payload, dict):
+            return payload
+        try:
+            truncated, audit = truncate_payload(payload, policy)
+        except Exception:
+            logger.debug(
+                "Adapter %s truncation failed; emitting raw payload",
+                self.FRAMEWORK,
+                exc_info=True,
+            )
+            return payload
+        if not audit:
+            # Common case — no field exceeded its cap. Return the
+            # original dict to avoid an unnecessary copy.
+            return payload
+        # Preserve any caller-supplied ``_truncated_fields`` (rare —
+        # the caller would only set this if they pre-truncated).
+        existing = truncated.get("_truncated_fields")
+        if isinstance(existing, list):
+            truncated["_truncated_fields"] = list(existing) + audit
+        else:
+            truncated["_truncated_fields"] = audit
+        return truncated
 
     # --- Circuit breaker internals ---
 

@@ -24,6 +24,7 @@ from layerlens.instrument.adapters._base.adapter import (
     AdapterCapability,
 )
 from layerlens.instrument.adapters._base.capture import CaptureConfig
+from layerlens.instrument.adapters._base.truncation import DEFAULT_POLICY
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,12 @@ class VectorStoreAdapter(BaseAdapter):
         capture_config: CaptureConfig | None = None,
     ) -> None:
         super().__init__(stratix=stratix, capture_config=capture_config)
+        # Per-adapter wiring of the field-specific truncation policy
+        # (cross-pollination audit §2.4). Vector-store query results
+        # can include large content payloads (matched documents); the
+        # policy caps those without dropping the structural fields
+        # (scores, IDs, metadata) needed for retrieval analytics.
+        self._truncation_policy = DEFAULT_POLICY
         self._originals: dict[str, Any] = {}
         self._clients: list[Any] = []
 

@@ -23,6 +23,7 @@ from layerlens.instrument.adapters._base.adapter import (
     AdapterCapability,
 )
 from layerlens.instrument.adapters._base.capture import CaptureConfig
+from layerlens.instrument.adapters._base.truncation import DEFAULT_POLICY
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,11 @@ class EmbeddingAdapter(BaseAdapter):
         capture_config: CaptureConfig | None = None,
     ) -> None:
         super().__init__(stratix=stratix, capture_config=capture_config)
+        # Per-adapter wiring of the field-specific truncation policy
+        # (cross-pollination audit §2.4). Embedding payloads contain
+        # input text arrays that can be very large for batch jobs —
+        # truncation prevents single-emit blowups.
+        self._truncation_policy = DEFAULT_POLICY
         self._originals: dict[str, Any] = {}
         self._clients: list[Any] = []
 

@@ -212,3 +212,69 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "openai_agents"
     assert rt.adapter_name == "OpenAIAgentsAdapter"
     assert "capture_config" in rt.config
+
+
+ADAPTER_CLS = OpenAIAgentsAdapter
+
+
+
+# ---------------------------------------------------------------------------
+# Field-specific truncation policy (cross-pollination audit §2.4)
+# ---------------------------------------------------------------------------
+
+
+def test_truncation_policy_is_default_after_construction() -> None:
+    """The adapter wires :data:`DEFAULT_POLICY` in its constructor.
+
+    Without this, large prompts / tool I/O / state values would flow
+    through to ``Stratix.emit`` unbounded — see audit §2.4.
+    """
+    from layerlens.instrument.adapters._base import DEFAULT_POLICY
+
+    adapter = ADAPTER_CLS()
+    assert adapter._truncation_policy is DEFAULT_POLICY
+
+
+def test_truncation_clips_oversize_prompt_via_emit_dict_event() -> None:
+    """A 10 000-char prompt is truncated to the policy cap on emit."""
+    stratix = _RecordingStratix()
+    adapter = ADAPTER_CLS(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.emit_dict_event("model.invoke", {"prompt": "p" * 10000})
+
+    assert stratix.events
+    payload = stratix.events[-1]["payload"]
+    assert isinstance(payload["prompt"], str)
+    assert payload["prompt"].startswith("p" * 4096)
+    assert "more chars truncated" in payload["prompt"]
+    audit = payload.get("_truncated_fields", [])
+    assert any("prompt:chars-10000->4096" in entry for entry in audit), audit
+
+
+def test_truncation_drops_screenshot_with_hash_reference() -> None:
+    """``screenshot`` field is replaced with a SHA-256 reference string."""
+    stratix = _RecordingStratix()
+    adapter = ADAPTER_CLS(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.emit_dict_event(
+        "tool.call",
+        {"tool_name": "snap", "screenshot": b"FAKE_PNG_BYTES" * 1000},
+    )
+
+    payload = stratix.events[-1]["payload"]
+    assert isinstance(payload["screenshot"], str)
+    assert payload["screenshot"].startswith("<dropped:screenshot:sha256:")
+
+
+def test_truncation_short_payload_no_audit_attached() -> None:
+    """Payloads under cap do NOT receive a ``_truncated_fields`` key."""
+    stratix = _RecordingStratix()
+    adapter = ADAPTER_CLS(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.emit_dict_event("model.invoke", {"prompt": "short"})
+
+    payload = stratix.events[-1]["payload"]
+    assert "_truncated_fields" not in payload

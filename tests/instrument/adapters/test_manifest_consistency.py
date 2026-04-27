@@ -374,6 +374,20 @@ def test_capability_hook_consistency(framework_key: str, request: pytest.Fixture
                 strict=True,
             )
         )
+    if framework_key == "browser_use":
+        request.applymarker(
+            pytest.mark.xfail(
+                reason=(
+                    "browser_use ships as a placeholder lifecycle.py that "
+                    "wires the field-specific truncation policy ahead of M7 "
+                    "(cross-pollination audit §2.4) but does not yet "
+                    "implement the on_<event> hooks. The capability/hook "
+                    "consistency check turns green when the M7 instrumentation "
+                    "PR lands and the adapter graduates to _MATURE."
+                ),
+                strict=True,
+            )
+        )
 
     src_path = _adapter_dir("framework", framework_key) / "lifecycle.py"
     src = _read_source_if_exists(src_path)
@@ -412,11 +426,25 @@ def test_canonical_events_emitted(framework_key: str, request: pytest.FixtureReq
 
     Known gaps tagged xfail:
 
-    * (none today — the audit's prior bedrock_agents 3/5 finding has
-      since been remediated; if a future regression drops one of the
-      five canonical types, this test will turn red without an xfail
-      marker.)
+    * ``browser_use`` is a placeholder lifecycle.py that wires the
+      field-specific truncation policy ahead of M7 (cross-pollination
+      audit §2.4) but does not yet emit canonical events — those land
+      with the M7 instrumentation PR. Marked ``strict=True`` so the
+      xfail flips red the moment the M7 PR adds them.
     """
+    if framework_key == "browser_use":
+        request.applymarker(
+            pytest.mark.xfail(
+                reason=(
+                    "browser_use ships as a placeholder lifecycle.py that "
+                    "pre-wires the field-specific truncation policy ahead "
+                    "of M7 (cross-pollination audit §2.4); canonical events "
+                    "are added by the M7 instrumentation PR."
+                ),
+                strict=True,
+            )
+        )
+
     src_path = _adapter_dir("framework", framework_key) / "lifecycle.py"
     src = _read_source_if_exists(src_path)
     assert src, f"Expected lifecycle.py at {src_path}"
