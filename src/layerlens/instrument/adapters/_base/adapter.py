@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import time
 import logging
+import warnings
 import threading
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -28,6 +29,10 @@ if TYPE_CHECKING:
     from layerlens.instrument.adapters._base.sinks import EventSink
 
 from layerlens._compat.pydantic import Field, BaseModel, model_dump
+from layerlens.instrument._compat.events import (
+    TypedEventValidationError,
+    validate_typed_event,
+)
 from layerlens.instrument.adapters._base.capture import (
     ALWAYS_ENABLED_EVENT_TYPES,
     CaptureConfig,
@@ -465,6 +470,19 @@ class BaseAdapter(ABC):
                 meta[ORG_ID_FIELD] = self._org_id
         return payload
 
+    # ---- Typed-event policy (per-adapter overridable) ----
+    #
+    # ``ALLOW_UNREGISTERED_EVENTS`` lets a subclass opt into emitting
+    # event types that are not in :data:`ALL_TYPED_EVENTS`. This is
+    # the per-adapter ``extra="allow"`` decision documented in
+    # ``docs/adapters/typed-events.md``: framework adapters whose
+    # event taxonomy genuinely diverges from the canonical schema
+    # (langfuse importer, third-party trace shapes) MUST set this to
+    # ``True`` AND document why in their lifecycle module. Adapters
+    # targeting the canonical 13-event taxonomy MUST leave it
+    # ``False`` so unknown event types are caught at emission time.
+    ALLOW_UNREGISTERED_EVENTS: bool = False
+
     def emit_event(
         self,
         payload: Any,
@@ -472,27 +490,62 @@ class BaseAdapter(ABC):
     ) -> None:
         """Emit a typed event payload through the LayerLens pipeline.
 
+        This is the **preferred** emission path. Pass an instance of one
+        of the canonical event payload models from
+        :mod:`layerlens.instrument._compat.events` (e.g.
+        :class:`ToolCallEvent`, :class:`ModelInvokeEvent`).
+
         This method:
 
         1. Checks the circuit breaker — drops events if open (unless
            cooldown expired).
         2. Checks :class:`CaptureConfig` — silently drops events whose
            layer is disabled (cross-cutting events are never dropped).
-        3. **Stamps the adapter's bound ``org_id`` onto the payload**
+        3. **Validates the payload against the canonical schema**
+           (:func:`validate_typed_event`). Invalid payloads are
+           REJECTED — :class:`TypedEventValidationError` is raised
+           rather than silently emitting malformed data. This is the
+           CLAUDE.md "never silently skip failing operations" rule
+           applied to the emission path.
+        4. **Stamps the adapter's bound ``org_id`` onto the payload**
            (CLAUDE.md multi-tenancy requirement — every emission is
            tenant-scoped).
-        4. Delegates to ``self._stratix.emit(payload, privacy_level)``
+        5. Delegates to ``self._stratix.emit(payload, privacy_level)``
            with error counting for circuit-breaker state management.
 
         Args:
             payload: A Pydantic event payload (e.g.,
-                ``ToolCallEvent.create(...)``).
+                ``ToolCallEvent.create(...)``) — already an instance of
+                one of the canonical models in
+                :data:`ALL_TYPED_EVENTS`.
             privacy_level: Optional ``PrivacyLevel`` override.
+
+        Raises:
+            TypedEventValidationError: When ``payload`` is not a
+                registered typed model and the adapter has not opted
+                into ``ALLOW_UNREGISTERED_EVENTS``.
         """
         event_type = getattr(payload, "event_type", None)
 
         if not self._pre_emit_check(event_type):
             return
+
+        # Schema validation is the CLAUDE.md guarantee that adapters
+        # never ship malformed events. ``validate_typed_event`` is a
+        # no-op fast path for already-typed payloads — it just runs
+        # an isinstance check — so the emission hot path stays cheap.
+        try:
+            payload = validate_typed_event(
+                event_type,
+                payload,
+                allow_unregistered=self.ALLOW_UNREGISTERED_EVENTS,
+            )
+        except TypedEventValidationError:
+            # Re-raise — never swallow schema errors. Callers (and the
+            # test suite) assert that invalid payloads are rejected at
+            # the adapter boundary, not silently dropped.
+            self._post_emit_failure()
+            raise
 
         payload = self._stamp_org_id(payload)
 
@@ -513,10 +566,23 @@ class BaseAdapter(ABC):
     ) -> None:
         """Emit a dict-based event through the LayerLens pipeline.
 
-        Provides the same circuit-breaker and CaptureConfig gating as
-        :meth:`emit_event` but accepts raw ``(event_type, dict)`` pairs
-        used by the legacy adapter emission path. This avoids bypassing
-        the BaseAdapter protections.
+        .. deprecated::
+            Adapters MUST migrate to :meth:`emit_event` with a typed
+            Pydantic payload from
+            :mod:`layerlens.instrument._compat.events`. This legacy
+            path emits a :class:`DeprecationWarning` on every call.
+            The 16 framework adapters currently using this path are
+            tracked in ``docs/adapters/typed-events-followups.md``.
+
+        This path does NOT run canonical schema validation — the
+        adapter-specific dict shapes (e.g. agno's
+        ``{framework, tool_name, tool_input, tool_output}`` for
+        ``tool.call``) deliberately diverge from the canonical
+        ``{tool: {name, version, integration}, input, output}`` shape
+        and will fail validation. The migration to :meth:`emit_event`
+        is what brings each adapter onto the canonical schema; until
+        an adapter migrates, its dict emissions flow through unchecked
+        but with the deprecation warning making the gap visible.
 
         **Multi-tenancy:** the adapter's bound ``org_id`` is stamped
         into ``payload[ORG_ID_FIELD]`` before the event is forwarded.
@@ -527,6 +593,17 @@ class BaseAdapter(ABC):
             event_type: Event type string (e.g., ``"model.invoke"``).
             payload: Raw event payload dict.
         """
+        warnings.warn(
+            (
+                f"BaseAdapter.emit_dict_event({event_type!r}, ...) is "
+                "deprecated; pass a typed payload to emit_event() — see "
+                "layerlens.instrument._compat.events and "
+                "docs/adapters/typed-events.md"
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         if not self._pre_emit_check(event_type):
             return
 

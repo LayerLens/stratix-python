@@ -19,6 +19,18 @@ import logging
 import threading
 from typing import Any
 
+from layerlens.instrument._compat.events import (
+    MessageRole,
+    ToolCallEvent,
+    AgentInputEvent,
+    CostRecordEvent,
+    EnvironmentType,
+    IntegrationType,
+    AgentOutputEvent,
+    ModelInvokeEvent,
+    AgentHandoffEvent,
+    EnvironmentConfigEvent,
+)
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -32,16 +44,62 @@ from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 logger = logging.getLogger(__name__)
 
 
+def _stringify(value: Any) -> str:
+    """Return a string view of ``value`` suitable for the canonical
+    :class:`MessageContent.message` field.
+
+    The canonical schema requires :class:`AgentInputEvent` and
+    :class:`AgentOutputEvent` to carry a ``message: str``. Agno
+    callbacks deliver the underlying input/output as arbitrary
+    Python objects (dicts, model responses, ``None``); this helper
+    converts each to a non-empty string so the typed event always
+    validates. The original payload is preserved on
+    ``MessageContent.metadata.raw_input`` / ``raw_output``.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _sha256_of(value: str) -> str:
+    """Return a canonical ``sha256:<hex64>`` hash string for ``value``.
+
+    The canonical schema's :class:`AgentHandoffEvent` requires
+    ``handoff_context_hash`` to start with ``sha256:`` and have a
+    64-character hex tail (see
+    ``ateam/stratix/core/events/cross_cutting.py``). Centralising the
+    format here ensures every emit site uses the same wire format.
+    """
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 class AgnoAdapter(BaseAdapter):
-    """LayerLens adapter for Agno."""
+    """LayerLens adapter for Agno.
+
+    Reference adapter for the typed-event foundation. Every emission
+    site flows through :meth:`emit_event` with a canonical Pydantic
+    payload from :mod:`layerlens.instrument._compat.events`. No call
+    site uses :meth:`emit_dict_event` — verified by the
+    ``test_agno_no_dict_emits`` test in
+    ``tests/instrument/adapters/frameworks/test_agno_adapter.py``.
+    """
 
     FRAMEWORK = "agno"
     VERSION = "0.1.0"
     # The adapter source has no direct ``pydantic`` imports (verified by
     # grep across ``frameworks/agno/``). Agno itself uses Pydantic v2
     # internally but the adapter only wraps ``Agent.run`` / ``Agent.arun``
-    # and emits dict events, never touching framework Pydantic models.
+    # and emits typed events, never touching framework Pydantic models.
     requires_pydantic = PydanticCompat.V1_OR_V2
+
+    # Per-adapter ``extra="allow"`` decision: agno targets the canonical
+    # 13-event taxonomy exclusively. Unknown event types must be
+    # rejected by the base adapter's typed-event validator, so this
+    # stays ``False``. See ``docs/adapters/typed-events.md`` for the
+    # opt-in policy.
+    ALLOW_UNREGISTERED_EVENTS: bool = False
 
     def __init__(
         self,
@@ -207,71 +265,95 @@ class AgnoAdapter(BaseAdapter):
         return traced_run_sync
 
     def _extract_run_details(self, agent: Any, result: Any) -> None:
-        """Extract tool calls, model invocations, and team handoffs from run result."""
+        """Extract tool calls, model invocations, and team handoffs from run result.
+
+        Each extracted signal is emitted as a typed canonical event via
+        :meth:`emit_event`. Agno-specific provenance (e.g. ``framework``,
+        ``agent_name``) is carried in the model's ``metadata`` /
+        ``parameters`` slots — the canonical schema does not expose
+        these as top-level fields.
+        """
         if result is None:
             return
         try:
-            # Extract model invocation details
+            # Extract model invocation details. The canonical schema
+            # requires ``provider`` and ``name``; ``version`` falls back
+            # to ``"unavailable"`` when agno cannot surface it (per the
+            # NORMATIVE rule in events_l3_model.py).
             model = getattr(agent, "model", None)
             if model:
                 model_name = getattr(model, "id", None) or str(model)
-                self.emit_dict_event(
-                    "model.invoke",
-                    {
-                        "framework": "agno",
-                        "model": model_name,
-                        "provider": self._detect_provider(model_name),
-                    },
+                provider = self._detect_provider(model_name) or "unknown"
+                self.emit_event(
+                    ModelInvokeEvent.create(
+                        provider=provider,
+                        name=model_name,
+                        version="unavailable",
+                        parameters={"framework": "agno"},
+                    )
                 )
 
-            # Extract usage/token info from result
+            # Extract usage/token info from result.
             usage = getattr(result, "metrics", None) or getattr(result, "usage", None)
             if usage:
-                self.emit_dict_event(
-                    "cost.record",
-                    {
-                        "framework": "agno",
-                        "tokens_prompt": getattr(usage, "input_tokens", None) or getattr(usage, "prompt_tokens", None),
-                        "tokens_completion": getattr(usage, "output_tokens", None)
+                self.emit_event(
+                    CostRecordEvent.create(
+                        prompt_tokens=getattr(usage, "input_tokens", None)
+                        or getattr(usage, "prompt_tokens", None),
+                        completion_tokens=getattr(usage, "output_tokens", None)
                         or getattr(usage, "completion_tokens", None),
-                        "tokens_total": getattr(usage, "total_tokens", None),
-                    },
+                        tokens=getattr(usage, "total_tokens", None),
+                    )
                 )
 
-            # Extract tool calls from messages
+            # Extract tool calls from messages.
             messages = getattr(result, "messages", None) or []
             for msg in messages:
                 tool_calls = getattr(msg, "tool_calls", None)
                 if tool_calls:
                     for tc in tool_calls:
-                        self.emit_dict_event(
-                            "tool.call",
-                            {
-                                "framework": "agno",
-                                "tool_name": getattr(tc, "function", {}).get("name", "unknown")
-                                if isinstance(getattr(tc, "function", None), dict)
-                                else getattr(getattr(tc, "function", None), "name", "unknown"),
-                                "tool_input": self._safe_serialize(
-                                    getattr(tc, "function", {}).get("arguments")
-                                    if isinstance(getattr(tc, "function", None), dict)
-                                    else None
-                                ),
-                            },
+                        function_obj = getattr(tc, "function", None)
+                        if isinstance(function_obj, dict):
+                            tool_name = function_obj.get("name", "unknown")
+                            raw_args = function_obj.get("arguments")
+                        else:
+                            tool_name = getattr(function_obj, "name", "unknown")
+                            raw_args = None
+                        serialised_args = self._safe_serialize(raw_args)
+                        input_data: dict[str, Any]
+                        if isinstance(serialised_args, dict):
+                            input_data = dict(serialised_args)
+                        elif serialised_args is None:
+                            input_data = {}
+                        else:
+                            input_data = {"value": serialised_args}
+                        self.emit_event(
+                            ToolCallEvent.create(
+                                name=tool_name,
+                                version="unavailable",
+                                integration=IntegrationType.LIBRARY,
+                                input_data=input_data,
+                            )
                         )
 
-            # Detect team delegation (multi-agent handoffs)
+            # Detect team delegation (multi-agent handoffs). The canonical
+            # schema requires a sha256 ``handoff_context_hash`` — we hash
+            # the (from_agent, to_agent, reason) tuple deterministically
+            # so the same delegation produces the same hash.
             team = getattr(agent, "team", None)
             if team:
                 members = getattr(team, "members", None) or getattr(team, "agents", None) or []
+                from_name = getattr(agent, "name", "leader") or "leader"
                 for member in members:
                     member_name = getattr(member, "name", None) or str(member)
-                    self.emit_dict_event(
-                        "agent.handoff",
-                        {
-                            "from_agent": getattr(agent, "name", "leader"),
-                            "to_agent": member_name,
-                            "reason": "team_delegation",
-                        },
+                    self.emit_event(
+                        AgentHandoffEvent.create(
+                            from_agent=from_name,
+                            to_agent=member_name,
+                            handoff_context_hash=_sha256_of(
+                                f"team_delegation::{from_name}::{member_name}"
+                            ),
+                        )
                     )
         except Exception:
             logger.debug("Could not extract run details", exc_info=True)
@@ -279,7 +361,13 @@ class AgnoAdapter(BaseAdapter):
     # --- Lifecycle Hooks ---
 
     def on_run_start(self, agent_name: str | None = None, input_data: Any = None) -> None:
-        """Emit agent.input event when an agent run starts."""
+        """Emit a typed :class:`AgentInputEvent` when an agent run starts.
+
+        Agno-specific provenance (``framework``, ``agent_name``,
+        ``timestamp_ns``) is carried on the canonical
+        :class:`MessageContent.metadata` slot — the canonical schema
+        does not declare these as top-level fields.
+        """
         if not self._connected:
             return
         try:
@@ -287,14 +375,18 @@ class AgnoAdapter(BaseAdapter):
             start_ns = time.time_ns()
             with self._adapter_lock:
                 self._run_starts[tid] = start_ns
-            self.emit_dict_event(
-                "agent.input",
-                {
-                    "framework": "agno",
-                    "agent_name": agent_name,
-                    "input": self._safe_serialize(input_data),
-                    "timestamp_ns": start_ns,
-                },
+            serialised_input = self._safe_serialize(input_data)
+            self.emit_event(
+                AgentInputEvent.create(
+                    message=_stringify(serialised_input),
+                    role=MessageRole.HUMAN,
+                    metadata={
+                        "framework": "agno",
+                        "agent_name": agent_name,
+                        "timestamp_ns": start_ns,
+                        "raw_input": serialised_input,
+                    },
+                )
             )
         except Exception:
             logger.warning("Error in on_run_start", exc_info=True)
@@ -305,7 +397,19 @@ class AgnoAdapter(BaseAdapter):
         output: Any = None,
         error: Exception | None = None,
     ) -> None:
-        """Emit agent.output event when an agent run ends."""
+        """Emit a typed :class:`AgentOutputEvent` when an agent run ends.
+
+        The previous adapter implementation also emitted a
+        ``agent.state.change`` event carrying only an ``event_subtype``
+        marker. That payload did not satisfy the canonical schema's
+        ``before_hash`` / ``after_hash`` requirement (the event is
+        defined for *real* state mutations with computable hashes —
+        see ``ateam/stratix/core/events/cross_cutting.py``). Rather
+        than synthesise placeholder hashes, the lifecycle marker is
+        now folded into the :class:`AgentOutputEvent.metadata` slot
+        as ``run_status``. Real state hashing requires upstream agno
+        instrumentation that is not available today.
+        """
         if not self._connected:
             return
         try:
@@ -314,22 +418,21 @@ class AgnoAdapter(BaseAdapter):
             with self._adapter_lock:
                 start_ns = self._run_starts.pop(tid, 0)
             duration_ns = end_ns - start_ns if start_ns else 0
-            payload: dict[str, Any] = {
+            serialised_output = self._safe_serialize(output)
+            metadata: dict[str, Any] = {
                 "framework": "agno",
                 "agent_name": agent_name,
-                "output": self._safe_serialize(output),
                 "duration_ns": duration_ns,
+                "raw_output": serialised_output,
+                "run_status": "run_failed" if error else "run_complete",
             }
             if error:
-                payload["error"] = str(error)
-            self.emit_dict_event("agent.output", payload)
-            self.emit_dict_event(
-                "agent.state.change",
-                {
-                    "framework": "agno",
-                    "agent_name": agent_name,
-                    "event_subtype": "run_complete" if not error else "run_failed",
-                },
+                metadata["error"] = str(error)
+            self.emit_event(
+                AgentOutputEvent.create(
+                    message=_stringify(serialised_output),
+                    metadata=metadata,
+                )
             )
         except Exception:
             logger.warning("Error in on_run_end", exc_info=True)
@@ -342,21 +445,37 @@ class AgnoAdapter(BaseAdapter):
         error: Exception | None = None,
         latency_ms: float | None = None,
     ) -> None:
-        """Emit tool.call event for a tool invocation."""
+        """Emit a typed :class:`ToolCallEvent` for a tool invocation."""
         if not self._connected:
             return
         try:
-            payload: dict[str, Any] = {
-                "framework": "agno",
-                "tool_name": tool_name,
-                "tool_input": self._safe_serialize(tool_input),
-                "tool_output": self._safe_serialize(tool_output),
-            }
-            if error:
-                payload["error"] = str(error)
-            if latency_ms is not None:
-                payload["latency_ms"] = latency_ms
-            self.emit_dict_event("tool.call", payload)
+            serialised_input = self._safe_serialize(tool_input)
+            serialised_output = self._safe_serialize(tool_output)
+            input_data: dict[str, Any]
+            if isinstance(serialised_input, dict):
+                input_data = dict(serialised_input)
+            elif serialised_input is None:
+                input_data = {}
+            else:
+                input_data = {"value": serialised_input}
+            output_data: dict[str, Any] | None
+            if isinstance(serialised_output, dict):
+                output_data = dict(serialised_output)
+            elif serialised_output is None:
+                output_data = None
+            else:
+                output_data = {"value": serialised_output}
+            self.emit_event(
+                ToolCallEvent.create(
+                    name=tool_name,
+                    version="unavailable",
+                    integration=IntegrationType.LIBRARY,
+                    input_data=input_data,
+                    output_data=output_data,
+                    error=str(error) if error else None,
+                    latency_ms=latency_ms,
+                )
+            )
         except Exception:
             logger.warning("Error in on_tool_use", exc_info=True)
 
@@ -369,41 +488,46 @@ class AgnoAdapter(BaseAdapter):
         latency_ms: float | None = None,
         messages: list[dict[str, str]] | None = None,
     ) -> None:
-        """Emit model.invoke event for an LLM call."""
+        """Emit a typed :class:`ModelInvokeEvent` for an LLM call."""
         if not self._connected:
             return
         try:
-            payload: dict[str, Any] = {"framework": "agno"}
-            if provider:
-                payload["provider"] = provider
-            if model:
-                payload["model"] = model
-            if tokens_prompt is not None:
-                payload["tokens_prompt"] = tokens_prompt
-            if tokens_completion is not None:
-                payload["tokens_completion"] = tokens_completion
-            if latency_ms is not None:
-                payload["latency_ms"] = latency_ms
-            if self._capture_config.capture_content and messages:
-                payload["messages"] = messages
-            self.emit_dict_event("model.invoke", payload)
+            self.emit_event(
+                ModelInvokeEvent.create(
+                    provider=provider or "unknown",
+                    name=model or "unknown",
+                    version="unavailable",
+                    parameters={"framework": "agno"},
+                    prompt_tokens=tokens_prompt,
+                    completion_tokens=tokens_completion,
+                    latency_ms=latency_ms,
+                    input_messages=messages
+                    if (self._capture_config.capture_content and messages)
+                    else None,
+                )
+            )
         except Exception:
             logger.warning("Error in on_llm_call", exc_info=True)
 
     def on_handoff(self, from_agent: str, to_agent: str, context: Any = None) -> None:
-        """Emit agent.handoff event for team delegation."""
+        """Emit a typed :class:`AgentHandoffEvent` for team delegation.
+
+        The canonical schema requires ``handoff_context_hash`` to be a
+        ``sha256:<hex64>`` string — empty contexts are still hashed
+        (over the empty string) so the wire format is uniform. The
+        previous adapter implementation emitted ``None`` when context
+        was missing; that was non-conformant.
+        """
         if not self._connected:
             return
         try:
             context_str = str(context) if context else ""
-            self.emit_dict_event(
-                "agent.handoff",
-                {
-                    "from_agent": from_agent,
-                    "to_agent": to_agent,
-                    "reason": "agno_team_delegation",
-                    "context_hash": hashlib.sha256(context_str.encode()).hexdigest() if context_str else None,
-                },
+            self.emit_event(
+                AgentHandoffEvent.create(
+                    from_agent=from_agent,
+                    to_agent=to_agent,
+                    handoff_context_hash=_sha256_of(context_str),
+                )
             )
         except Exception:
             logger.warning("Error in on_handoff", exc_info=True)
@@ -430,35 +554,48 @@ class AgnoAdapter(BaseAdapter):
         return None
 
     def _emit_agent_config(self, agent_name: str, agent: Any) -> None:
-        """Emit environment.config event for agent configuration on first encounter."""
+        """Emit a typed :class:`EnvironmentConfigEvent` for agent configuration.
+
+        Idempotent per agent — only the first call for a given
+        ``agent_name`` actually emits. Agno's runtime is treated as a
+        ``simulated`` environment by default; the real production
+        environment (cloud / on_prem) is the responsibility of the
+        host application's environment.config emission, not this
+        framework adapter.
+        """
         with self._adapter_lock:
             if agent_name in self._seen_agents:
                 return
             self._seen_agents.add(agent_name)
-        metadata: dict[str, Any] = {
+        attributes: dict[str, Any] = {
             "framework": "agno",
             "agent_name": agent_name,
         }
         model = getattr(agent, "model", None)
         if model:
-            metadata["model"] = str(model)
+            attributes["model"] = str(model)
         description = getattr(agent, "description", None)
         if description:
-            metadata["description"] = str(description)[:500]
+            attributes["description"] = str(description)[:500]
         instructions = getattr(agent, "instructions", None)
         if instructions and self._capture_config.capture_content:
-            metadata["instructions"] = str(instructions)[:500]
+            attributes["instructions"] = str(instructions)[:500]
         tools = getattr(agent, "tools", None)
         if tools:
-            metadata["tools"] = [getattr(t, "name", str(t)) for t in tools]
+            attributes["tools"] = [getattr(t, "name", str(t)) for t in tools]
         knowledge = getattr(agent, "knowledge", None)
         if knowledge:
-            metadata["knowledge"] = str(type(knowledge).__name__)
+            attributes["knowledge"] = str(type(knowledge).__name__)
         team = getattr(agent, "team", None)
         if team:
             members = getattr(team, "members", None) or getattr(team, "agents", None) or []
-            metadata["team_members"] = [getattr(m, "name", str(m)) for m in members]
-        self.emit_dict_event("environment.config", metadata)
+            attributes["team_members"] = [getattr(m, "name", str(m)) for m in members]
+        self.emit_event(
+            EnvironmentConfigEvent.create(
+                env_type=EnvironmentType.SIMULATED,
+                attributes=attributes,
+            )
+        )
 
     def _safe_serialize(self, value: Any) -> Any:
         """Safely serialize a value for event payloads."""
