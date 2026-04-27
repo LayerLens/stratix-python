@@ -4,6 +4,7 @@ import time
 import logging
 from typing import Any, Dict, Optional
 
+from .._base import resilient_callback
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
@@ -134,6 +135,7 @@ class GoogleADKAdapter(FrameworkAdapter):
     # Run lifecycle handlers (called from plugin)
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_before_run")
     def _on_before_run(self, invocation_context: Any) -> None:
         span_id = self._new_span_id()
         with self._lock:
@@ -176,6 +178,7 @@ class GoogleADKAdapter(FrameworkAdapter):
         self._set_if_capturing(payload, "input", safe_serialize(user_content))
         self._fire("agent.input", payload, span_id=span_id, span_name=agent_name)
 
+    @resilient_callback(callback_name="_on_after_run")
     def _on_after_run(self, invocation_context: Any) -> None:
         latency_ms = self._tock("run")
         span_id = self._run_span_id or self._new_span_id()
@@ -191,6 +194,7 @@ class GoogleADKAdapter(FrameworkAdapter):
     # Agent lifecycle handlers
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_before_agent")
     def _on_before_agent(self, agent: Any, callback_context: Any) -> None:
         name = _agent_name(agent)
         span_id = self._new_span_id()
@@ -206,6 +210,7 @@ class GoogleADKAdapter(FrameworkAdapter):
         self._set_if_capturing(payload, "input", safe_serialize(user_content))
         self._fire("agent.input", payload, span_id=span_id, parent_span_id=self._run_span_id, span_name=f"agent:{name}")
 
+    @resilient_callback(callback_name="_on_after_agent")
     def _on_after_agent(self, agent: Any, callback_context: Any) -> None:
         name = _agent_name(agent)
         latency_ms = self._tock(f"agent:{name}")
@@ -225,10 +230,12 @@ class GoogleADKAdapter(FrameworkAdapter):
     # Model lifecycle handlers
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_before_model")
     def _on_before_model(self, callback_context: Any, llm_request: Any) -> None:
         agent_name = getattr(callback_context, "agent_name", None) or "unknown"
         self._tick(f"model:{agent_name}")
 
+    @resilient_callback(callback_name="_on_after_model")
     def _on_after_model(self, callback_context: Any, llm_response: Any) -> None:
         agent_name = getattr(callback_context, "agent_name", None) or "unknown"
         latency_ms = self._tock(f"model:{agent_name}")
@@ -267,6 +274,7 @@ class GoogleADKAdapter(FrameworkAdapter):
                 cost_payload["model"] = str(model)
             self._fire("cost.record", cost_payload, span_id=span_id, parent_span_id=parent)
 
+    @resilient_callback(callback_name="_on_model_error")
     def _on_model_error(self, callback_context: Any, llm_request: Any, error: Exception) -> None:
         agent_name = getattr(callback_context, "agent_name", None) or "unknown"
         self._tock(f"model:{agent_name}")  # clear timer
@@ -280,11 +288,13 @@ class GoogleADKAdapter(FrameworkAdapter):
     # Tool lifecycle handlers
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_before_tool")
     def _on_before_tool(self, tool: Any, tool_args: Any, tool_context: Any) -> None:
         tool_name = getattr(tool, "name", None) or "unknown"
         call_id = getattr(tool_context, "function_call_id", None) or tool_name
         self._tick(f"tool:{call_id}")
 
+    @resilient_callback(callback_name="_on_after_tool")
     def _on_after_tool(self, tool: Any, tool_args: Any, tool_context: Any, result: Any) -> None:
         tool_name = getattr(tool, "name", None) or "unknown"
         call_id = getattr(tool_context, "function_call_id", None) or tool_name
@@ -303,6 +313,7 @@ class GoogleADKAdapter(FrameworkAdapter):
         self._set_if_capturing(result_payload, "output", safe_serialize(result))
         self._fire("tool.result", result_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
 
+    @resilient_callback(callback_name="_on_tool_error")
     def _on_tool_error(self, tool: Any, tool_args: Any, tool_context: Any, error: Exception) -> None:
         tool_name = getattr(tool, "name", None) or "unknown"
         call_id = getattr(tool_context, "function_call_id", None) or tool_name
@@ -317,6 +328,7 @@ class GoogleADKAdapter(FrameworkAdapter):
     # Event callback
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_event")
     def _on_event(self, invocation_context: Any, event: Any) -> None:
         # Detect agent handoffs from event actions
         actions = getattr(event, "actions", None)
@@ -378,86 +390,58 @@ def _make_plugin(adapter: GoogleADKAdapter) -> Any:
     if _BasePlugin is None:
         raise ImportError("google-adk is required for GoogleADKAdapter")
 
-    class _LayerLensPlugin(_BasePlugin):
+    # The adapter's ``_on_*`` methods are wrapped with ``@resilient_callback``
+    # which catches exceptions, logs them, and increments the resilience
+    # tracker — so the plugin shims can call them directly without any
+    # additional try/except. The shims still need to ``return None``
+    # (the ADK plugin contract requires None to mean "don't override").
+    class _LayerLensPlugin(_BasePlugin):  # type: ignore[misc, valid-type]
         def __init__(self) -> None:
             super().__init__(name="layerlens")
 
         async def before_run_callback(self, *, invocation_context: Any) -> None:
-            try:
-                adapter._on_before_run(invocation_context)
-            except Exception:
-                log.warning("layerlens: error in before_run_callback", exc_info=True)
+            adapter._on_before_run(invocation_context)
             return None
 
         async def after_run_callback(self, *, invocation_context: Any) -> None:
-            try:
-                adapter._on_after_run(invocation_context)
-            except Exception:
-                log.warning("layerlens: error in after_run_callback", exc_info=True)
+            adapter._on_after_run(invocation_context)
 
         async def before_agent_callback(self, *, agent: Any, callback_context: Any) -> None:
-            try:
-                adapter._on_before_agent(agent, callback_context)
-            except Exception:
-                log.warning("layerlens: error in before_agent_callback", exc_info=True)
+            adapter._on_before_agent(agent, callback_context)
             return None
 
         async def after_agent_callback(self, *, agent: Any, callback_context: Any) -> None:
-            try:
-                adapter._on_after_agent(agent, callback_context)
-            except Exception:
-                log.warning("layerlens: error in after_agent_callback", exc_info=True)
+            adapter._on_after_agent(agent, callback_context)
             return None
 
         async def before_model_callback(self, *, callback_context: Any, llm_request: Any) -> None:
-            try:
-                adapter._on_before_model(callback_context, llm_request)
-            except Exception:
-                log.warning("layerlens: error in before_model_callback", exc_info=True)
+            adapter._on_before_model(callback_context, llm_request)
             return None
 
         async def after_model_callback(self, *, callback_context: Any, llm_response: Any) -> None:
-            try:
-                adapter._on_after_model(callback_context, llm_response)
-            except Exception:
-                log.warning("layerlens: error in after_model_callback", exc_info=True)
+            adapter._on_after_model(callback_context, llm_response)
             return None
 
         async def on_model_error_callback(self, *, callback_context: Any, llm_request: Any, error: Exception) -> None:
-            try:
-                adapter._on_model_error(callback_context, llm_request, error)
-            except Exception:
-                log.warning("layerlens: error in on_model_error_callback", exc_info=True)
+            adapter._on_model_error(callback_context, llm_request, error)
             return None
 
         async def before_tool_callback(self, *, tool: Any, tool_args: Any, tool_context: Any) -> None:
-            try:
-                adapter._on_before_tool(tool, tool_args, tool_context)
-            except Exception:
-                log.warning("layerlens: error in before_tool_callback", exc_info=True)
+            adapter._on_before_tool(tool, tool_args, tool_context)
             return None
 
         async def after_tool_callback(self, *, tool: Any, tool_args: Any, tool_context: Any, result: Any) -> None:
-            try:
-                adapter._on_after_tool(tool, tool_args, tool_context, result)
-            except Exception:
-                log.warning("layerlens: error in after_tool_callback", exc_info=True)
+            adapter._on_after_tool(tool, tool_args, tool_context, result)
             return None
 
         async def on_tool_error_callback(
             self, *, tool: Any, tool_args: Any, tool_context: Any, error: Exception
         ) -> None:
-            try:
-                adapter._on_tool_error(tool, tool_args, tool_context, error)
-            except Exception:
-                log.warning("layerlens: error in on_tool_error_callback", exc_info=True)
+            adapter._on_tool_error(tool, tool_args, tool_context, error)
             return None
 
         async def on_event_callback(self, *, invocation_context: Any, event: Any) -> None:
-            try:
-                adapter._on_event(invocation_context, event)
-            except Exception:
-                log.warning("layerlens: error in on_event_callback", exc_info=True)
+            adapter._on_event(invocation_context, event)
             return None
 
     return _LayerLensPlugin()

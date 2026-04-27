@@ -222,13 +222,21 @@ class TestAdapterInfo:
         assert info.name == "langfuse"
         assert info.adapter_type == "framework"
         assert info.connected is True
-        assert info.metadata == {"host": "https://test.langfuse.com"}
+        # The Langfuse-specific ``host`` metadata must be present; resilience
+        # health metadata is added by FrameworkAdapter.adapter_info() to
+        # every framework adapter — assert presence of both surfaces.
+        assert info.metadata["host"] == "https://test.langfuse.com"
+        assert info.metadata["resilience_status"] == "healthy"
 
     def test_adapter_info_disconnected(self, mock_client):
         adapter = LangfuseAdapter(mock_client)
         info = adapter.adapter_info()
         assert info.connected is False
-        assert info.metadata == {}
+        # Disconnected adapters expose only the resilience health surface
+        # (no per-adapter metadata since connect() never populated it).
+        assert info.metadata.get("host") is None
+        assert info.metadata["resilience_status"] == "healthy"
+        assert info.metadata["resilience_failures_total"] == 0
 
 
 # ===================================================================

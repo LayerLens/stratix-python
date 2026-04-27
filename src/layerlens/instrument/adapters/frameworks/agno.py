@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from .._base import resilient_callback
 from ._utils import safe_serialize
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -245,6 +246,7 @@ class AgnoAdapter(FrameworkAdapter):
     # Run lifecycle
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_run_start")
     def _on_run_start(self, agent: Any, input_data: Any) -> None:
         root = self._get_root_span()
         name = _agent_name(agent)
@@ -255,6 +257,7 @@ class AgnoAdapter(FrameworkAdapter):
         self._set_if_capturing(payload, "input", safe_serialize(input_data))
         self._emit("agent.input", payload, span_id=root, parent_span_id=None, span_name=f"agno:{name}")
 
+    @resilient_callback(callback_name="_on_run_end")
     def _on_run_end(self, agent: Any, result: Any, error: Optional[Exception]) -> None:
         self._emit_output(agent, result, error)
         if result is not None:

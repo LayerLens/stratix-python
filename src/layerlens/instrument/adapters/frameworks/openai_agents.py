@@ -4,6 +4,7 @@ import logging
 from typing import Any, Dict, Optional
 from datetime import datetime
 
+from .._base import resilient_callback
 from ._utils import safe_serialize
 from ..._context import RunState, _current_run, _current_collector
 from ..._collector import TraceCollector
@@ -83,52 +84,46 @@ class OpenAIAgentsAdapter(*_Bases):
     # TracingProcessor interface
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="on_trace_start")
     def on_trace_start(self, trace: Any) -> None:
-        try:
-            # OA manages multiple concurrent traces from one processor,
-            # so we create RunState directly instead of using _begin_run
-            # (which would pollute ContextVars for the next trace).
-            run = RunState(
-                collector=TraceCollector(self._client, self._config),
-                root_span_id=self._new_span_id(),
-            )
-            with self._lock:
-                self._trace_runs[trace.trace_id] = run
-        except Exception:
-            log.warning("layerlens: error in on_trace_start", exc_info=True)
+        # OA manages multiple concurrent traces from one processor,
+        # so we create RunState directly instead of using _begin_run
+        # (which would pollute ContextVars for the next trace).
+        run = RunState(
+            collector=TraceCollector(self._client, self._config),
+            root_span_id=self._new_span_id(),
+        )
+        with self._lock:
+            self._trace_runs[trace.trace_id] = run
 
+    @resilient_callback(callback_name="on_trace_end")
     def on_trace_end(self, trace: Any) -> None:
-        try:
-            with self._lock:
-                run = self._trace_runs.pop(trace.trace_id, None)
-            if run is not None:
-                run.collector.flush()
-        except Exception:
-            log.warning("layerlens: error in on_trace_end", exc_info=True)
+        with self._lock:
+            run = self._trace_runs.pop(trace.trace_id, None)
+        if run is not None:
+            run.collector.flush()
 
     def on_span_start(self, span: Any) -> None:
         pass
 
+    @resilient_callback(callback_name="on_span_end")
     def on_span_end(self, span: Any) -> None:
-        try:
-            with self._lock:
-                run = self._trace_runs.get(span.trace_id)
-            if run is None:
-                return
+        with self._lock:
+            run = self._trace_runs.get(span.trace_id)
+        if run is None:
+            return
 
-            # Temporarily set both ContextVars so _emit and providers work.
-            run_token = _current_run.set(run)
-            col_token = _current_collector.set(run.collector)
-            try:
-                span_type = getattr(span.span_data, "type", None) or ""
-                handler_name = self._SPAN_HANDLERS.get(span_type)
-                if handler_name is not None:
-                    getattr(self, handler_name)(span)
-            finally:
-                _current_collector.reset(col_token)
-                _current_run.reset(run_token)
-        except Exception:
-            log.warning("layerlens: error handling OpenAI Agents span", exc_info=True)
+        # Temporarily set both ContextVars so _emit and providers work.
+        run_token = _current_run.set(run)
+        col_token = _current_collector.set(run.collector)
+        try:
+            span_type = getattr(span.span_data, "type", None) or ""
+            handler_name = self._SPAN_HANDLERS.get(span_type)
+            if handler_name is not None:
+                getattr(self, handler_name)(span)
+        finally:
+            _current_collector.reset(col_token)
+            _current_run.reset(run_token)
 
     def shutdown(self) -> None:
         pass
