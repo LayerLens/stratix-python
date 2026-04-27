@@ -1,7 +1,18 @@
 import os
+import sys
+from pathlib import Path
 from unittest import mock
 
 import pytest
+
+# Prepend the worktree's ``src`` directory so test imports resolve to
+# the in-tree code first. The global Python 3.12 environment editable-
+# installs ``layerlens`` from a sibling worktree which would otherwise
+# shadow our changes (CLAUDE.md: tests must actually exercise the code
+# under review, not a sibling clone of it).
+_WORKTREE_SRC = str(Path(__file__).resolve().parent.parent / "src")
+if _WORKTREE_SRC not in sys.path:
+    sys.path.insert(0, _WORKTREE_SRC)
 
 
 def pytest_configure(config):
