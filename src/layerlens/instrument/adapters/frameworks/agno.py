@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from .._base import StateFilter, resilient_callback
 from ._utils import safe_serialize
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -139,8 +140,13 @@ class AgnoAdapter(FrameworkAdapter):
 
     name = "agno"
 
-    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
-        super().__init__(client, capture_config)
+    def __init__(
+        self,
+        client: Any,
+        capture_config: Optional[CaptureConfig] = None,
+        state_filter: Optional[StateFilter] = None,
+    ) -> None:
+        super().__init__(client, capture_config, state_filter=state_filter)
         self._originals: Dict[int, Dict[str, Any]] = {}
         self._wrapped_agents: List[Any] = []
 
@@ -245,6 +251,7 @@ class AgnoAdapter(FrameworkAdapter):
     # Run lifecycle
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_run_start")
     def _on_run_start(self, agent: Any, input_data: Any) -> None:
         root = self._get_root_span()
         name = _agent_name(agent)
@@ -253,8 +260,10 @@ class AgnoAdapter(FrameworkAdapter):
         if model:
             payload["model"] = model
         self._set_if_capturing(payload, "input", safe_serialize(input_data))
+        self._filter_payload(payload, "input")
         self._emit("agent.input", payload, span_id=root, parent_span_id=None, span_name=f"agno:{name}")
 
+    @resilient_callback(callback_name="_on_run_end")
     def _on_run_end(self, agent: Any, result: Any, error: Optional[Exception]) -> None:
         self._emit_output(agent, result, error)
         if result is not None:
@@ -281,6 +290,7 @@ class AgnoAdapter(FrameworkAdapter):
             payload["error"] = str(error)
             payload["error_type"] = type(error).__name__
         self._set_if_capturing(payload, "output", safe_serialize(output))
+        self._filter_payload(payload, "output")
         self._emit("agent.output", payload, span_id=root, parent_span_id=None, span_name=f"agno:{name}")
 
     def _emit_model(self, agent: Any, result: Any) -> None:
@@ -307,12 +317,14 @@ class AgnoAdapter(FrameworkAdapter):
 
             call_payload = self._payload(tool_name=tool["tool_name"])
             self._set_if_capturing(call_payload, "input", safe_serialize(tool.get("tool_args")))
+            self._filter_payload(call_payload, "input")
             self._emit("tool.call", call_payload, span_id=span_id, parent_span_id=root)
 
             result_payload = self._payload(tool_name=tool["tool_name"])
             self._set_if_capturing(result_payload, "output", safe_serialize(tool.get("result")))
             if tool.get("latency_ms") is not None:
                 result_payload["latency_ms"] = tool["latency_ms"]
+            self._filter_payload(result_payload, "output")
             self._emit("tool.result", result_payload, span_id=span_id, parent_span_id=root)
 
 

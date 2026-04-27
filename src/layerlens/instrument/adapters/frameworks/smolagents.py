@@ -4,6 +4,7 @@ import time
 import logging
 from typing import Any, Dict, List, Optional
 
+from .._base import resilient_callback
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
@@ -190,6 +191,7 @@ class SmolAgentsAdapter(FrameworkAdapter):
     # Run lifecycle handlers
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_run_start")
     def _on_run_start(self, agent: Any, task: Any) -> None:
         span_id = self._new_span_id()
         with self._lock:
@@ -219,6 +221,7 @@ class SmolAgentsAdapter(FrameworkAdapter):
         self._set_if_capturing(payload, "input", safe_serialize(task))
         self._fire("agent.input", payload, span_id=span_id, span_name=agent_name)
 
+    @resilient_callback(callback_name="_on_run_end")
     def _on_run_end(self, agent: Any, result: Any, error: Optional[Exception]) -> None:
         latency_ms = self._tock("run")
         span_id = self._run_span_id or self._new_span_id()
@@ -232,6 +235,7 @@ class SmolAgentsAdapter(FrameworkAdapter):
         self._fire("agent.output", payload, span_id=span_id, span_name=agent_name)
         self._end_trace()
 
+    @resilient_callback(callback_name="_on_run_error")
     def _on_run_error(self, agent: Any, exc: Exception) -> None:
         agent_name = _agent_name(agent)
         self._fire(
@@ -244,18 +248,15 @@ class SmolAgentsAdapter(FrameworkAdapter):
     # Step handlers (registered as step_callbacks)
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_action_step")
     def _on_action_step(self, step: Any, agent: Any = None) -> None:
-        try:
-            self._handle_action_step(step, agent)
-        except Exception:
-            log.warning("layerlens: error in SmolAgents action step handler", exc_info=True)
+        self._handle_action_step(step, agent)
 
+    @resilient_callback(callback_name="_on_planning_step")
     def _on_planning_step(self, step: Any, agent: Any = None) -> None:
-        try:
-            self._handle_planning_step(step, agent)
-        except Exception:
-            log.warning("layerlens: error in SmolAgents planning step handler", exc_info=True)
+        self._handle_planning_step(step, agent)
 
+    @resilient_callback(callback_name="_on_final_answer_step")
     def _on_final_answer_step(self, step: Any, agent: Any = None) -> None:
         pass  # run wrapper handles final output + flush
 
