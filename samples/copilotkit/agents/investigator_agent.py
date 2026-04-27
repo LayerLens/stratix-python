@@ -482,7 +482,10 @@ def build_graph() -> StateGraph:
 
     graph.add_node("fetch_trace", fetch_trace_node)
     graph.add_node("analyze", analyze_node)
-    graph.add_node("error", error_node)
+    # Node name is ``handle_error`` rather than ``error`` to avoid colliding
+    # with the ``error`` field on ``InvestigatorState`` (older LangGraph
+    # versions reject nodes that share a name with a state key).
+    graph.add_node("handle_error", error_node)
 
     graph.set_entry_point("fetch_trace")
 
@@ -491,17 +494,22 @@ def build_graph() -> StateGraph:
         route_step,
         {
             "analyze": "analyze",
-            "error": "error",
+            "error": "handle_error",
             "done": END,
         },
     )
     graph.add_edge("analyze", END)
-    graph.add_edge("error", END)
+    graph.add_edge("handle_error", END)
 
     return graph
 
 
-# Pre-compiled graph for import
+# Pre-compiled graph for import.
+#
+# No checkpointer is compiled in because this graph has no ``interrupt()``
+# calls and therefore never needs to pause/resume. If you add a human-in-the-
+# loop step to this graph, you MUST also add a checkpointer -- see
+# ``evaluator_agent.py`` and ``samples/copilotkit/README.md`` for the pattern.
 investigator_graph = build_graph().compile()
 
 

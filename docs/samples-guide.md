@@ -92,10 +92,12 @@ See the [MCP README](../samples/mcp/README.md) for setup instructions.
 
 Located in [`samples/copilotkit/`](../samples/copilotkit/). Full-stack integration with CopilotKit using LangGraph CoAgents and generative UI card components.
 
-- [`agents/evaluator_agent.py`](../samples/copilotkit/agents/evaluator_agent.py) -- LangGraph CoAgent for evaluation workflows
+- [`agents/evaluator_agent.py`](../samples/copilotkit/agents/evaluator_agent.py) -- LangGraph CoAgent for evaluation workflows (human-in-the-loop judge confirmation via `interrupt()`)
 - [`agents/investigator_agent.py`](../samples/copilotkit/agents/investigator_agent.py) -- LangGraph CoAgent for trace investigation
 - [`components/*.tsx`](../samples/copilotkit/components/) -- React card components for rendering results
 - [`hooks/*.ts`](../samples/copilotkit/hooks/) -- CopilotKit hooks for wiring LayerLens actions
+
+> **Checkpointer note:** Any LangGraph CoAgent that calls `interrupt()` (such as `evaluator_agent.py`) **must** be compiled with a checkpointer. Without one, the AG-UI stream ends without emitting `RUN_FINISHED` and CopilotKit blocks all subsequent messages. The sample ships with `InMemorySaver` for a zero-setup local run and documents Postgres / SQLite / Redis / LangGraph Platform alternatives for production in its [README](../samples/copilotkit/README.md#human-in-the-loop-checkpointers).
 
 See the [CopilotKit README](../samples/copilotkit/README.md) for the full list.
 
