@@ -137,6 +137,39 @@ class MSAgentAdapter(BaseAdapter):
             config={"capture_config": self._capture_config.model_dump()},
         )
 
+    # --- Factory-based replay (cross-pollination audit §2.6) ---
+
+    async def execute_replay_via_factory(
+        self,
+        trace: ReplayableTrace,
+        agent_factory: Any,
+    ) -> Any:
+        """Re-execute ``trace`` through a fresh MS Agent Framework chat.
+
+        :meth:`instrument_chat` wraps ``invoke`` and ``invoke_stream``
+        so multi-turn ChatHistory events fire during the replay.
+        """
+        return await self._replay_via_executor(
+            trace,
+            agent_factory,
+            instrument=self.instrument_chat,
+        )
+
+    def _invoke_for_replay(
+        self,
+        agent: Any,
+        inputs: Any,
+        trace: ReplayableTrace,  # noqa: ARG002 - executor contract; some adapters need trace context
+    ) -> Any:
+        """MS Agent Framework invocation: ``invoke`` (async generator) / fallbacks."""
+        if hasattr(agent, "invoke") and callable(agent.invoke):
+            return agent.invoke(input=inputs)
+        if hasattr(agent, "arun") and callable(agent.arun):
+            return agent.arun(inputs)
+        if hasattr(agent, "run") and callable(agent.run):
+            return agent.run(inputs)
+        return NotImplemented
+
     # --- Framework Integration ---
 
     def instrument_chat(self, chat: Any) -> Any:

@@ -123,6 +123,38 @@ class PydanticAIAdapter(BaseAdapter):
             config={"capture_config": self._capture_config.model_dump()},
         )
 
+    # --- Factory-based replay (cross-pollination audit §2.6) ---
+
+    async def execute_replay_via_factory(
+        self,
+        trace: ReplayableTrace,
+        agent_factory: Any,
+    ) -> Any:
+        """Re-execute ``trace`` through a fresh PydanticAI agent.
+
+        :meth:`instrument_agent` wraps both ``run`` (async) and
+        ``run_sync`` so PydanticAI's primary execution paths emit
+        lifecycle events during replay.
+        """
+        return await self._replay_via_executor(
+            trace,
+            agent_factory,
+            instrument=self.instrument_agent,
+        )
+
+    def _invoke_for_replay(
+        self,
+        agent: Any,
+        inputs: Any,
+        trace: ReplayableTrace,  # noqa: ARG002 - executor contract; some adapters need trace context
+    ) -> Any:
+        """PydanticAI invocation: prefer async ``run``, else ``run_sync``."""
+        if hasattr(agent, "run") and callable(agent.run):
+            return agent.run(inputs)
+        if hasattr(agent, "run_sync") and callable(agent.run_sync):
+            return agent.run_sync(inputs)
+        return NotImplemented
+
     # --- Framework Integration ---
 
     def instrument_agent(self, agent: Any) -> Any:

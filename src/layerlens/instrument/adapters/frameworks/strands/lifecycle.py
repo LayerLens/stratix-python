@@ -130,6 +130,37 @@ class StrandsAdapter(BaseAdapter):
             config={"capture_config": self._capture_config.model_dump()},
         )
 
+    # --- Factory-based replay (cross-pollination audit §2.6) ---
+
+    async def execute_replay_via_factory(
+        self,
+        trace: ReplayableTrace,
+        agent_factory: Any,
+    ) -> Any:
+        """Re-execute ``trace`` through a fresh AWS Strands agent.
+
+        Strands agents are invoked by ``__call__`` or ``invoke`` —
+        :meth:`instrument_agent` wraps both so tracing fires.
+        """
+        return await self._replay_via_executor(
+            trace,
+            agent_factory,
+            instrument=self.instrument_agent,
+        )
+
+    def _invoke_for_replay(
+        self,
+        agent: Any,
+        inputs: Any,
+        trace: ReplayableTrace,  # noqa: ARG002 - executor contract; some adapters need trace context
+    ) -> Any:
+        """Strands invocation: ``__call__`` (primary) or ``invoke``."""
+        if hasattr(agent, "invoke") and callable(agent.invoke):
+            return agent.invoke(inputs)
+        if callable(agent):
+            return agent(inputs)
+        return NotImplemented
+
     # --- Framework Integration ---
 
     def instrument_agent(self, agent: Any) -> Any:

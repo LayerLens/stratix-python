@@ -120,6 +120,37 @@ class SmolAgentsAdapter(BaseAdapter):
             config={"capture_config": model_dump(self._capture_config)},
         )
 
+    # --- Factory-based replay (cross-pollination audit §2.6) ---
+
+    async def execute_replay_via_factory(
+        self,
+        trace: ReplayableTrace,
+        agent_factory: Any,
+    ) -> Any:
+        """Re-execute ``trace`` through a fresh SmolAgents agent.
+
+        SmolAgents' CodeAct execution is naturally reproducible — the
+        agent regenerates and re-executes the code on the same task.
+        :meth:`instrument_agent` wraps ``run`` so step-callbacks fire
+        during the replay.
+        """
+        return await self._replay_via_executor(
+            trace,
+            agent_factory,
+            instrument=self.instrument_agent,
+        )
+
+    def _invoke_for_replay(
+        self,
+        agent: Any,
+        inputs: Any,
+        trace: ReplayableTrace,  # noqa: ARG002 - executor contract; some adapters need trace context
+    ) -> Any:
+        """SmolAgents invocation: ``run(task)``."""
+        if hasattr(agent, "run") and callable(agent.run):
+            return agent.run(inputs)
+        return NotImplemented
+
     # --- Framework integration ---
 
     def instrument_agent(self, agent: Any) -> Any:

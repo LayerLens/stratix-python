@@ -13,6 +13,14 @@ from layerlens.instrument.adapters._base.sinks import (
     TraceStoreSink,
     IngestionPipelineSink,
 )
+from layerlens.instrument.adapters._base.replay import (
+    AgentFactory,
+    ReplayResult,
+    StubInjector,
+    DivergenceKind,
+    ReplayExecutor,
+    ReplayDivergence,
+)
 from layerlens.instrument.adapters._base.adapter import (
     ORG_ID_FIELD,
     AdapterInfo,
@@ -39,13 +47,19 @@ __all__ = [
     "AdapterInfo",
     "AdapterRegistry",
     "AdapterStatus",
+    "AgentFactory",
     "BaseAdapter",
     "CaptureConfig",
+    "DivergenceKind",
     "EventSink",
     "IngestionPipelineSink",
     "ORG_ID_FIELD",
     "PydanticCompat",
+    "ReplayDivergence",
+    "ReplayExecutor",
+    "ReplayResult",
     "ReplayableTrace",
+    "StubInjector",
     "TraceStoreSink",
     "requires_pydantic",
 ]

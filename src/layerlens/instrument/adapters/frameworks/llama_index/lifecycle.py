@@ -131,6 +131,39 @@ class LlamaIndexAdapter(BaseAdapter):
             config={"capture_config": self._capture_config.model_dump()},
         )
 
+    # --- Factory-based replay (cross-pollination audit §2.6) ---
+
+    async def execute_replay_via_factory(
+        self,
+        trace: ReplayableTrace,
+        agent_factory: Any,
+    ) -> Any:
+        """Re-execute ``trace`` through a fresh LlamaIndex workflow.
+
+        The factory must return a LlamaIndex workflow (object with
+        ``run``/``arun``) or a duck-typed equivalent. The adapter
+        registers its event handler via :meth:`instrument_workflow`
+        before the run so dispatcher events are captured.
+        """
+        return await self._replay_via_executor(
+            trace,
+            agent_factory,
+            instrument=self.instrument_workflow,
+        )
+
+    def _invoke_for_replay(
+        self,
+        agent: Any,
+        inputs: Any,
+        trace: ReplayableTrace,  # noqa: ARG002 - executor contract; some adapters need trace context
+    ) -> Any:
+        """LlamaIndex workflow invocation: prefer ``arun``, else ``run``."""
+        if hasattr(agent, "arun") and callable(agent.arun):
+            return agent.arun(inputs)
+        if hasattr(agent, "run") and callable(agent.run):
+            return agent.run(inputs)
+        return NotImplemented
+
     # --- Framework Integration ---
 
     def instrument_workflow(self, workflow: Any) -> Any:

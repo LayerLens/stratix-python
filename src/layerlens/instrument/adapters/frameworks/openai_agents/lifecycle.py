@@ -120,6 +120,84 @@ class OpenAIAgentsAdapter(BaseAdapter):
             config={"capture_config": self._capture_config.model_dump()},
         )
 
+    # --- Factory-based replay (cross-pollination audit §2.6) ---
+
+    async def execute_replay_via_factory(
+        self,
+        trace: ReplayableTrace,
+        agent_factory: Any,
+    ) -> Any:
+        """Re-execute ``trace`` through a fresh Agent built by ``agent_factory``.
+
+        OpenAI Agents SDK uses a global ``add_trace_processor`` so the
+        instrumentation set up at adapter ``connect()`` already routes
+        spans to this adapter. The factory simply returns an
+        ``Agent`` instance; this adapter invokes it via
+        ``Runner.run(agent, input)`` (the canonical SDK entry point).
+
+        If the SDK is unavailable we fall back to manual lifecycle
+        emission via :meth:`on_run_start` / :meth:`on_run_end` so the
+        replay still produces a comparable trace shape.
+
+        Multi-tenancy: ``ReplayResult.org_id`` carries the adapter's
+        bound tenant.
+        """
+        return await self._replay_via_executor(
+            trace,
+            agent_factory,
+            instrument=self.instrument_runner,
+        )
+
+    def _invoke_for_replay(
+        self,
+        agent: Any,
+        inputs: Any,
+        trace: ReplayableTrace,  # noqa: ARG002 - executor contract; some adapters need trace context
+    ) -> Any:
+        """OpenAI Agents invocation: ``Runner.run(agent, input)``.
+
+        Falls back to direct ``run``/``arun`` discovery when the SDK
+        is not installed (test fixtures use plain duck-types).
+        """
+        try:
+            from agents import Runner  # type: ignore[import-not-found,unused-ignore]
+
+            agent_name = getattr(agent, "name", None) or "openai_agent"
+            self.on_run_start(agent_name=agent_name, input_data=inputs)
+            error: Exception | None = None
+            result: Any = None
+            try:
+                result = Runner.run(agent, inputs)
+                if hasattr(result, "__await__"):
+                    return self._await_and_emit(agent_name, result)
+            except Exception as exc:  # noqa: BLE001
+                error = exc
+                self.on_run_end(agent_name=agent_name, error=error)
+                raise
+            self.on_run_end(agent_name=agent_name, output=result)
+            return result
+        except ImportError:
+            # SDK absent — fall back to duck-typing the test agent.
+            if hasattr(agent, "arun") and callable(agent.arun):
+                return agent.arun(inputs)
+            if hasattr(agent, "run") and callable(agent.run):
+                return agent.run(inputs)
+            return NotImplemented
+
+    async def _await_and_emit(
+        self,
+        agent_name: str,
+        coro: Any,
+    ) -> Any:
+        """Await a coroutine result and emit run-end on completion / error."""
+        try:
+            result = await coro
+        except Exception as exc:  # noqa: BLE001
+            self.on_run_end(agent_name=agent_name, error=exc)
+            raise
+        self.on_run_end(agent_name=agent_name, output=result)
+        return result
+
     # --- Framework Integration ---
 
     def instrument_runner(self, runner: Any) -> Any:

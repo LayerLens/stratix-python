@@ -401,7 +401,7 @@ class BaseAdapter(ABC):
     def serialize_for_replay(self) -> ReplayableTrace:
         """Serialize the current trace data for replay."""
 
-    # --- Replay execution hook ---
+    # --- Replay execution hooks ---
 
     async def execute_replay(
         self,
@@ -410,11 +410,18 @@ class BaseAdapter(ABC):
         request: Any,
         replay_trace_id: str,
     ) -> Any:
-        """Re-execute through this adapter's framework.
+        """Re-execute through this adapter's framework (engine integration).
 
-        Subclasses override this to provide actual re-execution. The
-        default raises :class:`NotImplementedError` (synthetic replay
-        used instead).
+        Subclasses override this to provide actual re-execution from the
+        replay engine. The default raises :class:`NotImplementedError`
+        (synthetic replay used instead).
+
+        For the *factory*-based replay path used by the adapter
+        cross-pollination work (audit §2.6) see
+        :meth:`execute_replay_via_factory` — that path uses a shared
+        :class:`~layerlens.instrument.adapters._base.replay.ReplayExecutor`
+        with adapter-specific stub injection rather than going through
+        the engine.
 
         Args:
             inputs: Reconstructed inputs for the replay.
@@ -429,6 +436,126 @@ class BaseAdapter(ABC):
             NotImplementedError: If the adapter does not support replay.
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support execute_replay()")
+
+    async def _replay_via_executor(
+        self,
+        trace: ReplayableTrace,
+        agent_factory: Any,
+        instrument: Any = None,
+        stub_injector: Any = None,
+    ) -> Any:
+        """Internal helper: build executor + run replay with optional instrumentation.
+
+        Adapters call this from their :meth:`execute_replay_via_factory`
+        override with an ``instrument`` callable that wraps the
+        framework-built agent (e.g., ``self.instrument_agent``,
+        ``self.instrument_workflow``, ``self.instrument_runner``).
+
+        The helper exists to keep per-adapter overrides one-liners
+        — the actual factory wrapping (instrument-after-build) is
+        identical across all 8 adapters and would otherwise be
+        copy-pasted.
+
+        Args:
+            trace: Captured trace to replay.
+            agent_factory: Caller's zero-arg agent factory.
+            instrument: Optional one-arg callable invoked on the built
+                agent before execution. Use this to plug the
+                framework's traced-agent wrapper.
+            stub_injector: Optional adapter-specific stub injector.
+
+        Returns:
+            A ReplayResult.
+        """
+        # Lazy import to keep cold paths small for adapters that never
+        # replay (the executor module pulls in unittest.mock).
+        from layerlens.instrument.adapters._base.replay import ReplayExecutor
+
+        original_factory = agent_factory
+
+        async def _wrapped_factory() -> Any:
+            raw = original_factory()
+            if hasattr(raw, "__await__"):
+                agent = await raw
+            else:
+                agent = raw
+            if instrument is not None:
+                instrument(agent)
+            return agent
+
+        executor = ReplayExecutor(self, stub_injector=stub_injector)
+        return await executor.execute_replay(trace, _wrapped_factory)
+
+    async def execute_replay_via_factory(
+        self,
+        trace: ReplayableTrace,
+        agent_factory: Any,
+    ) -> Any:
+        """Re-execute a captured trace through a fresh agent built by ``agent_factory``.
+
+        This is the cross-pollination audit §2.6 entry point. It
+        delegates to a shared
+        :class:`~layerlens.instrument.adapters._base.replay.ReplayExecutor`
+        configured with the adapter's stub injector (see
+        :meth:`_replay_stub_injector`). Adapters that need to invoke
+        the framework-specific run method differently should override
+        :meth:`_invoke_for_replay` rather than this method.
+
+        Multi-tenancy: the returned ``ReplayResult`` carries this
+        adapter's bound ``org_id`` — replay events therefore stay
+        scoped to the original tenant.
+
+        Args:
+            trace: A :class:`ReplayableTrace` previously produced by
+                :meth:`serialize_for_replay`.
+            agent_factory: Zero-argument callable that returns a fresh
+                agent instance (or an awaitable resolving to one). The
+                factory is invoked exactly once per replay.
+
+        Returns:
+            A
+            :class:`~layerlens.instrument.adapters._base.replay.ReplayResult`
+            carrying outputs, captured events, and any divergence
+            records.
+
+        Raises:
+            NotImplementedError: If the adapter does not implement the
+                factory-based replay path. Adapters that *do* support
+                it must override this method (typically a one-line
+                delegate to a configured executor).
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support execute_replay_via_factory(). "
+            "Adapters opt in by overriding this method (cross-pollination audit §2.6)."
+        )
+
+    def _invoke_for_replay(
+        self,
+        agent: Any,  # noqa: ARG002 - subclass override hook
+        inputs: Any,  # noqa: ARG002 - subclass override hook
+        trace: ReplayableTrace,  # noqa: ARG002 - subclass override hook
+    ) -> Any:
+        """Adapter-specific agent invocation for the factory-based replay path.
+
+        Default implementation returns ``NotImplemented`` so the shared
+        :class:`~layerlens.instrument.adapters._base.replay.ReplayExecutor`
+        falls back to its generic duck-typed run/arun/invoke discovery.
+        Adapters with non-standard invocation shapes (OpenAI Agents'
+        ``Runner.run(agent, input)`` static call, Bedrock's
+        ``invoke_agent`` etc.) override this method.
+
+        Returning the awaitable is fine — the executor awaits the
+        return value if it is a coroutine.
+
+        Args:
+            agent: The agent built by the factory.
+            inputs: Inputs extracted from the original trace.
+            trace: The original :class:`ReplayableTrace`.
+
+        Returns:
+            The agent's output, or an awaitable that resolves to it.
+        """
+        return NotImplemented
 
     # --- Concrete event emission ---
 
