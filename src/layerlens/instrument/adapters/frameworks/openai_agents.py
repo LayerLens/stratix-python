@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, Optional
 from datetime import datetime
 
-from .._base import resilient_callback
+from .._base import StateFilter, resilient_callback
 from ._utils import safe_serialize
 from ..._context import RunState, _current_run, _current_collector
 from ..._collector import TraceCollector
@@ -58,8 +58,13 @@ class OpenAIAgentsAdapter(*_Bases):
         "response": "_handle_response_span",
     }
 
-    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
-        FrameworkAdapter.__init__(self, client, capture_config)
+    def __init__(
+        self,
+        client: Any,
+        capture_config: Optional[CaptureConfig] = None,
+        state_filter: Optional[StateFilter] = None,
+    ) -> None:
+        FrameworkAdapter.__init__(self, client, capture_config, state_filter=state_filter)
         # trace_id -> RunState for concurrent trace isolation
         self._trace_runs: Dict[str, Any] = {}
 
@@ -146,7 +151,10 @@ class OpenAIAgentsAdapter(*_Bases):
             val = getattr(data, key, None)
             if val:
                 input_payload[key] = val
-
+        # Tools/handoffs/output_type may carry user-controlled
+        # configuration (e.g. tool function args schemas referencing
+        # secrets); run them through the filter before emit.
+        self._filter_payload(input_payload, "tools", "handoffs", "output_type")
         self._emit(
             "agent.input",
             input_payload,
@@ -194,6 +202,12 @@ class OpenAIAgentsAdapter(*_Bases):
 
         self._set_if_capturing(payload, "messages", safe_serialize(getattr(data, "input", None)))
         self._set_if_capturing(payload, "output_message", safe_serialize(getattr(data, "output", None)))
+        # Messages and output frequently contain prompt text — scrub
+        # any structured PII / credential fields before they reach a
+        # sink. ``filter_payload_fields`` is a no-op when these fields
+        # are absent (capture_content disabled) or scalar (already a
+        # string).
+        self._filter_payload(payload, "messages", "output_message", "model_config")
 
         if span.error:
             payload["error"] = safe_serialize(span.error)
@@ -248,6 +262,10 @@ class OpenAIAgentsAdapter(*_Bases):
             )
             if resource_ref:
                 call_payload["mcp_resource_uri"] = str(resource_ref)
+        # Tool input args + parameters_schema + mcp_data are user-defined
+        # and are the most common vector for credential leakage in
+        # agent traces.
+        self._filter_payload(call_payload, "input", "parameters_schema", "mcp_data")
         self._emit("tool.call", call_payload, span_id=span_id, parent_span_id=parent_id)
 
         # Emit tool.result or agent.error
@@ -262,6 +280,7 @@ class OpenAIAgentsAdapter(*_Bases):
             self._set_if_capturing(result_payload, "output", safe_serialize(getattr(data, "output", None)))
             if duration_ms is not None:
                 result_payload["latency_ms"] = duration_ms
+            self._filter_payload(result_payload, "output")
             self._emit("tool.result", result_payload, span_id=span_id, parent_span_id=parent_id)
 
     def _handle_handoff_span(self, span: Any) -> None:

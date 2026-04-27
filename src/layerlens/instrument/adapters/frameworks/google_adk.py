@@ -4,7 +4,7 @@ import time
 import logging
 from typing import Any, Dict, Optional
 
-from .._base import resilient_callback
+from .._base import StateFilter, resilient_callback
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
@@ -53,8 +53,13 @@ class GoogleADKAdapter(FrameworkAdapter):
 
     name = "google_adk"
 
-    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
-        super().__init__(client, capture_config)
+    def __init__(
+        self,
+        client: Any,
+        capture_config: Optional[CaptureConfig] = None,
+        state_filter: Optional[StateFilter] = None,
+    ) -> None:
+        super().__init__(client, capture_config, state_filter=state_filter)
         self._collector: Optional[TraceCollector] = None
         self._run_span_id: Optional[str] = None
         self._agent_span_ids: Dict[str, str] = {}
@@ -176,6 +181,9 @@ class GoogleADKAdapter(FrameworkAdapter):
 
         user_content = getattr(invocation_context, "user_content", None)
         self._set_if_capturing(payload, "input", safe_serialize(user_content))
+        # User content + agent_tree (which can contain sub-agent
+        # config) are user-controlled; filter PII keys.
+        self._filter_payload(payload, "input", "agent_tree")
         self._fire("agent.input", payload, span_id=span_id, span_name=agent_name)
 
     @resilient_callback(callback_name="_on_after_run")
@@ -208,6 +216,7 @@ class GoogleADKAdapter(FrameworkAdapter):
         payload = self._payload(agent_name=name)
         user_content = getattr(callback_context, "user_content", None)
         self._set_if_capturing(payload, "input", safe_serialize(user_content))
+        self._filter_payload(payload, "input")
         self._fire("agent.input", payload, span_id=span_id, parent_span_id=self._run_span_id, span_name=f"agent:{name}")
 
     @resilient_callback(callback_name="_on_after_agent")
@@ -307,10 +316,14 @@ class GoogleADKAdapter(FrameworkAdapter):
         self._set_if_capturing(call_payload, "input", safe_serialize(tool_args))
         if latency_ms is not None:
             call_payload["latency_ms"] = latency_ms
+        # Tool args + tool result are user-controlled; both are
+        # high-frequency credential leak vectors.
+        self._filter_payload(call_payload, "input")
         self._fire("tool.call", call_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
 
         result_payload = self._payload(tool_name=tool_name)
         self._set_if_capturing(result_payload, "output", safe_serialize(result))
+        self._filter_payload(result_payload, "output")
         self._fire("tool.result", result_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
 
     @resilient_callback(callback_name="_on_tool_error")

@@ -4,7 +4,7 @@ import time
 import logging
 from typing import Any, Dict, List, Optional
 
-from .._base import resilient_callback
+from .._base import StateFilter, resilient_callback
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
@@ -69,8 +69,13 @@ class LlamaIndexAdapter(FrameworkAdapter):
         "ReRankEndEvent": "_on_rerank_end",
     }
 
-    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
-        super().__init__(client, capture_config)
+    def __init__(
+        self,
+        client: Any,
+        capture_config: Optional[CaptureConfig] = None,
+        state_filter: Optional[StateFilter] = None,
+    ) -> None:
+        super().__init__(client, capture_config, state_filter=state_filter)
         self._span_handler: Optional[Any] = None
         self._event_handler: Optional[Any] = None
         # Per-root-span collectors (concurrent query support)
@@ -243,6 +248,11 @@ class LlamaIndexAdapter(FrameworkAdapter):
                 if output:
                     payload["output_message"] = output
 
+        # Scrub PII / credentials from messages before they hit the
+        # event sink. ``output_message`` is a string scalar in this
+        # adapter, so the filter is a no-op for it; we still pass it
+        # through so any future structured-output change is covered.
+        self._filter_payload(payload, "messages", "output_message")
         self._fire("model.invoke", payload, span_id=span_id)
 
         if tokens:
@@ -288,6 +298,7 @@ class LlamaIndexAdapter(FrameworkAdapter):
                 if text:
                     payload["output_message"] = str(text)
 
+        self._filter_payload(payload, "messages", "output_message")
         self._fire("model.invoke", payload, span_id=span_id)
 
         if tokens:
@@ -317,6 +328,8 @@ class LlamaIndexAdapter(FrameworkAdapter):
                 if desc:
                     payload["tool_description"] = str(desc)
 
+        # Tool input arguments are user-supplied; filter PII keys.
+        self._filter_payload(payload, "input")
         self._fire("tool.call", payload, span_id=span_id)
 
     # ------------------------------------------------------------------
@@ -331,6 +344,7 @@ class LlamaIndexAdapter(FrameworkAdapter):
             query = getattr(event, "str_or_query_bundle", None)
             if query is not None:
                 payload["input"] = str(query)
+        self._filter_payload(payload, "input")
         self._fire("tool.call", payload, span_id=span_id, span_name="retrieval")
 
     @resilient_callback(callback_name="_on_retrieval_end")
@@ -342,6 +356,9 @@ class LlamaIndexAdapter(FrameworkAdapter):
             payload["num_results"] = len(nodes)
             if self._config.capture_content:
                 payload["output"] = _serialize_nodes(nodes)
+        # Retrieval results carry the node text — same PII risk as
+        # any document store payload. Filter dict-shaped node entries.
+        self._filter_payload(payload, "output")
         self._fire("tool.result", payload, span_id=span_id, span_name="retrieval")
 
     # ------------------------------------------------------------------
@@ -405,6 +422,7 @@ class LlamaIndexAdapter(FrameworkAdapter):
             query = getattr(event, "query", None)
             if query is not None:
                 payload["input"] = str(query)
+        self._filter_payload(payload, "input")
         self._fire("agent.input", payload, span_id=span_id, span_name="query")
 
     @resilient_callback(callback_name="_on_query_end")
@@ -415,6 +433,7 @@ class LlamaIndexAdapter(FrameworkAdapter):
             response = getattr(event, "response", None)
             if response is not None:
                 payload["output"] = str(response)
+        self._filter_payload(payload, "output")
         self._fire("agent.output", payload, span_id=span_id, span_name="query")
 
     # ------------------------------------------------------------------
@@ -432,6 +451,7 @@ class LlamaIndexAdapter(FrameworkAdapter):
             step_input = getattr(event, "input", None)
             if step_input is not None:
                 payload["input"] = safe_serialize(step_input)
+        self._filter_payload(payload, "input")
         self._fire("agent.input", payload, span_id=span_id, span_name="agent_step")
 
     @resilient_callback(callback_name="_on_agent_step_end")
@@ -442,6 +462,7 @@ class LlamaIndexAdapter(FrameworkAdapter):
             output = getattr(event, "step_output", None)
             if output is not None:
                 payload["output"] = safe_serialize(output)
+        self._filter_payload(payload, "output")
         self._fire("agent.output", payload, span_id=span_id, span_name="agent_step")
 
     # ------------------------------------------------------------------

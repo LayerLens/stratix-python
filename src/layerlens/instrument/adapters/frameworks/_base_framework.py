@@ -12,7 +12,14 @@ import logging
 import threading
 from typing import Any, Dict, Optional
 
-from .._base import AdapterInfo, BaseAdapter, ResilienceTracker
+from .._base import (
+    AdapterInfo,
+    BaseAdapter,
+    StateFilter,
+    ResilienceTracker,
+    default_state_filter,
+    filter_payload_fields,
+)
 from ..._context import (
     RunState,
     _pop_span,
@@ -48,7 +55,12 @@ class FrameworkAdapter(BaseAdapter):
                 "Install it with: pip install layerlens[%s]" % (pkg, self.name, pkg)
             )
 
-    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
+    def __init__(
+        self,
+        client: Any,
+        capture_config: Optional[CaptureConfig] = None,
+        state_filter: Optional[StateFilter] = None,
+    ) -> None:
         self._client = client
         self._config = capture_config or CaptureConfig.standard()
         self._lock = threading.Lock()
@@ -61,6 +73,16 @@ class FrameworkAdapter(BaseAdapter):
         # has set it (class-level), otherwise fall back to the class name.
         adapter_name = getattr(type(self), "name", None) or type(self).__name__
         self._resilience: ResilienceTracker = ResilienceTracker(adapter_name)
+        # State filtering: every framework adapter gets a per-instance
+        # filter so dict-shaped state (agent input, output, messages,
+        # deps, args, etc.) is scrubbed of common PII / credentials
+        # before it reaches a telemetry sink. Customers who don't pass a
+        # ``state_filter`` get :func:`default_state_filter` which excludes
+        # the conservative :data:`DEFAULT_PII_EXCLUDE_KEYS` denylist —
+        # baseline protection out of the box per CLAUDE.md ("never silently
+        # leak customer data"). Customers who explicitly pass
+        # ``StateFilter.permissive()`` opt out.
+        self._state_filter: StateFilter = state_filter if state_filter is not None else default_state_filter()
         # Public, mypy-friendly alias of the failure counter — kept as a
         # property-shaped int so external callers can read it without
         # importing ResilienceTracker.
@@ -236,6 +258,41 @@ class FrameworkAdapter(BaseAdapter):
             payload[key] = value
 
     # ------------------------------------------------------------------
+    # State filtering — applied to dict-shaped payload fields before emit
+    # ------------------------------------------------------------------
+
+    def _filter_payload(self, payload: Dict[str, Any], *fields: str) -> None:
+        """Filter dict-shaped *fields* of *payload* through the state filter.
+
+        Drops or masks keys per ``self._state_filter`` and records any
+        clipped keys under ``payload['_filtered_keys']`` for audit
+        visibility (per the `auditable` contract called out in the
+        cross-pollination audit §2.12).
+
+        Adapters call this immediately before ``self._emit(...)`` for
+        any payload that may contain user-controlled state (input,
+        output, messages, deps, args, state, context, etc.).
+
+        No-op when *fields* are absent from the payload, when the
+        values are not dict / list shapes, or when the filter has no
+        rules to apply.
+        """
+        if not fields:
+            return
+        filter_payload_fields(payload, self._state_filter, fields)
+
+    def serialize_state_filter_for_replay(self) -> Dict[str, Any]:
+        """Snapshot of the active state filter for replay reproducibility.
+
+        Replays must apply the SAME filter as the original run so the
+        captured payload shapes match. Adapters that implement a
+        ``serialize_for_replay`` method include this dict under a
+        ``state_filter`` key so the replay engine can reconstruct an
+        equivalent :class:`StateFilter` on the other side.
+        """
+        return self._state_filter.as_metadata()
+
+    # ------------------------------------------------------------------
     # Event emission
     # ------------------------------------------------------------------
 
@@ -328,8 +385,16 @@ class FrameworkAdapter(BaseAdapter):
         # Merge live resilience snapshot into the metadata block so
         # ``adapter_info().metadata['resilience_status']`` reports
         # HEALTHY / DEGRADED to monitoring code without each subclass
-        # having to remember to do it.
-        merged_metadata: Dict[str, Any] = {**self._metadata, **self._resilience.as_metadata()}
+        # having to remember to do it. Also surface the active state
+        # filter config under ``state_filter`` so operators can verify
+        # what's being scrubbed (or audit that the default PII
+        # protection wasn't accidentally disabled with
+        # ``StateFilter.permissive()``).
+        merged_metadata: Dict[str, Any] = {
+            **self._metadata,
+            **self._resilience.as_metadata(),
+            "state_filter": self._state_filter.as_metadata(),
+        }
         return AdapterInfo(
             name=self.name,
             adapter_type="framework",

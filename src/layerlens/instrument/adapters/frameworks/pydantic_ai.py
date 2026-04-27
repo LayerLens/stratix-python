@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from .._base import resilient_callback
+from .._base import StateFilter, resilient_callback
 from ._utils import safe_serialize
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -40,8 +40,13 @@ class PydanticAIAdapter(FrameworkAdapter):
 
     name = "pydantic-ai"
 
-    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
-        super().__init__(client, capture_config)
+    def __init__(
+        self,
+        client: Any,
+        capture_config: Optional[CaptureConfig] = None,
+        state_filter: Optional[StateFilter] = None,
+    ) -> None:
+        super().__init__(client, capture_config, state_filter=state_filter)
         self._target: Any = None
         self._hooks: Any = None
 
@@ -134,6 +139,12 @@ class PydanticAIAdapter(FrameworkAdapter):
                 safe_serialize(deps)[:500] if isinstance(safe_serialize(deps), str) else _summarize_deps(deps)
             )
 
+        # Filter agent input + deps_summary before emit. ``deps`` in
+        # PydanticAI is the canonical request-scoped object — DB
+        # handles, request_id, user objects all live here. The filter
+        # is the last line of defence between the deps shape and the
+        # event sink.
+        self._filter_payload(payload, "input", "deps_summary")
         self._emit(
             "agent.input",
             payload,
@@ -160,6 +171,7 @@ class PydanticAIAdapter(FrameworkAdapter):
             payload["latency_ms"] = latency_ms
         self._set_if_capturing(payload, "output", output)
         payload.update(usage)
+        self._filter_payload(payload, "output")
         self._emit(
             "agent.output",
             payload,
@@ -243,6 +255,7 @@ class PydanticAIAdapter(FrameworkAdapter):
                     "input",
                     safe_serialize(getattr(part, "args", None)),
                 )
+                self._filter_payload(tool_payload, "input")
                 self._emit("tool.call", tool_payload)
 
         return response
@@ -317,6 +330,7 @@ class PydanticAIAdapter(FrameworkAdapter):
         self._set_if_capturing(payload, "output", safe_serialize(result))
         if latency_ms is not None:
             payload["latency_ms"] = latency_ms
+        self._filter_payload(payload, "output")
         self._emit("tool.result", payload, span_id=span_id)
         return result
 
@@ -389,6 +403,7 @@ class PydanticAIAdapter(FrameworkAdapter):
                 output = self._extract_output(response)
                 if output is not None:
                     payload["output_message"] = output
+        self._filter_payload(payload, "output_message")
         self._emit("model.invoke", payload)
 
     # ------------------------------------------------------------------

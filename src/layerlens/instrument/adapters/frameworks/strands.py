@@ -4,7 +4,7 @@ import time
 import logging
 from typing import Any, Dict, Optional
 
-from .._base import resilient_callback
+from .._base import StateFilter, resilient_callback
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
@@ -53,8 +53,13 @@ class StrandsAdapter(FrameworkAdapter):
 
     name = "strands"
 
-    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
-        super().__init__(client, capture_config)
+    def __init__(
+        self,
+        client: Any,
+        capture_config: Optional[CaptureConfig] = None,
+        state_filter: Optional[StateFilter] = None,
+    ) -> None:
+        super().__init__(client, capture_config, state_filter=state_filter)
         self._collector: Optional[TraceCollector] = None
         self._run_span_id: Optional[str] = None
         self._current_agent_name: Optional[str] = None
@@ -203,6 +208,7 @@ class StrandsAdapter(FrameworkAdapter):
 
         messages = getattr(event, "messages", None)
         self._set_if_capturing(payload, "input", safe_serialize(messages))
+        self._filter_payload(payload, "input")
         self._fire("agent.input", payload, span_id=span_id, span_name=name)
 
     @resilient_callback(callback_name="_on_after_invocation")
@@ -230,6 +236,7 @@ class StrandsAdapter(FrameworkAdapter):
         # so we read per-cycle tokens here instead.
         self._emit_per_cycle_tokens(agent)
 
+        self._filter_payload(payload, "output")
         self._fire("agent.output", payload, span_id=span_id, span_name=name)
         self._end_trace()
 
@@ -310,6 +317,7 @@ class StrandsAdapter(FrameworkAdapter):
         self._set_if_capturing(call_payload, "input", safe_serialize(tool_input))
         if latency_ms is not None:
             call_payload["latency_ms"] = latency_ms
+        self._filter_payload(call_payload, "input")
         self._fire("tool.call", call_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
 
         result = getattr(event, "result", None)
@@ -326,6 +334,7 @@ class StrandsAdapter(FrameworkAdapter):
             result_payload["error"] = str(exception)
             result_payload["error_type"] = type(exception).__name__
 
+        self._filter_payload(result_payload, "output")
         self._fire(
             "tool.result", result_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}"
         )
