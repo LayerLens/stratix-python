@@ -1235,13 +1235,27 @@ class TestAllSamplesWithMockedSDK:
 
             # Mock heavy dependencies that may not be installed
             mock_modules = {
+                "langchain": MagicMock(),
+                "langchain.agents": MagicMock(),
+                "langchain.agents.middleware": MagicMock(),
+                "langchain.tools": MagicMock(),
                 "langchain_core": MagicMock(),
                 "langchain_core.messages": MagicMock(),
+                "langchain_core.runnables": MagicMock(),
+                "langchain_core.tools": MagicMock(),
+                "langchain_core.tools.base": MagicMock(),
+                "langchain_openai": MagicMock(),
                 "langgraph": MagicMock(),
+                "langgraph.checkpoint": MagicMock(),
+                "langgraph.checkpoint.memory": MagicMock(),
+                "langgraph.checkpoint.serde": MagicMock(),
+                "langgraph.checkpoint.serde.jsonplus": MagicMock(),
                 "langgraph.graph": MagicMock(),
+                "langgraph.prebuilt": MagicMock(),
                 "langgraph.types": MagicMock(),
                 "copilotkit": MagicMock(),
                 "copilotkit.langchain": MagicMock(),
+                "copilotkit.langgraph": MagicMock(),
                 "pydantic": MagicMock(),
             }
 
@@ -1252,6 +1266,365 @@ class TestAllSamplesWithMockedSDK:
                         assert hasattr(mod, "main"), f"CopilotKit agent {name} should have main()"
                         # main() just prints usage -- call it
                         mod.main()
+        finally:
+            sys.modules.pop(mod_name, None)
+            if sample_dir in sys.path:
+                sys.path.remove(sample_dir)
+
+    def test_copilotkit_evaluator_tools(self):
+        """Each backend tool on the evaluator agent produces the expected shape
+        against a patched Stratix client.
+
+        This is the regression for the current HITL architecture: the
+        evaluator is a ``create_agent`` + ``CopilotKitMiddleware`` graph with
+        four backend tools (``list_judges``, ``list_recent_traces``,
+        ``run_trace_evaluation``, ``get_evaluation_result``) and one
+        frontend tool (``confirm_judge``, declared in the browser harness
+        via ``useCopilotAction``). No ``interrupt()``, so no ag-ui-langgraph
+        protocol bugs to work around.
+        """
+        pytest.importorskip("langchain")
+        pytest.importorskip("langchain_core")
+
+        from types import SimpleNamespace
+
+        fake_judge = SimpleNamespace(
+            id="jdg_1",
+            name="Helpfulness",
+            evaluation_goal="measures helpfulness",
+            created_at="2026-04-23T00:00:00Z",
+        )
+        fake_trace = SimpleNamespace(
+            id="trc_1",
+            filename="sample.jsonl",
+            created_at="2026-04-23T00:00:00Z",
+        )
+        fake_eval_pending = SimpleNamespace(
+            id="ev_1",
+            trace_id="trc_1",
+            judge_id="jdg_1",
+            status=SimpleNamespace(value="pending"),
+        )
+        fake_eval_done = SimpleNamespace(
+            id="ev_1",
+            trace_id="trc_1",
+            judge_id="jdg_1",
+            status=SimpleNamespace(value="success"),
+        )
+        fake_results = SimpleNamespace(score=0.9, passed=True, reasoning="ok")
+
+        fake_client = MagicMock()
+        fake_client.judges.get_many.return_value = SimpleNamespace(judges=[fake_judge])
+        fake_client.traces.get_many.return_value = SimpleNamespace(traces=[fake_trace])
+        fake_client.trace_evaluations.create.return_value = fake_eval_pending
+
+        sample_dir = os.path.join(SAMPLES_DIR, "copilotkit", "agents")
+        if sample_dir not in sys.path:
+            sys.path.insert(0, sample_dir)
+
+        mod_name = "copilotkit_evaluator_tools_test"
+        try:
+            # Stub OPENAI_API_KEY so import-time build_graph() doesn't fail;
+            # we won't invoke the LLM in this test.
+            with patch.dict(
+                "os.environ",
+                {
+                    "LAYERLENS_STRATIX_API_KEY": "test-key",
+                    "OPENAI_API_KEY": "test-openai",
+                },
+            ):
+                with patch("layerlens.Stratix", MagicMock(return_value=fake_client)):
+                    spec = importlib.util.spec_from_file_location(
+                        mod_name,
+                        os.path.join(sample_dir, "evaluator_agent.py"),
+                    )
+                    mod = importlib.util.module_from_spec(spec)
+                    sys.modules[mod_name] = mod
+                    spec.loader.exec_module(mod)
+                    mod._client = fake_client
+
+                    # The evaluator exposes its backend tools as a module-level
+                    # BACKEND_TOOLS list. Each one is a LangChain ``@tool``
+                    # with a canonical ``.invoke(args)`` entry point.
+                    tools_by_name = {t.name: t for t in mod.BACKEND_TOOLS}
+                    assert set(tools_by_name) == {
+                        "list_judges",
+                        "list_recent_traces",
+                        "run_trace_evaluation",
+                        "get_evaluation_result",
+                    }, f"unexpected tool set: {set(tools_by_name)}"
+
+                    judges = tools_by_name["list_judges"].invoke({})
+                    assert judges == [
+                        {
+                            "id": "jdg_1",
+                            "name": "Helpfulness",
+                            "goal": "measures helpfulness",
+                        }
+                    ]
+
+                    traces = tools_by_name["list_recent_traces"].invoke({"limit": 5})
+                    assert traces == [
+                        {
+                            "id": "trc_1",
+                            "filename": "sample.jsonl",
+                            "created_at": "2026-04-23T00:00:00Z",
+                        }
+                    ]
+
+                    started = tools_by_name["run_trace_evaluation"].invoke({"trace_id": "trc_1", "judge_id": "jdg_1"})
+                    assert started["evaluation_id"] == "ev_1"
+                    assert started["status"] == "pending"
+
+                    fake_client.trace_evaluations.get.return_value = fake_eval_done
+                    fake_client.trace_evaluations.get_results.return_value = fake_results
+                    result = tools_by_name["get_evaluation_result"].invoke({"evaluation_id": "ev_1"})
+                    assert result["status"] == "success"
+                    assert result["passed"] is True
+                    assert result["score"] == 0.9
+
+                    # Confirm the prompt references the frontend HITL tool by
+                    # the exact name the browser's useCopilotAction uses, and
+                    # includes the key flow steps. Sanity, not exhaustive.
+                    assert "confirm_judge" in mod.SYSTEM_PROMPT
+                    assert "list_recent_traces" in mod.SYSTEM_PROMPT
+                    assert "list_judges" in mod.SYSTEM_PROMPT
+        finally:
+            sys.modules.pop(mod_name, None)
+            if sample_dir in sys.path:
+                sys.path.remove(sample_dir)
+
+    @pytest.mark.live
+    def test_copilotkit_evaluator_live_llm(self):
+        """Live end-to-end: real LLM drives the evaluator through the
+        documented tool sequence and stops cleanly at the frontend HITL
+        tool boundary.
+
+        Skipped unless an OpenAI-compatible API key is available. The
+        test loader checks (in order):
+          - ``OPENAI_API_KEY`` env var (and ``OPENAI_BASE_URL`` /
+            ``OPENAI_MODEL`` overrides for non-OpenAI endpoints — any
+            OpenAI-compatible server works: hosted, on-prem, or local
+            inference)
+          - ``.env`` next to this test file
+          - ``samples/copilotkit/.env``
+
+        Local devs put their key in one of those ``.env`` files (which
+        are ``.gitignore``d). CI provides the key as a real env var.
+
+        Asserts that the LLM, given the documented system prompt and a
+        ``confirm_judge`` frontend tool declared on the AG-UI input,
+        calls (in order): ``list_recent_traces`` -> ``list_judges`` ->
+        ``confirm_judge``, then halts at ``confirm_judge`` waiting for a
+        resolve. Run lifecycle is clean (one RUN_STARTED, one
+        RUN_FINISHED with matching runId, no RUN_ERROR).
+
+        This is the test that proves the architectural rewrite (#2 in
+        the rollout plan) actually works against a real LLM, not just
+        against mocks.
+        """
+        pytest.importorskip("ag_ui_langgraph")
+        pytest.importorskip("copilotkit")
+        pytest.importorskip("fastapi")
+        pytest.importorskip("httpx")
+        pytest.importorskip("langchain")
+        pytest.importorskip("langchain_openai")
+
+        # Load env from any local .env files.
+        candidate_envs = [
+            os.path.join(os.path.dirname(__file__), ".env"),
+            os.path.join(SAMPLES_DIR, "copilotkit", ".env"),
+        ]
+        for env_file in candidate_envs:
+            if not os.path.isfile(env_file):
+                continue
+            with open(env_file, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+        if not os.environ.get("OPENAI_API_KEY"):
+            pytest.skip(
+                "no OPENAI_API_KEY available -- drop one in tests/.env "
+                "or samples/copilotkit/.env to enable this test locally. "
+                "Set OPENAI_BASE_URL / OPENAI_MODEL too if pointing at a "
+                "non-OpenAI OpenAI-compatible endpoint."
+            )
+
+        from uuid import uuid4
+        from types import SimpleNamespace
+
+        import httpx
+        from fastapi import FastAPI
+        from ag_ui_langgraph import add_langgraph_fastapi_endpoint
+
+        # Patched LayerLens fixtures
+        fake_judges = [
+            SimpleNamespace(
+                id="jdg_1",
+                name="Helpfulness",
+                evaluation_goal="measures helpfulness",
+                created_at="2026-04-23T00:00:00Z",
+            ),
+            SimpleNamespace(
+                id="jdg_2",
+                name="Conciseness",
+                evaluation_goal="penalises verbose answers",
+                created_at="2026-04-23T00:00:00Z",
+            ),
+        ]
+        fake_trace = SimpleNamespace(
+            id="trc_1",
+            filename="sample.jsonl",
+            created_at="2026-04-23T00:00:00Z",
+        )
+        fake_eval_done = SimpleNamespace(
+            id="ev_1",
+            trace_id="trc_1",
+            judge_id="jdg_1",
+            status=SimpleNamespace(value="success"),
+        )
+        fake_results = SimpleNamespace(score=0.9, passed=True, reasoning="answers were on-target")
+        fake_client = MagicMock()
+        fake_client.judges.get_many.return_value = SimpleNamespace(judges=fake_judges)
+        fake_client.traces.get_many.return_value = SimpleNamespace(traces=[fake_trace])
+        fake_client.trace_evaluations.create.return_value = fake_eval_done
+        fake_client.trace_evaluations.get.return_value = fake_eval_done
+        fake_client.trace_evaluations.get_results.return_value = fake_results
+
+        sample_dir = os.path.join(SAMPLES_DIR, "copilotkit", "agents")
+        if sample_dir not in sys.path:
+            sys.path.insert(0, sample_dir)
+
+        mod_name = "copilotkit_evaluator_live_test"
+        try:
+            with patch.dict(
+                "os.environ",
+                {"LAYERLENS_STRATIX_API_KEY": "test-key"},
+            ):
+                with patch(
+                    "layerlens.Stratix",
+                    MagicMock(return_value=fake_client),
+                ):
+                    spec = importlib.util.spec_from_file_location(
+                        mod_name,
+                        os.path.join(sample_dir, "evaluator_agent.py"),
+                    )
+                    mod = importlib.util.module_from_spec(spec)
+                    sys.modules[mod_name] = mod
+                    spec.loader.exec_module(mod)
+                    mod._client = fake_client
+
+            app = FastAPI()
+            add_langgraph_fastapi_endpoint(
+                app=app,
+                agent=mod.build_agui_agent(name="evaluator", graph=mod.evaluator_graph),
+                path="/",
+            )
+
+            client_run_id = "r1_" + uuid4().hex[:8]
+            client_thread = "thr_" + uuid4().hex[:8]
+            body = {
+                "threadId": client_thread,
+                "runId": client_run_id,
+                "state": {},
+                "messages": [
+                    {
+                        "id": str(uuid4()),
+                        "role": "user",
+                        "content": "Please evaluate my recent traces.",
+                    }
+                ],
+                # confirm_judge declared as a frontend tool. Real
+                # browsers send this in the AG-UI ``tools`` array;
+                # CopilotKitMiddleware bridges it into the LLM toolbelt.
+                "tools": [
+                    {
+                        "name": "confirm_judge",
+                        "description": ("Ask the user to choose which judge to apply. Returns id and name."),
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "candidates": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "string"},
+                                            "name": {"type": "string"},
+                                            "goal": {"type": "string"},
+                                        },
+                                        "required": ["id", "name", "goal"],
+                                    },
+                                }
+                            },
+                            "required": ["candidates"],
+                        },
+                    }
+                ],
+                "context": [],
+                "forwardedProps": {},
+            }
+
+            async def run_stream() -> tuple[list[dict], bytes]:
+                transport = httpx.ASGITransport(app=app)
+                async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                    buf = bytearray()
+                    async with client.stream("POST", "/", json=body, timeout=120.0) as resp:
+                        assert resp.status_code == 200, "status=" + str(resp.status_code)
+                        async for chunk in resp.aiter_bytes():
+                            buf.extend(chunk)
+                text = bytes(buf).decode("utf-8", errors="replace")
+                events: list[dict] = []
+                for line in text.splitlines():
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if not payload:
+                        continue
+                    try:
+                        events.append(json.loads(payload))
+                    except json.JSONDecodeError:
+                        pass
+                return events, bytes(buf)
+
+            events, raw = asyncio.run(run_stream())
+
+            started = [e for e in events if e.get("type") == "RUN_STARTED"]
+            finished = [e for e in events if e.get("type") == "RUN_FINISHED"]
+            errors = [e for e in events if e.get("type") == "RUN_ERROR"]
+            tool_calls = [e.get("toolCallName") for e in events if e.get("type") == "TOOL_CALL_START"]
+
+            assert started, "no RUN_STARTED in stream: " + repr(raw[:300])
+            assert finished, "no RUN_FINISHED -- INCOMPLETE_STREAM"
+            assert not errors, "RUN_ERROR: " + str([e.get("message") for e in errors])
+
+            # The LLM must call the documented tool sequence.
+            assert "list_recent_traces" in tool_calls, "agent did not call list_recent_traces; tools called: " + str(
+                tool_calls
+            )
+            assert "list_judges" in tool_calls, "agent did not call list_judges; tools called: " + str(tool_calls)
+            assert "confirm_judge" in tool_calls, (
+                "agent did not call frontend HITL tool 'confirm_judge'; tools called: " + str(tool_calls)
+            )
+
+            # And it must NOT have proceeded past confirm_judge -- it
+            # should be paused waiting for the frontend's resolve.
+            assert "run_trace_evaluation" not in tool_calls, (
+                "agent ran evaluations BEFORE confirm_judge resolved; tools called: " + str(tool_calls)
+            )
+
+            # Run-id continuity (regression for ag-ui-protocol/ag-ui#1582).
+            assert all(e.get("runId") == client_run_id for e in started), "RUN_STARTED runId mismatch: " + str(
+                [e.get("runId") for e in started]
+            )
+            assert all(e.get("runId") == client_run_id for e in finished), (
+                "RUN_FINISHED runId mismatch (regression of "
+                "ag-ui-protocol/ag-ui#1582): " + str([e.get("runId") for e in finished])
+            )
         finally:
             sys.modules.pop(mod_name, None)
             if sample_dir in sys.path:
@@ -1647,13 +2020,27 @@ class TestMissingDependencies:
             sys.modules[mod_name] = mod
 
             mock_modules = {
+                "langchain": MagicMock(),
+                "langchain.agents": MagicMock(),
+                "langchain.agents.middleware": MagicMock(),
+                "langchain.tools": MagicMock(),
                 "langchain_core": MagicMock(),
                 "langchain_core.messages": MagicMock(),
+                "langchain_core.runnables": MagicMock(),
+                "langchain_core.tools": MagicMock(),
+                "langchain_core.tools.base": MagicMock(),
+                "langchain_openai": MagicMock(),
                 "langgraph": MagicMock(),
+                "langgraph.checkpoint": MagicMock(),
+                "langgraph.checkpoint.memory": MagicMock(),
+                "langgraph.checkpoint.serde": MagicMock(),
+                "langgraph.checkpoint.serde.jsonplus": MagicMock(),
                 "langgraph.graph": MagicMock(),
+                "langgraph.prebuilt": MagicMock(),
                 "langgraph.types": MagicMock(),
                 "copilotkit": MagicMock(),
                 "copilotkit.langchain": MagicMock(),
+                "copilotkit.langgraph": MagicMock(),
                 "pydantic": MagicMock(),
             }
 

@@ -29,6 +29,15 @@ from .api import (
     ApplyJudgeOptimizationResultResponse,
     EstimateJudgeOptimizationCostResponse,
 )
+from .assistant import (
+    AssistantConversation,
+    AssistantConversationList,
+    AssistantMessage,
+    AssistantMessageList,
+    AssistantStreamEvent,
+    AssistantTokenUsage,
+    AssistantToolCall,
+)
 from .judge import Judge, JudgeVersion
 from .model import Model, CustomModel, PublicModel
 from .trace import Trace, TraceWithEvaluations, TraceEvaluationSummary
@@ -80,6 +89,13 @@ from .judge_optimization import (
 )
 
 __all__ = [
+    "AssistantConversation",
+    "AssistantConversationList",
+    "AssistantMessage",
+    "AssistantMessageList",
+    "AssistantStreamEvent",
+    "AssistantTokenUsage",
+    "AssistantToolCall",
     "ApplyJudgeOptimizationResultResponse",
     "Benchmark",
     "BenchmarkPrompt",

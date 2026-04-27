@@ -1,0 +1,97 @@
+<!doctype html>
+<html><head><title>Diagnostic</title>
+<style>
+body { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background:#0b0d12; color:#e6e8ee; padding:16px; margin:0; }
+h2 { color:#8ae5a3; margin-top:24px; font-size:14px; }
+.ok { color:#8ae5a3; } .bad { color:#ff8b8b; } .warn { color:#ffcc66; }
+pre { background:#10151f; padding:12px; border:1px solid #2f3747;
+  border-radius:6px; white-space:pre-wrap; word-break:break-word; }
+</style></head>
+<body>
+<h1 style="font-size:16px">Evaluator harness — runtime diagnostic</h1>
+<p>Auto-runs on page load. Refresh to re-run.</p>
+<div id="out">running...</div>
+<script>
+(async () => {
+  const out = document.getElementById('out');
+  const log = (cls, label, data) => {
+    const h = document.createElement('h2'); h.className = cls; h.textContent = label;
+    const p = document.createElement('pre'); p.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    out.appendChild(h); out.appendChild(p);
+  };
+  out.innerHTML = '';
+
+  // 1. Probe the runtime info endpoint
+  let info;
+  try {
+    const r = await fetch('/api/copilotkit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: 'info', params: {}, id: 1 }),
+    });
+    info = { status: r.status, body: await r.json() };
+    log(info.status === 200 && info.body.agents ? 'ok' : 'bad',
+        '1. runtime info', info);
+  } catch (e) {
+    log('bad', '1. runtime info — FAILED', String(e));
+  }
+
+  // 2. Try a real agent/run call (the same one CopilotChat would make)
+  try {
+    const threadId = 't_' + Math.random().toString(36).slice(2,10);
+    const runId = 'r_' + Math.random().toString(36).slice(2,10);
+    const body = {
+      method: 'agent/run',
+      params: { agentId: 'evaluator' },
+      body: {
+        threadId, runId, state: {},
+        messages: [{ id: 'm1', role: 'user', content: 'hello, list my traces' }],
+        tools: [{
+          name: 'confirm_judge',
+          description: 'Ask user to choose a judge. Returns id and name.',
+          parameters: {
+            type: 'object',
+            properties: { candidates: { type: 'array', items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' }, name: { type: 'string' }, goal: { type: 'string' }
+              },
+              required: ['id','name','goal']
+            }}},
+            required: ['candidates']
+          }
+        }],
+        context: [], forwardedProps: {}
+      }
+    };
+    const r = await fetch('/api/copilotkit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    const lines = text.split('\n').filter(l => l.trim());
+    const lifecycle = lines
+      .filter(l => l.startsWith('data:'))
+      .map(l => { try { return JSON.parse(l.slice(5).trim()); } catch { return null; } })
+      .filter(e => e && ['RUN_STARTED','RUN_FINISHED','RUN_ERROR','TOOL_CALL_START'].includes(e.type));
+    log(r.status === 200 && lifecycle.length ? 'ok' : 'bad',
+      '2. agent/run via /api/copilotkit',
+      { status: r.status, ssetail: lines.slice(-3), lifecycle, rawBytes: text.length });
+  } catch (e) {
+    log('bad', '2. agent/run — FAILED', String(e));
+  }
+
+  // 3. Direct backend reach (bypasses Next.js)
+  try {
+    const r = await fetch('http://127.0.0.1:8123/healthz');
+    log(r.ok ? 'ok' : 'bad', '3. backend /healthz', { status: r.status, body: await r.text() });
+  } catch (e) {
+    log('warn', '3. backend /healthz — FAILED (CORS or down)', String(e));
+  }
+
+  log('ok', 'Done', 'Read the labels above. Green = ok, red = problem, yellow = info.');
+})();
+</script>
+</body></html>

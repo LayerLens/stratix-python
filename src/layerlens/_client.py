@@ -17,6 +17,7 @@ from ._base_client import BaseClient, BaseAsyncClient
 
 if TYPE_CHECKING:
     from ._public_client import PublicClient, AsyncPublicClient
+    from .resources.assistant import Assistant, AsyncAssistant
     from .resources.judges import Judges, AsyncJudges
     from .resources.models import Models, AsyncModels
     from .resources.traces import Traces, AsyncTraces
@@ -153,6 +154,15 @@ class Stratix(BaseClient):
         from .resources.evaluation_spaces import EvaluationSpaces
 
         return EvaluationSpaces(self)
+
+    @cached_property
+    def assistant(self) -> Assistant:
+        # Stratix Assistant — gated by per-tier AssistantSDKEnabled +
+        # daily token cap (default-deny). See assistant resource
+        # docstring for details.
+        from .resources.assistant import Assistant
+
+        return Assistant(self)
 
     @cached_property
     def public(self) -> PublicClient:
@@ -376,6 +386,13 @@ class AsyncStratix(BaseAsyncClient):
         from .resources.evaluation_spaces import AsyncEvaluationSpaces
 
         return AsyncEvaluationSpaces(self)
+
+    @cached_property
+    def assistant(self) -> AsyncAssistant:
+        # See sync Stratix.assistant for the access-control notes.
+        from .resources.assistant import AsyncAssistant
+
+        return AsyncAssistant(self)
 
     @cached_property
     def public(self) -> AsyncPublicClient:
