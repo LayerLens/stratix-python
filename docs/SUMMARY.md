@@ -44,7 +44,7 @@
   * [LLM Provider Integrations](samples-guide.md#llm-provider-integrations-2-samples) -- OpenAI, Anthropic
   * [OpenClaw Agent Evaluation](samples-guide.md#openclaw-agent-evaluation-10-demos--skill) -- Cage match, code gate, safety audit, red-team
   * [MCP Server](samples-guide.md#mcp-server-1-sample) -- LayerLens as tools for Claude and other MCP clients
-  * [CopilotKit Integration](samples-guide.md#copilotkit-integration-2-agents--ui-components) -- LangGraph CoAgents, React components
+  * [CopilotKit Integration](samples-guide.md#copilotkit-integration) -- Next.js canvas + chat with create_agent and frontend HITL
   * [Claude Code Skills](samples-guide.md#claude-code-skills-6-skills) -- Slash commands for CLI and desktop
 
 ## Troubleshooting
