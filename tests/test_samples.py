@@ -16,11 +16,32 @@ SAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples"
 # Directories containing library/support modules (not standalone samples)
 _LIBRARY_DIRS = {"judges", "lib", "components", "hooks"}
 
+# Directories to skip entirely during sample discovery. The CopilotKit
+# sample ships a Next.js app under ``app/frontend``; once a developer runs
+# ``npm install`` there, dependencies like ``katex`` drop their own .py
+# helper scripts into ``node_modules`` -- those are not LayerLens samples
+# and must not be treated as such.
+_SKIP_DIRS = {
+    "node_modules",
+    ".next",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".pytest_cache",
+    "test-results",
+    "playwright-report",
+}
+
 
 def _collect_samples():
     """Collect all sample .py files, excluding helpers and __init__."""
     samples = []
     for root, dirs, files in os.walk(SAMPLES_DIR):
+        # Mutate ``dirs`` in place so ``os.walk`` does not descend into
+        # build artefacts, virtualenvs, or vendored packages.
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         for f in files:
             if f.endswith(".py") and not f.startswith("_"):
                 rel = os.path.relpath(os.path.join(root, f), SAMPLES_DIR)

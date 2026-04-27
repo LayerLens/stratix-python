@@ -88,16 +88,16 @@ Located in [`samples/mcp/`](../samples/mcp/). Expose LayerLens capabilities as t
 
 See the [MCP README](../samples/mcp/README.md) for setup instructions.
 
-### CopilotKit Integration (2 agents + UI components)
+### CopilotKit Integration
 
-Located in [`samples/copilotkit/`](../samples/copilotkit/). Full-stack integration with CopilotKit using LangGraph CoAgents and generative UI card components.
+Located in [`samples/copilotkit/`](../samples/copilotkit/). A full-stack canvas + chat sample built on `langchain.agents.create_agent` + `CopilotKitMiddleware`, with a runnable Next.js 16 + Tailwind 4 + shadcn/ui demo app under `app/`. The pattern mirrors CopilotKit's own [`coagents-research-canvas`](https://github.com/CopilotKit/CopilotKit/tree/main/examples/v1/research-canvas) reference: state-driven cards on the host page, a chat sidebar with a frontend HITL widget, and out-of-band polling for long-running async work.
 
-- [`agents/evaluator_agent.py`](../samples/copilotkit/agents/evaluator_agent.py) -- LangGraph CoAgent for evaluation workflows (human-in-the-loop judge confirmation via `interrupt()`)
-- [`agents/investigator_agent.py`](../samples/copilotkit/agents/investigator_agent.py) -- LangGraph CoAgent for trace investigation
-- [`components/*.tsx`](../samples/copilotkit/components/) -- React card components for rendering results
-- [`hooks/*.ts`](../samples/copilotkit/hooks/) -- CopilotKit hooks for wiring LayerLens actions
+- [`agents/evaluator_agent.py`](../samples/copilotkit/agents/evaluator_agent.py) -- LangGraph agent with four backend tools (`list_recent_traces`, `list_judges`, `run_trace_evaluation`, `get_evaluation_result`) and a frontend HITL tool (`confirm_judge`) for picking which judge to apply. The picker is a real React widget registered via `useCopilotAction({ renderAndWaitForResponse })`, bridged into the LLM's toolbelt by `CopilotKitMiddleware` -- no `interrupt()` call.
+- [`agents/investigator_agent.py`](../samples/copilotkit/agents/investigator_agent.py) -- Standalone procedural `StateGraph` for trace investigation (errors / latency / cost hot spots). No HITL, no LLM. Reference for non-conversational agents.
+- [`components/*.tsx`](../samples/copilotkit/components/) -- Five reusable SDK card components (`EvaluationCard`, `TraceCard`, `JudgeVerdictCard`, `MetricCard`, `ComplianceCard`) plus `MarkdownLite`, re-exported as `@layerlens/copilotkit-cards`.
+- [`app/`](../samples/copilotkit/app/) -- Runnable Next.js + FastAPI demo. Real LayerLens only -- a missing `LAYERLENS_STRATIX_API_KEY` is a hard error at startup.
 
-> **Checkpointer note:** Any LangGraph CoAgent that calls `interrupt()` (such as `evaluator_agent.py`) **must** be compiled with a checkpointer. Without one, the AG-UI stream ends without emitting `RUN_FINISHED` and CopilotKit blocks all subsequent messages. The sample ships with `InMemorySaver` for a zero-setup local run and documents Postgres / SQLite / Redis / LangGraph Platform alternatives for production in its [README](../samples/copilotkit/README.md#human-in-the-loop-checkpointers).
+> **Checkpointer note:** The evaluator graph is compiled with `InMemorySaver` so `ag_ui_langgraph`'s endpoint can call `graph.aget_state(config)` per request -- without it the AG-UI handler errors with "No checkpointer set" before any tool runs. The sample ships `InMemorySaver` for zero-setup local development; production deployments should swap to a durable saver (Postgres / SQLite / Redis / LangGraph Platform). See the sample's [README](../samples/copilotkit/README.md) for the full architecture walkthrough.
 
 See the [CopilotKit README](../samples/copilotkit/README.md) for the full list.
 
