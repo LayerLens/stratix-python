@@ -17,12 +17,22 @@ Typical SDK usage routes events to an HTTP sink that POSTs to atlas-app
 ``layerlens.instrument.transport`` and is added in a later milestone.
 
 Ported from ``ateam/stratix/sdk/python/adapters/sinks.py``.
+
+Multi-tenancy
+-------------
+Sinks accept events from multiple :class:`BaseAdapter` instances bound
+to different tenants. Buffering and flushing are partitioned by
+``org_id`` so a single tenant's burst cannot starve another tenant's
+events nor displace them via global eviction. See
+:class:`IngestionPipelineSink` for the per-tenant buffer cap contract
+(CLAUDE.md "EVERY data operation must be scoped by tenant").
 """
 
 from __future__ import annotations
 
 import uuid
 import logging
+import threading
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
@@ -214,6 +224,15 @@ class TraceStoreSink(EventSink):
             )
 
 
+_DEFAULT_MAX_PER_TENANT_BUFFER_SIZE = 1000
+"""Default per-tenant buffer cap for :class:`IngestionPipelineSink`.
+
+Caps each tenant's buffer independently so a single noisy tenant cannot
+exhaust memory or displace events from quieter tenants. See
+``MaxPerTenantBufferSize`` parameter on :class:`IngestionPipelineSink`.
+"""
+
+
 class IngestionPipelineSink(EventSink):
     """Sink that feeds events into a duck-typed ingestion pipeline.
 
@@ -222,9 +241,34 @@ class IngestionPipelineSink(EventSink):
 
     Supports two modes:
 
-    * **immediate** (default): each event is ingested as a single-item batch.
-    * **buffered**: events are collected and ingested on
-      :meth:`flush` / :meth:`close`.
+    * **immediate** (default): each event is ingested as a single-item batch
+      keyed by the per-event ``org_id``.
+    * **buffered**: events are partitioned by ``org_id`` into per-tenant
+      buffers and ingested on :meth:`flush` / :meth:`close`. Each tenant's
+      buffer is flushed in its own ``ingest()`` call so one tenant's
+      backlog cannot delay another tenant's events.
+
+    Multi-tenancy
+    -------------
+    Buffering is partitioned by ``org_id`` (Gap 2 of the multi-tenancy
+    hardening contract). Per-tenant invariants:
+
+    * **Isolation:** each tenant gets its own buffer dict slot. A burst
+      from tenant A never appears in tenant B's flush.
+    * **Bounded eviction:** ``max_per_tenant_buffer_size`` (default
+      ``1000``) caps each tenant independently. When tenant A overflows,
+      A's oldest events drop FIFO — tenant B's events are untouched.
+      Drops are counted per-tenant in :attr:`dropped_per_tenant`.
+    * **Observability:** :meth:`buffer_size_per_tenant` returns a
+      snapshot ``dict[org_id, int]`` for the
+      ``sink_per_tenant_buffer_size{org_id}`` gauge consumers.
+
+    Thread-safety
+    -------------
+    ``send`` / ``flush`` / ``close`` are safe to call concurrently from
+    any thread. All buffer mutations are serialized via an internal
+    lock; per-tenant ingest calls are made *outside* the lock to avoid
+    holding it across slow IO.
     """
 
     def __init__(
@@ -233,18 +277,55 @@ class IngestionPipelineSink(EventSink):
         trace_id: Optional[str] = None,
         tenant_id: str = "default",
         buffered: bool = False,
+        max_per_tenant_buffer_size: int = _DEFAULT_MAX_PER_TENANT_BUFFER_SIZE,
     ) -> None:
+        if max_per_tenant_buffer_size <= 0:
+            raise ValueError(
+                "max_per_tenant_buffer_size must be > 0; got "
+                f"{max_per_tenant_buffer_size}. The cap is per-tenant — "
+                "use a small positive value, never zero."
+            )
         self._pipeline = pipeline
         self._trace_id = trace_id or str(uuid.uuid4())
         self._tenant_id = tenant_id
         self._buffered = buffered
-        self._buffer: List[Dict[str, Any]] = []
+        # Per-tenant buffers — keyed by org_id. A buffer for tenant A
+        # is never flushed under tenant B's binding.
+        self._buffers: Dict[str, List[Dict[str, Any]]] = {}
+        # Per-tenant drop counters, surfaced as
+        # ``sink_per_tenant_dropped{org_id}``.
+        self._dropped_per_tenant: Dict[str, int] = {}
+        self._max_per_tenant_buffer_size = max_per_tenant_buffer_size
         self._sequence_id = 0
         self._closed = False
+        # Single mutex covers buffer / counter / sequence-id mutation.
+        # Per-tenant ingest IO happens outside the lock.
+        self._lock = threading.Lock()
 
     @property
     def trace_id(self) -> str:
         return self._trace_id
+
+    @property
+    def max_per_tenant_buffer_size(self) -> int:
+        """The per-tenant buffer cap. Read-only after construction."""
+        return self._max_per_tenant_buffer_size
+
+    def buffer_size_per_tenant(self) -> Dict[str, int]:
+        """Snapshot of currently-buffered event counts per tenant.
+
+        Suitable for the ``sink_per_tenant_buffer_size{org_id}`` gauge.
+        Returned dict is a defensive copy; mutating it does not affect
+        sink state.
+        """
+        with self._lock:
+            return {org_id: len(buf) for org_id, buf in self._buffers.items()}
+
+    @property
+    def dropped_per_tenant(self) -> Dict[str, int]:
+        """Snapshot of drop counts per tenant (FIFO eviction on overflow)."""
+        with self._lock:
+            return dict(self._dropped_per_tenant)
 
     def _format_event(
         self,
@@ -257,16 +338,20 @@ class IngestionPipelineSink(EventSink):
 
         ``org_id`` is propagated both as a top-level field (for sinks
         that read it directly) and inside the payload (already stamped
-        upstream by :meth:`BaseAdapter._stamp_org_id`).
+        upstream by :meth:`BaseAdapter._stamp_org_id`). Sequence-id
+        increment is performed under the sink lock so concurrent senders
+        do not collide.
         """
-        self._sequence_id += 1
+        with self._lock:
+            self._sequence_id += 1
+            seq = self._sequence_id
         ts = datetime.fromtimestamp(timestamp_ns / 1e9, tz=UTC)
         return {
             "event_type": event_type,
             "trace_id": self._trace_id,
             "timestamp": ts.isoformat(),
             "span_id": str(uuid.uuid4()),
-            "sequence_id": self._sequence_id,
+            "sequence_id": seq,
             "event_id": str(uuid.uuid4()),
             "org_id": org_id,
             "payload": payload if isinstance(payload, dict) else {"raw": str(payload)},
@@ -284,16 +369,17 @@ class IngestionPipelineSink(EventSink):
             return
 
         formatted = self._format_event(event_type, payload, timestamp_ns, org_id)
+        # Per-event org_id is the source of truth for multi-tenant
+        # ingest. Empty values fall back to the sink-level legacy
+        # ``tenant_id`` only to preserve backward compatibility — adapter
+        # emissions always carry a non-empty ``org_id`` post-PR #118.
+        effective_org = org_id or self._tenant_id
 
         if self._buffered:
-            self._buffer.append(formatted)
+            self._enqueue(effective_org, formatted)
         else:
             try:
-                # Honour the per-event org_id when present — falls back
-                # to the sink-level tenant_id only for legacy callers
-                # that did not configure one. Per-event org_id is the
-                # source of truth for multi-tenant ingest.
-                self._pipeline.ingest([formatted], tenant_id=org_id or self._tenant_id)
+                self._pipeline.ingest([formatted], tenant_id=effective_org)
             except Exception:
                 logger.debug(
                     "IngestionPipelineSink.send() failed for event %s",
@@ -301,18 +387,55 @@ class IngestionPipelineSink(EventSink):
                     exc_info=True,
                 )
 
+    def _enqueue(self, org_id: str, formatted: Dict[str, Any]) -> None:
+        """Append an event to ``org_id``'s buffer with FIFO overflow drop.
+
+        When the per-tenant buffer is at the cap, the OLDEST event in
+        THAT TENANT's buffer is dropped — never another tenant's. The
+        drop counter is bumped in :attr:`dropped_per_tenant`.
+        """
+        with self._lock:
+            buf = self._buffers.setdefault(org_id, [])
+            if len(buf) >= self._max_per_tenant_buffer_size:
+                # FIFO eviction confined to THIS tenant's buffer.
+                # Other tenants' buffers are not inspected or modified.
+                buf.pop(0)
+                self._dropped_per_tenant[org_id] = self._dropped_per_tenant.get(org_id, 0) + 1
+                logger.debug(
+                    "IngestionPipelineSink dropped oldest event for tenant %s (cap=%d)",
+                    org_id,
+                    self._max_per_tenant_buffer_size,
+                )
+            buf.append(formatted)
+
     def flush(self) -> None:
-        if not self._buffer:
-            return
-        try:
-            self._pipeline.ingest(list(self._buffer), tenant_id=self._tenant_id)
-        except Exception:
-            logger.debug(
-                "IngestionPipelineSink.flush() failed for %d events",
-                len(self._buffer),
-                exc_info=True,
-            )
-        self._buffer.clear()
+        """Flush every tenant's buffer in its own ``ingest()`` call.
+
+        Each tenant's batch is sent under that tenant's ``org_id`` — one
+        tenant's slow downstream cannot block another's flush, because
+        the calls are sequenced on a fresh per-tenant snapshot taken
+        under the lock and the ingest IO happens outside it.
+        """
+        with self._lock:
+            # Take a snapshot per tenant and clear each buffer atomically
+            # so concurrent ``send`` after this point starts a fresh
+            # buffer for that tenant.
+            snapshot: Dict[str, List[Dict[str, Any]]] = {}
+            for org_id, buf in self._buffers.items():
+                if buf:
+                    snapshot[org_id] = buf
+                    self._buffers[org_id] = []
+
+        for org_id, batch in snapshot.items():
+            try:
+                self._pipeline.ingest(list(batch), tenant_id=org_id)
+            except Exception:
+                logger.debug(
+                    "IngestionPipelineSink.flush() failed for %d events (tenant=%s)",
+                    len(batch),
+                    org_id,
+                    exc_info=True,
+                )
 
     def close(self) -> None:
         if self._closed:
