@@ -4,6 +4,7 @@ import uuid
 import logging
 from typing import Any, Dict, List, Optional
 
+from .._base import resilient_callback
 from ._utils import truncate, new_span_id
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
@@ -174,15 +175,14 @@ class LangfuseAdapter(FrameworkAdapter):
 
         imported = 0
         for trace_summary in traces:
-            try:
-                self._import_single_trace(trace_summary)
+            # ``_import_single_trace`` is wrapped with @resilient_callback
+            # — a malformed trace becomes a logged warning + failure
+            # counter increment, NOT a halt of the batch import. Track
+            # success via the success counter we maintain manually.
+            before = self._resilience.total_failures
+            self._import_single_trace(trace_summary)
+            if self._resilience.total_failures == before:
                 imported += 1
-            except Exception:
-                log.warning(
-                    "layerlens: failed to import Langfuse trace %s",
-                    trace_summary.get("id", "?"),
-                    exc_info=True,
-                )
 
         # Advance cursor to the most recent trace timestamp
         latest = traces[0].get("updatedAt") or traces[0].get("timestamp")
@@ -192,6 +192,7 @@ class LangfuseAdapter(FrameworkAdapter):
         log.info("layerlens: imported %d Langfuse traces", imported)
         return imported
 
+    @resilient_callback(callback_name="_import_single_trace")
     def _import_single_trace(self, trace_summary: Dict[str, Any]) -> None:
         """Fetch a full trace and emit events via TraceCollector."""
         trace_id = trace_summary["id"]
@@ -219,48 +220,17 @@ class LangfuseAdapter(FrameworkAdapter):
                 span_name=trace.get("name"),
             )
 
-        # Process observations (generations, spans, events)
+        # Process observations (generations, spans, events). Inner call
+        # is wrapped with @resilient_callback — a malformed observation
+        # is logged + counted, not propagated.
         observations = trace.get("observations", [])
         for obs in observations:
-            try:
-                self._import_observation(collector, obs, root_span_id)
-            except Exception:
-                log.warning(
-                    "layerlens: failed to import observation %s",
-                    obs.get("id", "?"),
-                    exc_info=True,
-                )
+            self._import_observation(collector, obs, root_span_id)
 
-        # Scores (Langfuse "annotations") — both human annotations and LLM-as-judge
-        # scores land in the same collection. Emit them as evaluation.result so
-        # the migration path preserves all grading signal.
+        # Scores (Langfuse "annotations") — wrapped in a resilient
+        # helper so one bad score doesn't abort the whole trace import.
         for score in trace.get("scores", []) or []:
-            try:
-                score_payload: Dict[str, Any] = {
-                    "framework": "langfuse",
-                    "langfuse_trace_id": trace_id,
-                    "name": score.get("name"),
-                    "value": score.get("value"),
-                    "source": score.get("source"),
-                    "data_type": score.get("dataType"),
-                    "observation_id": score.get("observationId"),
-                }
-                comment = score.get("comment")
-                if comment:
-                    score_payload["comment"] = truncate(str(comment), max_len=2000)
-                # Session clustering: Langfuse groups related traces via sessionId.
-                # Carry it through so downstream session-level analytics work.
-                session_id = score.get("sessionId") or trace.get("sessionId")
-                if session_id:
-                    score_payload["session_id"] = session_id
-                collector.emit(
-                    "evaluation.result",
-                    score_payload,
-                    span_id=new_span_id(),
-                    parent_span_id=root_span_id,
-                )
-            except Exception:
-                log.warning("layerlens: failed to import score", exc_info=True)
+            self._import_score(collector, trace, trace_id, root_span_id, score)
 
         # Emit agent.output from trace output
         trace_output = trace.get("output")
@@ -283,6 +253,41 @@ class LangfuseAdapter(FrameworkAdapter):
 
         collector.flush()
 
+    @resilient_callback(callback_name="_import_score")
+    def _import_score(
+        self,
+        collector: TraceCollector,
+        trace: Dict[str, Any],
+        trace_id: str,
+        root_span_id: str,
+        score: Dict[str, Any],
+    ) -> None:
+        """Emit one Langfuse score as a LayerLens evaluation.result event."""
+        score_payload: Dict[str, Any] = {
+            "framework": "langfuse",
+            "langfuse_trace_id": trace_id,
+            "name": score.get("name"),
+            "value": score.get("value"),
+            "source": score.get("source"),
+            "data_type": score.get("dataType"),
+            "observation_id": score.get("observationId"),
+        }
+        comment = score.get("comment")
+        if comment:
+            score_payload["comment"] = truncate(str(comment), max_len=2000)
+        # Session clustering: Langfuse groups related traces via sessionId.
+        # Carry it through so downstream session-level analytics work.
+        session_id = score.get("sessionId") or trace.get("sessionId")
+        if session_id:
+            score_payload["session_id"] = session_id
+        collector.emit(
+            "evaluation.result",
+            score_payload,
+            span_id=new_span_id(),
+            parent_span_id=root_span_id,
+        )
+
+    @resilient_callback(callback_name="_import_observation")
     def _import_observation(
         self,
         collector: TraceCollector,
@@ -472,20 +477,25 @@ class LangfuseAdapter(FrameworkAdapter):
 
         exported = 0
         for trace_id, events in events_by_trace.items():
-            try:
-                batch = self._build_ingestion_batch(trace_id, events)
-                if batch:
-                    self._post_ingestion(batch)
-                    exported += 1
-            except Exception:
-                log.warning(
-                    "layerlens: failed to export trace %s to Langfuse",
-                    trace_id,
-                    exc_info=True,
-                )
+            before = self._resilience.total_failures
+            self._export_single_trace(trace_id, events)
+            if self._resilience.total_failures == before:
+                exported += 1
 
         log.info("layerlens: exported %d traces to Langfuse", exported)
         return exported
+
+    @resilient_callback(callback_name="_export_single_trace")
+    def _export_single_trace(self, trace_id: str, events: List[Dict[str, Any]]) -> None:
+        """Build + POST a single trace's ingestion batch.
+
+        Wrapped with @resilient_callback so a single bad trace doesn't
+        abort the rest of the batch export. The success/failure of each
+        trace is tracked via the resilience tracker.
+        """
+        batch = self._build_ingestion_batch(trace_id, events)
+        if batch:
+            self._post_ingestion(batch)
 
     def _build_ingestion_batch(
         self,

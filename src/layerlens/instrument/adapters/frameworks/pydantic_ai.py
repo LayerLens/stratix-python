@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
+from .._base import resilient_callback
 from ._utils import safe_serialize
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -98,6 +99,7 @@ class PydanticAIAdapter(FrameworkAdapter):
     # Run lifecycle hooks
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_before_run")
     def _on_before_run(self, ctx: Any) -> None:
         self._begin_run()
         root = self._get_root_span()
@@ -141,6 +143,7 @@ class PydanticAIAdapter(FrameworkAdapter):
         )
         self._start_timer("run")
 
+    @resilient_callback(callback_name="_on_after_run", passthrough_arg="result")
     def _on_after_run(self, ctx: Any, *, result: Any) -> Any:
         latency_ms = self._stop_timer("run")
         root = self._get_root_span()
@@ -176,6 +179,16 @@ class PydanticAIAdapter(FrameworkAdapter):
         return result
 
     def _on_run_error(self, ctx: Any, *, error: BaseException) -> None:
+        # Telemetry is best-effort; we MUST always re-raise the
+        # framework's original error or PydanticAI loses its error
+        # propagation contract. Keep telemetry inside a resilient
+        # helper so adapter-side bugs can never swallow the framework
+        # error.
+        self._emit_run_error_telemetry(ctx, error=error)
+        raise error
+
+    @resilient_callback(callback_name="_on_run_error")
+    def _emit_run_error_telemetry(self, ctx: Any, *, error: BaseException) -> None:
         latency_ms = self._stop_timer("run")
         root = self._get_root_span()
         agent_name = self._get_agent_name(ctx)
@@ -196,12 +209,12 @@ class PydanticAIAdapter(FrameworkAdapter):
         )
 
         self._end_run()
-        raise error
 
     # ------------------------------------------------------------------
     # Model request hooks
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_after_model_request", passthrough_arg="response")
     def _on_after_model_request(
         self,
         ctx: Any,
@@ -241,17 +254,30 @@ class PydanticAIAdapter(FrameworkAdapter):
         request_context: Any,
         error: Exception,
     ) -> None:
+        # Telemetry first (resilient), THEN re-raise the framework's
+        # error so PydanticAI's own error propagation is preserved.
+        self._emit_model_request_error_telemetry(ctx, request_context=request_context, error=error)
+        raise error
+
+    @resilient_callback(callback_name="_on_model_request_error")
+    def _emit_model_request_error_telemetry(
+        self,
+        ctx: Any,
+        *,
+        request_context: Any,
+        error: Exception,
+    ) -> None:
         payload = self._payload(
             error=str(error),
             error_type=type(error).__name__,
         )
         self._emit("agent.error", payload)
-        raise error
 
     # ------------------------------------------------------------------
     # Tool execution hooks
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_before_tool_execute", passthrough_arg="args")
     def _on_before_tool_execute(
         self,
         ctx: Any,
@@ -269,6 +295,7 @@ class PydanticAIAdapter(FrameworkAdapter):
         self._start_timer(f"tool:{call_id}")
         return args
 
+    @resilient_callback(callback_name="_on_after_tool_execute", passthrough_arg="result")
     def _on_after_tool_execute(
         self,
         ctx: Any,
@@ -302,6 +329,21 @@ class PydanticAIAdapter(FrameworkAdapter):
         args: Any,
         error: Exception,
     ) -> None:
+        # Telemetry first (resilient), THEN re-raise the framework's
+        # error so PydanticAI can propagate the tool failure.
+        self._emit_tool_execute_error_telemetry(ctx, call=call, tool_def=tool_def, args=args, error=error)
+        raise error
+
+    @resilient_callback(callback_name="_on_tool_execute_error")
+    def _emit_tool_execute_error_telemetry(
+        self,
+        ctx: Any,
+        *,
+        call: Any,
+        tool_def: Any,
+        args: Any,
+        error: Exception,
+    ) -> None:
         tool_name = getattr(call, "tool_name", "unknown")
         call_id = getattr(call, "id", None) or tool_name
         self._stop_timer(f"tool:{call_id}")
@@ -316,12 +358,12 @@ class PydanticAIAdapter(FrameworkAdapter):
             error_type=type(error).__name__,
         )
         self._emit("agent.error", payload)
-        raise error
 
     # ------------------------------------------------------------------
     # Streaming hooks (pydantic-ai >= 0.5)
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_stream_chunk")
     def _on_stream_chunk(self, ctx: Any, *, chunk: Any, **_kwargs: Any) -> None:
         """Accumulate streaming chunks on the RunState; aggregated at stream end."""
         run = self._get_run()
@@ -330,6 +372,7 @@ class PydanticAIAdapter(FrameworkAdapter):
         buf = run.data.setdefault("stream_buffer", [])
         buf.append(chunk)
 
+    @resilient_callback(callback_name="_on_after_stream")
     def _on_after_stream(self, ctx: Any, *, response: Any = None, **_kwargs: Any) -> None:
         run = self._get_run()
         if run is None:

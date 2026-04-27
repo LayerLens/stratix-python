@@ -12,7 +12,7 @@ import logging
 import threading
 from typing import Any, Dict, Optional
 
-from .._base import AdapterInfo, BaseAdapter
+from .._base import AdapterInfo, BaseAdapter, ResilienceTracker
 from ..._context import (
     RunState,
     _pop_span,
@@ -55,6 +55,18 @@ class FrameworkAdapter(BaseAdapter):
         self._connected = False
         # Subclasses populate during connect() for adapter_info() metadata
         self._metadata: Dict[str, Any] = {}
+        # Resilience: every framework adapter gets a per-instance tracker so
+        # @resilient_callback wrappers can record failures without each
+        # subclass needing to opt in. Use ``self.name`` when the subclass
+        # has set it (class-level), otherwise fall back to the class name.
+        adapter_name = getattr(type(self), "name", None) or type(self).__name__
+        self._resilience: ResilienceTracker = ResilienceTracker(adapter_name)
+        # Public, mypy-friendly alias of the failure counter — kept as a
+        # property-shaped int so external callers can read it without
+        # importing ResilienceTracker.
+        # (Intentionally not @property — keeping a plain attribute would
+        # have masked the tracker's lock; readers should call
+        # ``self._resilience.total_failures`` for the up-to-date count.)
 
     # ------------------------------------------------------------------
     # Per-run state (ContextVar-based isolation for concurrent runs)
@@ -303,15 +315,24 @@ class FrameworkAdapter(BaseAdapter):
         self._on_disconnect()
         self._connected = False
         self._metadata.clear()
+        # Reset resilience state so a reconnect starts from a healthy
+        # baseline. Failures from a previous run shouldn't degrade a
+        # fresh adapter session.
+        self._resilience.reset()
 
     def _on_disconnect(self) -> None:
         """Override to clean up framework-specific resources (unsubscribe, restore, etc.)."""
         pass
 
     def adapter_info(self) -> AdapterInfo:
+        # Merge live resilience snapshot into the metadata block so
+        # ``adapter_info().metadata['resilience_status']`` reports
+        # HEALTHY / DEGRADED to monitoring code without each subclass
+        # having to remember to do it.
+        merged_metadata: Dict[str, Any] = {**self._metadata, **self._resilience.as_metadata()}
         return AdapterInfo(
             name=self.name,
             adapter_type="framework",
             connected=self._connected,
-            metadata=self._metadata,
+            metadata=merged_metadata,
         )

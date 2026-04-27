@@ -4,6 +4,7 @@ import time
 import logging
 from typing import Any, Dict, Optional
 
+from .._base import resilient_callback
 from ._utils import safe_serialize
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
@@ -174,78 +175,71 @@ class StrandsAdapter(FrameworkAdapter):
     # Hook handlers
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_agent_initialized")
     def _on_agent_initialized(self, event: Any) -> None:
         """Sync-only callback fired when an agent is constructed."""
-        try:
-            agent = event.agent
-            name = _agent_name(agent)
-            self._emit_agent_config(name, agent)
-        except Exception:
-            log.warning("layerlens: error in Strands agent_initialized", exc_info=True)
+        agent = event.agent
+        name = _agent_name(agent)
+        self._emit_agent_config(name, agent)
 
+    @resilient_callback(callback_name="_on_before_invocation")
     def _on_before_invocation(self, event: Any) -> None:
-        try:
-            agent = event.agent
-            name = _agent_name(agent)
-            span_id = self._new_span_id()
-            with self._lock:
-                self._collector = TraceCollector(self._client, self._config)
-                self._run_span_id = span_id
-                self._current_agent_name = name
-            self._tick("run")
+        agent = event.agent
+        name = _agent_name(agent)
+        span_id = self._new_span_id()
+        with self._lock:
+            self._collector = TraceCollector(self._client, self._config)
+            self._run_span_id = span_id
+            self._current_agent_name = name
+        self._tick("run")
 
-            # Re-emit config if we haven't seen this agent yet
-            self._emit_agent_config(name, agent)
+        # Re-emit config if we haven't seen this agent yet
+        self._emit_agent_config(name, agent)
 
-            payload = self._payload(agent_name=name)
-            model_id = _model_id(agent)
-            if model_id:
-                payload["model"] = model_id
+        payload = self._payload(agent_name=name)
+        model_id = _model_id(agent)
+        if model_id:
+            payload["model"] = model_id
 
-            messages = getattr(event, "messages", None)
-            self._set_if_capturing(payload, "input", safe_serialize(messages))
-            self._fire("agent.input", payload, span_id=span_id, span_name=name)
-        except Exception:
-            log.warning("layerlens: error in Strands before_invocation", exc_info=True)
+        messages = getattr(event, "messages", None)
+        self._set_if_capturing(payload, "input", safe_serialize(messages))
+        self._fire("agent.input", payload, span_id=span_id, span_name=name)
 
+    @resilient_callback(callback_name="_on_after_invocation")
     def _on_after_invocation(self, event: Any) -> None:
-        try:
-            agent = event.agent
-            name = _agent_name(agent)
-            latency_ms = self._tock("run")
-            span_id = self._run_span_id or self._new_span_id()
+        agent = event.agent
+        name = _agent_name(agent)
+        latency_ms = self._tock("run")
+        span_id = self._run_span_id or self._new_span_id()
 
-            payload = self._payload(agent_name=name)
-            if latency_ms is not None:
-                payload["duration_ns"] = int(latency_ms * 1_000_000)
+        payload = self._payload(agent_name=name)
+        if latency_ms is not None:
+            payload["duration_ns"] = int(latency_ms * 1_000_000)
 
-            result = getattr(event, "result", None)
-            if result is not None:
-                stop_reason = getattr(result, "stop_reason", None)
-                if stop_reason:
-                    payload["stop_reason"] = str(stop_reason)
+        result = getattr(event, "result", None)
+        if result is not None:
+            stop_reason = getattr(result, "stop_reason", None)
+            if stop_reason:
+                payload["stop_reason"] = str(stop_reason)
 
-                message = getattr(result, "message", None)
-                self._set_if_capturing(payload, "output", safe_serialize(message))
+            message = getattr(result, "message", None)
+            self._set_if_capturing(payload, "output", safe_serialize(message))
 
-            # Emit per-cycle cost.record events matched to model spans.
-            # accumulated_usage updates AFTER AfterModelCallEvent fires,
-            # so we read per-cycle tokens here instead.
-            self._emit_per_cycle_tokens(agent)
+        # Emit per-cycle cost.record events matched to model spans.
+        # accumulated_usage updates AFTER AfterModelCallEvent fires,
+        # so we read per-cycle tokens here instead.
+        self._emit_per_cycle_tokens(agent)
 
-            self._fire("agent.output", payload, span_id=span_id, span_name=name)
-            self._end_trace()
-        except Exception:
-            log.warning("layerlens: error in Strands after_invocation", exc_info=True)
+        self._fire("agent.output", payload, span_id=span_id, span_name=name)
+        self._end_trace()
 
+    @resilient_callback(callback_name="_on_before_model")
     def _on_before_model(self, event: Any) -> None:
-        try:
-            agent = event.agent
-            name = _agent_name(agent)
-            self._tick(f"model:{name}")
-        except Exception:
-            log.warning("layerlens: error in Strands before_model", exc_info=True)
+        agent = event.agent
+        name = _agent_name(agent)
+        self._tick(f"model:{name}")
 
+    @resilient_callback(callback_name="_on_after_model")
     def _on_after_model(self, event: Any) -> None:
         """Emit model.invoke with timing and error info.
 
@@ -253,95 +247,88 @@ class StrandsAdapter(FrameworkAdapter):
         accumulated_usage AFTER this hook fires.  Tokens are emitted
         per-cycle from _on_after_invocation using the cycle data.
         """
-        try:
-            agent = event.agent
-            name = _agent_name(agent)
-            latency_ms = self._tock(f"model:{name}")
+        agent = event.agent
+        name = _agent_name(agent)
+        latency_ms = self._tock(f"model:{name}")
 
-            model_id = _model_id(agent)
-            payload = self._payload()
-            if model_id:
-                payload["model"] = model_id
+        model_id = _model_id(agent)
+        payload = self._payload()
+        if model_id:
+            payload["model"] = model_id
 
-            if latency_ms is not None:
-                payload["latency_ms"] = latency_ms
+        if latency_ms is not None:
+            payload["latency_ms"] = latency_ms
 
-            exception = getattr(event, "exception", None)
-            if exception is not None:
-                payload["error"] = str(exception)
-                payload["error_type"] = type(exception).__name__
+        exception = getattr(event, "exception", None)
+        if exception is not None:
+            payload["error"] = str(exception)
+            payload["error_type"] = type(exception).__name__
 
-            stop_response = getattr(event, "stop_response", None)
-            if stop_response is not None:
-                stop_reason = getattr(stop_response, "stop_reason", None)
-                if stop_reason:
-                    payload["stop_reason"] = str(stop_reason)
+        stop_response = getattr(event, "stop_response", None)
+        if stop_response is not None:
+            stop_reason = getattr(stop_response, "stop_reason", None)
+            if stop_reason:
+                payload["stop_reason"] = str(stop_reason)
 
-            parent = self._run_span_id
-            span_id = self._new_span_id()
-            self._fire("model.invoke", payload, span_id=span_id, parent_span_id=parent)
-            with self._lock:
-                self._model_span_ids.append(span_id)
-        except Exception:
-            log.warning("layerlens: error in Strands after_model", exc_info=True)
+        parent = self._run_span_id
+        span_id = self._new_span_id()
+        self._fire("model.invoke", payload, span_id=span_id, parent_span_id=parent)
+        with self._lock:
+            self._model_span_ids.append(span_id)
 
+    @resilient_callback(callback_name="_on_before_tool")
     def _on_before_tool(self, event: Any) -> None:
-        try:
-            tool_use = event.tool_use
-            tool_name = (
-                tool_use.get("name", "unknown") if isinstance(tool_use, dict) else getattr(tool_use, "name", "unknown")
-            )
-            tool_id = (
-                tool_use.get("toolUseId", tool_name)
-                if isinstance(tool_use, dict)
-                else getattr(tool_use, "toolUseId", tool_name)
-            )
-            self._tick(f"tool:{tool_id}")
-        except Exception:
-            log.warning("layerlens: error in Strands before_tool", exc_info=True)
+        tool_use = event.tool_use
+        tool_name = (
+            tool_use.get("name", "unknown") if isinstance(tool_use, dict) else getattr(tool_use, "name", "unknown")
+        )
+        tool_id = (
+            tool_use.get("toolUseId", tool_name)
+            if isinstance(tool_use, dict)
+            else getattr(tool_use, "toolUseId", tool_name)
+        )
+        self._tick(f"tool:{tool_id}")
 
+    @resilient_callback(callback_name="_on_after_tool")
     def _on_after_tool(self, event: Any) -> None:
-        try:
-            tool_use = event.tool_use
-            tool_name = (
-                tool_use.get("name", "unknown") if isinstance(tool_use, dict) else getattr(tool_use, "name", "unknown")
-            )
-            tool_id = (
-                tool_use.get("toolUseId", tool_name)
-                if isinstance(tool_use, dict)
-                else getattr(tool_use, "toolUseId", tool_name)
-            )
-            tool_input = tool_use.get("input", None) if isinstance(tool_use, dict) else getattr(tool_use, "input", None)
-            latency_ms = self._tock(f"tool:{tool_id}")
+        tool_use = event.tool_use
+        tool_name = (
+            tool_use.get("name", "unknown") if isinstance(tool_use, dict) else getattr(tool_use, "name", "unknown")
+        )
+        tool_id = (
+            tool_use.get("toolUseId", tool_name)
+            if isinstance(tool_use, dict)
+            else getattr(tool_use, "toolUseId", tool_name)
+        )
+        tool_input = tool_use.get("input", None) if isinstance(tool_use, dict) else getattr(tool_use, "input", None)
+        latency_ms = self._tock(f"tool:{tool_id}")
 
-            parent = self._run_span_id
-            span_id = self._new_span_id()
+        parent = self._run_span_id
+        span_id = self._new_span_id()
 
-            call_payload = self._payload(tool_name=tool_name)
-            self._set_if_capturing(call_payload, "input", safe_serialize(tool_input))
-            if latency_ms is not None:
-                call_payload["latency_ms"] = latency_ms
-            self._fire("tool.call", call_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
+        call_payload = self._payload(tool_name=tool_name)
+        self._set_if_capturing(call_payload, "input", safe_serialize(tool_input))
+        if latency_ms is not None:
+            call_payload["latency_ms"] = latency_ms
+        self._fire("tool.call", call_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
 
-            result = getattr(event, "result", None)
-            result_payload = self._payload(tool_name=tool_name)
-            if result is not None:
-                status = result.get("status", None) if isinstance(result, dict) else getattr(result, "status", None)
-                if status:
-                    result_payload["status"] = str(status)
-                content = result.get("content", None) if isinstance(result, dict) else getattr(result, "content", None)
-                self._set_if_capturing(result_payload, "output", safe_serialize(content))
+        result = getattr(event, "result", None)
+        result_payload = self._payload(tool_name=tool_name)
+        if result is not None:
+            status = result.get("status", None) if isinstance(result, dict) else getattr(result, "status", None)
+            if status:
+                result_payload["status"] = str(status)
+            content = result.get("content", None) if isinstance(result, dict) else getattr(result, "content", None)
+            self._set_if_capturing(result_payload, "output", safe_serialize(content))
 
-            exception = getattr(event, "exception", None)
-            if exception is not None:
-                result_payload["error"] = str(exception)
-                result_payload["error_type"] = type(exception).__name__
+        exception = getattr(event, "exception", None)
+        if exception is not None:
+            result_payload["error"] = str(exception)
+            result_payload["error_type"] = type(exception).__name__
 
-            self._fire(
-                "tool.result", result_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}"
-            )
-        except Exception:
-            log.warning("layerlens: error in Strands after_tool", exc_info=True)
+        self._fire(
+            "tool.result", result_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}"
+        )
 
     # ------------------------------------------------------------------
     # Helpers

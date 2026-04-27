@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Set, Dict, Optional
 
+from .._base import resilient_callback
 from ._utils import safe_serialize
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -119,62 +120,66 @@ class BedrockAgentsAdapter(FrameworkAdapter):
     # boto3 event hooks
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_before_invoke")
     def _before_invoke(self, **kwargs: Any) -> None:
         if not self._connected:
             return
-        try:
-            params = kwargs.get("params", {})
-            agent_id = params.get("agentId", "unknown")
+        params = kwargs.get("params", {})
+        agent_id = params.get("agentId", "unknown")
 
-            self._begin_run()
-            self._start_timer("invoke")
+        self._begin_run()
+        self._start_timer("invoke")
 
-            self._emit_agent_config(agent_id, params)
+        self._emit_agent_config(agent_id, params)
 
-            root = self._get_root_span()
-            payload = self._payload(
-                agent_id=agent_id,
-                session_id=params.get("sessionId"),
-                enable_trace=params.get("enableTrace", False),
-            )
-            self._set_if_capturing(payload, "input", params.get("inputText"))
-            self._emit(
-                "agent.input",
-                payload,
-                span_id=root,
-                parent_span_id=None,
-                span_name="bedrock.invoke_agent",
-            )
-        except Exception:
-            log.warning("layerlens: error in _before_invoke", exc_info=True)
+        root = self._get_root_span()
+        payload = self._payload(
+            agent_id=agent_id,
+            session_id=params.get("sessionId"),
+            enable_trace=params.get("enableTrace", False),
+        )
+        self._set_if_capturing(payload, "input", params.get("inputText"))
+        self._emit(
+            "agent.input",
+            payload,
+            span_id=root,
+            parent_span_id=None,
+            span_name="bedrock.invoke_agent",
+        )
 
     def _after_invoke(self, **kwargs: Any) -> None:
+        # _end_run() MUST run regardless of telemetry failures (otherwise
+        # collector/span ContextVars leak across boto3 calls). Keep the
+        # ``finally`` here at the OUTER level and delegate the resilient
+        # body to a helper wrapped with @resilient_callback.
         if not self._connected:
             return
         try:
-            parsed = kwargs.get("parsed", {})
-            latency_ms = self._stop_timer("invoke")
-            output = _extract_completion(parsed)
-
-            root = self._get_root_span()
-            payload = self._payload(session_id=parsed.get("sessionId"))
-            if latency_ms is not None:
-                payload["latency_ms"] = latency_ms
-            self._set_if_capturing(payload, "output", output)
-            self._emit(
-                "agent.output",
-                payload,
-                span_id=root,
-                parent_span_id=None,
-                span_name="bedrock.invoke_agent",
-            )
-
-            for step in _collect_steps(parsed):
-                self._process_step(step)
-        except Exception:
-            log.warning("layerlens: error in _after_invoke", exc_info=True)
+            self._after_invoke_body(**kwargs)
         finally:
             self._end_run()
+
+    @resilient_callback(callback_name="_after_invoke")
+    def _after_invoke_body(self, **kwargs: Any) -> None:
+        parsed = kwargs.get("parsed", {})
+        latency_ms = self._stop_timer("invoke")
+        output = _extract_completion(parsed)
+
+        root = self._get_root_span()
+        payload = self._payload(session_id=parsed.get("sessionId"))
+        if latency_ms is not None:
+            payload["latency_ms"] = latency_ms
+        self._set_if_capturing(payload, "output", output)
+        self._emit(
+            "agent.output",
+            payload,
+            span_id=root,
+            parent_span_id=None,
+            span_name="bedrock.invoke_agent",
+        )
+
+        for step in _collect_steps(parsed):
+            self._process_step(step)
 
     # ------------------------------------------------------------------
     # Trace step processing

@@ -6,6 +6,7 @@ import threading
 from typing import Any, Dict, Iterator, Optional
 from contextlib import contextmanager
 
+from .._base import resilient_callback
 from ._utils import safe_serialize
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -70,15 +71,13 @@ class HaystackAdapter(FrameworkAdapter):
     # Span handlers (called by _LayerLensSpan._finish)
     # ------------------------------------------------------------------
 
+    @resilient_callback(callback_name="_on_span_end")
     def _on_span_end(self, span: _LayerLensSpan) -> None:
         elapsed_ms = (time.time_ns() - span._start_ns) / 1_000_000
-        try:
-            if span._is_pipeline:
-                self._on_pipeline_end(span, elapsed_ms)
-            elif span._operation_name == "haystack.component.run":
-                self._on_component_end(span, elapsed_ms)
-        except Exception:
-            log.warning("layerlens: error emitting Haystack span", exc_info=True)
+        if span._is_pipeline:
+            self._on_pipeline_end(span, elapsed_ms)
+        elif span._operation_name == "haystack.component.run":
+            self._on_component_end(span, elapsed_ms)
 
     def _on_pipeline_end(self, span: _LayerLensSpan, elapsed_ms: float) -> None:
         tags = span._all_tags()
