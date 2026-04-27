@@ -1,0 +1,40 @@
+# Baseline of TRANSITIVELY-RESOLVED package names for `pip install layerlens`.
+#
+# Format: one PEP 503 normalized package name per line, sorted
+# alphabetically. Comments (lines starting with `#`) and blank lines
+# are ignored. Versions are intentionally OMITTED — version drift in
+# transitive deps is a separate concern (handled by the lockfile);
+# this guard is purely about install-set BLOAT.
+#
+# This file is consumed by tests/instrument/test_resolved_dep_tree.py
+# and `.github/workflows/dep-tree-guard.yaml` to guard against
+# transitive bloat. A direct dep with a permissive lower bound can
+# pull in a tree that quintuples install size; this baseline catches
+# it.
+#
+# The CI workflow resolves the dependency tree from a clean
+# environment (no extras), normalizes the package names, and diffs
+# against this file:
+#   - ADDITIONS fail the build.
+#   - REMOVALS pass (transitive deps disappearing is good news).
+#
+# Adding a transitively-resolved dep here represents an explicit
+# acknowledgement that the new transitive bloat is acceptable.
+#
+# To regenerate after an intentional change (e.g. bumping the floor
+# of a direct dep, accepting a new transitive package):
+#   1. Edit `[project] dependencies` in pyproject.toml as desired.
+#   2. Run: python scripts/regen_dep_baselines.py
+#   3. Commit pyproject.toml AND this file in the same PR.
+annotated-types
+anyio
+certifi
+exceptiongroup
+h11
+httpcore
+httpx
+idna
+pydantic
+pydantic-core
+typing-extensions
+typing-inspection
