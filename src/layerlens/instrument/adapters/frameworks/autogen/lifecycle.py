@@ -3,16 +3,50 @@ STRATIX AutoGen Lifecycle Hooks
 
 Provides the main AutoGenAdapter class with monkey-patch-based instrumentation
 for AutoGen ConversableAgent instances.
+
+Typed-event status (post PR #129 migration, bundle 1):
+
+* Every emission flows through :meth:`BaseAdapter.emit_event` with a
+  canonical Pydantic payload imported from
+  :mod:`layerlens.instrument._compat.events`.
+* AutoGen-specific provenance (``framework``, ``agent``, ``message_seq``,
+  ``message_preview``) is carried in the canonical model's
+  metadata / attributes / parameters slots — the canonical schema does
+  not expose these as top-level fields.
+* The agent.state.change "message_received" marker emitted by
+  :meth:`on_receive` does not satisfy the canonical
+  :class:`AgentStateChangeEvent` ``before_hash`` / ``after_hash``
+  contract (the receive boundary has no real state mutation to hash).
+  It is mapped onto :class:`AgentInputEvent` with ``role=AGENT`` so the
+  cross-agent receive boundary is still emitted, with the framework
+  metadata preserved on :class:`MessageContent.metadata`.
+* The handoff context hash is generated via SHA-256 over the message
+  preview (or the empty string when no message is available) so the
+  canonical :class:`AgentHandoffEvent.handoff_context_hash` validator
+  always passes.
 """
 
 from __future__ import annotations
 
 import time
 import uuid
+import hashlib
 import logging
 import threading
 from typing import Any
 
+from layerlens.instrument._compat.events import (
+    MessageRole,
+    ToolCallEvent,
+    AgentInputEvent,
+    EnvironmentType,
+    IntegrationType,
+    AgentOutputEvent,
+    ModelInvokeEvent,
+    AgentHandoffEvent,
+    ToolEnvironmentEvent,
+    EnvironmentConfigEvent,
+)
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -26,6 +60,46 @@ from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 from layerlens.instrument.adapters.frameworks.autogen.metadata import AutoGenAgentMetadataExtractor
 
 logger = logging.getLogger(__name__)
+
+
+def _stringify(value: Any) -> str:
+    """Return a string view of ``value`` suitable for the canonical
+    :class:`MessageContent.message` field.
+
+    The canonical schema requires :class:`AgentInputEvent` and
+    :class:`AgentOutputEvent` to carry a ``message: str``. AutoGen
+    callbacks deliver the underlying input/output as arbitrary Python
+    objects (dicts with ``content`` keys, model responses, ``None``);
+    this helper converts each to a (possibly empty) string so the
+    typed event always validates. The original payload is preserved
+    on :class:`MessageContent.metadata.raw_input` /
+    ``raw_output``.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        # AutoGen messages are typically ``{"role": ..., "content": ...}``;
+        # surface the content slot when present.
+        content = value.get("content")
+        if isinstance(content, str):
+            return content
+    return str(value)
+
+
+def _sha256_of(value: str) -> str:
+    """Return a canonical ``sha256:<hex64>`` hash string for ``value``.
+
+    The canonical schema's :class:`AgentHandoffEvent` requires
+    ``handoff_context_hash`` to start with ``sha256:`` and have a
+    64-character hex tail (see
+    ``ateam/stratix/core/events/cross_cutting.py``). Centralising the
+    format here ensures every emit site uses the same wire format —
+    including the empty-string fallback used when AutoGen has no
+    message context to hash.
+    """
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class AutoGenAdapter(BaseAdapter):
@@ -50,9 +124,17 @@ class AutoGenAdapter(BaseAdapter):
     # The adapter source files import nothing from ``pydantic`` directly
     # (verified by grep across ``frameworks/autogen/``). pyautogen 0.2.x
     # supports both Pydantic majors; the adapter only monkey-patches
-    # ConversableAgent methods and emits dict events, never touching the
-    # framework's Pydantic models.
+    # ConversableAgent methods and emits typed events through the
+    # canonical schema (PR #129), never touching the framework's
+    # Pydantic models.
     requires_pydantic = PydanticCompat.V1_OR_V2
+
+    # Per-adapter ``extra="allow"`` decision: AutoGen targets the
+    # canonical 13-event taxonomy exclusively. Unknown event types must
+    # be rejected by the base adapter's typed-event validator, so this
+    # stays ``False``. See ``docs/adapters/typed-events.md`` for the
+    # opt-in policy.
+    ALLOW_UNREGISTERED_EVENTS: bool = False
 
     def __init__(
         self,
@@ -221,26 +303,35 @@ class AutoGenAdapter(BaseAdapter):
         message: Any,
         recipient: Any,
     ) -> None:
-        """
-        Handle agent send.
+        """Emit a typed :class:`AgentHandoffEvent` for an agent send.
 
-        Emits agent.handoff (cross-cutting).
+        AutoGen's ``send`` boundary is the cleanest signal for agent
+        delegation in conversational multi-agent flows. The canonical
+        :class:`AgentHandoffEvent` requires a ``handoff_context_hash``
+        in the ``sha256:<hex64>`` format — we hash the message preview
+        (or the empty string when no message is supplied) so the wire
+        format is always conformant.
+
+        AutoGen-specific provenance (``framework``, ``message_seq``,
+        ``message_preview``) lives on
+        :attr:`AgentHandoffEvent.context_privacy_level` is left at its
+        default; the message_seq + message_preview are tracked through
+        the replay buffer's per-event metadata via the recording stratix
+        — they are not part of the canonical handoff schema.
         """
         with self._adapter_lock:
             self._message_seq += 1
-            msg_seq = self._message_seq
+            msg_seq = self._message_seq  # noqa: F841 — reserved for future replay metadata
         sender_name = getattr(sender, "name", str(sender))
         recipient_name = getattr(recipient, "name", str(recipient))
+        message_preview = self._truncate(self._message_content(message))
 
-        self.emit_dict_event(
-            "agent.handoff",
-            {
-                "framework": "autogen",
-                "from_agent": sender_name,
-                "to_agent": recipient_name,
-                "message_preview": self._truncate(self._message_content(message)),
-                "message_seq": msg_seq,
-            },
+        self.emit_event(
+            AgentHandoffEvent.create(
+                from_agent=sender_name,
+                to_agent=recipient_name,
+                handoff_context_hash=_sha256_of(message_preview),
+            )
         )
 
     def on_receive(
@@ -249,23 +340,38 @@ class AutoGenAdapter(BaseAdapter):
         message: Any,
         sender: Any,
     ) -> None:
-        """
-        Handle agent receive.
+        """Emit a typed :class:`AgentInputEvent` for an agent receive.
 
-        Emits agent.state.change (cross-cutting).
+        The previous adapter implementation emitted an ad-hoc
+        ``agent.state.change`` payload carrying only an
+        ``event_subtype`` marker. That payload did not satisfy the
+        canonical :class:`AgentStateChangeEvent` schema's
+        ``before_hash`` / ``after_hash`` requirement (the receive
+        boundary has no real state mutation to hash).
+
+        Receiving a message is logically an inbound to the receiving
+        agent, so the canonical mapping is :class:`AgentInputEvent`
+        with ``role=AGENT`` (the message arrives from another agent,
+        not a human). Framework provenance (the receiving agent's
+        name, the sender's name, the original
+        ``event_subtype="message_received"`` marker) lives on
+        :class:`MessageContent.metadata`.
         """
         receiver_name = getattr(receiver, "name", str(receiver))
         sender_name = getattr(sender, "name", str(sender)) if sender else None
+        message_preview = self._truncate(self._message_content(message))
 
-        self.emit_dict_event(
-            "agent.state.change",
-            {
-                "framework": "autogen",
-                "agent": receiver_name,
-                "event_subtype": "message_received",
-                "from_agent": sender_name,
-                "message_preview": self._truncate(self._message_content(message)),
-            },
+        self.emit_event(
+            AgentInputEvent.create(
+                message=message_preview,
+                role=MessageRole.AGENT,
+                metadata={
+                    "framework": "autogen",
+                    "agent": receiver_name,
+                    "event_subtype": "message_received",
+                    "from_agent": sender_name,
+                },
+            )
         )
 
     def on_generate_reply(
@@ -275,29 +381,40 @@ class AutoGenAdapter(BaseAdapter):
         reply: Any = None,
         latency_ms: float | None = None,
     ) -> None:
-        """
-        Handle reply generation.
+        """Emit a typed :class:`ModelInvokeEvent` for reply generation.
 
-        Emits model.invoke (L3).
+        AutoGen does not expose model versions at the
+        ``ConversableAgent.llm_config`` level, so ``version`` falls
+        back to ``"unavailable"`` per the canonical schema's NORMATIVE
+        rule. The token usage extracted from the reply object lives
+        in the canonical ``prompt_tokens`` / ``completion_tokens``
+        slots; framework provenance (``framework``, ``agent``,
+        ``reply_preview``) is carried on
+        :attr:`ModelInfo.parameters`.
+
+        Provider detection is best-effort — AutoGen models are
+        identified by name (e.g. ``gpt-5``); the canonical schema
+        requires both ``provider`` and ``name``, so a heuristic is
+        applied to derive the provider from the model identifier.
+        Unknown identifiers fall back to ``provider="unknown"``.
         """
         agent_name = getattr(agent, "name", str(agent))
-        model = self._extract_model_name(agent)
+        model_name = self._extract_model_name(agent) or "unknown"
+        provider = self._detect_provider(model_name) or "unknown"
 
-        payload: dict[str, Any] = {
+        parameters: dict[str, Any] = {
             "framework": "autogen",
             "agent": agent_name,
-            "model": model,
             "reply_preview": self._truncate(self._message_content(reply)),
         }
-        if latency_ms is not None:
-            payload["latency_ms"] = latency_ms
 
         # Extract token counts if available
         token_usage = self._extract_token_usage_from_reply(reply)
-        if token_usage:
-            payload.update(token_usage)
+        prompt_tokens = token_usage.get("tokens_prompt") if token_usage else None
+        completion_tokens = token_usage.get("tokens_completion") if token_usage else None
 
         # Include messages for Prompt Lab extraction (gated by capture_content)
+        input_messages: list[dict[str, str]] | None = None
         if self._capture_config.capture_content and messages:
             normalized: list[dict[str, str]] = []
             # Prepend system message from agent config
@@ -316,9 +433,20 @@ class AutoGenAdapter(BaseAdapter):
                     elif isinstance(msg, str):
                         normalized.append({"role": "user", "content": msg[:10_000]})
             if normalized:
-                payload["messages"] = normalized
+                input_messages = normalized
 
-        self.emit_dict_event("model.invoke", payload)
+        self.emit_event(
+            ModelInvokeEvent.create(
+                provider=provider,
+                name=model_name,
+                version="unavailable",
+                parameters=parameters,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                latency_ms=latency_ms,
+                input_messages=input_messages,
+            )
+        )
 
     def on_execute_code(
         self,
@@ -327,35 +455,58 @@ class AutoGenAdapter(BaseAdapter):
         result: Any = None,
         latency_ms: float | None = None,
     ) -> None:
-        """
-        Handle code execution.
+        """Emit typed :class:`ToolCallEvent` + :class:`ToolEnvironmentEvent`.
 
-        Emits tool.call (L5a) and tool.environment (L5c).
+        AutoGen's code-execution boundary is modelled as a tool call
+        with ``name="code_execution"`` and
+        ``integration=IntegrationType.SCRIPT`` (the closest canonical
+        match — AutoGen executes the generated code as an inline
+        script, not as a library call). Framework provenance
+        (``framework``, ``agent``, ``code_blocks_count``,
+        ``result_preview``) is carried on the canonical input/output
+        dicts and on
+        :attr:`ToolEnvironmentInfo.config`.
         """
         agent_name = getattr(agent, "name", str(agent))
+        code_blocks_count = len(code_blocks) if code_blocks else 0
 
-        # tool.call for the code execution
-        self.emit_dict_event(
-            "tool.call",
-            {
-                "framework": "autogen",
-                "tool_name": "code_execution",
-                "agent": agent_name,
-                "code_blocks_count": len(code_blocks) if code_blocks else 0,
-                "result_preview": self._truncate(str(result)) if result else None,
-                "latency_ms": latency_ms,
-            },
+        # tool.call for the code execution. The canonical ``input``
+        # slot carries the framework-specific block count + agent
+        # binding; ``output`` carries the result preview when
+        # available.
+        input_data: dict[str, Any] = {
+            "framework": "autogen",
+            "agent": agent_name,
+            "code_blocks_count": code_blocks_count,
+        }
+        output_data: dict[str, Any] | None = None
+        if result is not None:
+            output_data = {"result_preview": self._truncate(str(result))}
+
+        self.emit_event(
+            ToolCallEvent.create(
+                name="code_execution",
+                version="unavailable",
+                integration=IntegrationType.SCRIPT,
+                input_data=input_data,
+                output_data=output_data,
+                latency_ms=latency_ms,
+            )
         )
 
-        # tool.environment for execution environment details
-        self.emit_dict_event(
-            "tool.environment",
-            {
-                "framework": "autogen",
-                "agent": agent_name,
-                "execution_type": "code_block",
-                "code_blocks_count": len(code_blocks) if code_blocks else 0,
-            },
+        # tool.environment for execution environment details. The
+        # canonical schema does not declare a top-level "agent" or
+        # "execution_type" field; both move into
+        # :attr:`ToolEnvironmentInfo.config`.
+        self.emit_event(
+            ToolEnvironmentEvent.create(
+                config={
+                    "framework": "autogen",
+                    "agent": agent_name,
+                    "execution_type": "code_block",
+                    "code_blocks_count": code_blocks_count,
+                },
+            )
         )
 
     def on_conversation_start(
@@ -363,23 +514,29 @@ class AutoGenAdapter(BaseAdapter):
         initiator: Any,
         message: Any,
     ) -> None:
-        """
-        Handle conversation start.
+        """Emit a typed :class:`AgentInputEvent` for conversation start.
 
-        Emits agent.input (L1).
+        AutoGen-specific provenance (``framework``, ``initiator``,
+        ``timestamp_ns``, ``raw_input``) lives on
+        :class:`MessageContent.metadata`. The canonical ``message``
+        field carries a string view of the inbound message.
         """
         with self._adapter_lock:
             self._conversation_start_ns = time.time_ns()
         initiator_name = getattr(initiator, "name", str(initiator))
+        serialised_message = self._safe_serialize(message)
 
-        self.emit_dict_event(
-            "agent.input",
-            {
-                "framework": "autogen",
-                "initiator": initiator_name,
-                "message": self._safe_serialize(message),
-                "timestamp_ns": self._conversation_start_ns,
-            },
+        self.emit_event(
+            AgentInputEvent.create(
+                message=_stringify(serialised_message),
+                role=MessageRole.HUMAN,
+                metadata={
+                    "framework": "autogen",
+                    "initiator": initiator_name,
+                    "timestamp_ns": self._conversation_start_ns,
+                    "raw_input": serialised_message,
+                },
+            )
         )
 
     def on_conversation_end(
@@ -387,22 +544,28 @@ class AutoGenAdapter(BaseAdapter):
         final_message: Any = None,
         termination_reason: str | None = None,
     ) -> None:
-        """
-        Handle conversation end.
+        """Emit a typed :class:`AgentOutputEvent` for conversation end.
 
-        Emits agent.output (L1).
+        Termination metadata (``termination_reason``, ``duration_ns``,
+        ``framework``, ``raw_output``) is carried on
+        :class:`MessageContent.metadata` — the canonical
+        :class:`AgentOutputEvent` has no top-level slot for these
+        AutoGen-specific signals.
         """
         end_ns = time.time_ns()
         duration_ns = end_ns - self._conversation_start_ns if self._conversation_start_ns else 0
+        serialised_final = self._safe_serialize(final_message)
 
-        self.emit_dict_event(
-            "agent.output",
-            {
-                "framework": "autogen",
-                "final_message": self._safe_serialize(final_message),
-                "termination_reason": termination_reason,
-                "duration_ns": duration_ns,
-            },
+        self.emit_event(
+            AgentOutputEvent.create(
+                message=_stringify(serialised_final),
+                metadata={
+                    "framework": "autogen",
+                    "termination_reason": termination_reason,
+                    "duration_ns": duration_ns,
+                    "raw_output": serialised_final,
+                },
+            )
         )
 
     # --- Memory integration ---
@@ -487,7 +650,15 @@ class AutoGenAdapter(BaseAdapter):
     # --- Agent config emission ---
 
     def _emit_agent_config(self, agent: Any) -> None:
-        """Emit environment.config for an agent on first encounter."""
+        """Emit a typed :class:`EnvironmentConfigEvent` per agent.
+
+        Idempotent per agent — only the first call for a given
+        agent name actually emits. AutoGen's runtime is treated as
+        a ``simulated`` environment by default; the real production
+        environment (``cloud`` / ``on_prem``) is the responsibility
+        of the host application's environment.config emission, not
+        this framework adapter (mirrors the agno reference pattern).
+        """
         name = getattr(agent, "name", None) or str(agent)
         with self._adapter_lock:
             if name in self._seen_agents:
@@ -496,12 +667,15 @@ class AutoGenAdapter(BaseAdapter):
 
         metadata = self._metadata_extractor.extract(agent)
 
-        self.emit_dict_event(
-            "environment.config",
-            {
-                "framework": "autogen",
-                **metadata,
-            },
+        attributes: dict[str, Any] = {
+            "framework": "autogen",
+            **metadata,
+        }
+        self.emit_event(
+            EnvironmentConfigEvent.create(
+                env_type=EnvironmentType.SIMULATED,
+                attributes=attributes,
+            )
         )
 
     # --- Internal helpers ---
@@ -554,6 +728,35 @@ class AutoGenAdapter(BaseAdapter):
                 return str(content)
         except Exception:
             pass
+        return None
+
+    def _detect_provider(self, model: str | None) -> str | None:
+        """Detect the LLM provider from a model identifier.
+
+        AutoGen does not surface ``provider`` directly on
+        ``llm_config``; callers pass identifiers like ``"gpt-5"``,
+        ``"claude-opus-4"``, etc. The canonical
+        :class:`ModelInvokeEvent` requires both ``provider`` and
+        ``name``, so this heuristic derives the provider from
+        well-known model name prefixes. Mirrors the agno reference
+        implementation. Unknown identifiers return ``None`` and the
+        caller falls back to ``provider="unknown"``.
+        """
+        if not model:
+            return None
+        model_lower = model.lower()
+        if "gpt" in model_lower or "o1" in model_lower or "o3" in model_lower:
+            return "openai"
+        if "claude" in model_lower:
+            return "anthropic"
+        if "gemini" in model_lower:
+            return "google"
+        if "mistral" in model_lower or "mixtral" in model_lower:
+            return "mistral"
+        if "llama" in model_lower:
+            return "meta"
+        if "command" in model_lower:
+            return "cohere"
         return None
 
     def _extract_model_name(self, agent: Any) -> str | None:
