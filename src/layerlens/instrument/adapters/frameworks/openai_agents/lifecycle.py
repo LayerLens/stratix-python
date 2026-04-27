@@ -23,6 +23,7 @@ import logging
 import threading
 from typing import Any
 
+from layerlens.instrument.adapters._base.errors import emit_error_event
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -275,6 +276,13 @@ class OpenAIAgentsAdapter(BaseAdapter):
                 "span_id": getattr(span, "span_id", None),
             },
         )
+        # Surface span-level errors as a discrete event. The Agents SDK
+        # populates ``span.error`` (or the span_data.error attribute) when
+        # the agent raised; without this hook the trace shows only a
+        # closed agent.output event with the error swallowed.
+        self._emit_span_error(
+            span, data, phase="agent", context={"agent_name": agent_name}, event_type="agent.error"
+        )
 
     def _on_generation_span_end(self, span: Any, data: Any) -> None:
         payload: dict[str, Any] = {"framework": "openai_agents"}
@@ -302,6 +310,9 @@ class OpenAIAgentsAdapter(BaseAdapter):
                     "tokens_total": (input_tokens or 0) + (output_tokens or 0),
                 },
             )
+        self._emit_span_error(
+            span, data, phase="model.invoke", context={"model": model}, event_type="model.error"
+        )
 
     def _on_function_span_end(self, span: Any, data: Any) -> None:
         tool_name = getattr(data, "name", None) or "unknown"
@@ -314,6 +325,42 @@ class OpenAIAgentsAdapter(BaseAdapter):
                 "tool_output": self._safe_serialize(getattr(data, "output", None)),
                 "latency_ms": getattr(span, "duration_ms", None),
             },
+        )
+        self._emit_span_error(
+            span, data, phase="tool.call", context={"tool_name": tool_name}, event_type="tool.error"
+        )
+
+    def _emit_span_error(
+        self,
+        span: Any,
+        data: Any,
+        phase: str,
+        context: dict[str, Any],
+        event_type: str,
+    ) -> None:
+        """Emit a discrete error event for a failed Agents SDK span.
+
+        The SDK exposes errors via ``span.error`` (string or dict) or
+        ``span_data.error`` (the FunctionSpanData / GenerationSpanData
+        ``error`` attribute when the call raised). We coerce whatever
+        shape we find into an :class:`Exception` so the standard
+        :func:`emit_error_event` payload format is preserved.
+        """
+        raw_error = getattr(span, "error", None) or getattr(data, "error", None)
+        if not raw_error:
+            return
+        if isinstance(raw_error, BaseException):
+            exc: BaseException = raw_error
+        elif isinstance(raw_error, dict):
+            message = raw_error.get("message") or raw_error.get("data") or str(raw_error)
+            exc = RuntimeError(str(message))
+        else:
+            exc = RuntimeError(str(raw_error))
+        emit_error_event(
+            self,
+            exc,
+            {"framework": "openai_agents", "phase": phase, **context},
+            event_type=event_type,
         )
 
     def _on_handoff_span_start(self, span: Any, data: Any) -> None:
@@ -390,6 +437,13 @@ class OpenAIAgentsAdapter(BaseAdapter):
             if error:
                 payload["error"] = str(error)
             self.emit_dict_event("agent.output", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "openai_agents", "agent_name": agent_name, "phase": "agent.run"},
+                    event_type="agent.error",
+                )
         except Exception:
             logger.warning("Error in on_run_end", exc_info=True)
 
@@ -415,6 +469,13 @@ class OpenAIAgentsAdapter(BaseAdapter):
             if latency_ms is not None:
                 payload["latency_ms"] = latency_ms
             self.emit_dict_event("tool.call", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "openai_agents", "tool_name": tool_name, "phase": "tool.call"},
+                    event_type="tool.error",
+                )
         except Exception:
             logger.warning("Error in on_tool_use", exc_info=True)
 

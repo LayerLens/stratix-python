@@ -210,3 +210,41 @@ def test_serialize_for_replay() -> None:
     rt = adapter.serialize_for_replay()
     assert rt.framework == "smolagents"
     assert "capture_config" in rt.config
+
+
+# --- Cross-pollination #2: error-aware emission ----------------------------
+
+
+def test_smolagents_run_failure_emits_error_event() -> None:
+    """Agent.run() failure surfaces as a discrete policy.violation event."""
+    import pytest
+
+    stratix = _RecordingStratix()
+    adapter = SmolAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    agent = _FakeAgent(name="failing")
+    agent._raised = True
+    adapter.instrument_agent(agent)
+
+    with pytest.raises(RuntimeError):
+        agent.run("bad")
+
+    error_events = [e for e in stratix.events if e["event_type"] == "policy.violation"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["framework"] == "smolagents"
+    assert payload["agent_name"] == "failing"
+    assert payload["phase"] == "agent.run"
+
+
+def test_smolagents_on_tool_use_with_error_emits_tool_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = SmolAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_tool_use("calc", error=ValueError("nope"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["tool_name"] == "calc"

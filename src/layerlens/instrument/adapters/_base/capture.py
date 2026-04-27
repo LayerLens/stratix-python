@@ -59,6 +59,15 @@ ALWAYS_ENABLED_EVENT_TYPES = frozenset(
         "protocol.task.submitted",
         "protocol.task.completed",
         "protocol.async_task",
+        # Error-aware emission events from the lighter-adapter
+        # cross-pollination wave (see _base/errors.py). Errors must
+        # NEVER be silently dropped by capture-config gating — silent
+        # error drops are the exact failure mode the helper exists to
+        # prevent. Adapters may emit ``agent.error`` / ``tool.error`` /
+        # ``model.error`` as the framework dictates; all are admitted.
+        "agent.error",
+        "tool.error",
+        "model.error",
         # Commerce-namespace events from AP2 / A2UI / UCP. The frozenset
         # only contains exact event-type strings, so we list the family
         # heads here — adapters that emit nested types still must use

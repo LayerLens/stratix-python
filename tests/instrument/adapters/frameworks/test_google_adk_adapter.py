@@ -218,3 +218,48 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "google_adk"
     assert rt.adapter_name == "GoogleADKAdapter"
     assert "capture_config" in rt.config
+
+
+# --- Cross-pollination #2: error-aware emission ----------------------------
+
+
+def test_google_adk_after_model_with_error_emits_model_error() -> None:
+    """ADK llm_response.error → discrete model.error event."""
+    stratix = _RecordingStratix()
+    adapter = GoogleADKAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    cb = SimpleNamespace(model="gemini-3-pro", agent=_FakeAgent(name="x"))
+    llm_response = SimpleNamespace(error="rate_limited", model="gemini-3-pro", usage_metadata=None)
+    adapter._after_model_callback(cb, llm_response)
+
+    error_events = [e for e in stratix.events if e["event_type"] == "model.error"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["framework"] == "google_adk"
+    assert payload["model"] == "gemini-3-pro"
+    assert "rate_limited" in payload["message"]
+
+
+def test_google_adk_on_tool_use_with_error_emits_tool_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = GoogleADKAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_tool_use("calc", error=ValueError("bad arg"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["tool_name"] == "calc"
+
+
+def test_google_adk_on_agent_end_with_error_emits_agent_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = GoogleADKAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_agent_end(agent_name="alpha", error=RuntimeError("boom"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "agent.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["agent_name"] == "alpha"

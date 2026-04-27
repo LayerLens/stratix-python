@@ -214,3 +214,37 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "pydantic_ai"
     assert rt.adapter_name == "PydanticAIAdapter"
     assert "capture_config" in rt.config
+
+
+# --- Cross-pollination #2: error-aware emission ----------------------------
+
+
+def test_pydantic_ai_run_sync_failure_emits_error_event() -> None:
+    """run_sync raise → policy.violation event with framework attribution."""
+    stratix = _RecordingStratix()
+    adapter = PydanticAIAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+    agent = _FakeAgent(name="failing", raises=True)
+    adapter.instrument_agent(agent)
+
+    with pytest.raises(RuntimeError):
+        agent.run_sync("bad")
+
+    error_events = [e for e in stratix.events if e["event_type"] == "policy.violation"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["framework"] == "pydantic_ai"
+    assert payload["agent_name"] == "failing"
+    assert payload["phase"] == "agent.run"
+
+
+def test_pydantic_ai_on_tool_use_with_error_emits_tool_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = PydanticAIAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_tool_use("calc", error=ValueError("nope"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["tool_name"] == "calc"

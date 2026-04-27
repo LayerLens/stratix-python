@@ -212,3 +212,73 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "openai_agents"
     assert rt.adapter_name == "OpenAIAgentsAdapter"
     assert "capture_config" in rt.config
+
+
+# --- Cross-pollination #2: error-aware emission ----------------------------
+
+
+class _ErrorSpan:
+    """A span carrying an error attribute (Agents SDK populates this on failure)."""
+
+    def __init__(self, span_data: Any, error: Any, span_id: str = "span-err") -> None:
+        self.span_data = span_data
+        self.span_id = span_id
+        self.duration_ms = 50.0
+        self.error = error
+
+
+def test_openai_agents_function_span_error_emits_tool_error() -> None:
+    """A FunctionSpanData with span.error → discrete tool.error event."""
+    stratix = _RecordingStratix()
+    adapter = OpenAIAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    span = _ErrorSpan(FunctionSpanData(name="calc", input={"x": 1}), error="bad input")
+    adapter._on_span_end(span)
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["framework"] == "openai_agents"
+    assert payload["tool_name"] == "calc"
+    assert "bad input" in payload["message"]
+
+
+def test_openai_agents_generation_span_error_emits_model_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = OpenAIAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    span = _ErrorSpan(
+        GenerationSpanData(model="gpt-5", input_tokens=10, output_tokens=0),
+        error={"message": "context length exceeded"},
+    )
+    adapter._on_span_end(span)
+
+    error_events = [e for e in stratix.events if e["event_type"] == "model.error"]
+    assert len(error_events) == 1
+    assert "context length exceeded" in error_events[0]["payload"]["message"]
+
+
+def test_openai_agents_on_run_end_with_error_emits_agent_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = OpenAIAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_run_end(agent_name="alpha", error=RuntimeError("workflow halted"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "agent.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["agent_name"] == "alpha"
+
+
+def test_openai_agents_on_tool_use_with_error_emits_tool_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = OpenAIAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_tool_use("calc", error=ValueError("nope"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["tool_name"] == "calc"

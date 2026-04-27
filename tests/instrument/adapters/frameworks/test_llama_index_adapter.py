@@ -197,3 +197,57 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "llama_index"
     assert rt.adapter_name == "LlamaIndexAdapter"
     assert "capture_config" in rt.config
+
+
+# --- Cross-pollination #2: error-aware emission ----------------------------
+
+
+class _LLMChatEndEvent:
+    """Shape-matched fake of a LlamaIndex LLMChatEndEvent carrying an exception."""
+
+    def __init__(self, exc: BaseException, model: str = "gpt-5") -> None:
+        self.exception = exc
+        self.model = model
+
+
+def test_llama_index_event_with_exception_emits_model_error() -> None:
+    """LlamaIndex events with an ``exception`` attribute become model.error events."""
+    stratix = _RecordingStratix()
+    adapter = LlamaIndexAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter._handle_event(_LLMChatEndEvent(RuntimeError("rate limit hit"), model="gpt-5"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "model.error"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["framework"] == "llama_index"
+    assert payload["model"] == "gpt-5"
+    assert payload["phase"] == "model.invoke"
+    assert "rate limit" in payload["message"]
+
+
+def test_llama_index_on_agent_end_with_error_emits_agent_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = LlamaIndexAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_agent_end(agent_name="planner", error=RuntimeError("workflow halted"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "agent.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["agent_name"] == "planner"
+
+
+def test_llama_index_on_tool_use_with_error_emits_tool_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = LlamaIndexAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_tool_use("search", error=ConnectionError("no network"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["tool_name"] == "search"
+    assert payload["exception_type"] == "ConnectionError"

@@ -19,6 +19,7 @@ import logging
 import threading
 from typing import Any
 
+from layerlens.instrument.adapters._base.errors import emit_error_event
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -166,6 +167,14 @@ class AgnoAdapter(BaseAdapter):
                 result = await original_run(*args, **kwargs)
             except Exception as exc:
                 error = exc
+                # Cross-pollination #2: surface the framework exception as a
+                # discrete event before re-raise so traces show a real failure
+                # instead of a hung start-event.
+                emit_error_event(
+                    adapter,
+                    exc,
+                    {"framework": "agno", "agent_name": agent_name, "phase": "agent.run"},
+                )
                 raise
             finally:
                 output = None
@@ -192,6 +201,11 @@ class AgnoAdapter(BaseAdapter):
                 result = original_run(*args, **kwargs)
             except Exception as exc:
                 error = exc
+                emit_error_event(
+                    adapter,
+                    exc,
+                    {"framework": "agno", "agent_name": agent_name, "phase": "agent.run"},
+                )
                 raise
             finally:
                 output = None
@@ -356,6 +370,13 @@ class AgnoAdapter(BaseAdapter):
             if latency_ms is not None:
                 payload["latency_ms"] = latency_ms
             self.emit_dict_event("tool.call", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "agno", "tool_name": tool_name, "phase": "tool.call"},
+                    event_type="tool.error",
+                )
         except Exception:
             logger.warning("Error in on_tool_use", exc_info=True)
 

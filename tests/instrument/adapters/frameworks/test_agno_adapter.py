@@ -212,3 +212,43 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "agno"
     assert rt.adapter_name == "AgnoAdapter"
     assert "capture_config" in rt.config
+
+
+# --- Cross-pollination #2: error-aware emission ----------------------------
+
+
+def test_run_failure_emits_policy_violation_error_event() -> None:
+    """When agent.run raises, a policy.violation event captures the failure."""
+    stratix = _RecordingStratix()
+    adapter = AgnoAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    agent = _FakeAgent(name="failing", raises=True)
+    adapter.instrument_agent(agent)
+
+    with pytest.raises(RuntimeError):
+        agent.run("bad")
+
+    error_events = [e for e in stratix.events if e["event_type"] == "policy.violation"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["framework"] == "agno"
+    assert payload["agent_name"] == "failing"
+    assert payload["phase"] == "agent.run"
+    assert payload["exception_type"] == "RuntimeError"
+    assert "simulated failure" in payload["message"]
+
+
+def test_on_tool_use_with_error_emits_tool_error_event() -> None:
+    """Tool failures surface as a discrete tool.error event."""
+    stratix = _RecordingStratix()
+    adapter = AgnoAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_tool_use("calc", tool_input={"x": 1}, error=ValueError("divide by zero"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["tool_name"] == "calc"
+    assert payload["exception_type"] == "ValueError"

@@ -20,6 +20,7 @@ import logging
 import threading
 from typing import Any
 
+from layerlens.instrument.adapters._base.errors import emit_error_event
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -197,6 +198,26 @@ class LlamaIndexAdapter(BaseAdapter):
         elif event_type in ("AgentRunStepEndEvent",):
             self._on_agent_step_end(event)
 
+        # Cross-pollination #2: any LlamaIndex event with an ``exception``
+        # attribute (LLMChatEndEvent / RetrievalEndEvent / etc. all
+        # populate this on failure) is surfaced as a discrete error
+        # event. Without this hook, LlamaIndex failures present as a
+        # silent missing END event in the dashboard.
+        exc = getattr(event, "exception", None)
+        if isinstance(exc, BaseException):
+            phase = "model.invoke" if "LLM" in event_type else "tool.call" if "Tool" in event_type else "agent.run"
+            emit_error_event(
+                self,
+                exc,
+                {
+                    "framework": "llama_index",
+                    "phase": phase,
+                    "model": getattr(event, "model", None) or getattr(event, "model_name", None),
+                    "tool_name": getattr(event, "tool_name", None) or getattr(event, "name", None),
+                },
+                event_type="agent.error" if phase == "agent.run" else f"{phase.split('.')[0]}.error",
+            )
+
     def _on_llm_start(self, event: Any) -> None:
         pass  # Timing tracked on end
 
@@ -335,6 +356,13 @@ class LlamaIndexAdapter(BaseAdapter):
             if error:
                 payload["error"] = str(error)
             self.emit_dict_event("agent.output", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "llama_index", "agent_name": agent_name, "phase": "agent.run"},
+                    event_type="agent.error",
+                )
         except Exception:
             logger.warning("Error in on_agent_end", exc_info=True)
 
@@ -360,6 +388,13 @@ class LlamaIndexAdapter(BaseAdapter):
             if latency_ms is not None:
                 payload["latency_ms"] = latency_ms
             self.emit_dict_event("tool.call", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "llama_index", "tool_name": tool_name, "phase": "tool.call"},
+                    event_type="tool.error",
+                )
         except Exception:
             logger.warning("Error in on_tool_use", exc_info=True)
 

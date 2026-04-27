@@ -208,3 +208,60 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "ms_agent_framework"
     assert rt.adapter_name == "MSAgentAdapter"
     assert "capture_config" in rt.config
+
+
+# --- Cross-pollination #2: error-aware emission ----------------------------
+
+
+def test_ms_agent_traced_invoke_emits_error_event_on_raise() -> None:
+    """When the wrapped async generator raises, a policy.violation event fires."""
+    import asyncio
+
+    import pytest
+
+    class _RaisingChat:
+        name = "raisy"
+        agents = None
+        agent = None
+
+        async def invoke(self, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("model down")
+            if False:  # pragma: no cover — async-gen marker
+                yield None
+
+        async def invoke_stream(self, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("stream down")
+            if False:  # pragma: no cover
+                yield None
+
+    stratix = _RecordingStratix()
+    adapter = MSAgentAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+    chat = _RaisingChat()
+    adapter.instrument_chat(chat)
+
+    async def _drive() -> None:
+        async for _ in chat.invoke():  # type: ignore[attr-defined]
+            pass
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(_drive())
+
+    error_events = [e for e in stratix.events if e["event_type"] == "policy.violation"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["framework"] == "ms_agent_framework"
+    assert payload["chat_name"] == "raisy"
+    assert payload["phase"] == "agent.run"
+
+
+def test_ms_agent_on_tool_use_with_error_emits_tool_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = MSAgentAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_tool_use("calc", error=ValueError("nope"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["tool_name"] == "calc"

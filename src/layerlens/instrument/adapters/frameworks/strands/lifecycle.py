@@ -18,6 +18,7 @@ import logging
 import threading
 from typing import Any
 
+from layerlens.instrument.adapters._base.errors import emit_error_event
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -164,6 +165,11 @@ class StrandsAdapter(BaseAdapter):
                 result = original_call(*args, **kwargs)
             except Exception as exc:
                 error = exc
+                emit_error_event(
+                    adapter,
+                    exc,
+                    {"framework": "strands", "agent_name": agent_name, "phase": "agent.run"},
+                )
                 raise
             finally:
                 output = None
@@ -339,6 +345,13 @@ class StrandsAdapter(BaseAdapter):
             if latency_ms is not None:
                 payload["latency_ms"] = latency_ms
             self.emit_dict_event("tool.call", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "strands", "tool_name": tool_name, "phase": "tool.call"},
+                    event_type="tool.error",
+                )
         except Exception:
             logger.warning("Error in on_tool_use", exc_info=True)
 

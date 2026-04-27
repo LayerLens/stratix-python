@@ -233,3 +233,65 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "bedrock_agents"
     assert rt.adapter_name == "BedrockAgentsAdapter"
     assert "capture_config" in rt.config
+
+
+# --- Cross-pollination #2: error-aware emission ----------------------------
+
+
+def test_bedrock_after_invoke_with_failure_trace_emits_agent_error() -> None:
+    """parsed.trace.failureTrace.failureReason → discrete agent.error event."""
+    stratix = _RecordingStratix()
+    adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    parsed = {
+        "sessionId": "sess-1",
+        "trace": {
+            "failureTrace": {"failureReason": "model unavailable", "failureCode": "MODEL_DOWN"},
+        },
+    }
+    adapter._after_invoke_agent(parsed=parsed)
+
+    error_events = [e for e in stratix.events if e["event_type"] == "agent.error"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["framework"] == "bedrock_agents"
+    assert payload["session_id"] == "sess-1"
+    assert "model unavailable" in payload["message"]
+
+
+def test_bedrock_after_invoke_with_sdk_error_emits_agent_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    parsed = {"errorMessage": "AccessDenied"}
+    adapter._after_invoke_agent(parsed=parsed)
+
+    error_events = [e for e in stratix.events if e["event_type"] == "agent.error"]
+    assert len(error_events) == 1
+    assert "AccessDenied" in error_events[0]["payload"]["message"]
+
+
+def test_bedrock_on_invoke_end_with_error_emits_agent_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_invoke_end(agent_id="A1", error=RuntimeError("timeout"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "agent.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["agent_id"] == "A1"
+
+
+def test_bedrock_on_tool_use_with_error_emits_tool_error() -> None:
+    stratix = _RecordingStratix()
+    adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_tool_use("calc", error=ValueError("nope"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["tool_name"] == "calc"

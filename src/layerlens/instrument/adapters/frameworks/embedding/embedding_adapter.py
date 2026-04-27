@@ -14,6 +14,7 @@ import time
 import logging
 from typing import Any
 
+from layerlens.instrument.adapters._base.errors import emit_error_event
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -151,7 +152,16 @@ class EmbeddingAdapter(BaseAdapter):
             batch_size = len(input_data) if isinstance(input_data, list) else 1
 
             start = time.monotonic()
-            result = original(*args, **kwargs)
+            try:
+                result = original(*args, **kwargs)
+            except Exception as exc:
+                emit_error_event(
+                    adapter,
+                    exc,
+                    {"framework": "embedding", "provider": "openai", "model": model, "phase": "embedding.create"},
+                    event_type="model.error",
+                )
+                raise
             elapsed_ms = (time.monotonic() - start) * 1000
 
             dimensions = None
@@ -188,7 +198,16 @@ class EmbeddingAdapter(BaseAdapter):
             batch_size = len(texts) if isinstance(texts, list) else 1
 
             start = time.monotonic()
-            result = original(*args, **kwargs)
+            try:
+                result = original(*args, **kwargs)
+            except Exception as exc:
+                emit_error_event(
+                    adapter,
+                    exc,
+                    {"framework": "embedding", "provider": "cohere", "model": model, "phase": "embedding.create"},
+                    event_type="model.error",
+                )
+                raise
             elapsed_ms = (time.monotonic() - start) * 1000
 
             dimensions = None
@@ -217,7 +236,21 @@ class EmbeddingAdapter(BaseAdapter):
             batch_size = len(sentences) if isinstance(sentences, list) else 1
 
             start = time.monotonic()
-            result = original(*args, **kwargs)
+            try:
+                result = original(*args, **kwargs)
+            except Exception as exc:
+                emit_error_event(
+                    adapter,
+                    exc,
+                    {
+                        "framework": "embedding",
+                        "provider": "sentence_transformers",
+                        "model": "local",
+                        "phase": "embedding.create",
+                    },
+                    event_type="model.error",
+                )
+                raise
             elapsed_ms = (time.monotonic() - start) * 1000
 
             dimensions = None

@@ -19,6 +19,7 @@ import logging
 import threading
 from typing import Any
 
+from layerlens.instrument.adapters._base.errors import emit_error_event
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -191,8 +192,42 @@ class BedrockAgentsAdapter(BaseAdapter):
             )
             # Extract trace steps if available
             self._process_trace(parsed)
+            # Bedrock surfaces failures via parsed.failureTrace.failureReason
+            # OR via top-level Error / errorCode keys (depends on whether
+            # the failure happened inside the agent loop or at the SDK
+            # boundary). Both paths route through emit_error_event so
+            # operators see a single consistent signal in the dashboard.
+            self._maybe_emit_invoke_error(parsed)
         except Exception:
             logger.warning("Error in _after_invoke_agent", exc_info=True)
+
+    def _maybe_emit_invoke_error(self, parsed: dict[str, Any]) -> None:
+        """Detect failure information in a bedrock-agent-runtime response."""
+        if not isinstance(parsed, dict):
+            return
+        failure_trace = (parsed.get("trace") or {}).get("failureTrace") if isinstance(
+            parsed.get("trace"), dict
+        ) else None
+        failure_reason = None
+        if isinstance(failure_trace, dict):
+            failure_reason = failure_trace.get("failureReason") or failure_trace.get("failureCode")
+        # Top-level error keys for SDK-side failures.
+        sdk_error = parsed.get("Error") or parsed.get("errorMessage") or parsed.get("errorCode")
+        if isinstance(sdk_error, dict):
+            sdk_error = sdk_error.get("Message") or sdk_error.get("Code") or str(sdk_error)
+        message = failure_reason or sdk_error
+        if not message:
+            return
+        emit_error_event(
+            self,
+            RuntimeError(str(message)),
+            {
+                "framework": "bedrock_agents",
+                "phase": "agent.run",
+                "session_id": parsed.get("sessionId"),
+            },
+            event_type="agent.error",
+        )
 
     def _process_trace(self, parsed: dict[str, Any]) -> None:
         """Extract trace steps from Bedrock response and emit events."""
@@ -321,6 +356,13 @@ class BedrockAgentsAdapter(BaseAdapter):
             if error:
                 payload["error"] = str(error)
             self.emit_dict_event("agent.output", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "bedrock_agents", "agent_id": agent_id, "phase": "agent.run"},
+                    event_type="agent.error",
+                )
         except Exception:
             logger.warning("Error in on_invoke_end", exc_info=True)
 
@@ -346,6 +388,13 @@ class BedrockAgentsAdapter(BaseAdapter):
             if latency_ms is not None:
                 payload["latency_ms"] = latency_ms
             self.emit_dict_event("tool.call", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "bedrock_agents", "tool_name": tool_name, "phase": "tool.call"},
+                    event_type="tool.error",
+                )
         except Exception:
             logger.warning("Error in on_tool_use", exc_info=True)
 

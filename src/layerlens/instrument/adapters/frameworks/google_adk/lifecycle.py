@@ -20,6 +20,7 @@ import logging
 import threading
 from typing import Any
 
+from layerlens.instrument.adapters._base.errors import emit_error_event
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -178,6 +179,13 @@ class GoogleADKAdapter(BaseAdapter):
                     "duration_ns": duration_ns,
                 },
             )
+            # Surface ADK-side errors propagated via the callback context.
+            self._maybe_emit_callback_error(
+                callback_context,
+                phase="agent.run",
+                context={"agent_name": agent_name},
+                event_type="agent.error",
+            )
         except Exception:
             logger.warning("Error in after_agent_callback", exc_info=True)
         return None
@@ -229,6 +237,14 @@ class GoogleADKAdapter(BaseAdapter):
                         ),
                     },
                 )
+            # ADK exposes failed model calls via llm_response.error /
+            # error_message — surface as a discrete event.
+            self._maybe_emit_callback_error(
+                llm_response,
+                phase="model.invoke",
+                context={"model": str(model) if model else None},
+                event_type="model.error",
+            )
         except Exception:
             logger.warning("Error in after_model_callback", exc_info=True)
         return None
@@ -269,6 +285,15 @@ class GoogleADKAdapter(BaseAdapter):
                     "tool_output": self._safe_serialize(tool_output),
                     "latency_ms": latency_ms,
                 },
+            )
+            # tool_output may be an Exception object or a dict containing
+            # a top-level "error" / "exception" entry when the function
+            # raised — surface as discrete tool.error.
+            self._maybe_emit_callback_error(
+                tool_output,
+                phase="tool.call",
+                context={"tool_name": tool_name},
+                event_type="tool.error",
             )
         except Exception:
             logger.warning("Error in after_tool_callback", exc_info=True)
@@ -319,6 +344,13 @@ class GoogleADKAdapter(BaseAdapter):
             if error:
                 payload["error"] = str(error)
             self.emit_dict_event("agent.output", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "google_adk", "agent_name": agent_name, "phase": "agent.run"},
+                    event_type="agent.error",
+                )
         except Exception:
             logger.warning("Error in on_agent_end", exc_info=True)
 
@@ -364,6 +396,13 @@ class GoogleADKAdapter(BaseAdapter):
             if latency_ms is not None:
                 payload["latency_ms"] = latency_ms
             self.emit_dict_event("tool.call", payload)
+            if error is not None:
+                emit_error_event(
+                    self,
+                    error,
+                    {"framework": "google_adk", "tool_name": tool_name, "phase": "tool.call"},
+                    event_type="tool.error",
+                )
         except Exception:
             logger.warning("Error in on_tool_use", exc_info=True)
 
@@ -397,6 +436,50 @@ class GoogleADKAdapter(BaseAdapter):
             logger.warning("Error in on_llm_call", exc_info=True)
 
     # --- Helpers ---
+
+    def _maybe_emit_callback_error(
+        self,
+        carrier: Any,
+        phase: str,
+        context: dict[str, Any],
+        event_type: str,
+    ) -> None:
+        """Emit a discrete error event when ``carrier`` exposes one.
+
+        ADK callbacks receive response objects that may carry the failure
+        on ``error`` / ``error_message`` / ``exception`` attributes (the
+        SDK uses these instead of raising directly so the agent loop can
+        decide whether to retry). We coerce whatever shape we find into
+        a real exception and route through :func:`emit_error_event`.
+        """
+        if carrier is None:
+            return
+        raw_error: Any = None
+        if isinstance(carrier, BaseException):
+            raw_error = carrier
+        else:
+            for attr in ("error", "exception", "error_message"):
+                value = getattr(carrier, attr, None)
+                if value:
+                    raw_error = value
+                    break
+            if raw_error is None and isinstance(carrier, dict):
+                for key in ("error", "exception", "error_message"):
+                    if carrier.get(key):
+                        raw_error = carrier[key]
+                        break
+        if raw_error is None:
+            return
+        if isinstance(raw_error, BaseException):
+            exc: BaseException = raw_error
+        else:
+            exc = RuntimeError(str(raw_error))
+        emit_error_event(
+            self,
+            exc,
+            {"framework": "google_adk", "phase": phase, **context},
+            event_type=event_type,
+        )
 
     def _get_agent_name(self, callback_context: Any) -> str:
         agent = getattr(callback_context, "agent", None)

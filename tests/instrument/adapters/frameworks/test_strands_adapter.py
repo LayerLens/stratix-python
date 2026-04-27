@@ -208,3 +208,38 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "strands"
     assert rt.adapter_name == "StrandsAdapter"
     assert "capture_config" in rt.config
+
+
+# --- Cross-pollination #2: error-aware emission ----------------------------
+
+
+def test_invoke_failure_emits_policy_violation_error_event() -> None:
+    """When agent invocation raises, a policy.violation event captures the failure."""
+    stratix = _RecordingStratix()
+    adapter = StrandsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+    agent = _FakeAgent(name="failing", raises=True)
+    adapter.instrument_agent(agent)
+
+    with pytest.raises(RuntimeError):
+        agent("bad")
+
+    error_events = [e for e in stratix.events if e["event_type"] == "policy.violation"]
+    assert len(error_events) == 1
+    payload = error_events[0]["payload"]
+    assert payload["framework"] == "strands"
+    assert payload["agent_name"] == "failing"
+    assert payload["phase"] == "agent.run"
+    assert payload["exception_type"] == "RuntimeError"
+
+
+def test_strands_on_tool_use_with_error_emits_tool_error_event() -> None:
+    stratix = _RecordingStratix()
+    adapter = StrandsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+
+    adapter.on_tool_use("calc", error=ValueError("bad input"))
+
+    error_events = [e for e in stratix.events if e["event_type"] == "tool.error"]
+    assert len(error_events) == 1
+    assert error_events[0]["payload"]["tool_name"] == "calc"

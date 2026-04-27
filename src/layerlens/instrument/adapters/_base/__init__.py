@@ -13,6 +13,15 @@ from layerlens.instrument.adapters._base.sinks import (
     TraceStoreSink,
     IngestionPipelineSink,
 )
+from layerlens.instrument.adapters._base.errors import (
+    MAX_MESSAGE_CHARS,
+    SAFE_CONTEXT_KEYS,
+    DEFAULT_EVENT_TYPE,
+    MAX_TRACEBACK_CHARS,
+    MAX_TRACEBACK_FRAMES,
+    emit_error_event,
+    build_error_payload,
+)
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -40,10 +49,17 @@ __all__ = [
     "AdapterStatus",
     "BaseAdapter",
     "CaptureConfig",
+    "DEFAULT_EVENT_TYPE",
     "EventSink",
     "IngestionPipelineSink",
+    "MAX_MESSAGE_CHARS",
+    "MAX_TRACEBACK_CHARS",
+    "MAX_TRACEBACK_FRAMES",
     "PydanticCompat",
     "ReplayableTrace",
+    "SAFE_CONTEXT_KEYS",
     "TraceStoreSink",
+    "build_error_payload",
+    "emit_error_event",
     "requires_pydantic",
 ]
