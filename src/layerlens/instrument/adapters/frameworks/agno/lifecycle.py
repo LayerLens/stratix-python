@@ -122,7 +122,13 @@ class AgnoAdapter(BaseAdapter):
         )
 
     def serialize_for_replay(self) -> ReplayableTrace:
-        """Serialize the current trace data for replay."""
+        """Serialize the current trace data for replay.
+
+        Includes the per-adapter memory snapshot (cross-poll #1) under
+        ``metadata["memory_snapshot"]`` so the replay engine can call
+        :meth:`MemoryRecorder.restore` before re-execution and reach
+        byte-identical memory state.
+        """
         return ReplayableTrace(
             adapter_name="AgnoAdapter",
             framework=self.FRAMEWORK,
@@ -130,6 +136,7 @@ class AgnoAdapter(BaseAdapter):
             events=list(self._trace_events),
             state_snapshots=[],
             config={"capture_config": self._capture_config.model_dump()},
+            metadata={"memory_snapshot": self.memory_snapshot_dict()},
         )
 
     # --- Framework Integration ---
@@ -173,7 +180,16 @@ class AgnoAdapter(BaseAdapter):
                 output = None
                 if result is not None:
                     output = getattr(result, "content", result)
-                adapter.on_run_end(agent_name=agent_name, output=output, error=error)
+                # Surface input + tool list to the memory recorder so the
+                # episodic and procedural buckets capture the full turn.
+                tool_names = adapter._collect_tool_names(agent, result)
+                adapter.on_run_end(
+                    agent_name=agent_name,
+                    output=output,
+                    error=error,
+                    input_data=input_data,
+                    tools=tool_names,
+                )
                 adapter._extract_run_details(agent, result)
             return result
 
@@ -199,7 +215,16 @@ class AgnoAdapter(BaseAdapter):
                 output = None
                 if result is not None:
                     output = getattr(result, "content", result)
-                adapter.on_run_end(agent_name=agent_name, output=output, error=error)
+                # Surface input + tool list to the memory recorder so the
+                # episodic and procedural buckets capture the full turn.
+                tool_names = adapter._collect_tool_names(agent, result)
+                adapter.on_run_end(
+                    agent_name=agent_name,
+                    output=output,
+                    error=error,
+                    input_data=input_data,
+                    tools=tool_names,
+                )
                 adapter._extract_run_details(agent, result)
             return result
 
@@ -304,6 +329,8 @@ class AgnoAdapter(BaseAdapter):
         agent_name: str | None = None,
         output: Any = None,
         error: Exception | None = None,
+        input_data: Any = None,
+        tools: list[str] | None = None,
     ) -> None:
         """Emit agent.output event when an agent run ends."""
         if not self._connected:
@@ -330,6 +357,18 @@ class AgnoAdapter(BaseAdapter):
                     "agent_name": agent_name,
                     "event_subtype": "run_complete" if not error else "run_failed",
                 },
+            )
+            # Cross-poll #1: persist this turn into the per-adapter
+            # memory recorder. Episodic = the input/output pair;
+            # procedural patterns are detected from recurring tool
+            # sequences in the recorder. Recording is best-effort and
+            # never breaks the host run path (BaseAdapter swallows).
+            self.record_memory_turn(
+                agent_name=agent_name,
+                input_data=self._safe_serialize(input_data),
+                output_data=self._safe_serialize(output),
+                error=str(error) if error else None,
+                tools=tools,
             )
         except Exception:
             logger.warning("Error in on_run_end", exc_info=True)
@@ -459,6 +498,36 @@ class AgnoAdapter(BaseAdapter):
             members = getattr(team, "members", None) or getattr(team, "agents", None) or []
             metadata["team_members"] = [getattr(m, "name", str(m)) for m in members]
         self.emit_dict_event("environment.config", metadata)
+
+    def _collect_tool_names(self, agent: Any, result: Any) -> list[str]:  # noqa: ARG002
+        """Collect tool names invoked during the run for memory persistence.
+
+        Used by the memory recorder's procedural-pattern detector — a
+        short, stable list of tool names is preferable to the full tool
+        argument blob.
+
+        ``agent`` is accepted for symmetry with peer ``_collect_*``/
+        ``_extract_run_details`` helpers and to leave the door open for
+        agent-side tool introspection (e.g. ``agent.tools`` discovery)
+        if the result object stops carrying tool calls in a future Agno
+        release. Currently unused but kept on the contract.
+        """
+        names: list[str] = []
+        try:
+            messages = getattr(result, "messages", None) or []
+            for msg in messages:
+                tool_calls = getattr(msg, "tool_calls", None) or []
+                for tc in tool_calls:
+                    fn = getattr(tc, "function", None)
+                    if isinstance(fn, dict):
+                        name = fn.get("name")
+                    else:
+                        name = getattr(fn, "name", None)
+                    if name:
+                        names.append(str(name))
+        except Exception:
+            logger.debug("Could not collect tool names", exc_info=True)
+        return names
 
     def _safe_serialize(self, value: Any) -> Any:
         """Safely serialize a value for event payloads."""
