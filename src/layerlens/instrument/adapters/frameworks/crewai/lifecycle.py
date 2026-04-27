@@ -2,6 +2,28 @@
 STRATIX CrewAI Lifecycle Hooks
 
 Provides the main CrewAIAdapter class and crew instrumentation.
+
+Typed-event status (post PR #129 migration, bundle 1):
+
+* Every emission flows through :meth:`BaseAdapter.emit_event` with a
+  canonical Pydantic payload imported from
+  :mod:`layerlens.instrument._compat.events`.
+* CrewAI-specific provenance (``framework``, ``agent_role``,
+  ``task_description``, ``task_order``, ``event_subtype``,
+  ``process_type``) is carried in the canonical model's metadata /
+  attributes / parameters / input slots — the canonical schema does
+  not expose these as top-level fields.
+* The previous adapter emitted an ad-hoc ``agent.code`` event for
+  task-start (not in the canonical 13-event taxonomy). The typed
+  migration maps the task-start boundary onto :class:`AgentInputEvent`
+  with ``role=AGENT`` (the task description is logically input to the
+  receiving agent) and carries the original ``event_subtype="task_start"``
+  marker on :class:`MessageContent.metadata`.
+* The previous adapter emitted an ``agent.state.change`` for task-end
+  with no real ``before_hash`` / ``after_hash`` (the canonical schema
+  rejects partial-hash payloads). The typed migration maps task-end
+  onto :class:`AgentOutputEvent` with ``run_status=task_complete`` (or
+  ``task_failed``) on :class:`MessageContent.metadata`.
 """
 
 from __future__ import annotations
@@ -12,6 +34,17 @@ import logging
 import threading
 from typing import Any
 
+from layerlens.instrument._compat.events import (
+    MessageRole,
+    ToolCallEvent,
+    AgentInputEvent,
+    CostRecordEvent,
+    EnvironmentType,
+    IntegrationType,
+    AgentOutputEvent,
+    ModelInvokeEvent,
+    EnvironmentConfigEvent,
+)
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -26,6 +59,32 @@ from layerlens.instrument.adapters.frameworks.crewai.metadata import AgentMetada
 from layerlens.instrument.adapters.frameworks.crewai.delegation import CrewDelegationTracker
 
 logger = logging.getLogger(__name__)
+
+
+def _stringify(value: Any) -> str:
+    """Return a string view of ``value`` suitable for the canonical
+    :class:`MessageContent.message` field.
+
+    The canonical schema requires :class:`AgentInputEvent` and
+    :class:`AgentOutputEvent` to carry a ``message: str``. CrewAI
+    callbacks deliver inputs/outputs as arbitrary Python objects
+    (TaskOutput, dicts, ``None``); this helper converts each to a
+    (possibly empty) string so the typed event always validates. The
+    original payload is preserved on
+    :class:`MessageContent.metadata.raw_input` / ``raw_output``.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        # CrewAI TaskOutput.model_dump() commonly produces
+        # ``{"raw": ..., "agent": ..., "description": ..., ...}``;
+        # surface the raw slot when present.
+        raw = value.get("raw") or value.get("output") or value.get("content")
+        if isinstance(raw, str):
+            return raw
+    return str(value)
 
 
 class CrewAIAdapter(BaseAdapter):
@@ -51,6 +110,16 @@ class CrewAIAdapter(BaseAdapter):
     # only — see crewai's pyproject which pins ``pydantic = "^2.4.2"``.
     # Importing crewai under v1 fails inside crewai's own model layer.
     requires_pydantic = PydanticCompat.V2_ONLY
+
+    # Per-adapter ``extra="allow"`` decision: CrewAI targets the
+    # canonical 13-event taxonomy exclusively. Unknown event types
+    # must be rejected by the base adapter's typed-event validator,
+    # so this stays ``False``. The previous ``agent.code`` event
+    # emitted on task-start is migrated to :class:`AgentInputEvent`
+    # (with ``role=AGENT``) on the typed path — see
+    # :meth:`on_task_start`. See ``docs/adapters/typed-events.md``
+    # for the opt-in policy.
+    ALLOW_UNREGISTERED_EVENTS: bool = False
 
     def __init__(
         self,
@@ -177,21 +246,27 @@ class CrewAIAdapter(BaseAdapter):
     # --- Lifecycle hooks (called by callback) ---
 
     def on_crew_start(self, crew_input: Any = None) -> None:
-        """
-        Handle crew execution start.
+        """Emit a typed :class:`AgentInputEvent` for crew execution start.
 
-        Emits agent.input (L1).
+        CrewAI-specific provenance (``framework``, ``timestamp_ns``,
+        ``raw_input``) lives on :class:`MessageContent.metadata` —
+        the canonical schema does not declare these as top-level
+        fields.
         """
         with self._adapter_lock:
             self._crew_start_ns = time.time_ns()
+        serialised_input = self._safe_serialize(crew_input)
 
-        self.emit_dict_event(
-            "agent.input",
-            {
-                "framework": "crewai",
-                "input": self._safe_serialize(crew_input),
-                "timestamp_ns": self._crew_start_ns,
-            },
+        self.emit_event(
+            AgentInputEvent.create(
+                message=_stringify(serialised_input),
+                role=MessageRole.HUMAN,
+                metadata={
+                    "framework": "crewai",
+                    "timestamp_ns": self._crew_start_ns,
+                    "raw_input": serialised_input,
+                },
+            )
         )
 
     def on_crew_end(
@@ -199,23 +274,33 @@ class CrewAIAdapter(BaseAdapter):
         crew_output: Any = None,
         error: Exception | None = None,
     ) -> None:
-        """
-        Handle crew execution end.
+        """Emit a typed :class:`AgentOutputEvent` for crew execution end.
 
-        Emits agent.output (L1).
+        Termination metadata (``duration_ns``, ``framework``,
+        ``raw_output``, ``error``) is carried on
+        :class:`MessageContent.metadata` — the canonical
+        :class:`AgentOutputEvent` has no top-level slot for these
+        CrewAI-specific signals.
         """
         end_ns = time.time_ns()
         duration_ns = end_ns - self._crew_start_ns if self._crew_start_ns else 0
+        serialised_output = self._safe_serialize(crew_output)
 
-        payload: dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "framework": "crewai",
-            "output": self._safe_serialize(crew_output),
             "duration_ns": duration_ns,
+            "raw_output": serialised_output,
+            "run_status": "crew_failed" if error else "crew_complete",
         }
         if error:
-            payload["error"] = str(error)
+            metadata["error"] = str(error)
 
-        self.emit_dict_event("agent.output", payload)
+        self.emit_event(
+            AgentOutputEvent.create(
+                message=_stringify(serialised_output),
+                metadata=metadata,
+            )
+        )
 
     def on_task_start(
         self,
@@ -224,24 +309,36 @@ class CrewAIAdapter(BaseAdapter):
         expected_output: str | None = None,
         task_order: int | None = None,
     ) -> None:
-        """
-        Handle task start.
+        """Emit a typed :class:`AgentInputEvent` for task start.
 
-        Emits agent.code (L2) as dict event with task metadata.
+        The previous adapter implementation emitted an ad-hoc
+        ``agent.code`` event type that is NOT in the canonical
+        13-event taxonomy. The typed migration maps the task-start
+        boundary onto :class:`AgentInputEvent` with ``role=AGENT``
+        — a task description is logically input to the receiving
+        agent. The original ``event_subtype="task_start"`` marker
+        and CrewAI-specific provenance (``agent_role``,
+        ``expected_output``, ``task_order``) live on
+        :class:`MessageContent.metadata`.
         """
-        payload: dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "framework": "crewai",
-            "task_description": task_description,
             "event_subtype": "task_start",
         }
         if agent_role:
-            payload["agent_role"] = agent_role
+            metadata["agent_role"] = agent_role
         if expected_output:
-            payload["expected_output"] = expected_output
+            metadata["expected_output"] = expected_output
         if task_order is not None:
-            payload["task_order"] = task_order
+            metadata["task_order"] = task_order
 
-        self.emit_dict_event("agent.code", payload)
+        self.emit_event(
+            AgentInputEvent.create(
+                message=task_description,
+                role=MessageRole.AGENT,
+                metadata=metadata,
+            )
+        )
 
     def on_task_end(
         self,
@@ -250,36 +347,56 @@ class CrewAIAdapter(BaseAdapter):
         task_order: int | None = None,
         error: Exception | None = None,
     ) -> None:
-        """
-        Handle task completion.
+        """Emit a typed :class:`AgentOutputEvent` and optional
+        :class:`CostRecordEvent` for task completion.
 
-        Emits agent.state.change (cross-cutting) and cost.record (cross-cutting)
-        if token costs are available.
+        The previous adapter implementation emitted an
+        ``agent.state.change`` payload carrying only ``event_subtype``
+        and ``task_output``. That payload did not satisfy the
+        canonical :class:`AgentStateChangeEvent` schema's
+        ``before_hash`` / ``after_hash`` requirement (the task
+        completion boundary has no real state mutation to hash).
+
+        The typed migration maps task-end onto
+        :class:`AgentOutputEvent` with ``run_status=task_complete`` (or
+        ``task_failed``) on :class:`MessageContent.metadata`. Cost
+        records use the canonical :class:`CostRecordEvent` with
+        ``prompt_tokens`` / ``completion_tokens`` / ``tokens`` slots;
+        ``agent_role`` is preserved on the canonical
+        :class:`AgentOutputEvent.metadata` slot since the cost event
+        has no metadata field.
         """
-        payload: dict[str, Any] = {
+        serialised_output = self._safe_serialize(task_output)
+        metadata: dict[str, Any] = {
             "framework": "crewai",
-            "task_output": self._safe_serialize(task_output),
             "event_subtype": "task_complete",
+            "raw_output": serialised_output,
+            "run_status": "task_failed" if error else "task_complete",
         }
         if agent_role:
-            payload["agent_role"] = agent_role
+            metadata["agent_role"] = agent_role
         if task_order is not None:
-            payload["task_order"] = task_order
+            metadata["task_order"] = task_order
         if error:
-            payload["error"] = str(error)
+            metadata["error"] = str(error)
 
-        self.emit_dict_event("agent.state.change", payload)
+        self.emit_event(
+            AgentOutputEvent.create(
+                message=_stringify(serialised_output),
+                metadata=metadata,
+            )
+        )
 
-        # Emit cost record if token usage available
+        # Emit cost record if token usage available — uses the
+        # canonical :class:`CostRecordEvent` slots.
         token_usage = self._extract_token_usage(task_output)
         if token_usage:
-            self.emit_dict_event(
-                "cost.record",
-                {
-                    "framework": "crewai",
-                    "agent_role": agent_role,
-                    **token_usage,
-                },
+            self.emit_event(
+                CostRecordEvent.create(
+                    prompt_tokens=token_usage.get("tokens_prompt"),
+                    completion_tokens=token_usage.get("tokens_completion"),
+                    tokens=token_usage.get("tokens_total"),
+                )
             )
 
     def on_tool_use(
@@ -290,23 +407,44 @@ class CrewAIAdapter(BaseAdapter):
         error: Exception | None = None,
         latency_ms: float | None = None,
     ) -> None:
-        """
-        Handle tool usage.
+        """Emit a typed :class:`ToolCallEvent` for tool usage.
 
-        Emits tool.call (L5a).
+        CrewAI does not expose tool versions on the
+        ``CrewAgentExecutor`` callback signature, so ``version``
+        falls back to ``"unavailable"`` per the canonical schema's
+        NORMATIVE rule. Scalar tool inputs/outputs are wrapped in
+        ``{"value": ...}`` so the canonical ``input`` / ``output``
+        dict slots are satisfied (mirrors the agno reference
+        pattern).
         """
-        payload: dict[str, Any] = {
-            "framework": "crewai",
-            "tool_name": tool_name,
-            "tool_input": self._safe_serialize(tool_input),
-            "tool_output": self._safe_serialize(tool_output),
-        }
-        if error:
-            payload["error"] = str(error)
-        if latency_ms is not None:
-            payload["latency_ms"] = latency_ms
+        serialised_input = self._safe_serialize(tool_input)
+        serialised_output = self._safe_serialize(tool_output)
+        input_data: dict[str, Any]
+        if isinstance(serialised_input, dict):
+            input_data = dict(serialised_input)
+        elif serialised_input is None:
+            input_data = {}
+        else:
+            input_data = {"value": serialised_input}
+        output_data: dict[str, Any] | None
+        if isinstance(serialised_output, dict):
+            output_data = dict(serialised_output)
+        elif serialised_output is None:
+            output_data = None
+        else:
+            output_data = {"value": serialised_output}
 
-        self.emit_dict_event("tool.call", payload)
+        self.emit_event(
+            ToolCallEvent.create(
+                name=tool_name,
+                version="unavailable",
+                integration=IntegrationType.LIBRARY,
+                input_data=input_data,
+                output_data=output_data,
+                error=str(error) if error else None,
+                latency_ms=latency_ms,
+            )
+        )
 
     def on_llm_call(
         self,
@@ -317,28 +455,29 @@ class CrewAIAdapter(BaseAdapter):
         latency_ms: float | None = None,
         messages: list[dict[str, str]] | None = None,
     ) -> None:
-        """
-        Handle LLM invocation.
+        """Emit a typed :class:`ModelInvokeEvent` for LLM invocation.
 
-        Emits model.invoke (L3).
+        Provider / model identifiers fall back to ``"unknown"`` when
+        not supplied so the canonical schema validators are
+        satisfied. Token counts use the canonical ``prompt_tokens`` /
+        ``completion_tokens`` slots.
         """
-        payload: dict[str, Any] = {
-            "framework": "crewai",
-        }
-        if provider:
-            payload["provider"] = provider
-        if model:
-            payload["model"] = model
-        if tokens_prompt is not None:
-            payload["tokens_prompt"] = tokens_prompt
-        if tokens_completion is not None:
-            payload["tokens_completion"] = tokens_completion
-        if latency_ms is not None:
-            payload["latency_ms"] = latency_ms
+        input_messages: list[dict[str, str]] | None = None
         if self._capture_config.capture_content and messages:
-            payload["messages"] = messages
+            input_messages = messages
 
-        self.emit_dict_event("model.invoke", payload)
+        self.emit_event(
+            ModelInvokeEvent.create(
+                provider=provider or "unknown",
+                name=model or "unknown",
+                version="unavailable",
+                parameters={"framework": "crewai"},
+                prompt_tokens=tokens_prompt,
+                completion_tokens=tokens_completion,
+                latency_ms=latency_ms,
+                input_messages=input_messages,
+            )
+        )
 
     def on_delegation(
         self,
@@ -441,7 +580,15 @@ class CrewAIAdapter(BaseAdapter):
         agent: Any,
         process_type: str | None = None,
     ) -> None:
-        """Emit environment.config for an agent on first encounter."""
+        """Emit a typed :class:`EnvironmentConfigEvent` per agent.
+
+        Idempotent per agent role — only the first call for a given
+        role actually emits. CrewAI's runtime is treated as a
+        ``simulated`` environment by default; the real production
+        environment (``cloud`` / ``on_prem``) is the responsibility
+        of the host application's environment.config emission, not
+        this framework adapter (mirrors the agno reference pattern).
+        """
         role = getattr(agent, "role", None) or str(agent)
         with self._adapter_lock:
             if role in self._seen_agents:
@@ -452,13 +599,16 @@ class CrewAIAdapter(BaseAdapter):
         if process_type:
             metadata["process_type"] = process_type
 
-        self.emit_dict_event(
-            "environment.config",
-            {
-                "framework": "crewai",
-                "agent_role": role,
-                **metadata,
-            },
+        attributes: dict[str, Any] = {
+            "framework": "crewai",
+            "agent_role": role,
+            **metadata,
+        }
+        self.emit_event(
+            EnvironmentConfigEvent.create(
+                env_type=EnvironmentType.SIMULATED,
+                attributes=attributes,
+            )
         )
 
     # --- Internal helpers ---
