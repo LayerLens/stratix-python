@@ -61,6 +61,11 @@ class GoogleADKAdapter(BaseAdapter):
         self._model_call_starts: dict[int, int] = {}  # thread_id -> start_ns
         self._tool_call_starts: dict[str, int] = {}
         self._agent_starts: dict[int, int] = {}  # thread_id -> start_ns
+        # Per-thread state for memory persistence — mirrors the
+        # _agent_starts thread-id key. ADK callbacks fire on the same
+        # thread that drives the agent so this is a natural fit.
+        self._agent_inputs: dict[int, Any] = {}
+        self._agent_tools: dict[int, list[str]] = {}
 
     def connect(self) -> None:
         try:
@@ -83,6 +88,8 @@ class GoogleADKAdapter(BaseAdapter):
         self._model_call_starts.clear()
         self._tool_call_starts.clear()
         self._agent_starts.clear()
+        self._agent_inputs.clear()
+        self._agent_tools.clear()
         self._connected = False
         self._status = AdapterStatus.DISCONNECTED
 
@@ -112,6 +119,13 @@ class GoogleADKAdapter(BaseAdapter):
         )
 
     def serialize_for_replay(self) -> ReplayableTrace:
+        """Serialize the current trace data for replay.
+
+        Includes the per-adapter memory snapshot (cross-poll #1) under
+        ``metadata["memory_snapshot"]``. ADK's session/state machinery
+        is consolidated into the snapshot at after_agent_callback so a
+        replay engine can reconstruct conversational state.
+        """
         return ReplayableTrace(
             adapter_name="GoogleADKAdapter",
             framework=self.FRAMEWORK,
@@ -119,6 +133,7 @@ class GoogleADKAdapter(BaseAdapter):
             events=list(self._trace_events),
             state_snapshots=[],
             config={"capture_config": self._capture_config.model_dump()},
+            metadata={"memory_snapshot": self.memory_snapshot_dict()},
         )
 
     # --- Framework Integration ---
@@ -146,14 +161,17 @@ class GoogleADKAdapter(BaseAdapter):
             self._emit_agent_config(agent_name, callback_context)
             tid = threading.get_ident()
             start_ns = time.time_ns()
+            user_content = getattr(callback_context, "user_content", None)
             with self._adapter_lock:
                 self._agent_starts[tid] = start_ns
+                self._agent_inputs[tid] = user_content
+                self._agent_tools[tid] = []
             self.emit_dict_event(
                 "agent.input",
                 {
                     "framework": "google_adk",
                     "agent_name": agent_name,
-                    "input": self._safe_serialize(getattr(callback_context, "user_content", None)),
+                    "input": self._safe_serialize(user_content),
                     "timestamp_ns": start_ns,
                 },
             )
@@ -170,15 +188,25 @@ class GoogleADKAdapter(BaseAdapter):
             end_ns = time.time_ns()
             with self._adapter_lock:
                 start_ns = self._agent_starts.pop(tid, 0)
+                user_content = self._agent_inputs.pop(tid, None)
+                tool_names = self._agent_tools.pop(tid, [])
             duration_ns = end_ns - start_ns if start_ns else 0
+            agent_output = getattr(callback_context, "agent_output", None)
             self.emit_dict_event(
                 "agent.output",
                 {
                     "framework": "google_adk",
                     "agent_name": agent_name,
-                    "output": self._safe_serialize(getattr(callback_context, "agent_output", None)),
+                    "output": self._safe_serialize(agent_output),
                     "duration_ns": duration_ns,
                 },
+            )
+            # Cross-poll #1: persist this turn into memory.
+            self.record_memory_turn(
+                agent_name=agent_name,
+                input_data=self._safe_serialize(user_content),
+                output_data=self._safe_serialize(agent_output),
+                tools=tool_names or None,
             )
         except Exception:
             logger.warning("Error in after_agent_callback", exc_info=True)
@@ -269,6 +297,14 @@ class GoogleADKAdapter(BaseAdapter):
                     "latency_ms": latency_ms,
                 },
             )
+            # Memory persistence: record this tool name under the
+            # in-flight agent turn so the procedural-pattern detector
+            # sees it. Same thread as the agent that fired the tool.
+            tid = threading.get_ident()
+            with self._adapter_lock:
+                bucket = self._agent_tools.get(tid)
+                if bucket is not None:
+                    bucket.append(str(tool_name))
         except Exception:
             logger.warning("Error in after_tool_callback", exc_info=True)
         return None
@@ -300,6 +336,8 @@ class GoogleADKAdapter(BaseAdapter):
         agent_name: str | None = None,
         output: Any = None,
         error: Exception | None = None,
+        input_data: Any = None,
+        tools: list[str] | None = None,
     ) -> None:
         if not self._connected:
             return
@@ -308,6 +346,14 @@ class GoogleADKAdapter(BaseAdapter):
             end_ns = time.time_ns()
             with self._adapter_lock:
                 start_ns = self._agent_starts.pop(tid, 0)
+                if input_data is None:
+                    input_data = self._agent_inputs.pop(tid, None)
+                else:
+                    self._agent_inputs.pop(tid, None)
+                if tools is None:
+                    tools = self._agent_tools.pop(tid, []) or None
+                else:
+                    self._agent_tools.pop(tid, None)
             duration_ns = end_ns - start_ns if start_ns else 0
             payload: dict[str, Any] = {
                 "framework": "google_adk",
@@ -318,6 +364,14 @@ class GoogleADKAdapter(BaseAdapter):
             if error:
                 payload["error"] = str(error)
             self.emit_dict_event("agent.output", payload)
+            # Cross-poll #1: persist this turn into memory.
+            self.record_memory_turn(
+                agent_name=agent_name,
+                input_data=self._safe_serialize(input_data),
+                output_data=self._safe_serialize(output),
+                error=str(error) if error else None,
+                tools=tools,
+            )
         except Exception:
             logger.warning("Error in on_agent_end", exc_info=True)
 
