@@ -18,6 +18,10 @@ from layerlens.instrument._vendored.events_l1_io import (
     AgentInputEvent,
     AgentOutputEvent,
 )
+from layerlens.instrument._vendored.events_l2_code import (
+    CodeInfo,
+    AgentCodeEvent,
+)
 from layerlens.instrument._vendored.events_l3_model import ModelInvokeEvent
 from layerlens.instrument._vendored.events_l5_tools import (
     ToolCallEvent,
@@ -57,6 +61,9 @@ __all__ = [
     "AgentInputEvent",
     "AgentOutputEvent",
     "MessageRole",
+    # L2
+    "AgentCodeEvent",
+    "CodeInfo",
     # L3
     "ModelInvokeEvent",
     # L4

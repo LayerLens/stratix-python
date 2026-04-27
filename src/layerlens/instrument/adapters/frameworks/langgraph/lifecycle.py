@@ -10,6 +10,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any, TypeVar
 from dataclasses import field, dataclass
+from collections.abc import Callable
 
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
@@ -21,6 +22,18 @@ from layerlens.instrument.adapters._base.adapter import (
 )
 from layerlens.instrument.adapters._base.capture import CaptureConfig
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
+from layerlens.instrument.adapters.frameworks.langgraph.nodes import (
+    _RUNTIME_REPO_SENTINEL,
+    _RUNTIME_COMMIT_SENTINEL,
+    _sha256,
+    _zero_hash,
+    _truncate_error,
+    _safe_state_keys,
+    _resolve_callable_module,
+    _resolve_callable_qualname,
+    _resolve_callable_artifact_hash,
+    _resolve_callable_signature_descriptor,
+)
 from layerlens.instrument.adapters.frameworks.langgraph.state import LangGraphStateAdapter
 
 if TYPE_CHECKING:
@@ -341,6 +354,7 @@ class LayerLensLangGraphAdapter(BaseAdapter):
         execution: GraphExecution,
         node_name: str,
         state: Any,
+        node_callable: Callable[..., Any] | None = None,
     ) -> dict[str, Any]:
         """
         Handle node execution start.
@@ -349,18 +363,29 @@ class LayerLensLangGraphAdapter(BaseAdapter):
         transition to it so that agent-to-agent handoffs are detected
         and emitted.
 
+        The ``node_callable`` is captured into the node context so that
+        :meth:`on_node_end` can emit the L2 :class:`AgentCodeEvent`
+        with deterministic identity-derived hashes per spec
+        ``04a-langgraph-adapter-spec.md`` table line 57.
+
         Args:
             execution: Execution tracking object
             node_name: Name of the node
             state: Current state
+            node_callable: The node callable (used to derive L2 identity
+                hashes when the node exits). Optional — when omitted,
+                the L2 envelope is still emitted with sentinel identity
+                values rather than being skipped.
 
         Returns:
             Node execution context for tracking
         """
-        node_context = {
+        node_context: dict[str, Any] = {
             "node_name": node_name,
             "start_time_ns": time.time_ns(),
             "state_hash_before": self._state_adapter.get_hash(state),
+            "node_callable": node_callable,
+            "input_state_keys": _safe_state_keys(state),
         }
 
         if self._handoff_detector is not None:
@@ -382,7 +407,10 @@ class LayerLensLangGraphAdapter(BaseAdapter):
         Handle node execution end.
 
         Emits:
-        - agent.state.change (if state changed at this node)
+        - ``agent.code`` (L2) — always, on success and error path, per
+          spec ``04a-langgraph-adapter-spec.md`` table line 57.
+        - ``agent.state.change`` (cross-cutting) — only when boundary
+          hashes differ.
 
         Args:
             execution: Execution tracking object
@@ -393,11 +421,20 @@ class LayerLensLangGraphAdapter(BaseAdapter):
         node_context["end_time_ns"] = time.time_ns()
         node_context["state_hash_after"] = self._state_adapter.get_hash(state)
         node_context["duration_ns"] = node_context["end_time_ns"] - node_context["start_time_ns"]
+        node_context["output_state_keys"] = _safe_state_keys(state)
 
-        if error:
-            node_context["error"] = str(error)
+        if error is not None:
+            error_class, truncated, was_truncated = _truncate_error(error)
+            node_context["error"] = truncated
+            node_context["error_class"] = error_class
+            node_context["error_truncated"] = was_truncated
 
         execution.node_executions.append(node_context)
+
+        # L2: emit AgentCodeEvent on every node execution (success or
+        # error). Spec 04a §3 table line 57 requires this regardless of
+        # state-change outcome.
+        self._emit_node_agent_code(execution, node_context)
 
         # Emit state change if node modified state (cross-cutting — always enabled)
         if node_context["state_hash_before"] != node_context["state_hash_after"]:
@@ -409,6 +446,106 @@ class LayerLensLangGraphAdapter(BaseAdapter):
                     "node_name": node_context["node_name"],
                     "before_hash": node_context["state_hash_before"],
                     "after_hash": node_context["state_hash_after"],
+                },
+            )
+
+    def _emit_node_agent_code(
+        self,
+        execution: GraphExecution,
+        node_context: dict[str, Any],
+    ) -> None:
+        """Emit an L2 ``AgentCodeEvent`` for a node execution.
+
+        Routes through :meth:`emit_event` (typed payload, with
+        :class:`CaptureConfig` gating + circuit-breaker + multi-tenant
+        ``org_id`` stamping). Falls back to :meth:`emit_dict_event` if
+        the typed-event vendored module is unavailable. On any failure
+        logs at DEBUG and returns silently — emission failures must
+        never break a graph execution.
+        """
+        callable_obj = node_context.get("node_callable")
+        node_name = node_context.get("node_name", "")
+        repo = (
+            _resolve_callable_module(callable_obj)
+            if callable_obj is not None
+            else _RUNTIME_REPO_SENTINEL
+        )
+        artifact_hash = (
+            _resolve_callable_artifact_hash(callable_obj)
+            if callable_obj is not None
+            else _zero_hash()
+        )
+        signature_descriptor = (
+            _resolve_callable_signature_descriptor(callable_obj)
+            if callable_obj is not None
+            else ""
+        )
+        qualname = (
+            _resolve_callable_qualname(callable_obj)
+            if callable_obj is not None
+            else node_name
+        )
+
+        status = "error" if node_context.get("error_class") is not None else "success"
+        in_keys: list[str] = list(node_context.get("input_state_keys") or [])
+        out_keys: list[str] = list(node_context.get("output_state_keys") or [])
+
+        # config_hash: deterministic descriptor of node identity +
+        # outcome shape. Only key NAMES, never values — PII-safe.
+        config_descriptor = "|".join(
+            [
+                "graph_id=" + execution.graph_id,
+                "node_name=" + node_name,
+                "qualname=" + qualname,
+                "signature=" + signature_descriptor,
+                "status=" + status,
+                "in_keys=" + ",".join(in_keys),
+                "out_keys=" + ",".join(out_keys),
+            ]
+        )
+        config_hash = _sha256(config_descriptor.encode("utf-8"))
+
+        build_info: dict[str, Any] = {
+            "node_name": node_name,
+            "node_qualname": qualname,
+            "graph_id": execution.graph_id,
+            "execution_id": execution.execution_id,
+            "execution_duration_ns": node_context.get("duration_ns", 0),
+            "input_state_keys": in_keys,
+            "output_state_keys": out_keys,
+            "status": status,
+        }
+        if node_context.get("error_class") is not None:
+            build_info["error_class"] = node_context["error_class"]
+            build_info["error_truncated"] = bool(node_context.get("error_truncated"))
+
+        try:
+            from layerlens.instrument._vendored.events import AgentCodeEvent
+
+            event = AgentCodeEvent.create(
+                repo=repo,
+                commit=_RUNTIME_COMMIT_SENTINEL,
+                artifact_hash=artifact_hash,
+                config_hash=config_hash,
+                build_info=build_info,
+            )
+            self.emit_event(event)
+        except Exception:
+            # Typed-event path failed; fall back to dict emission so
+            # the L2 envelope still reaches the trace. emit_dict_event
+            # applies the same CaptureConfig gate via the event_type
+            # mapping in capture.py.
+            self.emit_dict_event(
+                "agent.code",
+                {
+                    "code": {
+                        "repo": repo,
+                        "commit": _RUNTIME_COMMIT_SENTINEL,
+                        "artifact_hash": artifact_hash,
+                        "config_hash": config_hash,
+                        "build_info": build_info,
+                    },
+                    "node_name": node_name,
                 },
             )
 
