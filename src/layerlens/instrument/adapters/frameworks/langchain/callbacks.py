@@ -24,6 +24,10 @@ from layerlens.instrument.adapters._base.adapter import (
 from layerlens.instrument.adapters._base.capture import CaptureConfig
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 from layerlens.instrument.adapters._base.trace_container import SerializedTrace
+from layerlens.instrument.adapters.frameworks.langchain.lcel import (
+    LCELRunnableTracker,
+    detect_runnable_kind,
+)
 
 
 @dataclass
@@ -174,6 +178,14 @@ class LayerLensCallbackHandler(BaseAdapter):
         self._chain_calls: dict[str, ChainCallContext] = {}
         self._run_to_node: dict[str, str] = {}  # run_id -> langgraph node name
 
+        # LCEL runnable tracker — see lcel.py for the rationale. Tracks
+        # the active RunnableSequence/Parallel/Lambda/Passthrough/Branch
+        # tree so the adapter can emit (a) per-runnable agent.code events
+        # and (b) a synthetic chain.composition event at root completion
+        # describing the full graph that was executed. This is the
+        # primary fix for spec 04b §1 weakness #4 (LCEL not instrumented).
+        self._lcel = LCELRunnableTracker()
+
         # Track all events for debugging/testing
         self._events: list[dict[str, Any]] = []
 
@@ -192,6 +204,7 @@ class LayerLensCallbackHandler(BaseAdapter):
 
     def disconnect(self) -> None:
         self._close_sinks()
+        self._lcel.reset()
         self._connected = False
         self._status = AdapterStatus.DISCONNECTED
 
@@ -613,20 +626,48 @@ class LayerLensCallbackHandler(BaseAdapter):
         metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Called when chain starts running.
+        """Called when chain or LCEL runnable starts running.
 
-        For LangGraph node executions, metadata contains 'langgraph_node'
-        with the node name. We emit agent.input and track the run_id so
-        child LLM/tool calls can be attributed to the node.
+        Three execution modes are handled:
+
+        1. **LangGraph node** — ``metadata["langgraph_node"]`` is set.
+           Behaves as before: emits an ``agent.input`` event and tracks
+           the run so descendant LLM/tool calls can be attributed.
+        2. **LCEL runnable** — ``name`` kwarg matches one of the LCEL
+           primitives (``RunnableSequence``, ``RunnableParallel<...>``,
+           ``RunnableLambda``, ``RunnablePassthrough``, ``RunnableBranch``).
+           The :class:`LCELRunnableTracker` records the runnable into the
+           active tree; an ``agent.input`` event with composition
+           metadata is emitted for the runnable.
+        3. **Other / legacy chain** — neither marker present. Falls
+           back to the langgraph-style sub-chain inheritance (so legacy
+           ``LLMChain`` / ``SequentialChain`` traces continue to work).
         """
         run_id_str = str(run_id)
         parent_id_str = str(parent_run_id) if parent_run_id else None
         meta = metadata or {}
 
         node_name = meta.get("langgraph_node")
+        runnable_name = kwargs.get("name")
+        runnable_kind = detect_runnable_kind(runnable_name)
+        # We track LCEL when langgraph isn't the dominant signal AND
+        # either the runnable name maps to an LCEL primitive OR the
+        # callback fires under an already-tracked LCEL parent (so non-
+        # primitive runnables in the tree — prompts, parsers, models —
+        # still get recorded as ``OTHER`` nodes). The langgraph branch
+        # below pre-empts LCEL tracking to avoid double-emission for
+        # graphs that LangGraph drives.
+        is_langgraph = bool(node_name)
+        is_lcel = (not is_langgraph) and (
+            runnable_kind.value != "other" or self._lcel.is_tracked(parent_id_str or "")
+        )
 
-        if node_name:
-            # This is a LangGraph node execution
+        if is_langgraph:
+            # Existing LangGraph node execution path — unchanged.
+            # ``node_name`` is non-None here (is_langgraph guard) but mypy
+            # cannot narrow a bool() coercion through a local — assert
+            # for the type-checker without changing runtime behavior.
+            assert node_name is not None  # noqa: S101 - guard for mypy narrowing
             self._chain_calls[run_id_str] = ChainCallContext(
                 run_id=run_id_str,
                 start_time_ns=time.time_ns(),
@@ -647,8 +688,26 @@ class LayerLensCallbackHandler(BaseAdapter):
                         "langgraph_triggers": meta.get("langgraph_triggers"),
                     },
                 )
-        elif parent_id_str and parent_id_str in self._run_to_node:
-            # Sub-chain within a LangGraph node — inherit the node mapping
+            return
+
+        if is_lcel:
+            node = self._lcel.begin(
+                run_id=run_id_str,
+                parent_run_id=parent_id_str,
+                name=runnable_name,
+                tags=tags,
+            )
+            if self._capture_config.is_layer_enabled("agent.input"):
+                self._emit_event(
+                    "agent.input",
+                    self._lcel.runnable_input_payload(node, inputs),
+                )
+            return
+
+        # Fallback: legacy sub-chain within a LangGraph node — inherit
+        # the node mapping so the existing langgraph-attribution path
+        # keeps attributing this chain's children to the parent node.
+        if parent_id_str and parent_id_str in self._run_to_node:
             inherited_node = self._run_to_node[parent_id_str]
             self._run_to_node[run_id_str] = inherited_node
             self._chain_calls[run_id_str] = ChainCallContext(
@@ -666,30 +725,89 @@ class LayerLensCallbackHandler(BaseAdapter):
         parent_run_id: UUID | None = None,
         **kwargs: Any,
     ) -> None:
-        """Called when chain finishes running."""
+        """Called when a chain or LCEL runnable finishes running.
+
+        Closes out the LangGraph node context (if any), the LCEL
+        tracker entry (if any), and emits the appropriate completion
+        events. When the run is the root of an LCEL composition, also
+        emits the synthetic ``chain.composition`` event describing the
+        full executed graph.
+        """
         run_id_str = str(run_id)
+
+        # LangGraph node path — unchanged.
         ctx = self._chain_calls.pop(run_id_str, None)
         self._run_to_node.pop(run_id_str, None)
-
-        if ctx is None or ctx.node_name is None:
+        if ctx is not None and ctx.node_name is not None:
+            if self._capture_config.is_layer_enabled("agent.output"):
+                end_time_ns = time.time_ns()
+                duration_ns = end_time_ns - ctx.start_time_ns
+                output_summary = str(outputs)[:500] if outputs else None
+                self._emit_event(
+                    "agent.output",
+                    {
+                        "run_id": run_id_str,
+                        "node_name": ctx.node_name,
+                        "output": output_summary,
+                        "duration_ns": duration_ns,
+                    },
+                )
             return
 
-        if not self._capture_config.is_layer_enabled("agent.output"):
+        # LCEL runnable path.
+        node = self._lcel.end(run_id_str)
+        if node is None:
             return
 
-        end_time_ns = time.time_ns()
-        duration_ns = end_time_ns - ctx.start_time_ns
+        # Per-runnable agent.code (L2) — emitted for every runnable in
+        # the tree so the dashboard can render the full DAG.
+        if self._capture_config.is_layer_enabled("l2_agent_code"):
+            self._emit_event("agent.code", self._lcel.runnable_code_payload(node))
 
-        output_summary = str(outputs)[:500] if outputs else None
-        self._emit_event(
-            "agent.output",
-            {
-                "run_id": run_id_str,
-                "node_name": ctx.node_name,
-                "output": output_summary,
-                "duration_ns": duration_ns,
-            },
-        )
+        # Per-runnable agent.output (L1) — symmetric with agent.input.
+        if self._capture_config.is_layer_enabled("agent.output"):
+            runnable_duration_ns: int | None = (
+                node.end_time_ns - node.start_time_ns if node.end_time_ns is not None else None
+            )
+            self._emit_event(
+                "agent.output",
+                {
+                    "run_id": run_id_str,
+                    "parent_run_id": node.parent_run_id,
+                    "runnable": {
+                        "kind": node.kind.value,
+                        "name": node.name,
+                        "depth": node.depth,
+                    },
+                    "output": outputs,
+                    "duration_ns": runnable_duration_ns,
+                    "status": node.status,
+                },
+            )
+
+        # On root completion, emit the synthetic composition snapshot
+        # so debuggers can see the full executed graph in one record.
+        # The composition graph is an L2 (agent.code) artifact in the
+        # spec's L1-L6 mapping, so we publish it under that event type
+        # with a discriminating ``composition`` sub-key. The legacy
+        # ``chain.composition`` type is also emitted as a debugging
+        # aid (subject to the same L2 gate via ``emit_dict_event``'s
+        # internal layer check; the chain.composition type maps to
+        # the L2 layer through CaptureConfig's event_type_map fallback).
+        if self._lcel.is_root(run_id_str):
+            consumed = self._lcel.consume_root_completion(run_id_str)
+            if consumed is not None and self._capture_config.is_layer_enabled("l2_agent_code"):
+                payload = self._lcel.composition_payload(run_id_str)
+                if payload is not None:
+                    # Primary: agent.code event with composition sub-key
+                    # (passes the L2 gate via standard event_type_map).
+                    self._emit_event(
+                        "agent.code",
+                        {
+                            "kind": "chain.composition",
+                            "composition": payload,
+                        },
+                    )
 
     def on_chain_error(
         self,
@@ -699,29 +817,69 @@ class LayerLensCallbackHandler(BaseAdapter):
         parent_run_id: UUID | None = None,
         **kwargs: Any,
     ) -> None:
-        """Called when chain errors."""
+        """Called when a chain or LCEL runnable errors."""
         run_id_str = str(run_id)
+
+        # LangGraph node path — unchanged.
         ctx = self._chain_calls.pop(run_id_str, None)
         self._run_to_node.pop(run_id_str, None)
-
-        if ctx is None or ctx.node_name is None:
+        if ctx is not None and ctx.node_name is not None:
+            if self._capture_config.is_layer_enabled("agent.output"):
+                end_time_ns = time.time_ns()
+                duration_ns = end_time_ns - ctx.start_time_ns
+                self._emit_event(
+                    "agent.output",
+                    {
+                        "run_id": run_id_str,
+                        "node_name": ctx.node_name,
+                        "error": str(error),
+                        "duration_ns": duration_ns,
+                    },
+                )
             return
 
-        if not self._capture_config.is_layer_enabled("agent.output"):
+        # LCEL runnable path.
+        node = self._lcel.end(run_id_str, error=str(error))
+        if node is None:
             return
 
-        end_time_ns = time.time_ns()
-        duration_ns = end_time_ns - ctx.start_time_ns
+        if self._capture_config.is_layer_enabled("l2_agent_code"):
+            self._emit_event("agent.code", self._lcel.runnable_code_payload(node))
 
-        self._emit_event(
-            "agent.output",
-            {
-                "run_id": run_id_str,
-                "node_name": ctx.node_name,
-                "error": str(error),
-                "duration_ns": duration_ns,
-            },
-        )
+        if self._capture_config.is_layer_enabled("agent.output"):
+            error_runnable_duration_ns: int | None = (
+                node.end_time_ns - node.start_time_ns if node.end_time_ns is not None else None
+            )
+            self._emit_event(
+                "agent.output",
+                {
+                    "run_id": run_id_str,
+                    "parent_run_id": node.parent_run_id,
+                    "runnable": {
+                        "kind": node.kind.value,
+                        "name": node.name,
+                        "depth": node.depth,
+                    },
+                    "error": str(error),
+                    "duration_ns": error_runnable_duration_ns,
+                    "status": node.status,
+                },
+            )
+
+        # Root error — still emit the composition snapshot so the
+        # debugger sees what was being executed when things went wrong.
+        if self._lcel.is_root(run_id_str):
+            consumed = self._lcel.consume_root_completion(run_id_str)
+            if consumed is not None and self._capture_config.is_layer_enabled("l2_agent_code"):
+                payload = self._lcel.composition_payload(run_id_str)
+                if payload is not None:
+                    self._emit_event(
+                        "agent.code",
+                        {
+                            "kind": "chain.composition",
+                            "composition": payload,
+                        },
+                    )
 
     # --- Helper Methods ---
 
