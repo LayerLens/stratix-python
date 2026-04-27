@@ -74,6 +74,18 @@ def test_adapter_info_and_health() -> None:
     assert health.framework_name == "google_adk"
 
 
+def test_adapter_info_declares_streaming_and_replay_capabilities() -> None:
+    """Google ADK ``BeforeModelCallback`` / ``AfterModelCallback`` fire on
+    every chunk in a streaming generation, so STREAMING is supported.
+    The adapter also implements ``serialize_for_replay``.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = GoogleADKAdapter().get_adapter_info()
+    assert AdapterCapability.STREAMING in info.capabilities
+    assert AdapterCapability.REPLAY in info.capabilities
+
+
 def test_instrument_agent_attaches_callbacks() -> None:
     adapter = GoogleADKAdapter(stratix=_RecordingStratix(), capture_config=CaptureConfig.full())
     adapter.connect()

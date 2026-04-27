@@ -1,7 +1,7 @@
 """
 Semantic Kernel Filter Implementations
 
-Provides STRATIX-instrumented filter classes for the SK filter API:
+Provides LayerLens-instrumented filter classes for the SK filter API:
 - LayerLensFunctionFilter: Function invocation pre/post hooks
 - LayerLensPromptRenderFilter: Prompt template rendering hooks
 - LayerLensAutoFunctionFilter: Auto-invoked function hooks

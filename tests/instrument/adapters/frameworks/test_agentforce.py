@@ -143,7 +143,23 @@ def test_package_reexports_full_public_api() -> None:
 
 
 def test_package_does_not_eagerly_import_requests() -> None:
-    """Importing the adapter package must not pull in ``requests``."""
+    """Importing the adapter package must not pull in ``requests``.
+
+    Implementation note: this test deletes ``agentforce.*`` entries from
+    ``sys.modules`` so the re-import is measured against a clean slate.
+    The original module objects are saved and restored after the
+    assertion so subsequent tests still see the same ``AgentForceAdapter``
+    class object — otherwise ``is`` identity checks elsewhere in the
+    suite (e.g., ``test_adapter_class_registered``) would fail because
+    the second import creates a fresh class object.
+    """
+    # Snapshot existing agentforce module objects so we can restore them.
+    saved_agentforce = {
+        mod: sys.modules[mod]
+        for mod in list(sys.modules)
+        if mod.startswith("layerlens.instrument.adapters.frameworks.agentforce")
+    }
+
     # Drop any prior import so the assertion measures the package itself.
     for mod in list(sys.modules):
         if mod == "requests" or mod.startswith("requests."):
@@ -154,11 +170,19 @@ def test_package_does_not_eagerly_import_requests() -> None:
         if mod.startswith("layerlens.instrument.adapters.frameworks.agentforce"):
             del sys.modules[mod]
 
-    import layerlens.instrument.adapters.frameworks.agentforce  # noqa: F401
+    try:
+        import layerlens.instrument.adapters.frameworks.agentforce  # noqa: F401
 
-    assert "requests" not in sys.modules, (
-        "agentforce adapter must not import requests at module load time"
-    )
+        assert "requests" not in sys.modules, (
+            "agentforce adapter must not import requests at module load time"
+        )
+    finally:
+        # Restore the original module objects so other tests in the suite
+        # see the same class identity they imported at collection time.
+        for mod in list(sys.modules):
+            if mod.startswith("layerlens.instrument.adapters.frameworks.agentforce"):
+                del sys.modules[mod]
+        sys.modules.update(saved_agentforce)
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +217,17 @@ def test_lifecycle_with_prebuilt_connection() -> None:
     adapter.disconnect()
     assert adapter.is_connected is False
     assert adapter.status == AdapterStatus.DISCONNECTED
+
+
+def test_adapter_info_declares_replay_capability() -> None:
+    """AgentForce implements ``serialize_for_replay`` (Salesforce session
+    backfill is the entire reason this adapter exists), so REPLAY must
+    appear in the declared capabilities.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = AgentForceAdapter().get_adapter_info()
+    assert AdapterCapability.REPLAY in info.capabilities
 
 
 def test_health_message_warns_when_token_expired() -> None:
@@ -634,6 +669,58 @@ def test_trust_layer_to_layerlens_policy_emits_well_formed_yaml() -> None:
     assert "threshold: 0.9" in yaml_str
     assert "LayerLens Policy" in yaml_str
     assert "stratix.sdk" not in yaml_str
+
+
+def test_trust_layer_yaml_has_no_stratix_brand_leak() -> None:
+    """Regression: customer-visible YAML must contain LayerLens branding only.
+
+    Trust Layer policies are written to a customer's source tree (and may be
+    committed to their VCS / shared with auditors). They MUST NOT leak the
+    legacy ``STRATIX`` brand or internal ``stratix.sdk.python.*`` module
+    paths. This test exercises the full surface (header comments, generator
+    line, body, alias output) so any future regression is caught immediately.
+    """
+    importer = TrustLayerImporter(connection=_connection())
+    cfg = TrustLayerConfig(
+        guardrails=[
+            TrustLayerGuardrail(
+                name="toxicity_detection",
+                type="toxicity",
+                action="block",
+                threshold=0.7,
+            ),
+            TrustLayerGuardrail(name="pii_detection", type="pii"),
+            TrustLayerGuardrail(name="prompt_injection", type="prompt_injection"),
+            TrustLayerGuardrail(
+                name="hallucination_detection",
+                type="hallucination",
+            ),
+        ],
+        data_masking_enabled=True,
+        zero_data_retention=True,
+        audit_trail_enabled=True,
+    )
+
+    yaml_str = importer.to_layerlens_policy(cfg, policy_name="customer_policy")
+
+    # Positive assertions: LayerLens branding is present.
+    assert "# LayerLens Policy" in yaml_str
+    assert "layerlens.instrument.adapters.frameworks.agentforce.trust_layer" in yaml_str
+
+    # Negative assertions: no STRATIX / stratix.sdk strings escape into the
+    # customer-visible YAML output. Casing variants intentional.
+    assert "STRATIX" not in yaml_str
+    assert "Stratix" not in yaml_str
+    assert "stratix.sdk" not in yaml_str
+    assert "stratix.sdk.python" not in yaml_str
+    assert "ateam" not in yaml_str
+
+    # The deprecated alias must produce identical output (same brand audit).
+    with pytest.warns(DeprecationWarning):
+        legacy_yaml = importer.to_stratix_policy(cfg, policy_name="customer_policy")
+    assert legacy_yaml == yaml_str
+    assert "STRATIX" not in legacy_yaml
+    assert "stratix.sdk" not in legacy_yaml
 
 
 def test_trust_layer_deprecation_alias_warns_and_returns_same() -> None:

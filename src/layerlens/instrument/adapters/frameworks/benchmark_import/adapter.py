@@ -1,5 +1,5 @@
 """
-STRATIX Benchmark Import Adapter (ADP-074)
+LayerLens Benchmark Import Adapter (ADP-074)
 
 Imports external benchmark datasets from:
 - HuggingFace Datasets (via ``datasets`` library with streaming)
@@ -7,7 +7,7 @@ Imports external benchmark datasets from:
 - Custom sources: CSV, JSON, Parquet files
 
 Features:
-- Automatic schema detection and mapping to Stratix benchmark format
+- Automatic schema detection and mapping to LayerLens benchmark format
 - Versioned tracking with source, version, and import timestamp
 - Comparison of external benchmark scores with internal evaluations
 """
@@ -69,7 +69,7 @@ class ImportResult(BaseModel):
 
 class BenchmarkImportAdapter:
     """
-    Imports external benchmark datasets into Stratix evaluation spaces.
+    Imports external benchmark datasets into LayerLens evaluation spaces.
 
     Usage::
 

@@ -44,7 +44,7 @@ _DEFAULT_GUARDRAILS = [
 
 class TrustLayerImporter:
     """
-    Import Einstein Trust Layer configuration and convert to Stratix policy.
+    Import Einstein Trust Layer configuration and convert to a LayerLens policy.
 
     Usage::
 

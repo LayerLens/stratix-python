@@ -91,6 +91,18 @@ def test_adapter_info_and_health() -> None:
     assert health.framework_name == "openai_agents"
 
 
+def test_adapter_info_declares_streaming_and_replay_capabilities() -> None:
+    """The OpenAI Agents SDK trace processor receives ``GenerationSpanData``
+    for every chunk in a streaming response, so STREAMING is supported. The
+    adapter also implements ``serialize_for_replay``.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = OpenAIAgentsAdapter().get_adapter_info()
+    assert AdapterCapability.STREAMING in info.capabilities
+    assert AdapterCapability.REPLAY in info.capabilities
+
+
 def test_agent_span_emits_input_output_and_config() -> None:
     stratix = _RecordingStratix()
     adapter = OpenAIAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())

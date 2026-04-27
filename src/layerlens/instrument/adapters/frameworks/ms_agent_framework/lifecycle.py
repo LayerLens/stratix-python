@@ -120,6 +120,8 @@ class MSAgentAdapter(BaseAdapter):
                 AdapterCapability.TRACE_MODELS,
                 AdapterCapability.TRACE_STATE,
                 AdapterCapability.TRACE_HANDOFFS,
+                AdapterCapability.STREAMING,
+                AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for Microsoft Agent Framework",
         )

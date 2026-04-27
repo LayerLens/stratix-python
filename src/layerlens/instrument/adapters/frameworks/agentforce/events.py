@@ -110,7 +110,7 @@ class PlatformEventSubscriber:
         self._running = True
         self._thread = threading.Thread(
             target=self._subscribe_loop,
-            name="stratix-sf-events",
+            name="layerlens-sf-events",
             daemon=True,
         )
         self._thread.start()

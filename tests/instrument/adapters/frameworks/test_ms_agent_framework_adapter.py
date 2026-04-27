@@ -78,6 +78,17 @@ def test_adapter_info_and_health() -> None:
     assert health.framework_name == "ms_agent_framework"
 
 
+def test_adapter_info_declares_streaming_and_replay_capabilities() -> None:
+    """MS Agent Framework wraps ``ChatCompletionAgent.invoke_stream`` and
+    implements ``serialize_for_replay``; both must be declared.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = MSAgentAdapter().get_adapter_info()
+    assert AdapterCapability.STREAMING in info.capabilities
+    assert AdapterCapability.REPLAY in info.capabilities
+
+
 def test_instrument_chat_wraps_invoke_and_emits_config() -> None:
     stratix = _RecordingStratix()
     adapter = MSAgentAdapter(stratix=stratix, capture_config=CaptureConfig.full())

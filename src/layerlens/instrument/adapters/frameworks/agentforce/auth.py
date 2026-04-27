@@ -165,7 +165,7 @@ class SalesforceConnection:
                 if status is not None and 400 <= status < 500 and status != 429:
                     raise SalesforceAuthError(
                         f"Salesforce authentication failed (HTTP {status}). "
-                        f"Check credentials and re-authenticate using `stratix agentforce connect`."
+                        f"Check credentials and re-authenticate using `layerlens agentforce connect`."
                         f" "
                         f"Endpoint: {endpoint}",
                         status_code=status,
@@ -198,7 +198,7 @@ class SalesforceConnection:
         raise SalesforceAuthError(
             f"Salesforce authentication failed after {self.max_retries} attempts. "
             f"Last error: {last_error}. "
-            f"Re-authenticate using `stratix agentforce connect`. "
+            f"Re-authenticate using `layerlens agentforce connect`. "
             f"Endpoint: {endpoint}",
             endpoint=endpoint,
         )

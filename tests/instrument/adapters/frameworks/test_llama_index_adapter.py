@@ -82,6 +82,19 @@ def test_adapter_info_and_health() -> None:
     assert health.framework_name == "llama_index"
 
 
+def test_adapter_info_declares_streaming_and_replay_capabilities() -> None:
+    """LlamaIndex's Instrumentation Module emits per-chunk events on
+    streaming chat (``LLMChatStartEvent`` / ``LLMChatEndEvent``), so
+    STREAMING is supported. The adapter also implements
+    ``serialize_for_replay``.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = LlamaIndexAdapter().get_adapter_info()
+    assert AdapterCapability.STREAMING in info.capabilities
+    assert AdapterCapability.REPLAY in info.capabilities
+
+
 def test_handle_llm_end_emits_model_invoke_and_cost() -> None:
     stratix = _RecordingStratix()
     adapter = LlamaIndexAdapter(stratix=stratix, capture_config=CaptureConfig.full())

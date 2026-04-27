@@ -126,6 +126,7 @@ class AgentForceAdapter(BaseAdapter):
             capabilities=[
                 AdapterCapability.TRACE_MODELS,
                 AdapterCapability.TRACE_TOOLS,
+                AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for Salesforce AgentForce trace import",
         )

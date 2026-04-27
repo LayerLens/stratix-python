@@ -1,5 +1,5 @@
 """
-STRATIX Semantic Kernel Lifecycle Hooks
+LayerLens Semantic Kernel Lifecycle Hooks
 
 Provides the main SemanticKernelAdapter class. Instruments SK Kernel
 instances via the official filter API (FunctionInvocationFilter,
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 class SemanticKernelAdapter(BaseAdapter):
     """
-    Main adapter for integrating STRATIX with Microsoft Semantic Kernel.
+    Main adapter for integrating LayerLens with Microsoft Semantic Kernel.
 
     Instruments Kernel instances via the official SK filter API to capture
     plugin invocations, planner executions, memory operations, and LLM calls.
@@ -109,6 +109,7 @@ class SemanticKernelAdapter(BaseAdapter):
                 AdapterCapability.TRACE_TOOLS,
                 AdapterCapability.TRACE_MODELS,
                 AdapterCapability.TRACE_STATE,
+                AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for Microsoft Semantic Kernel",
         )
@@ -129,7 +130,7 @@ class SemanticKernelAdapter(BaseAdapter):
 
     def instrument_kernel(self, kernel: Any) -> Any:
         """
-        Instrument a Semantic Kernel instance with STRATIX tracing.
+        Instrument a Semantic Kernel instance with LayerLens tracing.
 
         Registers filter instances on the kernel for function invocations,
         prompt rendering, and auto-function invocations.
@@ -490,9 +491,16 @@ class StratixMemoryStore:
     """Semantic Kernel memory store backed by AgentMemoryService.
 
     Implements the SK memory store interface (``save_information``,
-    ``get_nearest_matches``) by delegating to the STRATIX
-    ``AgentMemoryService``.  This allows SK applications to use
-    STRATIX persistent memory without changing their code.
+    ``get_nearest_matches``) by delegating to the LayerLens
+    ``AgentMemoryService``. This allows SK applications to use
+    LayerLens persistent memory without changing their code.
+
+    .. note::
+       The class name retains the historical ``Stratix`` prefix for
+       backward compatibility with existing SK applications that import
+       it directly. A LayerLens-prefixed alias may be added in a future
+       release; the legacy name will continue to work via deprecation
+       alias when that lands.
 
     Usage::
 

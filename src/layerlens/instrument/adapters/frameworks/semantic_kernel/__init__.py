@@ -1,5 +1,5 @@
 """
-STRATIX Semantic Kernel Adapter
+LayerLens Semantic Kernel Adapter
 
 Provides plugin invocation tracing, planner execution tracking,
 and memory operation capture for Microsoft Semantic Kernel.

@@ -85,6 +85,18 @@ def test_adapter_info_and_health() -> None:
     assert health.status == AdapterStatus.HEALTHY
 
 
+def test_adapter_info_declares_streaming_and_replay_capabilities() -> None:
+    """Agno wraps ``Agent.arun`` (async streaming) and implements
+    ``serialize_for_replay``; both must be declared in capabilities so the
+    catalog UI can surface the supported feature set accurately.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = AgnoAdapter().get_adapter_info()
+    assert AdapterCapability.STREAMING in info.capabilities
+    assert AdapterCapability.REPLAY in info.capabilities
+
+
 def test_instrument_agent_wraps_run() -> None:
     adapter = AgnoAdapter(stratix=_RecordingStratix(), capture_config=CaptureConfig.full())
     adapter.connect()

@@ -1,5 +1,5 @@
 """
-STRATIX Embedding Provider Adapter (ADP-060)
+LayerLens Embedding Provider Adapter (ADP-060)
 
 Wraps embedding API calls to capture dimension tracking, batch handling,
 and per-item latency. Supports OpenAI, Cohere, and HuggingFace embedding
@@ -98,8 +98,9 @@ class EmbeddingAdapter(BaseAdapter):
             framework=self.FRAMEWORK,
             capabilities=[
                 AdapterCapability.TRACE_MODELS,
+                AdapterCapability.REPLAY,
             ],
-            author="STRATIX Team",
+            author="LayerLens",
             description="Traces embedding operations across OpenAI, Cohere, and HuggingFace providers",  # noqa: E501
         )
 

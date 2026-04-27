@@ -113,6 +113,7 @@ class StrandsAdapter(BaseAdapter):
                 AdapterCapability.TRACE_TOOLS,
                 AdapterCapability.TRACE_MODELS,
                 AdapterCapability.TRACE_STATE,
+                AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for AWS Strands",
         )

@@ -115,6 +115,8 @@ class LlamaIndexAdapter(BaseAdapter):
                 AdapterCapability.TRACE_MODELS,
                 AdapterCapability.TRACE_STATE,
                 AdapterCapability.TRACE_HANDOFFS,
+                AdapterCapability.STREAMING,
+                AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for LlamaIndex",
         )
@@ -132,7 +134,7 @@ class LlamaIndexAdapter(BaseAdapter):
     # --- Framework Integration ---
 
     def instrument_workflow(self, workflow: Any) -> Any:
-        """Register Stratix event handler with LlamaIndex instrumentation."""
+        """Register LayerLens event handler with LlamaIndex instrumentation."""
         try:
             from llama_index.core.instrumentation import get_dispatcher
 
@@ -150,7 +152,7 @@ class LlamaIndexAdapter(BaseAdapter):
         return workflow
 
     def _create_event_handler(self) -> Any:
-        """Create a LlamaIndex event handler that routes to Stratix."""
+        """Create a LlamaIndex event handler that routes to LayerLens."""
         adapter = self
 
         try:
@@ -163,10 +165,14 @@ class LlamaIndexAdapter(BaseAdapter):
         except ImportError:
             return None
 
-        class StratixEventHandler(BaseEventHandler):  # type: ignore[misc]
+        # Renamed from StratixEventHandler -> LayerLensEventHandler so the
+        # name surfaced in LlamaIndex dispatcher logs / UI carries the
+        # current brand. The class lives in a closure so no external
+        # consumer can have referenced the old name.
+        class LayerLensEventHandler(BaseEventHandler):  # type: ignore[misc]
             @classmethod
             def class_name(cls) -> str:
-                return "StratixEventHandler"
+                return "LayerLensEventHandler"
 
             def handle(self, event: BaseEvent, **kwargs: Any) -> None:
                 try:
@@ -174,10 +180,10 @@ class LlamaIndexAdapter(BaseAdapter):
                 except Exception:
                     logger.warning("Error handling LlamaIndex event", exc_info=True)
 
-        return StratixEventHandler()
+        return LayerLensEventHandler()
 
     def _handle_event(self, event: Any) -> None:
-        """Route LlamaIndex events to appropriate Stratix event emission."""
+        """Route LlamaIndex events to appropriate LayerLens event emission."""
         if not self._connected:
             return
         event_type = type(event).__name__

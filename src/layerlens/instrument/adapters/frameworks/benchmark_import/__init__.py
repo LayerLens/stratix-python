@@ -1,8 +1,8 @@
 """
-STRATIX Benchmark Import Adapter (FEA-1913)
+LayerLens Benchmark Import Adapter (FEA-1913)
 
 Enables importing external benchmark datasets from HuggingFace Datasets,
-HELM, and custom sources (CSV/JSON/Parquet) into Stratix evaluation spaces.
+HELM, and custom sources (CSV/JSON/Parquet) into LayerLens evaluation spaces.
 """
 
 from __future__ import annotations

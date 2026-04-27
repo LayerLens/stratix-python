@@ -1,5 +1,5 @@
 """
-STRATIX Embedding & Vector Store Adapters (FEA-1910)
+LayerLens Embedding & Vector Store Adapters (FEA-1910)
 
 Provides adapters for tracing embedding operations and vector store queries
 across popular providers and databases.

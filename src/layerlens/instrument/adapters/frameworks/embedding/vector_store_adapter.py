@@ -1,5 +1,5 @@
 """
-STRATIX Vector Store Adapter (ADP-061)
+LayerLens Vector Store Adapter (ADP-061)
 
 Traces retrieval operations across popular vector databases:
 Pinecone, Weaviate, and Chroma. Captures query parameters,
@@ -94,8 +94,9 @@ class VectorStoreAdapter(BaseAdapter):
             framework=self.FRAMEWORK,
             capabilities=[
                 AdapterCapability.TRACE_TOOLS,
+                AdapterCapability.REPLAY,
             ],
-            author="STRATIX Team",
+            author="LayerLens",
             description="Traces vector retrieval operations across Pinecone, Weaviate, and Chroma",
         )
 

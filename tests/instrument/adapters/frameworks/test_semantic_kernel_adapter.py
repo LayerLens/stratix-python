@@ -58,6 +58,16 @@ def test_adapter_info_and_health() -> None:
     assert health.framework_name == "semantic_kernel"
 
 
+def test_adapter_info_declares_replay_capability() -> None:
+    """Semantic Kernel adapter implements ``serialize_for_replay`` so
+    REPLAY must appear in the declared capabilities.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = SemanticKernelAdapter().get_adapter_info()
+    assert AdapterCapability.REPLAY in info.capabilities
+
+
 def test_instrument_kernel_registers_filters_and_discovers_plugins() -> None:
     stratix = _RecordingStratix()
     adapter = SemanticKernelAdapter(stratix=stratix, capture_config=CaptureConfig.full())

@@ -5,7 +5,7 @@ Instrumentation strategy: Dual approach
   1. TraceProcessor (primary) — framework-sanctioned, receives all SDK span events
   2. Runner wrapping (secondary) — execution lifecycle hooks
 
-SDK spans map to Stratix events:
+SDK spans map to LayerLens events:
   AgentSpanData      → agent.input / agent.output (L1)
   GenerationSpanData → model.invoke (L3)
   FunctionSpanData   → tool.call (L5a)
@@ -104,6 +104,8 @@ class OpenAIAgentsAdapter(BaseAdapter):
                 AdapterCapability.TRACE_MODELS,
                 AdapterCapability.TRACE_STATE,
                 AdapterCapability.TRACE_HANDOFFS,
+                AdapterCapability.STREAMING,
+                AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for OpenAI Agents SDK",
         )
@@ -121,7 +123,7 @@ class OpenAIAgentsAdapter(BaseAdapter):
     # --- Framework Integration ---
 
     def instrument_runner(self, runner: Any) -> Any:
-        """Register Stratix trace processor with the SDK."""
+        """Register LayerLens trace processor with the SDK."""
         try:
             from agents import add_trace_processor  # type: ignore[import-not-found,unused-ignore]
 
@@ -138,7 +140,7 @@ class OpenAIAgentsAdapter(BaseAdapter):
         return runner
 
     def _create_trace_processor(self) -> Any:
-        """Create a TraceProcessor that routes SDK spans to Stratix events."""
+        """Create a TraceProcessor that routes SDK spans to LayerLens events."""
         adapter = self
 
         try:

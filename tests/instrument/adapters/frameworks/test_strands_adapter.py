@@ -84,6 +84,16 @@ def test_adapter_info_and_health() -> None:
     assert health.framework_name == "strands"
 
 
+def test_adapter_info_declares_replay_capability() -> None:
+    """AWS Strands adapter implements ``serialize_for_replay`` so REPLAY
+    must appear in the declared capabilities.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = StrandsAdapter().get_adapter_info()
+    assert AdapterCapability.REPLAY in info.capabilities
+
+
 def test_instrument_agent_wraps_invoke() -> None:
     adapter = StrandsAdapter(stratix=_RecordingStratix(), capture_config=CaptureConfig.full())
     adapter.connect()

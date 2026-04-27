@@ -1,7 +1,7 @@
 """
-Agent API Session to Stratix Trace Event Mapper
+Agent API Session to LayerLens Trace Event Mapper
 
-Maps Agent API session data (from ``client.py``) to Stratix canonical
+Maps Agent API session data (from ``client.py``) to LayerLens canonical
 event types. This is distinct from ``normalizer.py`` which handles
 Data Cloud DMO records from SOQL queries.
 
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 class AgentApiMapper:
     """
-    Maps Agent API sessions to Stratix trace events.
+    Maps Agent API sessions to LayerLens trace events.
 
     Each public method returns a list of event dicts compatible with
     ``BaseAdapter.emit_dict_event(event_type, payload)``.
@@ -40,7 +40,7 @@ class AgentApiMapper:
 
     def map_session(self, session: AgentApiSession) -> list[dict[str, Any]]:
         """
-        Map a complete Agent API session to a sequence of Stratix events.
+        Map a complete Agent API session to a sequence of LayerLens events.
 
         Args:
             session: Complete AgentApiSession with messages.

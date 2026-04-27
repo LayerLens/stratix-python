@@ -75,6 +75,18 @@ def test_adapter_info_and_health() -> None:
     assert health.framework_name == "bedrock_agents"
 
 
+def test_adapter_info_declares_streaming_and_replay_capabilities() -> None:
+    """Bedrock Agents responses are EventStream payloads (``invoke_agent``
+    returns a streaming completion), so STREAMING is supported. The
+    adapter also implements ``serialize_for_replay``.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = BedrockAgentsAdapter().get_adapter_info()
+    assert AdapterCapability.STREAMING in info.capabilities
+    assert AdapterCapability.REPLAY in info.capabilities
+
+
 def test_instrument_client_registers_event_hooks() -> None:
     adapter = BedrockAgentsAdapter(stratix=_RecordingStratix(), capture_config=CaptureConfig.full())
     adapter.connect()

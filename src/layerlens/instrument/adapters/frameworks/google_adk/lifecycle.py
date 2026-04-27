@@ -105,6 +105,8 @@ class GoogleADKAdapter(BaseAdapter):
                 AdapterCapability.TRACE_MODELS,
                 AdapterCapability.TRACE_STATE,
                 AdapterCapability.TRACE_HANDOFFS,
+                AdapterCapability.STREAMING,
+                AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for Google Agent Development Kit",
         )
@@ -122,7 +124,7 @@ class GoogleADKAdapter(BaseAdapter):
     # --- Framework Integration ---
 
     def instrument_agent(self, agent: Any) -> Any:
-        """Attach Stratix callbacks to a Google ADK agent."""
+        """Attach LayerLens callbacks to a Google ADK agent."""
         try:
             agent.before_agent_callback = self._before_agent_callback
             agent.after_agent_callback = self._after_agent_callback

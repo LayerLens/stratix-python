@@ -60,6 +60,16 @@ def test_lifecycle() -> None:
     assert a.status == AdapterStatus.DISCONNECTED
 
 
+def test_adapter_info_declares_replay_capability() -> None:
+    """SmolAgents adapter implements ``serialize_for_replay`` so REPLAY
+    must appear in the declared capabilities.
+    """
+    from layerlens.instrument.adapters._base.adapter import AdapterCapability
+
+    info = SmolAgentsAdapter().get_adapter_info()
+    assert AdapterCapability.REPLAY in info.capabilities
+
+
 def test_instrument_agent_wraps_run() -> None:
     adapter = SmolAgentsAdapter(stratix=_RecordingStratix(), capture_config=CaptureConfig.full())
     adapter.connect()
