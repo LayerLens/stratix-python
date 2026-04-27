@@ -32,6 +32,10 @@ from layerlens.instrument.adapters._base.capture import (
     ALWAYS_ENABLED_EVENT_TYPES,
     CaptureConfig,
 )
+from layerlens.instrument.adapters._base.logging import (
+    TenantContextLogAdapter,
+    get_tenant_logger,
+)
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
 # Forward reference: EventSink is defined in sinks.py, which itself does not
@@ -41,6 +45,60 @@ from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 # methods, and import EventSink lazily inside add_sink at call time.
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# OTel ↔ SDK org_id correlation (Gap 3)
+# ---------------------------------------------------------------------------
+
+# OTel span attribute name used to correlate distributed traces with the
+# SDK's tenant binding. Picked under the ``layerlens.*`` namespace so it
+# does not clash with the OTel semantic conventions and so atlas-app /
+# downstream span processors can index on it directly.
+_OTEL_ORG_ID_ATTR: str = "layerlens.org_id"
+
+
+def _set_current_span_org_id(org_id: str) -> None:
+    """Stamp ``layerlens.org_id`` onto the currently-active OTel span.
+
+    No-op in any of the following conditions:
+
+    * OpenTelemetry is not installed (``opentelemetry`` import fails).
+    * No span is currently active (``trace.get_current_span()`` returns
+      the no-op ``INVALID_SPAN``).
+    * The active span is not recording (``span.is_recording()`` is
+      ``False``).
+    * The OTel API raises (defensive — we never let logging /
+      observability take down the adapter hot path).
+
+    The attribute is set under the ``layerlens.*`` prefix so it can
+    coexist with OTel semantic-convention attributes
+    (``service.namespace`` etc.) without collision. Downstream span
+    processors (atlas-app, Tempo, Jaeger) can index on this attribute
+    to filter spans by tenant — closing the cross-correlation gap
+    between the SDK's per-event ``org_id`` and OTel's distributed
+    span graph.
+    """
+    try:
+        from opentelemetry import trace as _otel_trace
+    except ImportError:
+        return
+    try:
+        span = _otel_trace.get_current_span()
+        # ``get_current_span`` always returns a span object (the no-op
+        # ``INVALID_SPAN`` when no context exists). Defer to the
+        # ``is_recording`` predicate so non-recording / sampled-out
+        # spans do not pay the attribute-set cost.
+        is_recording = getattr(span, "is_recording", None)
+        if callable(is_recording) and not is_recording():
+            return
+        span.set_attribute(_OTEL_ORG_ID_ATTR, org_id)
+    except Exception:  # noqa: BLE001 — observability MUST never raise
+        # Defensive: if the OTel API misbehaves under any condition,
+        # we drop the attribute set rather than fault the emit path.
+        logger.debug(
+            "Failed to stamp %s onto active OTel span", _OTEL_ORG_ID_ATTR, exc_info=True
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -278,19 +336,33 @@ class BaseAdapter(ABC):
         self._connected = False
         self._status: AdapterStatus = AdapterStatus.DISCONNECTED
 
-        # Circuit breaker state (protected by _lock).
+        # Circuit breaker state (protected by _lock). The lock and
+        # counter are *per-instance*, so they inherit the adapter's
+        # single-tenant binding — tenant A's circuit cannot trip
+        # tenant B's adapter even though both share the BaseAdapter
+        # class. See ``test_cache_tenant_isolation.py``.
         self._lock = threading.Lock()
         self._error_count = 0
         self._circuit_open = False
         self._circuit_opened_at: float = 0.0
 
-        # Collected events for replay serialization.
+        # Collected events for replay serialization. Per-instance, so
+        # cross-tenant trace contamination is structurally impossible
+        # for the in-memory event buffer.
         self._trace_events: List[Dict[str, Any]] = []
 
         # Pluggable event sinks for persistence / export. Use add_sink /
         # remove_sink to mutate; direct list manipulation is not part of
         # the public API and may change in v2.
         self._event_sinks: List["EventSink"] = list(event_sinks) if event_sinks else []
+
+        # Per-instance tenant-aware logger (Gap 4). All adapter log
+        # lines now carry ``org_id`` in record extras AND in a
+        # ``[org_id=...]`` message prefix. Subclasses inherit this via
+        # ``self.tlogger`` and should prefer it over plain ``logging``.
+        self._tlogger: TenantContextLogAdapter = get_tenant_logger(
+            type(self).__module__, self._org_id
+        )
 
     # --- Sink management (public API) ---
 
@@ -349,6 +421,19 @@ class BaseAdapter(ABC):
         field. See :data:`ORG_ID_FIELD`.
         """
         return self._org_id
+
+    @property
+    def tlogger(self) -> TenantContextLogAdapter:
+        """Per-instance tenant-aware logger.
+
+        Wraps a standard :class:`logging.Logger` named by the subclass
+        module and stamps ``org_id`` into every record's ``extra`` dict
+        AND prefixes the message with ``[org_id=...]``. Subclasses
+        SHOULD use this in place of ``logging.getLogger(__name__)`` so
+        adapter log lines carry tenant context end-to-end (Gap 4 of the
+        multi-tenancy hardening contract).
+        """
+        return self._tlogger
 
     # --- Abstract lifecycle methods ---
 
@@ -496,6 +581,12 @@ class BaseAdapter(ABC):
 
         payload = self._stamp_org_id(payload)
 
+        # Cross-correlate the SDK's per-event tenant binding with the
+        # currently-active OTel span so distributed-trace consumers can
+        # filter spans by tenant. No-op when OTel is absent or when no
+        # recording span is active. (Gap 3.)
+        _set_current_span_org_id(self._org_id)
+
         try:
             if privacy_level is not None:
                 self._stratix.emit(payload, privacy_level)
@@ -531,6 +622,10 @@ class BaseAdapter(ABC):
             return
 
         payload = self._stamp_org_id(payload)
+
+        # Cross-correlate with the active OTel span (see emit_event for
+        # the full rationale). Same no-op semantics. (Gap 3.)
+        _set_current_span_org_id(self._org_id)
 
         try:
             self._stratix.emit(event_type, payload)
