@@ -148,15 +148,45 @@ class LangGraphStateAdapter:
         """
         Compute hash of state without creating full snapshot.
 
+        The returned value is prefixed with ``sha256:`` so it can be
+        passed directly to :class:`AgentStateChangeEvent.create` (whose
+        ``before_hash`` / ``after_hash`` Pydantic validators require the
+        algorithm prefix per spec ``02-event-schema-spec.md``). Callers
+        that need the raw 64-char hex digest (for example, for byte-wise
+        comparison with an externally produced digest) should use
+        :meth:`get_hash_unprefixed`.
+
         Args:
             state: LangGraph state
 
         Returns:
-            Hash string
+            Hash string in the canonical ``sha256:<64-hex>`` form.
         """
         state_dict = self._to_dict(state)
         filtered = self._filter_state(state_dict)
         return self._compute_hash(filtered)
+
+    def get_hash_unprefixed(self, state: Any) -> str:
+        """
+        Compute hash of state and return the bare 64-char hex digest.
+
+        Provided for callers that need the unprefixed SHA-256 hex value
+        (for byte-wise comparison or interoperability with consumers
+        that supply their own algorithm prefix). Internal LangGraph
+        adapter code paths use :meth:`get_hash` so the result is
+        directly accepted by :class:`AgentStateChangeEvent.create`.
+
+        Args:
+            state: LangGraph state
+
+        Returns:
+            Bare 64-character hex SHA-256 digest (no ``sha256:`` prefix).
+        """
+        state_dict = self._to_dict(state)
+        filtered = self._filter_state(state_dict)
+        digest = self._compute_hash(filtered)
+        # ``_compute_hash`` always returns the prefixed form; strip it.
+        return digest.removeprefix("sha256:")
 
     def _to_dict(self, state: Any) -> dict[str, Any]:
         """Convert state to dictionary."""
@@ -184,7 +214,15 @@ class LangGraphStateAdapter:
         return state
 
     def _compute_hash(self, state: dict[str, Any]) -> str:
-        """Compute SHA-256 hash of state."""
+        """Compute SHA-256 hash of state.
+
+        Returns the canonical ``sha256:<64-hex>`` form so the value is
+        directly accepted by :class:`AgentStateChangeEvent` Pydantic
+        validators (spec ``02-event-schema-spec.md`` requires the
+        algorithm prefix). Snapshot equality comparisons in
+        :meth:`has_changed` are unaffected — both sides are prefixed
+        identically.
+        """
         # Canonical JSON serialization
         try:
             serialized = json.dumps(state, sort_keys=True, default=str)
@@ -192,7 +230,7 @@ class LangGraphStateAdapter:
             # Fallback for non-serializable objects
             serialized = str(state)
 
-        return hashlib.sha256(serialized.encode()).hexdigest()
+        return f"sha256:{hashlib.sha256(serialized.encode()).hexdigest()}"
 
 
 class MessageListAdapter(LangGraphStateAdapter):
