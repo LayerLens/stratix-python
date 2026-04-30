@@ -1,47 +1,89 @@
 {
-  "trace_id": "tr_00001",
-  "timestamp": "2026-03-13T10:15:32.441Z",
-  "framework": "openai",
+  "trace_id": "tr-scn-simple-llm-001",
   "agent_name": "support-assistant",
-  "status": "ok",
-  "duration_ms": 1237,
+  "framework": "openai",
+  "status": "completed",
+  "description": "Single LLM call - baseline scenario for quickstart tutorials and first-trace upload",
+  "event_count": 5,
   "metadata": {
-    "sdk_version": "1.3.0",
-    "environment": "development",
-    "seed": 42
+    "synthetic": true,
+    "agents": [
+      "support-assistant"
+    ],
+    "scenario_type": "single_agent_llm",
+    "evaluation_dimensions": [
+      "helpfulness",
+      "instruction_following",
+      "factual_accuracy"
+    ]
   },
+  "start_time": "2026-04-14T08:00:00Z",
+  "end_time": "2026-04-14T08:00:01.180Z",
+  "duration_ms": 1180,
   "events": [
     {
-      "span_id": "sp_00001_001",
-      "span_name": "llm_call",
-      "span_type": "llm",
-      "start_time": "2026-03-13T10:15:32.441Z",
-      "end_time": "2026-03-13T10:15:33.678Z",
-      "status": "ok",
-      "attributes": {
-        "llm.model": "gpt-5.3",
-        "llm.temperature": 0.7,
-        "llm.max_tokens": 512,
-        "llm.prompt": [
-          {
-            "role": "system",
-            "content": "You are a helpful customer support assistant for an enterprise SaaS platform. Be concise and professional."
-          },
-          {
-            "role": "user",
-            "content": "How do I reset my API key?"
-          }
+      "type": "environment.config",
+      "dt": 0,
+      "payload": {
+        "agent_name": "orchestrator",
+        "config": {
+          "session_type": "single-agent",
+          "framework": "openai",
+          "model_default": "gpt-4o",
+          "sdk_version": "1.6.2",
+          "environment": "production",
+          "agents_available": [
+            "support-assistant"
+          ]
+        }
+      }
+    },
+    {
+      "type": "agent.input",
+      "dt": 3,
+      "payload": {
+        "agent_name": "support-assistant",
+        "input": "Our production integration started returning 401 about 20 minutes ago. I think someone on the team rotated the API key in your dashboard but I cannot find who. We need to get back online before the 9am sales demo. How do I issue a new key and what happens to the old one?",
+        "customer_id": "cust-prod-7714",
+        "ticket_id": "TKT-2026-0414-1881",
+        "channel": "support_chat",
+        "priority": "P1"
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 4,
+      "payload": {
+        "agent_name": "support-assistant",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 284,
+        "completion_tokens": 312,
+        "duration_ms": 1180,
+        "purpose": "compose actionable customer-support response with grace-period guidance"
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 2,
+      "payload": {
+        "agent_name": "support-assistant",
+        "output": "Sorry about the production interruption - here is the fastest path. (1) Sign in at https://app.example.com using SSO; if SSO is the blocker, request a magic link from the login page. (2) Open Settings -> API Keys. You will see who rotated the key and when, in the audit column. (3) Click 'Generate new key' - the new key is shown once, copy it immediately into your secret store. (4) The previous key (the one that was rotated 20 minutes ago) is in a 24-hour grace period: it still authenticates but emits a 'X-Deprecated-Key' response header so your monitoring can verify the cutover. So if your integration is failing with 401 right now, it is more likely the key was fully revoked rather than rotated. In Settings -> Audit Log, look for 'api_key.revoked' in the last hour - if you see one, that explains the 401s and the new key is the only path forward. For the 9am demo: once the new key is in your secret store, your integration should reconnect within 60 seconds. If you need a temporary read-only key while your team coordinates the rotation, reply with the demo timestamp and I can issue one bound to your team's IP allowlist.",
+        "resolution_offered": true,
+        "escalation_path": "temporary_read_only_key_available"
+      }
+    },
+    {
+      "type": "cost.record",
+      "dt": 2,
+      "payload": {
+        "total_tokens": 596,
+        "total_cost_usd": 0.0061,
+        "model": "gpt-4o",
+        "agents_invoked": [
+          "support-assistant"
         ],
-        "llm.response": {
-          "role": "assistant",
-          "content": "To reset your API key, follow these steps:\n\n1. Navigate to **Settings > API Keys** in the dashboard.\n2. Click the key you want to reset.\n3. Select **Regenerate Key** and confirm the action.\n4. Copy the new key immediately -- it will only be shown once.\n\nNote: Any integrations using the old key will stop working. Update them with the new key before the old one expires (24-hour grace period)."
-        },
-        "llm.token_usage": {
-          "prompt_tokens": 47,
-          "completion_tokens": 93,
-          "total_tokens": 140
-        },
-        "llm.latency_ms": 1192
+        "resolution": "Customer received audit-log diagnostic, rotation-vs-revocation distinction, grace-period explanation, and an offered fallback path for the 9am demo deadline"
       }
     }
   ]
