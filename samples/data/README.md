@@ -25,12 +25,12 @@ Expected output: the trace ID of the newly uploaded trace record.
 
 | File | Description |
 |------|-------------|
-| `traces/simple_llm_trace.json` | A single LLM call trace (OpenAI support assistant) with prompt, completion, and token usage. The simplest trace format for getting started. |
-| `traces/rag_pipeline_trace.json` | A RAG pipeline trace (LangChain) with retrieval and LLM spans, including document references. Useful for testing multi-span evaluation. |
-| `traces/multi_agent_trace.json` | A multi-agent trace (CrewAI) with sequential researcher, analyst, and writer collaboration spans. |
-| `traces/error_trace.json` | A failed trace containing a TimeoutError after retry attempts. Useful for testing error handling and investigation workflows. |
+| `traces/simple_llm_trace.json` | A single-agent OpenAI support-assistant trace with one LLM call and a cost record. The simplest structured trace for getting started. |
+| `traces/rag_pipeline_trace.json` | A LangChain retrieval-augmented generation trace with retriever, reranker, and answer-synthesis agents handed off across multiple spans. |
+| `traces/multi_agent_trace.json` | A CrewAI multi-agent trace where a researcher, fact-verifier, and analyst collaborate on an executive brief with peer review and one corrected error. |
+| `traces/error_trace.json` | A failed LangChain trace covering context-length errors, rate-limit retries with exponential backoff, fallback agent handoff, and final failure with diagnostic guidance. |
 | `traces/example_traces.jsonl` | A collection of example traces in JSONL format for batch processing samples. |
-| `traces/batch_traces.jsonl` | Ten traces across multiple frameworks, models, and statuses. Designed for batch ingestion testing. |
+| `traces/batch_traces.jsonl` | Fifty structured traces across multiple frameworks, models, and statuses. Designed for batch ingestion testing. |
 
 ## Datasets
 
