@@ -1,106 +1,178 @@
 {
-  "trace_id": "tr_00002",
-  "timestamp": "2026-03-13T10:22:08.117Z",
+  "trace_id": "tr-scn-rag-pipeline-001",
+  "agent_name": "enterprise-rag-stack",
   "framework": "langchain",
-  "agent_name": "knowledge-base-qa",
-  "status": "ok",
-  "duration_ms": 2814,
+  "status": "completed",
+  "description": "Retrieval-augmented generation with reranker - retriever, reranker, and grounded answer synthesizer",
+  "event_count": 11,
   "metadata": {
-    "sdk_version": "1.3.0",
-    "environment": "development",
-    "pipeline_type": "rag",
-    "seed": 42
+    "synthetic": true,
+    "agents": [
+      "knowledge-retriever",
+      "relevance-reranker",
+      "answer-synthesizer"
+    ],
+    "scenario_type": "retrieval_augmented_generation",
+    "evaluation_dimensions": [
+      "rag_quality",
+      "factual_accuracy",
+      "relevance",
+      "groundedness"
+    ]
   },
+  "start_time": "2026-04-14T08:05:00Z",
+  "end_time": "2026-04-14T08:05:02.880Z",
+  "duration_ms": 2880,
   "events": [
     {
-      "span_id": "sp_00002_001",
-      "span_name": "retriever",
-      "span_type": "retrieval",
-      "parent_span_id": null,
-      "start_time": "2026-03-13T10:22:08.117Z",
-      "end_time": "2026-03-13T10:22:09.341Z",
-      "status": "ok",
-      "attributes": {
-        "retriever.engine": "pgvector",
-        "retriever.query": "What are the SLA guarantees for the enterprise tier?",
-        "retriever.top_k": 5,
-        "retriever.documents": [
-          {
-            "doc_id": "doc_0041",
-            "title": "Enterprise SLA Agreement v3.2",
-            "content": "Enterprise tier customers receive a 99.95% uptime SLA with automated credits. Incident response times: P1 critical within 15 minutes, P2 high within 1 hour, P3 medium within 4 hours. Monthly uptime is calculated excluding scheduled maintenance windows announced 72 hours in advance.",
-            "score": 0.94,
-            "source": "legal/sla-enterprise-v3.2.pdf",
-            "chunk_index": 2
-          },
-          {
-            "doc_id": "doc_0042",
-            "title": "Enterprise SLA Agreement v3.2",
-            "content": "SLA credit schedule: Below 99.95% but above 99.9% — 10% credit. Below 99.9% but above 99.0% — 25% credit. Below 99.0% — 50% credit. Credits are applied to the next billing cycle and do not exceed the monthly subscription fee.",
-            "score": 0.91,
-            "source": "legal/sla-enterprise-v3.2.pdf",
-            "chunk_index": 3
-          },
-          {
-            "doc_id": "doc_0108",
-            "title": "Pricing and Plans Overview",
-            "content": "Enterprise plans include dedicated infrastructure, custom data residency, SSO/SCIM provisioning, and a named account manager. SLA-backed uptime guarantees apply to all production endpoints.",
-            "score": 0.82,
-            "source": "marketing/pricing-overview.md",
-            "chunk_index": 1
-          },
-          {
-            "doc_id": "doc_0073",
-            "title": "Support Tiers Comparison",
-            "content": "Enterprise support includes 24/7 coverage with phone, email, and Slack channels. Dedicated support engineer assigned within 48 hours of contract signing. Quarterly business reviews included.",
-            "score": 0.76,
-            "source": "support/tiers-comparison.md",
-            "chunk_index": 4
-          },
-          {
-            "doc_id": "doc_0019",
-            "title": "Platform Architecture Overview",
-            "content": "The platform is deployed across three AWS regions (us-east-1, eu-west-1, ap-southeast-1) with active-active replication. Failover is automatic with sub-30-second DNS propagation.",
-            "score": 0.68,
-            "source": "engineering/architecture-overview.md",
-            "chunk_index": 7
-          }
-        ],
-        "retriever.latency_ms": 1224
+      "type": "environment.config",
+      "dt": 0,
+      "payload": {
+        "agent_name": "orchestrator",
+        "config": {
+          "session_type": "multi-agent",
+          "framework": "langchain",
+          "vector_store": "pinecone-serverless",
+          "index": "acme-policy-2026",
+          "embedding_model": "text-embedding-3-large",
+          "reranker_model": "cohere-rerank-3",
+          "top_k_initial": 12,
+          "top_k_after_rerank": 4,
+          "agents_available": [
+            "knowledge-retriever",
+            "relevance-reranker",
+            "answer-synthesizer"
+          ]
+        }
       }
     },
     {
-      "span_id": "sp_00002_002",
-      "span_name": "llm_call",
-      "span_type": "llm",
-      "parent_span_id": null,
-      "start_time": "2026-03-13T10:22:09.345Z",
-      "end_time": "2026-03-13T10:22:10.931Z",
-      "status": "ok",
-      "attributes": {
-        "llm.model": "gpt-5.3",
-        "llm.temperature": 0.3,
-        "llm.max_tokens": 1024,
-        "llm.prompt": [
-          {
-            "role": "system",
-            "content": "You are a helpful assistant that answers questions using only the provided context. If the context does not contain enough information, say so. Cite document sources."
-          },
-          {
-            "role": "user",
-            "content": "Context:\n[1] Enterprise SLA Agreement v3.2 (chunk 2): Enterprise tier customers receive a 99.95% uptime SLA with automated credits. Incident response times: P1 critical within 15 minutes, P2 high within 1 hour, P3 medium within 4 hours. Monthly uptime is calculated excluding scheduled maintenance windows announced 72 hours in advance.\n\n[2] Enterprise SLA Agreement v3.2 (chunk 3): SLA credit schedule: Below 99.95% but above 99.9% — 10% credit. Below 99.9% but above 99.0% — 25% credit. Below 99.0% — 50% credit. Credits are applied to the next billing cycle and do not exceed the monthly subscription fee.\n\n[3] Pricing and Plans Overview (chunk 1): Enterprise plans include dedicated infrastructure, custom data residency, SSO/SCIM provisioning, and a named account manager. SLA-backed uptime guarantees apply to all production endpoints.\n\nQuestion: What are the SLA guarantees for the enterprise tier?"
-          }
+      "type": "agent.input",
+      "dt": 3,
+      "payload": {
+        "agent_name": "knowledge-retriever",
+        "input": "What is the SLA for production incidents on our enterprise tier during business hours, and what are the specific response and resolution targets per incident severity?",
+        "customer_tier": "enterprise",
+        "customer_id": "cust-acme-corp-0017",
+        "query_id": "q-2026-0414-7711"
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 4,
+      "payload": {
+        "agent_name": "knowledge-retriever",
+        "model": "text-embedding-3-large",
+        "provider": "openai",
+        "prompt_tokens": 48,
+        "completion_tokens": 0,
+        "duration_ms": 180,
+        "purpose": "embed user query into 3072-dim vector for similarity search"
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 2,
+      "payload": {
+        "agent_name": "knowledge-retriever",
+        "output": "Retrieved 12 candidate chunks across 5 source documents. Top scores by document: enterprise-sla-2026-q1.md (0.91, 0.87, 0.82), incident-response-runbook.md (0.84, 0.78), pricing-tier-comparison.md (0.78), severity-classification.md (0.74, 0.71), legacy-sla-2024.md (0.68 - flagged as outdated). Median relevance 0.79. Sending 12-chunk candidate set to reranker.",
+        "retrieval_count": 12,
+        "sources_consulted": 5,
+        "top_score": 0.91,
+        "flagged_outdated": 1
+      }
+    },
+    {
+      "type": "agent.handoff",
+      "dt": 3,
+      "payload": {
+        "from_agent": "knowledge-retriever",
+        "to_agent": "relevance-reranker",
+        "reason": "Vector retrieval cast a wide net - need cross-encoder reranking to identify the chunks that actually answer this multi-part question (SLA + response + resolution + severity)",
+        "context": {
+          "query_id": "q-2026-0414-7711",
+          "candidate_count": 12
+        }
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 3,
+      "payload": {
+        "agent_name": "relevance-reranker",
+        "model": "cohere-rerank-3",
+        "provider": "cohere",
+        "prompt_tokens": 1840,
+        "completion_tokens": 0,
+        "duration_ms": 420,
+        "purpose": "cross-encoder rerank to surface chunks that answer all four parts of the question"
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 2,
+      "payload": {
+        "agent_name": "relevance-reranker",
+        "output": "Reranked candidates against compound query 'enterprise tier business-hours SLA + response targets + resolution targets + per-severity'. Top 4 selected: (1) enterprise-sla-2026-q1.md#sla-table covering all severities (rerank 0.96), (2) severity-classification.md#definitions defining P1-P4 (rerank 0.92), (3) enterprise-sla-2026-q1.md#business-hours defining 8AM-8PM PT window (rerank 0.89), (4) incident-response-runbook.md#escalation tying response to severity (rerank 0.85). Discarded the 2024 outdated chunk and 7 lower-relevance fragments.",
+        "reranked_count": 4,
+        "discarded_count": 8,
+        "top_rerank_score": 0.96
+      }
+    },
+    {
+      "type": "agent.handoff",
+      "dt": 3,
+      "payload": {
+        "from_agent": "relevance-reranker",
+        "to_agent": "answer-synthesizer",
+        "reason": "Top-4 chunks span SLA table, severity definitions, business hours, and escalation - sufficient context for a fully-grounded multi-part answer with citations",
+        "context": {
+          "context_chunk_count": 4,
+          "primary_source": "enterprise-sla-2026-q1.md"
+        }
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 4,
+      "payload": {
+        "agent_name": "answer-synthesizer",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 2280,
+        "completion_tokens": 348,
+        "duration_ms": 2280,
+        "purpose": "synthesize grounded multi-part answer with explicit per-severity targets and source citations"
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 2,
+      "payload": {
+        "agent_name": "answer-synthesizer",
+        "output": "Enterprise tier SLA during business hours (Monday-Friday 8:00 AM - 8:00 PM Pacific Time):\n\n**P1 (Critical)** - Service unavailable or core functionality broken for all users.\n  Response: 15 minutes. Resolution target: 4 hours.\n\n**P2 (High)** - Significant degradation or core functionality broken for a subset of users.\n  Response: 1 hour. Resolution target: 8 business hours.\n\n**P3 (Medium)** - Non-critical feature broken or workaround exists.\n  Response: 4 hours. Resolution target: 2 business days.\n\n**P4 (Low)** - Cosmetic or documentation issues.\n  Response: 1 business day. Resolution target: scheduled in next release cycle.\n\nAfter business hours, only P1 and P2 are continuously monitored: P1 response shifts to 30 minutes with 8-hour resolution target; P2 escalates to next-business-day morning queue.\n\nSeverity is determined by the customer in the initial report and may be reclassified by the on-call engineer within 30 minutes if scope assessment differs (per incident-response-runbook.md section 3.2). All P1 incidents trigger automatic VP-of-Engineering paging.\n\nSources: enterprise-sla-2026-q1.md (sections 1-3), severity-classification.md, incident-response-runbook.md (section 3.2).",
+        "citations": [
+          "enterprise-sla-2026-q1.md",
+          "severity-classification.md",
+          "incident-response-runbook.md"
         ],
-        "llm.response": {
-          "role": "assistant",
-          "content": "The enterprise tier includes the following SLA guarantees:\n\n**Uptime**: 99.95% uptime SLA with automated credits [1].\n\n**Incident Response Times** [1]:\n- P1 (Critical): 15 minutes\n- P2 (High): 1 hour\n- P3 (Medium): 4 hours\n\n**SLA Credit Schedule** [2]:\n- 99.9%--99.95% uptime: 10% credit\n- 99.0%--99.9% uptime: 25% credit\n- Below 99.0% uptime: 50% credit\n\nCredits are applied to the next billing cycle and capped at the monthly subscription fee. Scheduled maintenance windows (announced 72 hours ahead) are excluded from uptime calculations [1].\n\nAdditionally, the SLA covers all production endpoints and includes dedicated infrastructure [3]."
-        },
-        "llm.token_usage": {
-          "prompt_tokens": 312,
-          "completion_tokens": 168,
-          "total_tokens": 480
-        },
-        "llm.latency_ms": 1586
+        "groundedness_score": 0.97,
+        "answer_completeness": "all_4_subquestions_addressed"
+      }
+    },
+    {
+      "type": "cost.record",
+      "dt": 2,
+      "payload": {
+        "total_tokens": 4516,
+        "total_cost_usd": 0.027,
+        "model": "gpt-4o + text-embedding-3-large + cohere-rerank-3",
+        "agents_invoked": [
+          "knowledge-retriever",
+          "relevance-reranker",
+          "answer-synthesizer"
+        ],
+        "resolution": "Multi-part SLA question answered with full per-severity table, business-hours/after-hours distinction, severity reclassification policy, and three-source citation - fully grounded in retrieved context with no fabrication"
       }
     }
   ]
