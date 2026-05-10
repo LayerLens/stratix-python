@@ -2,12 +2,24 @@
 
 Mocked at the SDK shape level — no real ``boto3`` runtime needed.
 The adapter integrates via boto3 event hooks: ``client.meta.events.register(...)``.
+
+After the typed-event migration (PR #129 follow-up — bundle 4) every
+emit site flows through :meth:`BaseAdapter.emit_event` with a canonical
+Pydantic payload. The :class:`_RecordingStratix` stand-in below records
+both shapes so pre- and post-migration assertions live side by side: the
+``payload`` slot always carries a dict (model-dumped if typed), and
+``typed_payloads`` holds the original Pydantic instances for tests that
+want to assert against the model surface.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple, Callable
 
+from layerlens._compat.pydantic import (
+    BaseModel as _CompatBaseModel,
+    model_dump as _compat_model_dump,
+)
 from layerlens.instrument.adapters._base import AdapterStatus, CaptureConfig
 from layerlens.instrument.adapters.frameworks.bedrock_agents import (
     ADAPTER_CLASS,
@@ -25,10 +37,26 @@ class _RecordingStratix:
 
     def __init__(self) -> None:
         self.events: List[Dict[str, Any]] = []
+        # Hold strong references to the original typed payloads for
+        # the subset of tests that want to assert against the model
+        # surface (e.g. ``isinstance(payload, ToolCallEvent)``). The
+        # dict view lives on ``events`` and is what most assertions
+        # read.
+        self.typed_payloads: List[Any] = []
 
     def emit(self, *args: Any, **kwargs: Any) -> None:
+        # Two-arg legacy path: ``emit(event_type, payload_dict)``.
         if len(args) == 2 and isinstance(args[0], str):
             self.events.append({"event_type": args[0], "payload": args[1]})
+            return
+        # Single-arg typed path: ``emit(payload_model[, privacy_level])``.
+        if args and isinstance(args[0], _CompatBaseModel):
+            payload_model = args[0]
+            self.typed_payloads.append(payload_model)
+            event_type = getattr(payload_model, "event_type", "<unknown>")
+            self.events.append(
+                {"event_type": event_type, "payload": _compat_model_dump(payload_model)}
+            )
 
 
 class _FakeEventSystem:
@@ -104,6 +132,9 @@ def test_disconnect_unregisters_event_hooks() -> None:
 
 
 def test_before_invoke_emits_input_event() -> None:
+    """Typed AgentInputEvent: input lives on payload.content.message;
+    Bedrock-specific provenance lives on MessageContent.metadata.
+    """
     stratix = _RecordingStratix()
     adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
     adapter.connect()
@@ -126,11 +157,29 @@ def test_before_invoke_emits_input_event() -> None:
     assert "agent.input" in types
 
     inp = next(e for e in stratix.events if e["event_type"] == "agent.input")
-    assert inp["payload"]["agent_id"] == "agent-123"
-    assert inp["payload"]["input"] == "hello"
+    payload = inp["payload"]
+    assert payload["layer"] == "L1"
+    assert payload["content"]["message"] == "hello"
+    assert payload["content"]["role"] == "human"
+    metadata = payload["content"]["metadata"]
+    assert metadata["framework"] == "bedrock_agents"
+    assert metadata["agent_id"] == "agent-123"
+    assert metadata["session_id"] == "sess-1"
+    assert metadata["enable_trace"] is True
+
+    # environment.config carries the agent config on attributes.
+    cfg = next(e for e in stratix.events if e["event_type"] == "environment.config")
+    cfg_payload = cfg["payload"]
+    assert cfg_payload["layer"] == "L4a"
+    assert cfg_payload["environment"]["type"] == "cloud"
+    assert cfg_payload["environment"]["attributes"]["agent_id"] == "agent-123"
+    assert cfg_payload["environment"]["attributes"]["agent_alias_id"] == "alias-1"
 
 
 def test_after_invoke_emits_output_and_processes_trace() -> None:
+    """Typed AgentOutputEvent + ToolCallEvent + ModelInvokeEvent +
+    CostRecordEvent + AgentHandoffEvent for a complete Bedrock response.
+    """
     stratix = _RecordingStratix()
     adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
     adapter.connect()
@@ -171,34 +220,76 @@ def test_after_invoke_emits_output_and_processes_trace() -> None:
     assert "agent.handoff" in types
 
     out = next(e for e in stratix.events if e["event_type"] == "agent.output")
-    assert out["payload"]["output"] == "the answer is 42"
+    out_payload = out["payload"]
+    assert out_payload["layer"] == "L1"
+    assert out_payload["content"]["message"] == "the answer is 42"
+    assert out_payload["content"]["role"] == "agent"
+    assert out_payload["content"]["metadata"]["framework"] == "bedrock_agents"
+    assert out_payload["content"]["metadata"]["session_id"] == "sess-1"
 
     model = next(e for e in stratix.events if e["event_type"] == "model.invoke")
-    assert model["payload"]["model"] == "anthropic.claude-v2"
-    assert model["payload"]["tokens_prompt"] == 100
+    m_payload = model["payload"]
+    assert m_payload["layer"] == "L3"
+    assert m_payload["model"]["provider"] == "aws_bedrock"
+    assert m_payload["model"]["name"] == "anthropic.claude-v2"
+    assert m_payload["model"]["version"] == "unavailable"
+    assert m_payload["prompt_tokens"] == 100
+    assert m_payload["completion_tokens"] == 50
+
+    tool = next(e for e in stratix.events if e["event_type"] == "tool.call")
+    t_payload = tool["payload"]
+    assert t_payload["layer"] == "L5a"
+    assert t_payload["tool"]["name"] == "calc"
+    assert t_payload["tool"]["integration"] == "service"
+    assert t_payload["input"]["x"] == 1
+    assert t_payload["input"]["framework"] == "bedrock_agents"
+    assert t_payload["input"]["tool_type"] == "action_group"
+
+    cost = next(e for e in stratix.events if e["event_type"] == "cost.record")
+    cost_payload = cost["payload"]
+    assert cost_payload["cost"]["prompt_tokens"] == 100
+    assert cost_payload["cost"]["completion_tokens"] == 50
+    assert cost_payload["cost"]["tokens"] == 150
+
+    handoff = next(e for e in stratix.events if e["event_type"] == "agent.handoff")
+    h_payload = handoff["payload"]
+    assert h_payload["from_agent"] == "sup-1"
+    assert h_payload["to_agent"] == "col-1"
+    assert h_payload["handoff_context_hash"].startswith("sha256:")
+    assert len(h_payload["handoff_context_hash"]) == 7 + 64
 
 
 def test_on_tool_use_emits_event() -> None:
+    """Typed ToolCallEvent for a manual tool invocation."""
     stratix = _RecordingStratix()
     adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
     adapter.connect()
     adapter.on_tool_use("calc", tool_input={"x": 1}, tool_output=2, latency_ms=12.3)
 
     evt = next(e for e in stratix.events if e["event_type"] == "tool.call")
-    assert evt["payload"]["tool_name"] == "calc"
-    assert evt["payload"]["latency_ms"] == 12.3
+    payload = evt["payload"]
+    assert payload["layer"] == "L5a"
+    assert payload["tool"]["name"] == "calc"
+    assert payload["tool"]["integration"] == "library"
+    assert payload["latency_ms"] == 12.3
+    assert payload["input"]["x"] == 1
+    assert payload["input"]["framework"] == "bedrock_agents"
+    assert payload["output"] == {"value": 2}
 
 
 def test_on_handoff_emits_event_with_context_hash() -> None:
+    """Typed AgentHandoffEvent: canonical sha256:<hex64> handoff_context_hash."""
     stratix = _RecordingStratix()
     adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
     adapter.connect()
     adapter.on_handoff(from_agent="a", to_agent="b", context="some context")
 
     evt = next(e for e in stratix.events if e["event_type"] == "agent.handoff")
-    assert evt["payload"]["from_agent"] == "a"
-    assert evt["payload"]["to_agent"] == "b"
-    assert evt["payload"]["context_hash"] is not None
+    payload = evt["payload"]
+    assert payload["from_agent"] == "a"
+    assert payload["to_agent"] == "b"
+    assert payload["handoff_context_hash"].startswith("sha256:")
+    assert len(payload["handoff_context_hash"]) == 7 + 64
 
 
 def test_capture_config_gates_l5a_tool_calls() -> None:
@@ -237,3 +328,141 @@ def test_serialize_for_replay() -> None:
     assert rt.framework == "bedrock_agents"
     assert rt.adapter_name == "BedrockAgentsAdapter"
     assert "capture_config" in rt.config
+
+
+# ---------------------------------------------------------------------------
+# Typed-event migration regression tests (PR #129 follow-up — bundle 4)
+# ---------------------------------------------------------------------------
+
+
+def test_bedrock_agents_emits_typed_payloads_only() -> None:
+    """Every emit site in bedrock_agents lifecycle is a typed emit_event call.
+
+    Pins the post-migration contract: the recording stratix's
+    ``typed_payloads`` list grows for every emission and the legacy
+    two-arg dict path receives nothing. This is the public contract
+    backing the ``grep emit_dict_event src/.../bedrock_agents/lifecycle.py
+    → 0`` acceptance criterion in the typed-events bundle 4 PR.
+    """
+    from layerlens.instrument._compat.events import (
+        ToolCallEvent,
+        AgentInputEvent,
+        CostRecordEvent,
+        AgentOutputEvent,
+        ModelInvokeEvent,
+        AgentHandoffEvent,
+        EnvironmentConfigEvent,
+    )
+
+    stratix = _RecordingStratix()
+    adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+    client = _FakeClient()
+    adapter.instrument_client(client)
+
+    # Drive every emission path that does not require boto3.
+    adapter._before_invoke_agent(
+        params={
+            "agentId": "agent-123",
+            "agentAliasId": "alias-1",
+            "sessionId": "sess-1",
+            "inputText": "hello",
+            "enableTrace": True,
+        }
+    )
+    adapter._after_invoke_agent(
+        parsed={
+            "outputText": "answer",
+            "sessionId": "sess-1",
+            "trace": {
+                "steps": [
+                    {
+                        "type": "ACTION_GROUP",
+                        "actionGroupName": "calc",
+                        "actionGroupInput": {"x": 1},
+                        "actionGroupInvocationOutput": {"output": "ok"},
+                    },
+                    {
+                        "type": "KNOWLEDGE_BASE",
+                        "knowledgeBaseId": "kb-1",
+                        "knowledgeBaseLookupInput": {"q": "what"},
+                        "knowledgeBaseLookupOutput": {"retrievedReferences": []},
+                    },
+                    {
+                        "type": "MODEL_INVOCATION",
+                        "foundationModel": "anthropic.claude-v2",
+                        "modelInvocationOutput": {"usage": {"inputTokens": 1, "outputTokens": 2}},
+                    },
+                    {
+                        "type": "AGENT_COLLABORATOR",
+                        "supervisorAgentId": "sup-1",
+                        "collaboratorAgentId": "col-1",
+                    },
+                ]
+            },
+        }
+    )
+    adapter.on_invoke_start(agent_id="agent-456", input_text="more input")
+    adapter.on_invoke_end(agent_id="agent-456", output="more output")
+    adapter.on_tool_use("calc", tool_input={"x": 1}, tool_output=2)
+    adapter.on_llm_call(provider="aws_bedrock", model="anthropic.claude-v2", tokens_prompt=1, tokens_completion=2)
+    adapter.on_handoff(from_agent="a", to_agent="b", context="ctx")
+
+    # Every captured payload is a Pydantic model instance — the legacy
+    # dict path was not used.
+    assert stratix.typed_payloads, "expected typed payloads to be captured"
+    types_seen = {type(p) for p in stratix.typed_payloads}
+    assert AgentInputEvent in types_seen
+    assert AgentOutputEvent in types_seen
+    assert AgentHandoffEvent in types_seen
+    assert EnvironmentConfigEvent in types_seen
+    assert ModelInvokeEvent in types_seen
+    assert ToolCallEvent in types_seen
+    assert CostRecordEvent in types_seen
+
+
+def test_bedrock_agents_emit_does_not_warn_after_migration() -> None:
+    """No DeprecationWarning fires from bedrock_agents lifecycle emission paths.
+
+    The base adapter's ``emit_dict_event`` raises a DeprecationWarning
+    on every call. After migration, bedrock_agents lifecycle must
+    never trigger that warning. ``filterwarnings("error", ...)``
+    converts the warning into a test failure.
+    """
+    import warnings
+
+    stratix = _RecordingStratix()
+    adapter = BedrockAgentsAdapter(stratix=stratix, capture_config=CaptureConfig.full())
+    adapter.connect()
+    client = _FakeClient()
+    adapter.instrument_client(client)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        adapter._before_invoke_agent(
+            params={"agentId": "agent-1", "inputText": "hi"}
+        )
+        adapter._after_invoke_agent(
+            parsed={
+                "outputText": "out",
+                "trace": {
+                    "steps": [
+                        {
+                            "type": "MODEL_INVOCATION",
+                            "foundationModel": "claude",
+                            "modelInvocationOutput": {"usage": {"inputTokens": 1, "outputTokens": 1}},
+                        },
+                        {
+                            "type": "AGENT_COLLABORATOR",
+                            "supervisorAgentId": "s",
+                            "collaboratorAgentId": "c",
+                        },
+                    ]
+                },
+            }
+        )
+        adapter.on_invoke_start(agent_id="a", input_text="x")
+        adapter.on_invoke_end(agent_id="a", output="y")
+        adapter.on_tool_use("calc", tool_input={"x": 1}, tool_output=2)
+        adapter.on_llm_call(provider="aws_bedrock", model="claude", tokens_prompt=1, tokens_completion=2)
+        adapter.on_handoff(from_agent="a", to_agent="b", context="ctx")
