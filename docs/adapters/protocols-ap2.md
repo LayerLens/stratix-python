@@ -1,5 +1,10 @@
 # AP2 (Agent Payments Protocol) adapter
 
+> **Canonical source:** [`protocols/ap2.py`](../../src/layerlens/instrument/adapters/protocols/ap2.py)
+> and [`protocols/_commerce.py`](../../src/layerlens/instrument/adapters/protocols/_commerce.py).
+> Every event-name string in this doc matches the literal `event_type`
+> default at source.
+
 `layerlens.instrument.adapters.protocols.ap2.AP2Adapter` instruments the
 [Agent Payments Protocol](https://github.com/google/agent-payments-protocol)
 — the three-stage authorization chain for autonomous-agent commerce:
@@ -86,12 +91,12 @@ calls at each commerce step:
 
 | Event | Layer | When |
 |---|---|---|
-| `commerce.intent.created` | L7c | Per `on_intent_mandate_created`. |
-| `commerce.intent.validated` | L7c | Per intent (after guardrail evaluation). |
-| `commerce.guardrail.violation` | L7c | Per failed guardrail. |
-| `commerce.mandate.signed` | L7c | Per `on_payment_mandate_signed`. |
-| `commerce.spending.threshold` | L7c | Per cumulative-spend threshold breach. |
-| `commerce.payment.receipt` | L7c | Per `on_payment_receipt_issued`. |
+| `commerce.payment.intent_created` | L7a | Per `on_intent_mandate_created` (`_commerce.py:99-101`). |
+| `commerce.payment.intent_validated` | L7a | Per intent, after guardrail evaluation (`_commerce.py:130-132`). |
+| `commerce.payment.guardrail_violation` | L7a | Per failed guardrail (`_commerce.py:225-227`). |
+| `commerce.payment.mandate_signed` | L7a | Per `on_payment_mandate_signed` (`_commerce.py:167-169`). |
+| `commerce.payment.threshold_exceeded` | L7a | Per cumulative-spend threshold breach (`_commerce.py:270-272`). |
+| `commerce.payment.receipt_issued` | L7a | Per `on_payment_receipt_issued` (`_commerce.py:198-200`). |
 
 All `commerce.*` events bypass the `CaptureConfig` gate via the
 `ALWAYS_ENABLED_EVENT_TYPES` rule — these are audit-critical events that
@@ -111,8 +116,9 @@ must never be suppressed by capture configuration.
   workers, persist the cumulative state externally (see
   `memory_service=` constructor arg).
 - **Expiry enforcement**: if an intent mandate has expired by the time
-  `on_payment_mandate_signed` is called, a `commerce.guardrail.violation`
-  is emitted before the signed event.
+  `on_payment_mandate_signed` is called, a
+  `commerce.payment.guardrail_violation` is emitted before the signed
+  event.
 
 ## Capture config
 
