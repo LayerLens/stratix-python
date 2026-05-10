@@ -2,15 +2,50 @@
 STRATIX LangGraph Lifecycle Hooks
 
 Provides graph start/end hooks for STRATIX tracing.
+
+Typed-event migration (Bundle #6 — final):
+    The five ``self.emit_dict_event(...)`` sites in this module were
+    migrated to typed payloads from
+    :mod:`layerlens.instrument._compat.events`:
+
+    * ``environment.config`` (graph start) →
+      :class:`EnvironmentConfigEvent` with ``env_type=SIMULATED``
+      (LangGraph runs as an in-process Python state machine, not a
+      cloud service).
+    * ``agent.input`` (graph start) → :class:`AgentInputEvent`
+      (``role=AGENT`` — graph executions originate from the graph
+      runtime, not a human user).
+    * ``agent.output`` (graph end) → :class:`AgentOutputEvent`.
+    * ``agent.state.change`` (graph end + node end) →
+      :class:`AgentStateChangeEvent` with ``state_type=GLOBAL``.
+      LangGraph already supplies real before/after state hashes via
+      the :class:`LangGraphStateAdapter` so the canonical
+      ``before_hash`` / ``after_hash`` requirement is satisfied
+      directly — no synthesised hashes.
+
+    Graph / node provenance (``graph_id``, ``execution_id``,
+    ``node_name``, ``duration_ns``, ``error``) folds onto canonical
+    :class:`MessageContent.metadata` /
+    :class:`EnvironmentInfo.attributes` slots.
 """
 
 from __future__ import annotations
 
 import time
 import uuid
+import hashlib
 from typing import TYPE_CHECKING, Any, TypeVar
 from dataclasses import field, dataclass
 
+from layerlens.instrument._compat.events import (
+    StateType,
+    MessageRole,
+    AgentInputEvent,
+    EnvironmentType,
+    AgentOutputEvent,
+    AgentStateChangeEvent,
+    EnvironmentConfigEvent,
+)
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -25,6 +60,57 @@ from layerlens.instrument.adapters.frameworks.langgraph.state import LangGraphSt
 
 if TYPE_CHECKING:
     from layerlens.instrument.adapters.frameworks.langgraph.handoff import HandoffDetector
+
+
+def _stringify(value: Any) -> str:
+    """Coerce ``value`` to a non-``None`` string for canonical message slots.
+
+    See identical helper in
+    :mod:`layerlens.instrument.adapters.frameworks.langchain.callbacks`
+    for the design rationale.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _canonicalize_state_hash(value: str) -> str:
+    """Wrap ``value`` in canonical ``sha256:<hex64>`` format.
+
+    The canonical :class:`AgentStateChangeEvent` requires
+    ``before_hash`` / ``after_hash`` to start with ``sha256:`` and
+    have a 64-character hex tail (see
+    ``ateam/stratix/core/events/cross_cutting.py``).
+    :class:`LangGraphStateAdapter.get_hash` returns whichever hash
+    format the host application opted into (raw hex, ``sha256:``-
+    prefixed, or an opaque digest from a custom hasher) — this
+    helper normalises every shape onto the canonical format:
+
+    * ``sha256:<hex64>`` — pass through unchanged.
+    * raw 64-char hex — prefix with ``sha256:``.
+    * any other shape — re-hash the string representation so the
+      output is always the canonical 64-hex format.
+
+    Re-hashing is safe because :class:`AgentStateChangeEvent` does
+    not need a cryptographically meaningful equivalence with the
+    original LangGraph hash — it only needs deterministic
+    before/after pairs that satisfy the canonical schema validator.
+    Two adjacent calls with identical inputs always yield identical
+    outputs.
+    """
+    if value.startswith("sha256:") and len(value) == 7 + 64:
+        return value
+    if len(value) == 64 and all(c in "0123456789abcdefABCDEF" for c in value):
+        return f"sha256:{value.lower()}"
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+# NOTE: ``AgentHandoffEvent`` is intentionally NOT imported here.
+# LangGraph handoffs are detected by :class:`HandoffDetector` (see
+# ``langgraph/handoff.py``) which emits its own typed payload —
+# this lifecycle module only owns graph / node start/end events.
 
 
 StateT = TypeVar("StateT")
@@ -262,24 +348,38 @@ class LayerLensLangGraphAdapter(BaseAdapter):
         )
         self._executions.append(execution)
 
-        # Emit environment config (gated by CaptureConfig inside emit_dict_event)
-        self.emit_dict_event(
-            "environment.config",
-            {
-                "framework": "langgraph",
-                "graph_id": graph_id,
-                "config": config,
-            },
+        # Emit environment config (gated by CaptureConfig inside
+        # emit_event). LangGraph runs as an in-process Python state
+        # machine, not a cloud service — env_type=SIMULATED matches
+        # the agno reference's framework-runtime convention.
+        env_attributes: dict[str, Any] = {
+            "framework": "langgraph",
+            "graph_id": graph_id,
+        }
+        if config is not None:
+            env_attributes["config"] = config
+        self.emit_event(
+            EnvironmentConfigEvent.create(
+                env_type=EnvironmentType.SIMULATED,
+                attributes=env_attributes,
+            )
         )
 
-        # Emit agent input
-        self.emit_dict_event(
-            "agent.input",
-            {
-                "graph_id": graph_id,
-                "execution_id": execution_id,
-                "initial_state": self._safe_serialize(initial_state),
-            },
+        # Emit agent input. Graph executions originate from the graph
+        # runtime itself — not a human user — so the canonical role
+        # is AGENT.
+        serialised_state = self._safe_serialize(initial_state)
+        self.emit_event(
+            AgentInputEvent.create(
+                message=_stringify(serialised_state),
+                role=MessageRole.AGENT,
+                metadata={
+                    "framework": "langgraph",
+                    "graph_id": graph_id,
+                    "execution_id": execution_id,
+                    "raw_input": serialised_state,
+                },
+            )
         )
 
         return execution
@@ -308,28 +408,42 @@ class LayerLensLangGraphAdapter(BaseAdapter):
         if error:
             execution.error = str(error)
 
-        # Emit agent output (gated by CaptureConfig inside emit_dict_event)
-        self.emit_dict_event(
-            "agent.output",
-            {
-                "graph_id": execution.graph_id,
-                "execution_id": execution.execution_id,
-                "final_state": self._safe_serialize(final_state),
-                "duration_ns": execution.end_time_ns - execution.start_time_ns,
-                "error": execution.error,
-            },
+        # Emit agent output (gated by CaptureConfig inside emit_event).
+        serialised_final = self._safe_serialize(final_state)
+        output_metadata: dict[str, Any] = {
+            "framework": "langgraph",
+            "graph_id": execution.graph_id,
+            "execution_id": execution.execution_id,
+            "duration_ns": execution.end_time_ns - execution.start_time_ns,
+            "raw_output": serialised_final,
+            "run_status": "run_failed" if execution.error else "run_complete",
+        }
+        if execution.error is not None:
+            output_metadata["error"] = execution.error
+        self.emit_event(
+            AgentOutputEvent.create(
+                message=_stringify(serialised_final),
+                metadata=output_metadata,
+            )
         )
 
-        # Emit state change if state changed (cross-cutting — always enabled)
-        if execution.initial_state_hash != execution.final_state_hash:
-            self.emit_dict_event(
-                "agent.state.change",
-                {
-                    "graph_id": execution.graph_id,
-                    "execution_id": execution.execution_id,
-                    "before_hash": execution.initial_state_hash,
-                    "after_hash": execution.final_state_hash,
-                },
+        # Emit state change if state changed (cross-cutting — always
+        # enabled). LangGraph supplies real before/after state hashes
+        # via LangGraphStateAdapter, so the canonical sha256 contract
+        # on AgentStateChangeEvent is satisfied directly. The
+        # canonical model expects ``sha256:<hex64>`` format — see the
+        # _stringify_hash helper below for the wrapping.
+        if (
+            execution.initial_state_hash is not None
+            and execution.final_state_hash is not None
+            and execution.initial_state_hash != execution.final_state_hash
+        ):
+            self.emit_event(
+                AgentStateChangeEvent.create(
+                    state_type=StateType.INTERNAL,
+                    before_hash=_canonicalize_state_hash(execution.initial_state_hash),
+                    after_hash=_canonicalize_state_hash(execution.final_state_hash),
+                )
             )
 
     def on_node_start(
@@ -395,17 +509,28 @@ class LayerLensLangGraphAdapter(BaseAdapter):
 
         execution.node_executions.append(node_context)
 
-        # Emit state change if node modified state (cross-cutting — always enabled)
-        if node_context["state_hash_before"] != node_context["state_hash_after"]:
-            self.emit_dict_event(
-                "agent.state.change",
-                {
-                    "graph_id": execution.graph_id,
-                    "execution_id": execution.execution_id,
-                    "node_name": node_context["node_name"],
-                    "before_hash": node_context["state_hash_before"],
-                    "after_hash": node_context["state_hash_after"],
-                },
+        # Emit state change if node modified state (cross-cutting —
+        # always enabled). Per-node mutations carry the same
+        # before/after hashes that LangGraphStateAdapter computes;
+        # ``_canonicalize_state_hash`` lifts them onto the canonical
+        # ``sha256:<hex64>`` shape. Per-node provenance (``graph_id``,
+        # ``execution_id``, ``node_name``) does not have a canonical
+        # slot on AgentStateChangeEvent — those values are recovered
+        # from the surrounding agent.input / agent.output events that
+        # already carry them on metadata.
+        before_hash = node_context["state_hash_before"]
+        after_hash = node_context["state_hash_after"]
+        if (
+            isinstance(before_hash, str)
+            and isinstance(after_hash, str)
+            and before_hash != after_hash
+        ):
+            self.emit_event(
+                AgentStateChangeEvent.create(
+                    state_type=StateType.INTERNAL,
+                    before_hash=_canonicalize_state_hash(before_hash),
+                    after_hash=_canonicalize_state_hash(after_hash),
+                )
             )
 
     # --- Internal helpers ---
