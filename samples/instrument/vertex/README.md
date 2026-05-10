@@ -22,7 +22,7 @@ The adapter supports all three model families that share Vertex's
 
 ## What you'll see
 
-Running `python -m samples.instrument.providers.vertex.main` produces
+Running `python -m samples.instrument.vertex.main` produces
 two events for a single completion:
 
 - `model.invoke` (L3) — request and response with parameters, tokens,
@@ -58,7 +58,7 @@ wiring on a fresh checkout:
 
 ```bash
 LAYERLENS_VERTEX_SAMPLE_MODE=mock \
-  python -m samples.instrument.providers.vertex.main
+  python -m samples.instrument.vertex.main
 ```
 
 The sample swaps in a stubbed `GenerativeModel` whose
@@ -74,7 +74,7 @@ export GOOGLE_APPLICATION_CREDENTIALS=/abs/path/to/sa-key.json
 export GOOGLE_CLOUD_PROJECT=your-gcp-project-id
 export GOOGLE_CLOUD_REGION=us-central1
 export LAYERLENS_STRATIX_API_KEY=ll-...   # optional
-python -m samples.instrument.providers.vertex.main
+python -m samples.instrument.vertex.main
 ```
 
 The Vertex SDK auto-detects the SA-JSON path. The adapter reads the
@@ -86,7 +86,7 @@ event so you can audit which workloads use which key.
 ```bash
 gcloud auth application-default login
 export GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-python -m samples.instrument.providers.vertex.main
+python -m samples.instrument.vertex.main
 ```
 
 When `GOOGLE_APPLICATION_CREDENTIALS` is unset, the SDK falls back to
@@ -97,7 +97,7 @@ every event.
 
 ```bash
 export LAYERLENS_VERTEX_MODEL=publishers/anthropic/models/claude-opus-4-6
-python -m samples.instrument.providers.vertex.main
+python -m samples.instrument.vertex.main
 ```
 
 The adapter strips the `publishers/<vendor>/models/` prefix before

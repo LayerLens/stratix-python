@@ -30,9 +30,9 @@ Required environment (live mode):
 Run::
 
     pip install 'layerlens[providers-vertex]'
-    python -m samples.instrument.providers.vertex.main           # live
+    python -m samples.instrument.vertex.main           # live
     LAYERLENS_VERTEX_SAMPLE_MODE=mock \\
-        python -m samples.instrument.providers.vertex.main       # mock
+        python -m samples.instrument.vertex.main       # mock
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ def main() -> int:
     mode = os.environ.get("LAYERLENS_VERTEX_SAMPLE_MODE", "auto").lower()
     if mode == "auto":
         # Auto: prefer mock when no credentials are visible, so plain
-        # `python -m samples.instrument.providers.vertex.main` always
+        # `python -m samples.instrument.vertex.main` always
         # exits successfully on a fresh checkout.
         if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") and not os.environ.get(
             "GOOGLE_CLOUD_PROJECT"

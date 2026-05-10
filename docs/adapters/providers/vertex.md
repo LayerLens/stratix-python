@@ -172,6 +172,6 @@ separate types.
 
 ## See also
 
-- Sample: `samples/instrument/providers/vertex/main.py`
+- Sample: `samples/instrument/vertex/main.py`
 - Tests: `tests/instrument/adapters/providers/test_vertex.py`
 - Source port: `ateam/stratix/sdk/python/adapters/llm_providers/google_vertex_adapter.py`
