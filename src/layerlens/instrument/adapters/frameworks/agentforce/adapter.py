@@ -4,6 +4,30 @@ AgentForce Adapter
 BaseAdapter-compliant wrapper for AgentForce trace import.
 Provides lifecycle management, circuit breaker protection,
 CaptureConfig filtering, and health reporting.
+
+Typed-event migration (Bundle #6 — final):
+    The single ``self.emit_dict_event(...)`` site in
+    :meth:`AgentForceAdapter.import_sessions` (the per-event
+    re-emission loop after the importer normalises Salesforce
+    Agentforce trace records) was migrated to a typed
+    :meth:`BaseAdapter.emit_event` call.
+
+    AgentForce's :class:`AgentForceNormalizer` produces ad-hoc
+    event dicts whose ``event_type`` is a string already (one of the
+    canonical values: ``model.invoke``, ``tool.call``,
+    ``agent.handoff``, ``cost.record``, ``policy.violation``,
+    ``agent.input``, ``agent.output``, ``agent.state.change``,
+    ``environment.config``). Rather than restructure each shape into
+    its canonical Pydantic model (which would require teaching the
+    normaliser about every canonical field — out of scope for this
+    bundle), the adapter sets
+    ``ALLOW_UNREGISTERED_EVENTS = True`` to mark this adapter as
+    operating outside the canonical 13-event taxonomy.
+
+    This is the SAME policy decision documented in the foundation
+    PR #129 for langfuse (importer-style adapters whose event
+    taxonomy is the upstream system's, not Stratix's). See
+    ``docs/adapters/typed-events.md`` for the policy.
 """
 
 from __future__ import annotations
@@ -58,6 +82,19 @@ class AgentForceAdapter(BaseAdapter):
     # REST API, not a Python library, so there is no framework-side
     # Pydantic dependency to constrain.
     requires_pydantic = PydanticCompat.V1_OR_V2
+
+    # AgentForce is an importer-style adapter — events are derived
+    # from Salesforce Agentforce trace records via the
+    # ``AgentForceNormalizer`` rather than instrumented at runtime.
+    # The normaliser produces event dicts whose shape is
+    # AgentForce-native, not the canonical Pydantic models. We opt
+    # into ``ALLOW_UNREGISTERED_EVENTS`` so the typed-event validator
+    # accepts the dict payloads as open-ended models — the same
+    # policy decision PR #129 made for langfuse. See
+    # ``docs/adapters/typed-events.md`` for the policy and the
+    # follow-up backlog for the (out-of-scope) effort to re-shape
+    # the AgentForce taxonomy onto canonical models.
+    ALLOW_UNREGISTERED_EVENTS: bool = True
 
     def __init__(
         self,
@@ -154,8 +191,14 @@ class AgentForceAdapter(BaseAdapter):
         """
         Import AgentForce sessions and emit events through the adapter pipeline.
 
-        Events are routed through ``emit_dict_event()`` for circuit breaker
-        and CaptureConfig protection.
+        Events are routed through :meth:`BaseAdapter.emit_event` for
+        circuit-breaker, CaptureConfig, and typed-event-validator
+        protection. Because AgentForce events do not conform to the
+        canonical 13-event Pydantic taxonomy (the normaliser
+        produces Salesforce-native shapes), the adapter sets
+        :attr:`ALLOW_UNREGISTERED_EVENTS` to ``True`` — the validator
+        wraps each dict in an open-ended Pydantic model rather than
+        rejecting it. The dict shape on the wire is unchanged.
 
         Returns:
             ImportResult summary.
@@ -172,18 +215,28 @@ class AgentForceAdapter(BaseAdapter):
             last_import_timestamp=last_import_timestamp,
         )
 
-        # Route each event through BaseAdapter pipeline
+        # Route each event through BaseAdapter pipeline. The
+        # normaliser produces ``{event_type, payload, identity?,
+        # timestamp?}`` records — we splice the optional identity /
+        # timestamp onto the payload (preserving the legacy
+        # downstream-consumer contract: those values are visible at
+        # the payload root) and forward the resulting dict to
+        # :meth:`BaseAdapter.emit_event`. The base class wraps the
+        # dict in an open-ended Pydantic model and stamps ``org_id``
+        # per the multi-tenancy contract.
         emitted = 0
         for event in events:
             event_type = event.get("event_type", "")
-            payload = event.get("payload", {})
-            # Add identity and timestamp to payload for downstream consumers
+            payload = dict(event.get("payload", {}))
             if "identity" in event:
                 payload["_identity"] = event["identity"]
             if "timestamp" in event:
                 payload["_timestamp"] = event["timestamp"]
+            # The typed-event validator inspects ``event_type`` on
+            # the dict — make sure it's set before passing through.
+            payload.setdefault("event_type", event_type)
 
-            self.emit_dict_event(event_type, payload)
+            self.emit_event(payload)
             emitted += 1
 
         result.events_generated = emitted
