@@ -112,6 +112,7 @@ class CrewAIAdapter(BaseAdapter):
                 AdapterCapability.TRACE_MODELS,
                 AdapterCapability.TRACE_STATE,
                 AdapterCapability.TRACE_HANDOFFS,
+                AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for CrewAI agent framework",
         )

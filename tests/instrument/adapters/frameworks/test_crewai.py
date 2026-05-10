@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List
 
 from layerlens.instrument.adapters._base import AdapterStatus, CaptureConfig
+from layerlens.instrument.adapters._base.adapter import AdapterCapability
 from layerlens.instrument.adapters.frameworks.crewai import (
     ADAPTER_CLASS,
     CrewAIAdapter,
@@ -68,6 +69,22 @@ def test_adapter_info_and_health() -> None:
     assert info.name == "CrewAIAdapter"
     health = a.health_check()
     assert health.framework_name == "crewai"
+
+
+def test_declares_replay_capability() -> None:
+    """Catalog UI relies on declared capabilities. CrewAI implements
+    ``serialize_for_replay`` (returns a non-stub ReplayableTrace), so the
+    REPLAY capability must surface via ``info().capabilities``.
+
+    STREAMING is intentionally NOT declared: the CrewAI integration is
+    purely callback-driven (kickoff/task callbacks) and does not wrap a
+    streaming entry-point. Per CLAUDE.md 'no fake claims', the adapter
+    does not declare a capability it does not implement.
+    """
+    a = CrewAIAdapter()
+    caps = a.info().capabilities
+    assert AdapterCapability.REPLAY in caps
+    assert AdapterCapability.STREAMING not in caps
 
 
 def test_instrument_crew_attaches_callback_and_emits_config() -> None:
