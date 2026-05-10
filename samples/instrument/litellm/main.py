@@ -13,7 +13,7 @@ plus the appropriate vendor key (``OPENAI_API_KEY`` for the default
 Run::
 
     pip install 'layerlens[providers-litellm]'
-    python -m samples.instrument.providers.litellm.main
+    python -m samples.instrument.litellm.main
 """
 
 from __future__ import annotations

@@ -22,7 +22,7 @@ lazy-import guarantee tested by `tests/instrument/test_lazy_imports.py`.
 ## Run (offline / mocked)
 
 ```bash
-python -m samples.instrument.providers.litellm.main
+python -m samples.instrument.litellm.main
 ```
 
 You'll see the adapter emit `model.invoke` and `cost.record` events for
@@ -46,7 +46,7 @@ atlas-app (see `samples/instrument/openai/main.py` for that pattern).
 ```bash
 export LAYERLENS_LITELLM_LIVE=1
 export OPENAI_API_KEY=sk-...
-python -m samples.instrument.providers.litellm.main
+python -m samples.instrument.litellm.main
 ```
 
 This calls the real `litellm.completion(...)` and dispatches the
