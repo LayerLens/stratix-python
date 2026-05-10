@@ -60,14 +60,13 @@ and the kernel returns to its original behaviour.
 
 | Event | Layer | When |
 |---|---|---|
-| `environment.config` | L4a | First plugin invocation per kernel. |
-| `agent.input` | L1 | Function invocation start. |
-| `agent.output` | L1 | Function invocation end (success or error). |
-| `agent.code` | L2 | Per plugin function when `l2_agent_code` is true. |
-| `agent.action` | L4a | Per planner step. |
-| `agent.state.change` | cross-cutting | Memory store reads/writes. |
-| `tool.call` | L5a | Per `auto_function_invocation` (model-selected plugin). |
-| `model.invoke` | L3 | Per LLM call inside the kernel. |
+| `environment.config` | L4a | First plugin invocation per kernel and per-plugin discovery (`lifecycle.py:203,442`). |
+| `agent.input` | L1 | Kernel invoke start (`lifecycle.py:397`). |
+| `agent.output` | L1 | Kernel invoke end — success or error (`lifecycle.py:423`). |
+| `agent.code` | L2 | Per plugin function / prompt render (`lifecycle.py:271,355`). |
+| `tool.call` | L5a | Per `auto_function_invocation` and per memory-store operation (`lifecycle.py:247,390`). |
+| `model.invoke` | L3 | Per LLM call inside the kernel (`lifecycle.py:306`). |
+| `cost.record` | cross-cutting | Per LLM call when token usage is present (`lifecycle.py:310`). |
 
 ## Semantic Kernel specifics
 

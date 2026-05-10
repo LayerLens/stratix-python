@@ -56,13 +56,13 @@ hooks. `disconnect()` restores the originals.
 
 | Event | Layer | When |
 |---|---|---|
-| `environment.config` | L4a | First wrap of each agent. |
-| `agent.input` | L1 | Beginning of every `__call__` / `invoke`. |
-| `agent.output` | L1 | End of every `__call__` / `invoke`. |
-| `agent.action` | L4a | Per intermediate reasoning loop iteration. |
-| `agent.handoff` | L4a | Multi-agent collaboration handoffs. |
-| `tool.call` | L5a | Per Strands tool invocation. |
-| `model.invoke` | L3 | Per LLM call (Strands routes these through Bedrock). |
+| `environment.config` | L4a | First wrap of each agent (`lifecycle.py:430`). |
+| `agent.input` | L1 | Beginning of every `__call__` / `invoke` (`lifecycle.py:272`). |
+| `agent.output` | L1 | End of every `__call__` / `invoke` (`lifecycle.py:307`). |
+| `agent.state.change` | cross-cutting | Mid-run state mutations and run completion (`lifecycle.py:249,308`). |
+| `tool.call` | L5a | Per Strands tool invocation (`lifecycle.py:223,341`). |
+| `model.invoke` | L3 | Per LLM call — Strands routes through Bedrock (`lifecycle.py:188,371`). |
+| `cost.record` | cross-cutting | Per LLM call when token usage is present (`lifecycle.py:209`). |
 
 ## Strands specifics
 
@@ -72,10 +72,12 @@ hooks. `disconnect()` restores the originals.
 - **Tools**: Strands tools registered via the `@tool` decorator surface
   their function name and JSON schema in `tool.call.tool_schema`.
 - **Loops**: Strands runs a reasoning loop (think → act → observe). Each
-  loop iteration emits an `agent.action` with `loop_index` and a copy of
-  the conversation state.
-- **Multi-agent**: Strands supports orchestrator/worker patterns; cross-agent
-  delegation emits `agent.handoff` with `source_agent` + `target_agent`.
+  iteration is observable via the inner `model.invoke` and `tool.call`
+  events the adapter captures from Strands' callback hooks — there is no
+  separate per-iteration loop event.
+- **State changes**: mid-run state mutations emit `agent.state.change`
+  (`lifecycle.py:249`) and run completion emits a terminal
+  `agent.state.change` alongside `agent.output` (`lifecycle.py:308`).
 
 ## Capture config
 

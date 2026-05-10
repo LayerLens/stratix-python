@@ -59,14 +59,15 @@ events.
 
 | Event | Layer | When |
 |---|---|---|
-| `environment.config` | L4a | First agent span observed. |
-| `agent.input` | L1 | Per agent span start. |
-| `agent.output` | L1 | Per agent span end. |
-| `agent.action` | L4a | Per `response_span` (model call decision). |
-| `agent.handoff` | L4a | Per `handoff_span`. |
-| `tool.call` | L5a | Per `function_span`. |
-| `model.invoke` | L3 | Per `generation_span` (model call). |
-| `policy.violation` | cross-cutting | Per `guardrail_span` that fails. |
+| `environment.config` | L4a | First agent span observed (`lifecycle.py:497`). |
+| `agent.input` | L1 | Per agent span start (`lifecycle.py:256,358`). |
+| `agent.output` | L1 | Per agent span end (`lifecycle.py:269,392`). |
+| `agent.state.change` | cross-cutting | On agent span start/end (`lifecycle.py:193,211`). |
+| `model.invoke` | L3 | Per `response_span` / `generation_span` model call (`lifecycle.py:293,446`). |
+| `cost.record` | cross-cutting | Per model call when token counts are present (`lifecycle.py:295`). |
+| `tool.call` | L5a | Per `function_span` (`lifecycle.py:308,417`). |
+| `agent.handoff` | L4a | Per `handoff_span` (`lifecycle.py:325,463`). |
+| `policy.violation` | cross-cutting | Per `guardrail_span` that fails (`lifecycle.py:338`). |
 
 ## OpenAI Agents specifics
 

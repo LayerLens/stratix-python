@@ -54,14 +54,14 @@ sink.close()
 
 | Event | Layer | When |
 |---|---|---|
-| `environment.config` | L4a | First `run` per agent. |
-| `agent.input` | L1 | Beginning of every `run` / `arun`. |
-| `agent.output` | L1 | End of every `run` / `arun`. |
-| `agent.action` | L4a | Per intermediate reasoning step. |
-| `agent.handoff` | L4a | When a team agent delegates to a sub-agent. |
-| `agent.state.change` | cross-cutting | Memory mutations. |
-| `tool.call` | L5a | Per tool invocation. |
-| `model.invoke` | L3 | Per LLM call. |
+| `environment.config` | L4a | First `run` per agent (`lifecycle.py:462`). |
+| `agent.input` | L1 | Beginning of every `run` / `arun` (`lifecycle.py:289`). |
+| `agent.output` | L1 | End of every `run` / `arun` (`lifecycle.py:324`). |
+| `agent.handoff` | L4a | When a team agent delegates to a sub-agent (`lifecycle.py:267,398`). |
+| `agent.state.change` | cross-cutting | Run completion / failure (`lifecycle.py:325`). |
+| `tool.call` | L5a | Per tool invocation (`lifecycle.py:246,358`). |
+| `model.invoke` | L3 | Per LLM call (`lifecycle.py:216,388`). |
+| `cost.record` | cross-cutting | Per LLM call when `result.metrics` / `result.usage` are populated (`lifecycle.py:228`). |
 
 ## Agno specifics
 
@@ -69,9 +69,12 @@ sink.close()
   Each team member must be instrumented individually with
   `adapter.instrument_agent(team_member)` — or call
   `instrument_agent(team)` and the convenience helper recurses.
-- **Reasoning agents**: when `reasoning=True` is set on an Agent, the
-  intermediate reasoning steps emit `agent.action` events with a
-  `step_index` field.
+- **Reasoning agents**: Agno's `reasoning=True` mode is not specially
+  instrumented — intermediate reasoning steps are not surfaced as
+  separate events. The reasoning chain is observable only via the
+  inputs/outputs already captured on `agent.input` / `agent.output` and
+  any inner `model.invoke` / `tool.call` events the underlying agent
+  emits.
 - **Storage backends**: Agno session storage (Postgres, sqlite, Redis,
   etc.) emits `agent.state.change` on every save.
 
@@ -83,7 +86,8 @@ from layerlens.instrument.adapters._base import CaptureConfig
 # Recommended.
 adapter = AgnoAdapter(capture_config=CaptureConfig.standard())
 
-# Heavy: include reasoning steps as agent.code (the chain-of-thought).
+# Heavy: enable all capture layers (L2 agent.code currently has no
+# Agno-specific emission sites — reasoning is not specially instrumented).
 adapter = AgnoAdapter(
     capture_config=CaptureConfig(
         l1_agent_io=True,

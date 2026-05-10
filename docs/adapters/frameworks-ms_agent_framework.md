@@ -68,13 +68,14 @@ filters. `disconnect()` restores the originals.
 
 | Event | Layer | When |
 |---|---|---|
-| `environment.config` | L4a | First wrap of each chat. |
-| `agent.input` | L1 | Beginning of every `invoke` / `invoke_stream`. |
-| `agent.output` | L1 | End of every invocation (per response). |
-| `agent.action` | L4a | Per intermediate step. |
-| `agent.handoff` | L4a | Per `AgentGroupChat` speaker turn. |
-| `tool.call` | L5a | Per plugin function invocation. |
-| `model.invoke` | L3 | Per LLM call. |
+| `environment.config` | L4a | First wrap of each chat (`lifecycle.py:481`). |
+| `agent.input` | L1 | Beginning of every `invoke` / `invoke_stream` (`lifecycle.py:299`). |
+| `agent.output` | L1 | End of every invocation (per response) (`lifecycle.py:334`). |
+| `agent.state.change` | cross-cutting | Per `invoke` / `invoke_stream` end (`lifecycle.py:335`). |
+| `agent.handoff` | L4a | Per `AgentGroupChat` speaker turn (`lifecycle.py:223,408`). |
+| `tool.call` | L5a | Per plugin function invocation (`lifecycle.py:237,247,368`). |
+| `model.invoke` | L3 | Per LLM call (`lifecycle.py:262,398`). |
+| `cost.record` | cross-cutting | Per LLM call when token usage is present (`lifecycle.py:272`). |
 
 ## MS Agent Framework specifics
 
@@ -83,8 +84,10 @@ filters. `disconnect()` restores the originals.
   on each speaker turn.
 - **Plugins**: Semantic Kernel plugin functions surface as `tool.call` —
   the plugin name + function name combine into `tool_name`.
-- **Multi-agent terminations**: configurable termination strategies
-  emit `agent.action` with `terminate_reason` when a group chat ends.
+- **Multi-agent terminations**: configurable termination strategies are
+  not separately instrumented. When a group chat ends, the outer
+  `agent.output` carries the final response and the run completion fires
+  one `agent.state.change` (`lifecycle.py:335`).
 - **Streaming**: `invoke_stream` emits one consolidated `model.invoke`
   on stream completion; per-chunk text is accumulated.
 

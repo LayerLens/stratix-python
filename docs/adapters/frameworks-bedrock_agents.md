@@ -58,7 +58,8 @@ provided `bedrock-agent-runtime` client:
   emits `agent.input` and `environment.config` on first agent encounter.
 - `after-call.bedrock-agent-runtime.InvokeAgent` — fires after the response
   comes back. Walks the `trace` blocks in the streamed events and emits
-  `model.invoke` / `tool.call` / `agent.action` per trace step.
+  `model.invoke` / `tool.call` / `agent.handoff` per trace step
+  (`lifecycle.py:200-213`).
 
 `disconnect()` unregisters both hooks.
 
@@ -67,12 +68,12 @@ provided `bedrock-agent-runtime` client:
 | Event | Layer | When |
 |---|---|---|
 | `environment.config` | L4a | First `InvokeAgent` per `agentId`. |
-| `agent.input` | L1 | Beginning of every `InvokeAgent`. |
-| `agent.output` | L1 | End of every `InvokeAgent` (after stream consumption). |
-| `agent.action` | L4a | Per `orchestrationTrace.modelInvocationInput` block. |
-| `agent.handoff` | L4a | Per cross-agent collaboration step. |
-| `tool.call` | L5a | Per `actionGroupInvocationInput` / `knowledgeBaseLookupInput` block. |
-| `model.invoke` | L3 | Per `modelInvocationOutput` block (with token usage). |
+| `agent.input` | L1 | Beginning of every `InvokeAgent` (`lifecycle.py:289`). |
+| `agent.output` | L1 | End of every `InvokeAgent` after stream consumption (`lifecycle.py:323`). |
+| `agent.handoff` | L4a | Per `AGENT_COLLABORATOR` trace step (`lifecycle.py:269,386`). |
+| `tool.call` | L5a | Per `ACTION_GROUP` / `KNOWLEDGE_BASE` trace step (`lifecycle.py:217,230,348`). |
+| `model.invoke` | L3 | Per `MODEL_INVOCATION` trace step with token usage (`lifecycle.py:254,377`). |
+| `cost.record` | cross-cutting | Per `MODEL_INVOCATION` when `usage` is present (`lifecycle.py:256`). |
 
 ## Bedrock Agents specifics
 

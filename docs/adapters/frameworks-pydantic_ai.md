@@ -55,12 +55,14 @@ sink.close()
 
 | Event | Layer | When |
 |---|---|---|
-| `environment.config` | L4a | First wrap of each agent. |
-| `agent.input` | L1 | Beginning of every `run` / `run_sync`. |
-| `agent.output` | L1 | End of every `run` / `run_sync`. |
-| `agent.action` | L4a | Per intermediate model step (multi-step runs). |
-| `tool.call` | L5a | Per registered tool invocation. |
-| `model.invoke` | L3 | Per LLM call (one per model step). |
+| `environment.config` | L4a | First wrap of each agent (`lifecycle.py:407`). |
+| `agent.input` | L1 | Beginning of every `run` / `run_sync` (`lifecycle.py:248`). |
+| `agent.output` | L1 | End of every `run` / `run_sync` (`lifecycle.py:282`). |
+| `agent.state.change` | cross-cutting | On run end (`lifecycle.py:283`). |
+| `tool.call` | L5a | Per registered tool invocation (`lifecycle.py:227,315`). |
+| `model.invoke` | L3 | Per LLM call (one per model step) (`lifecycle.py:218,344`). |
+| `cost.record` | cross-cutting | Per LLM call when token usage is present (`lifecycle.py:203`). |
+| `agent.handoff` | L4a | Cross-agent delegation (`lifecycle.py:353`). |
 
 The `model.invoke` payload includes the model name (parsed from the
 PydanticAI model spec like `openai:gpt-4o-mini`), token usage from
@@ -70,8 +72,10 @@ PydanticAI model spec like `openai:gpt-4o-mini`), token usage from
 
 - **Structured results**: when an agent declares `result_type=MyModel`, the
   validated Pydantic model is included in `agent.output` (subject to
-  `CaptureConfig.capture_content`). Validation errors emit
-  `policy.violation`.
+  `CaptureConfig.capture_content`). Validation errors are surfaced on
+  the `agent.output` payload (via the wrapping `try/except` in
+  `_create_traced_run`) — the adapter does not emit a separate
+  `policy.violation` event for these.
 - **Model spec parsing**: PydanticAI accepts model spec strings like
   `"openai:gpt-4o-mini"` or `"anthropic:claude-3-5-sonnet"`. The adapter
   splits these into `provider` + `model` for downstream cost lookups.
