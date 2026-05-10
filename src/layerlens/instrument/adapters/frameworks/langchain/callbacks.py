@@ -214,6 +214,7 @@ class LayerLensCallbackHandler(BaseAdapter):
             capabilities=[
                 AdapterCapability.TRACE_TOOLS,
                 AdapterCapability.TRACE_MODELS,
+                AdapterCapability.REPLAY,
             ],
             description="LayerLens adapter for LangChain framework (callback-based)",
         )
