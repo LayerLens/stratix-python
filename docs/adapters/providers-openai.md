@@ -21,7 +21,7 @@ from layerlens.instrument.transport.sink_http import HttpEventSink
 
 sink = HttpEventSink(adapter_name="openai")  # ships to atlas-app
 adapter = OpenAIAdapter()
-adapter._event_sinks.append(sink)
+adapter.add_sink(sink)
 adapter.connect()
 
 client = OpenAI()
