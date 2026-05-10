@@ -65,12 +65,11 @@ proxies.
 | `environment.config` | L4a | First time each agent is seen. |
 | `agent.input` | L1 | Every `send`. |
 | `agent.output` | L1 | Every `receive`. |
-| `agent.action` | L4a | Per `generate_reply` decision. |
 | `agent.code` | L2 | When `execute_code_blocks` runs and `l2_agent_code` is enabled. |
 | `agent.handoff` | L4a | Group-chat speaker selection / human handoff. |
 | `agent.state.change` | cross-cutting | Conversation history mutations. |
-| `tool.call` | L5a | Per function-call inside `generate_reply`. |
-| `model.invoke` | L3 | Per LLM call. |
+| `tool.call` | L5a | Per function-call inside `generate_reply`, and per `execute_code_blocks` invocation. |
+| `model.invoke` | L3 | Per `generate_reply` (one LLM call per reply decision). |
 
 ## AutoGen specifics
 

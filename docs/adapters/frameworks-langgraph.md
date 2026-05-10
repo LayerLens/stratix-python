@@ -52,7 +52,7 @@ sink.close()
 Companion utilities:
 
 - `trace_node(fn)` — decorator that wraps an individual node function and
-  emits `agent.action` on entry/exit.
+  emits `agent.state.change` on exit (comparing pre/post state hashes).
 - `trace_langgraph_tool(fn)` — decorator for tool nodes; emits `tool.call`.
 - `wrap_llm_for_langgraph(llm, ...)` — wraps a LangGraph LLM node so each
   invocation emits `model.invoke`.
@@ -66,8 +66,7 @@ Companion utilities:
 | `environment.config` | L4a | First call into a wrapped graph (per execution). |
 | `agent.input` | L1 | Beginning of every wrapped graph execution. |
 | `agent.output` | L1 | End of every wrapped graph execution (success or error). |
-| `agent.state.change` | cross-cutting | When the state hash changes during execution. |
-| `agent.action` | L4a | One per node entry/exit when the node is wrapped with `trace_node`. |
+| `agent.state.change` | cross-cutting | When the state hash changes during execution, and on each `trace_node`-wrapped node exit. |
 | `tool.call` | L5a | One per tool node wrapped with `trace_langgraph_tool`. |
 | `model.invoke` | L3 | One per LLM call wrapped with `wrap_llm_for_langgraph`. |
 | `agent.handoff` | L4a | When a `HandoffDetector` is attached and a handoff is detected. |

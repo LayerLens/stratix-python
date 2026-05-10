@@ -73,13 +73,16 @@ Companion modules:
 
 | Event | Layer | When |
 |---|---|---|
-| `agent.input` | L1 | Per `AIAgentInteractionMessage` with role=user. |
+| `agent.input` | L1 | Per `AIAgentInteractionMessage` with role=user, and per `AIAgentInteractionStep` whose `StepType` is `UserInputStep`. |
 | `agent.output` | L1 | Per `AIAgentInteractionMessage` with role=agent. |
-| `agent.action` | L4a | Per `AIAgentInteractionStep`. |
-| `tool.call` | L5a | Per step where `StepType` is a tool/action invocation. |
-| `model.invoke` | L3 | Per LLM call captured in step metadata. |
+| `model.invoke` | L3 | Per `AIAgentInteractionStep` whose `StepType` is `LLMExecutionStep`. |
+| `tool.call` | L5a | Per `AIAgentInteractionStep` whose `StepType` is `FunctionStep`, `ActionInvocationStep`, or any unrecognized step type (default fallback). |
 | `policy.violation` | cross-cutting | Per Einstein Trust Layer policy hit. |
 | `agent.handoff` | L4a | Per `AIAgentSessionParticipant` change. |
+
+Interaction-step routing is driven by `_STEP_TYPE_MAP` in
+`adapters/frameworks/agentforce/normalizer.py`; unmapped step types fall
+through to `tool.call`.
 
 Each emitted event includes `_identity` (the Salesforce record `Id`) and
 `_timestamp` (record `LastModifiedDate`) for re-import idempotency.

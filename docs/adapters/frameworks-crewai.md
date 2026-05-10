@@ -54,8 +54,9 @@ crew + agent objects:
 
 - `Crew.kickoff` — emits `agent.input` + `environment.config` at start,
   `agent.output` at completion.
-- `Agent.execute_task` — emits `agent.action` + `agent.code` (when enabled)
-  per task.
+- `Agent.execute_task` — emits `agent.code` on task start (with task metadata)
+  and `agent.state.change` on task completion (with task output + optional
+  `cost.record` when token usage is reported).
 - `Agent._invoke_tool` — emits `tool.call` per tool invocation.
 - `Agent.llm.call` — emits `model.invoke` per LLM call.
 - Crew delegation events via `CrewDelegationTracker` — emits `agent.handoff`
@@ -67,13 +68,13 @@ crew + agent objects:
 |---|---|---|
 | `environment.config` | L4a | First `kickoff` of an instrumented crew. |
 | `agent.input` | L1 | Start of every `kickoff`. |
-| `agent.output` | L1 | End of every `kickoff` and per-task. |
-| `agent.code` | L2 | When `CaptureConfig.l2_agent_code` is true; one per agent. |
-| `agent.action` | L4a | Per task execution. |
-| `agent.state.change` | cross-cutting | When agent memory or context changes. |
+| `agent.output` | L1 | End of every `kickoff`. |
+| `agent.code` | L2 | At each task start (carries `task_description`, `agent_role`, `task_order`). |
+| `agent.state.change` | cross-cutting | At each task end (carries `task_output`), and when agent memory/context changes. |
 | `agent.handoff` | L4a | When one agent delegates to another. |
 | `tool.call` | L5a | Per tool invocation inside a task. |
 | `model.invoke` | L3 | Per LLM call from any crew agent. |
+| `cost.record` | cross-cutting | At task end when token usage is reported by the LLM client. |
 
 ## CrewAI specifics
 

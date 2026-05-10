@@ -65,9 +65,8 @@ Convenience helpers wrap whole objects:
 | Event | Layer | When |
 |---|---|---|
 | `model.invoke` | L3 | `on_llm_end` (success) and `on_llm_error` (failure). |
-| `tool.call` | L5a | `on_tool_end` and `on_tool_error`. |
+| `tool.call` | L5a | `on_tool_end`, `on_tool_error`, and `on_agent_action` (the action is treated as a tool invocation). |
 | `agent.output` | L4a | `on_agent_finish`. |
-| `agent.action` | L4a | `on_agent_action`. |
 | `chain.start` / `chain.end` / `chain.error` | L4a | `on_chain_*`. |
 | `agent.state.change` | L4a | When a wrapped memory is updated via `wrap_memory`. |
 
@@ -78,10 +77,10 @@ model name, prompts, generations, token usage if present, and latency.
 ## LangGraph nodes
 
 When the handler is used inside a LangGraph run, the `metadata.langgraph_node`
-field in the LangChain callback metadata is propagated to the
-`agent.action` / `chain.start` payloads as `node_name`. This lets the platform
-correlate per-node events back to the graph topology — see also the
-`langgraph` adapter for full graph instrumentation.
+field in the LangChain callback metadata is propagated to the chain-event
+payloads as `node_name`. This lets the platform correlate per-node events
+back to the graph topology — see also the `langgraph` adapter for full
+graph instrumentation.
 
 ## Capture config
 
