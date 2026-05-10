@@ -8,6 +8,27 @@ Instrumentation strategy: Chat wrapper (invoke wrapping)
   Tool call                -> tool.call (L5a)
   Model call               -> model.invoke (L3)
   Channel selection        -> agent.state.change (Cross)
+
+Typed-event status (post PR #129 migration, bundle 3):
+
+* Every emission flows through :meth:`BaseAdapter.emit_event` with a
+  canonical Pydantic payload imported from
+  :mod:`layerlens.instrument._compat.events`.
+* MS Agent Framework-specific provenance (``framework``, ``agent_name``,
+  ``chat_name``, ``chat_type``, ``timestamp_ns``, ``selection_strategy``,
+  ``termination_strategy``) is carried in the canonical model's
+  metadata / attributes / parameters slots.
+* The ``agent.state.change`` "run_complete" / "run_failed" marker
+  emitted by :meth:`on_run_end` does not satisfy the canonical
+  :class:`AgentStateChangeEvent` ``before_hash`` / ``after_hash``
+  contract (the run boundary has no real state mutation to hash).
+  It is mapped onto :class:`AgentOutputEvent` metadata as
+  ``run_status`` so the cross-cutting completion signal is preserved
+  without violating the canonical schema.
+* The handoff context hash is generated via SHA-256 over the context
+  string (or the empty string when no context is available) so the
+  canonical :class:`AgentHandoffEvent.handoff_context_hash` validator
+  always passes.
 """
 
 from __future__ import annotations
@@ -19,6 +40,18 @@ import logging
 import threading
 from typing import Any
 
+from layerlens.instrument._compat.events import (
+    MessageRole,
+    ToolCallEvent,
+    AgentInputEvent,
+    CostRecordEvent,
+    EnvironmentType,
+    IntegrationType,
+    AgentOutputEvent,
+    ModelInvokeEvent,
+    AgentHandoffEvent,
+    EnvironmentConfigEvent,
+)
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -32,6 +65,60 @@ from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 logger = logging.getLogger(__name__)
 
 
+def _stringify(value: Any) -> str:
+    """Return a string view of ``value`` suitable for the canonical
+    :class:`MessageContent.message` field.
+
+    The canonical schema requires :class:`AgentInputEvent` and
+    :class:`AgentOutputEvent` to carry a ``message: str``. MS Agent
+    Framework delivers the underlying input/output as arbitrary Python
+    objects (Pydantic ``ChatMessageContent`` models with ``content``
+    / ``items``, dicts, ``None``); this helper converts each to a
+    (possibly empty) string so the typed event always validates. The
+    original payload is preserved on
+    :class:`MessageContent.metadata.raw_input` / ``raw_output``.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        # SK ChatMessageContent serialises with a ``content`` slot.
+        content = value.get("content")
+        if isinstance(content, str):
+            return content
+    return str(value)
+
+
+def _coerce_to_dict(value: Any) -> dict[str, Any]:
+    """Coerce ``value`` into a dict suitable for the canonical
+    :class:`ToolCallEvent` ``input`` / ``output`` slots.
+
+    The canonical schema requires ``input: dict[str, Any]`` and
+    ``output: dict[str, Any] | None``. SK function-call payloads
+    deliver arbitrary Python values. This helper wraps non-dict
+    values in ``{"value": ...}`` so the canonical slot is always
+    satisfied.
+    """
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    return {"value": value}
+
+
+def _sha256_of(value: str) -> str:
+    """Return a canonical ``sha256:<hex64>`` hash string for ``value``.
+
+    The canonical schema's :class:`AgentHandoffEvent` requires
+    ``handoff_context_hash`` to start with ``sha256:`` and have a
+    64-character hex tail. Centralising the format here ensures every
+    emit site uses the same wire format — including the empty-string
+    fallback used when the framework has no context to hash.
+    """
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 class MSAgentAdapter(BaseAdapter):
     """LayerLens adapter for Microsoft Agent Framework."""
 
@@ -39,10 +126,17 @@ class MSAgentAdapter(BaseAdapter):
     VERSION = "0.1.0"
     # The adapter source has no direct ``pydantic`` imports (verified by
     # grep across ``frameworks/ms_agent_framework/``). The adapter wraps
-    # AgentChat.invoke() and emits dict events. The pyproject extra pulls
+    # AgentChat.invoke() and emits typed events through the canonical
+    # schema (PR #129). The pyproject extra pulls
     # ``semantic-kernel>=1.0,<2.0`` (SK 1.x is internally Pydantic v2)
     # but the adapter itself stays version-agnostic.
     requires_pydantic = PydanticCompat.V1_OR_V2
+
+    # Per-adapter ``extra="allow"`` decision: ms_agent_framework targets
+    # the canonical 13-event taxonomy exclusively. Unknown event types
+    # must be rejected by the base adapter's typed-event validator, so
+    # this stays ``False``.
+    ALLOW_UNREGISTERED_EVENTS: bool = False
 
     def __init__(
         self,
@@ -217,68 +311,93 @@ class MSAgentAdapter(BaseAdapter):
         return traced_invoke_stream
 
     def _process_message(self, chat: Any, message: Any, current_agent: str) -> None:
-        """Process a chat message to extract tool calls, model info, and handoffs."""
+        """Process a chat message to extract tool calls, model info, and handoffs.
+
+        Emits typed :class:`AgentHandoffEvent`, :class:`ToolCallEvent`,
+        :class:`ModelInvokeEvent`, and :class:`CostRecordEvent` based
+        on the message shape. SK-specific provenance is carried on
+        canonical metadata / parameters / input slots.
+        """
         try:
             # Detect agent turn transitions (handoffs in group chat)
             msg_agent_name = getattr(message, "agent_name", None) or getattr(message, "name", None)
             if msg_agent_name and msg_agent_name != current_agent:
-                self.emit_dict_event(
-                    "agent.handoff",
-                    {
-                        "from_agent": current_agent,
-                        "to_agent": msg_agent_name,
-                        "reason": "group_chat_turn",
-                    },
+                self.emit_event(
+                    AgentHandoffEvent.create(
+                        from_agent=current_agent,
+                        to_agent=msg_agent_name,
+                        handoff_context_hash=_sha256_of(""),
+                    )
                 )
 
             # Extract tool calls from message
             items = getattr(message, "items", None) or []
             for item in items:
                 item_type = type(item).__name__
+                tool_name_raw = getattr(item, "name", None) or getattr(
+                    item, "function_name", "unknown"
+                )
+                tool_name: str = str(tool_name_raw) if tool_name_raw else "unknown"
                 if "FunctionCall" in item_type or "ToolCall" in item_type:
-                    self.emit_dict_event(
-                        "tool.call",
-                        {
-                            "framework": "ms_agent_framework",
-                            "tool_name": getattr(item, "name", None) or getattr(item, "function_name", "unknown"),
-                            "tool_input": self._safe_serialize(getattr(item, "arguments", None)),
-                        },
+                    serialized_input = self._safe_serialize(getattr(item, "arguments", None))
+                    input_data = _coerce_to_dict(serialized_input)
+                    input_data.setdefault("framework", "ms_agent_framework")
+                    self.emit_event(
+                        ToolCallEvent.create(
+                            name=tool_name,
+                            version="unavailable",
+                            integration=IntegrationType.LIBRARY,
+                            input_data=input_data,
+                        )
                     )
                 elif "FunctionResult" in item_type or "ToolResult" in item_type:
-                    self.emit_dict_event(
-                        "tool.call",
-                        {
-                            "framework": "ms_agent_framework",
-                            "tool_name": getattr(item, "name", None) or getattr(item, "function_name", "unknown"),
-                            "tool_output": self._safe_serialize(getattr(item, "result", None)),
-                        },
+                    serialized_output = self._safe_serialize(getattr(item, "result", None))
+                    output_data: dict[str, Any] | None = (
+                        _coerce_to_dict(serialized_output)
+                        if serialized_output is not None
+                        else None
+                    )
+                    self.emit_event(
+                        ToolCallEvent.create(
+                            name=tool_name,
+                            version="unavailable",
+                            integration=IntegrationType.LIBRARY,
+                            input_data={"framework": "ms_agent_framework"},
+                            output_data=output_data,
+                        )
                     )
 
             # Extract model info from metadata
             metadata = getattr(message, "metadata", None) or {}
             if isinstance(metadata, dict):
-                model = metadata.get("model") or metadata.get("model_id")
-                if model:
-                    self.emit_dict_event(
-                        "model.invoke",
-                        {
-                            "framework": "ms_agent_framework",
-                            "model": str(model),
-                            "provider": self._detect_provider(str(model)),
-                        },
+                model_raw = metadata.get("model") or metadata.get("model_id")
+                if model_raw:
+                    model_name = str(model_raw)
+                    provider = self._detect_provider(model_name) or "azure_openai"
+                    self.emit_event(
+                        ModelInvokeEvent.create(
+                            provider=provider,
+                            name=model_name,
+                            version="unavailable",
+                            parameters={"framework": "ms_agent_framework"},
+                        )
                     )
                 usage = metadata.get("usage")
                 if usage:
-                    self.emit_dict_event(
-                        "cost.record",
-                        {
-                            "framework": "ms_agent_framework",
-                            "model": str(model) if model else None,
-                            "tokens_prompt": getattr(usage, "prompt_tokens", None)
-                            or (usage.get("prompt_tokens") if isinstance(usage, dict) else None),
-                            "tokens_completion": getattr(usage, "completion_tokens", None)
-                            or (usage.get("completion_tokens") if isinstance(usage, dict) else None),
-                        },
+                    prompt_tokens = getattr(usage, "prompt_tokens", None) or (
+                        usage.get("prompt_tokens") if isinstance(usage, dict) else None
+                    )
+                    completion_tokens = getattr(usage, "completion_tokens", None) or (
+                        usage.get("completion_tokens") if isinstance(usage, dict) else None
+                    )
+                    self.emit_event(
+                        CostRecordEvent.create(
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            tokens=(prompt_tokens or 0) + (completion_tokens or 0)
+                            if (prompt_tokens or completion_tokens)
+                            else None,
+                        )
                     )
         except Exception:
             logger.debug("Could not process message", exc_info=True)
@@ -286,7 +405,7 @@ class MSAgentAdapter(BaseAdapter):
     # --- Lifecycle Hooks ---
 
     def on_run_start(self, agent_name: str | None = None, input_data: Any = None) -> None:
-        """Emit agent.input event when a chat invocation starts."""
+        """Emit a typed :class:`AgentInputEvent` when a chat invocation starts."""
         if not self._connected:
             return
         try:
@@ -294,14 +413,18 @@ class MSAgentAdapter(BaseAdapter):
             start_ns = time.time_ns()
             with self._adapter_lock:
                 self._run_starts[tid] = start_ns
-            self.emit_dict_event(
-                "agent.input",
-                {
-                    "framework": "ms_agent_framework",
-                    "agent_name": agent_name,
-                    "input": self._safe_serialize(input_data),
-                    "timestamp_ns": start_ns,
-                },
+            raw_input = self._safe_serialize(input_data)
+            self.emit_event(
+                AgentInputEvent.create(
+                    message=_stringify(raw_input),
+                    role=MessageRole.HUMAN,
+                    metadata={
+                        "framework": "ms_agent_framework",
+                        "agent_name": agent_name,
+                        "timestamp_ns": start_ns,
+                        "raw_input": raw_input,
+                    },
+                )
             )
         except Exception:
             logger.warning("Error in on_run_start", exc_info=True)
@@ -312,7 +435,19 @@ class MSAgentAdapter(BaseAdapter):
         output: Any = None,
         error: Exception | None = None,
     ) -> None:
-        """Emit agent.output event when a chat invocation ends."""
+        """Emit a typed :class:`AgentOutputEvent` when a chat invocation ends.
+
+        The previous adapter implementation also emitted a separate
+        ``agent.state.change`` payload carrying only an
+        ``event_subtype`` marker (``run_complete`` / ``run_failed``).
+        That payload did not satisfy the canonical
+        :class:`AgentStateChangeEvent` ``before_hash`` / ``after_hash``
+        contract — the run boundary has no real state mutation to
+        hash. The post-migration mapping carries the same signal as
+        ``run_status`` on :class:`MessageContent.metadata`, preserving
+        the cross-cutting completion marker without violating the
+        canonical schema.
+        """
         if not self._connected:
             return
         try:
@@ -321,22 +456,21 @@ class MSAgentAdapter(BaseAdapter):
             with self._adapter_lock:
                 start_ns = self._run_starts.pop(tid, 0)
             duration_ns = end_ns - start_ns if start_ns else 0
-            payload: dict[str, Any] = {
+            raw_output = self._safe_serialize(output)
+            metadata: dict[str, Any] = {
                 "framework": "ms_agent_framework",
                 "agent_name": agent_name,
-                "output": self._safe_serialize(output),
                 "duration_ns": duration_ns,
+                "raw_output": raw_output,
+                "run_status": "run_complete" if not error else "run_failed",
             }
             if error:
-                payload["error"] = str(error)
-            self.emit_dict_event("agent.output", payload)
-            self.emit_dict_event(
-                "agent.state.change",
-                {
-                    "framework": "ms_agent_framework",
-                    "agent_name": agent_name,
-                    "event_subtype": "run_complete" if not error else "run_failed",
-                },
+                metadata["error"] = str(error)
+            self.emit_event(
+                AgentOutputEvent.create(
+                    message=_stringify(raw_output),
+                    metadata=metadata,
+                )
             )
         except Exception:
             logger.warning("Error in on_run_end", exc_info=True)
@@ -349,21 +483,28 @@ class MSAgentAdapter(BaseAdapter):
         error: Exception | None = None,
         latency_ms: float | None = None,
     ) -> None:
-        """Emit tool.call event for a tool invocation."""
+        """Emit a typed :class:`ToolCallEvent` for a tool invocation."""
         if not self._connected:
             return
         try:
-            payload: dict[str, Any] = {
-                "framework": "ms_agent_framework",
-                "tool_name": tool_name,
-                "tool_input": self._safe_serialize(tool_input),
-                "tool_output": self._safe_serialize(tool_output),
-            }
-            if error:
-                payload["error"] = str(error)
-            if latency_ms is not None:
-                payload["latency_ms"] = latency_ms
-            self.emit_dict_event("tool.call", payload)
+            serialized_input = self._safe_serialize(tool_input)
+            serialized_output = self._safe_serialize(tool_output)
+            input_data = _coerce_to_dict(serialized_input)
+            input_data.setdefault("framework", "ms_agent_framework")
+            output_data: dict[str, Any] | None = (
+                _coerce_to_dict(serialized_output) if serialized_output is not None else None
+            )
+            self.emit_event(
+                ToolCallEvent.create(
+                    name=tool_name,
+                    version="unavailable",
+                    integration=IntegrationType.LIBRARY,
+                    input_data=input_data,
+                    output_data=output_data,
+                    error=str(error) if error else None,
+                    latency_ms=latency_ms,
+                )
+            )
         except Exception:
             logger.warning("Error in on_tool_use", exc_info=True)
 
@@ -376,41 +517,42 @@ class MSAgentAdapter(BaseAdapter):
         latency_ms: float | None = None,
         messages: list[dict[str, str]] | None = None,
     ) -> None:
-        """Emit model.invoke event for an LLM call."""
+        """Emit a typed :class:`ModelInvokeEvent` for an LLM call."""
         if not self._connected:
             return
         try:
-            payload: dict[str, Any] = {"framework": "ms_agent_framework"}
-            if provider:
-                payload["provider"] = provider
-            if model:
-                payload["model"] = model
-            if tokens_prompt is not None:
-                payload["tokens_prompt"] = tokens_prompt
-            if tokens_completion is not None:
-                payload["tokens_completion"] = tokens_completion
-            if latency_ms is not None:
-                payload["latency_ms"] = latency_ms
+            model_name = model or "unknown"
+            resolved_provider = provider or self._detect_provider(model_name) or "azure_openai"
+            input_messages: list[dict[str, str]] | None = None
             if self._capture_config.capture_content and messages:
-                payload["messages"] = messages
-            self.emit_dict_event("model.invoke", payload)
+                input_messages = messages
+            self.emit_event(
+                ModelInvokeEvent.create(
+                    provider=resolved_provider,
+                    name=model_name,
+                    version="unavailable",
+                    parameters={"framework": "ms_agent_framework"},
+                    prompt_tokens=tokens_prompt,
+                    completion_tokens=tokens_completion,
+                    latency_ms=latency_ms,
+                    input_messages=input_messages,
+                )
+            )
         except Exception:
             logger.warning("Error in on_llm_call", exc_info=True)
 
     def on_handoff(self, from_agent: str, to_agent: str, context: Any = None) -> None:
-        """Emit agent.handoff event for agent turn transitions."""
+        """Emit a typed :class:`AgentHandoffEvent` for agent turn transitions."""
         if not self._connected:
             return
         try:
             context_str = str(context) if context else ""
-            self.emit_dict_event(
-                "agent.handoff",
-                {
-                    "from_agent": from_agent,
-                    "to_agent": to_agent,
-                    "reason": "group_chat_turn",
-                    "context_hash": hashlib.sha256(context_str.encode()).hexdigest() if context_str else None,
-                },
+            self.emit_event(
+                AgentHandoffEvent.create(
+                    from_agent=from_agent,
+                    to_agent=to_agent,
+                    handoff_context_hash=_sha256_of(context_str),
+                )
             )
         except Exception:
             logger.warning("Error in on_handoff", exc_info=True)
@@ -437,12 +579,19 @@ class MSAgentAdapter(BaseAdapter):
         return "azure_openai"  # Default for MS Agent Framework
 
     def _emit_chat_config(self, chat_name: str, chat: Any) -> None:
-        """Emit environment.config event for chat configuration on first encounter."""
+        """Emit a typed :class:`EnvironmentConfigEvent` per chat.
+
+        Idempotent per chat — only the first call for a given chat
+        name actually emits. SK chat instances run in a
+        ``simulated`` environment by default; the real production
+        environment (``cloud`` / ``on_prem``) is the responsibility
+        of the host application's environment.config emission.
+        """
         with self._adapter_lock:
             if chat_name in self._seen_agents:
                 return
             self._seen_agents.add(chat_name)
-        metadata: dict[str, Any] = {
+        attributes: dict[str, Any] = {
             "framework": "ms_agent_framework",
             "chat_name": chat_name,
             "chat_type": type(chat).__name__,
@@ -450,29 +599,34 @@ class MSAgentAdapter(BaseAdapter):
         # Extract agents from group chat
         agents = getattr(chat, "agents", None)
         if agents:
-            metadata["agents"] = [getattr(a, "name", str(a)) for a in agents]
+            attributes["agents"] = [getattr(a, "name", str(a)) for a in agents]
         # Extract agent info from single chat
         agent = getattr(chat, "agent", None)
         if agent:
-            metadata["agent_name"] = getattr(agent, "name", str(agent))
+            attributes["agent_name"] = getattr(agent, "name", str(agent))
             instructions = getattr(agent, "instructions", None)
             if instructions and self._capture_config.capture_content:
-                metadata["instructions"] = str(instructions)[:500]
+                attributes["instructions"] = str(instructions)[:500]
             kernel = getattr(agent, "kernel", None)
             if kernel:
                 plugins = getattr(kernel, "plugins", None)
                 if plugins:
-                    metadata["plugins"] = (
+                    attributes["plugins"] = (
                         list(plugins.keys()) if isinstance(plugins, dict) else [str(p) for p in plugins]
                     )
         # Selection strategy for group chats
         selection_strategy = getattr(chat, "selection_strategy", None)
         if selection_strategy:
-            metadata["selection_strategy"] = type(selection_strategy).__name__
+            attributes["selection_strategy"] = type(selection_strategy).__name__
         termination_strategy = getattr(chat, "termination_strategy", None)
         if termination_strategy:
-            metadata["termination_strategy"] = type(termination_strategy).__name__
-        self.emit_dict_event("environment.config", metadata)
+            attributes["termination_strategy"] = type(termination_strategy).__name__
+        self.emit_event(
+            EnvironmentConfigEvent.create(
+                env_type=EnvironmentType.SIMULATED,
+                attributes=attributes,
+            )
+        )
 
     def _safe_serialize(self, value: Any) -> Any:
         """Safely serialize a value for event payloads."""
