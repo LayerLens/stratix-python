@@ -46,15 +46,15 @@ dispatches.
 ## What's wrapped
 
 `adapter.instrument_workflow(...)` registers a `BaseEventHandler` with
-`llama_index.core.instrumentation.get_dispatcher()`. The handler observes:
+`llama_index.core.instrumentation.get_dispatcher()`. The handler observes
+(`lifecycle.py:185-198`):
 
-- LLM events (`LLMChatStartEvent`, `LLMChatEndEvent`,
-  `LLMCompletionStartEvent`, `LLMCompletionEndEvent`)
-- Tool events (`AgentToolCallEvent`)
-- Agent events (`AgentRunStepStartEvent`, `AgentRunStepEndEvent`,
-  `AgentChatWithStepStartEvent`, `AgentChatWithStepEndEvent`)
-- Retrieval events (`RetrievalStartEvent`, `RetrievalEndEvent`)
-- Embedding events (`EmbeddingStartEvent`, `EmbeddingEndEvent`)
+- LLM events: `LLMChatStartEvent`, `LLMStartEvent` (start);
+  `LLMChatEndEvent`, `LLMCompletionEndEvent` (end)
+- Tool events: `ToolCallEvent`
+- Agent events: `AgentRunStepStartEvent`, `AgentRunStepEndEvent`
+- Retrieval / query events: `RetrievalStartEvent`, `QueryStartEvent`
+  (start); `RetrievalEndEvent`, `QueryEndEvent` (end)
 
 `disconnect()` removes the handler from the dispatcher's
 `event_handlers` list, restoring the original behaviour.
@@ -63,20 +63,23 @@ dispatches.
 
 | Event | Layer | When |
 |---|---|---|
-| `environment.config` | L4a | First agent / workflow event per process. |
-| `agent.input` | L1 | `AgentChatWithStepStartEvent` / agent step start. |
-| `agent.output` | L1 | `AgentChatWithStepEndEvent` / agent step end. |
-| `agent.action` | L4a | Per `AgentRunStepEndEvent`. |
-| `tool.call` | L5a | Per `AgentToolCallEvent`. |
-| `model.invoke` | L3 | Per LLM start/end pair. |
+| `environment.config` | L4a | First `AgentRunStepStartEvent` per agent (`lifecycle.py:261,428`). |
+| `agent.input` | L1 | Per `AgentRunStepStartEvent` (`lifecycle.py:266`). |
+| `agent.output` | L1 | Per `AgentRunStepEndEvent` (`lifecycle.py:283`). |
+| `tool.call` | L5a | Per `ToolCallEvent` and per `RetrievalEndEvent` / `QueryEndEvent` (tool_name = `"retrieval"`, tool_type = `"retrieval"`) (`lifecycle.py:231,246`). |
+| `model.invoke` | L3 | Per LLM end event (`LLMChatEndEvent` / `LLMCompletionEndEvent`) (`lifecycle.py:216`). |
+| `cost.record` | cross-cutting | Per LLM end event when token counts are present (`lifecycle.py:218`). |
+| `agent.handoff` | L4a | Exposed via the `on_handoff` lifecycle hook (`lifecycle.py:400`) — not auto-emitted from the dispatcher event stream. |
 
 ## LlamaIndex specifics
 
 - **Workflows**: the new `Workflow` class emits dispatcher events the same
   way; the same handler captures both classic agents (`ReActAgent`,
   `OpenAIAgent`) and workflow `@step` runs.
-- **RAG retrievers**: retrieval events are surfaced as `tool.call` with
-  `tool_name="retriever"` and the resolved chunk count.
+- **RAG retrievers**: `RetrievalEndEvent` and `QueryEndEvent` are surfaced
+  as `tool.call` with `tool_name="retrieval"`, `tool_type="retrieval"`,
+  and the resolved chunk count in `result_count`
+  (`lifecycle.py:244-257`).
 - **Streaming**: streamed LLM responses fire one `LLMChatEndEvent` after
   the final chunk; the adapter emits one consolidated `model.invoke`.
 - **Span propagation**: LlamaIndex span IDs propagate into the event
