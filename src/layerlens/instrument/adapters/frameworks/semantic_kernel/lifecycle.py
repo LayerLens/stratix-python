@@ -4,16 +4,59 @@ STRATIX Semantic Kernel Lifecycle Hooks
 Provides the main SemanticKernelAdapter class. Instruments SK Kernel
 instances via the official filter API (FunctionInvocationFilter,
 PromptRenderFilter, AutoFunctionInvocationFilter).
+
+Typed-event status (post PR #129 migration, bundle 5):
+
+* Every emission flows through :meth:`BaseAdapter.emit_event` with a
+  canonical Pydantic payload imported from
+  :mod:`layerlens.instrument._compat.events`.
+* Microsoft Semantic Kernel-specific provenance (``framework``,
+  ``plugin_name``, ``function_name``, ``invocation_seq``,
+  ``auto_invoked``, ``timestamp_ns``, ``backend_type``,
+  ``relevance_scores``, ``planner_type``) is carried in the canonical
+  model's metadata / attributes / parameters / input slots.
+* SK plugins and skills execute in-process inside the host Python
+  runtime (``Kernel.invoke`` calls Python callables registered
+  through ``KernelFunction``). The L5a integration is therefore
+  :class:`IntegrationType.LIBRARY` for both function invocations and
+  memory operations. Memory backends (``qdrant``, ``redis``, etc.)
+  are recorded as ``backend_type`` provenance — the *call* is still
+  in-process even when the storage is remote.
+* The ad-hoc ``agent.code`` event type (used for prompt rendering and
+  planner step boundaries) is NOT in the canonical 13-event taxonomy.
+  Following the PR #138 smolagents precedent, those boundaries are
+  re-mapped onto :class:`ToolLogicEvent` (L5b — tool business logic).
+  The semantic fit is good: prompt rendering applies templating
+  rules to generate a final prompt; planner steps emit reasoning
+  rules (thought/action/observation) for plan execution. The L5b
+  ``description`` slot carries the operation summary and ``rules``
+  carries the per-event detail (template preview, planner status,
+  etc.). Framework provenance (``framework``, ``event_subtype``,
+  ``function_name``, ``planner_type``, ``step_index``) is preserved
+  as additional rules entries via JSON-encoded key/value pairs.
 """
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 import logging
 import threading
 from typing import Any
 
+from layerlens.instrument._compat.events import (
+    MessageRole,
+    ToolCallEvent,
+    AgentInputEvent,
+    CostRecordEvent,
+    EnvironmentType,
+    IntegrationType,
+    AgentOutputEvent,
+    ModelInvokeEvent,
+    ToolLogicEvent,
+    EnvironmentConfigEvent,
+)
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -26,6 +69,59 @@ from layerlens.instrument.adapters._base.capture import CaptureConfig
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 
 logger = logging.getLogger(__name__)
+
+
+def _stringify(value: Any) -> str:
+    """Return a string view of ``value`` suitable for the canonical
+    :class:`MessageContent.message` field.
+
+    The canonical schema requires :class:`AgentInputEvent` and
+    :class:`AgentOutputEvent` to carry a ``message: str``. Semantic
+    Kernel kernel arguments and results may be arbitrary Python
+    objects (``KernelArguments``, ``FunctionResult``, dicts,
+    ``None``); this helper converts each to a (possibly empty)
+    string so the typed event always validates. The original payload
+    is preserved on :class:`MessageContent.metadata.raw_input` /
+    ``raw_output``.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _coerce_to_dict(value: Any) -> dict[str, Any]:
+    """Coerce ``value`` into a dict suitable for the canonical
+    :class:`ToolCallEvent` ``input`` / ``output`` slots.
+
+    The canonical schema requires ``input: dict[str, Any]`` and
+    ``output: dict[str, Any] | None``. SK function/skill returns can
+    be arbitrary Python values. This helper wraps non-dict values in
+    ``{"value": ...}`` so the canonical slot is always satisfied.
+    """
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    return {"value": value}
+
+
+def _kv_rule(key: str, value: Any) -> str:
+    """Format a key/value pair as a single rule entry for L5b events.
+
+    The canonical :class:`ToolLogicInfo.rules` slot is ``list[str]``.
+    To preserve the framework's per-event provenance (function name,
+    planner status, step index, etc.) without losing structure, each
+    key/value pair is encoded as ``"<key>=<json-encoded-value>"``.
+    Consumers of the trace stream can split on the first ``=`` to
+    recover the original pair.
+    """
+    try:
+        encoded = json.dumps(value, default=str, ensure_ascii=False)
+    except (TypeError, ValueError):
+        encoded = json.dumps(str(value))
+    return f"{key}={encoded}"
 
 
 class SemanticKernelAdapter(BaseAdapter):
@@ -46,11 +142,19 @@ class SemanticKernelAdapter(BaseAdapter):
     VERSION = "0.1.0"
     # The adapter source files import nothing from ``pydantic`` directly
     # (verified by grep across ``frameworks/semantic_kernel/``). The
-    # adapter only registers SK filter callbacks and emits dict events;
+    # adapter only registers SK filter callbacks and emits typed events;
     # it never touches Semantic Kernel's own Pydantic models. SK 1.0+ is
     # internally Pydantic v2, but customers running older SK 0.x with
     # Pydantic v1 can still use this adapter.
     requires_pydantic = PydanticCompat.V1_OR_V2
+
+    # Per-adapter ``extra="allow"`` decision: semantic_kernel targets
+    # the canonical 13-event taxonomy exclusively. Unknown event types
+    # must be rejected by the base adapter's typed-event validator, so
+    # this stays ``False``. The legacy ``agent.code`` event type is
+    # re-mapped onto :class:`ToolLogicEvent` rather than passed through
+    # as an unregistered event — see the module docstring.
+    ALLOW_UNREGISTERED_EVENTS: bool = False
 
     def __init__(
         self,
@@ -186,6 +290,11 @@ class SemanticKernelAdapter(BaseAdapter):
         Handle function invocation start.
 
         Returns context dict for correlation with on_function_end.
+
+        Emits a typed :class:`EnvironmentConfigEvent` on the first
+        encounter of a plugin (idempotent per plugin name) carrying
+        the SK plugin/function provenance on
+        :attr:`EnvironmentInfo.attributes`.
         """
         with self._adapter_lock:
             self._invocation_count += 1
@@ -202,13 +311,15 @@ class SemanticKernelAdapter(BaseAdapter):
         with self._adapter_lock:
             if plugin_name not in self._seen_plugins:
                 self._seen_plugins.add(plugin_name)
-                self.emit_dict_event(
-                    "environment.config",
-                    {
-                        "framework": "semantic_kernel",
-                        "plugin_name": plugin_name,
-                        "function_name": function_name,
-                    },
+                self.emit_event(
+                    EnvironmentConfigEvent.create(
+                        env_type=EnvironmentType.SIMULATED,
+                        attributes={
+                            "framework": "semantic_kernel",
+                            "plugin_name": plugin_name,
+                            "function_name": function_name,
+                        },
+                    )
                 )
 
         return context
@@ -223,30 +334,47 @@ class SemanticKernelAdapter(BaseAdapter):
         """
         Handle function invocation end.
 
-        Emits tool.call (L5a) for plugin functions.
+        Emits a typed :class:`ToolCallEvent` (L5a) for plugin
+        functions. SK plugin functions are in-process Python
+        callables registered through ``KernelFunction`` — the
+        L5a integration is :class:`IntegrationType.LIBRARY`.
+        Tool versions are not surfaced by SK so ``version``
+        falls back to ``"unavailable"`` per the canonical
+        NORMATIVE rule.
         """
         start_ns = context.get("start_ns", 0)
-        elapsed_ms = (time.time_ns() - start_ns) / 1_000_000 if start_ns else 0
+        elapsed_ms = (time.time_ns() - start_ns) / 1_000_000 if start_ns else 0.0
 
-        payload: dict[str, Any] = {
+        plugin_name = context.get("plugin_name", "")
+        function_name = context.get("function_name", "")
+        tool_name = f"{plugin_name}.{function_name}"
+
+        input_data: dict[str, Any] = {
             "framework": "semantic_kernel",
-            "tool_name": f"{context.get('plugin_name', '')}.{context.get('function_name', '')}",
-            "plugin_name": context.get("plugin_name"),
-            "function_name": context.get("function_name"),
-            "latency_ms": elapsed_ms,
+            "plugin_name": plugin_name,
+            "function_name": function_name,
             "invocation_seq": context.get("invocation_seq"),
         }
-
         if auto_invoked:
-            payload["auto_invoked"] = True
+            input_data["auto_invoked"] = True
 
+        output_data: dict[str, Any] | None = None
         if result is not None:
-            payload["result_preview"] = self._truncate(self._safe_serialize(result))
+            output_data = {
+                "result_preview": self._truncate(self._safe_serialize(result)),
+            }
 
-        if error:
-            payload["error"] = str(error)
-
-        self.emit_dict_event("tool.call", payload)
+        self.emit_event(
+            ToolCallEvent.create(
+                name=tool_name,
+                version="unavailable",
+                integration=IntegrationType.LIBRARY,
+                input_data=input_data,
+                output_data=output_data,
+                error=str(error) if error else None,
+                latency_ms=elapsed_ms,
+            )
+        )
 
     def on_prompt_render(
         self,
@@ -257,20 +385,30 @@ class SemanticKernelAdapter(BaseAdapter):
         """
         Handle prompt template rendering.
 
-        Emits agent.code (L2) for template rendering events.
+        Emits a typed :class:`ToolLogicEvent` (L5b) for template
+        rendering. The previous adapter implementation emitted an
+        ad-hoc ``agent.code`` event type that is NOT in the canonical
+        13-event taxonomy. The post-migration mapping carries the
+        rendering operation as L5b business logic: prompt templating
+        applies a set of substitution rules to a template, which is
+        a clean fit for ``ToolLogicEvent``. The
+        :class:`ToolLogicInfo.description` slot carries a one-line
+        summary; per-event provenance (framework, function name,
+        previews) is encoded as key/value rule entries.
         """
-        payload: dict[str, Any] = {
-            "framework": "semantic_kernel",
-            "event_subtype": "prompt_render",
-        }
+        rules: list[str] = [_kv_rule("framework", "semantic_kernel"),
+                            _kv_rule("event_subtype", "prompt_render")]
         if function_name:
-            payload["function_name"] = function_name
+            rules.append(_kv_rule("function_name", function_name))
         if template:
-            payload["template_preview"] = self._truncate(template, 500)
+            rules.append(_kv_rule("template_preview", self._truncate(template, 500)))
         if rendered_prompt:
-            payload["rendered_preview"] = self._truncate(rendered_prompt, 500)
+            rules.append(_kv_rule("rendered_preview", self._truncate(rendered_prompt, 500)))
 
-        self.emit_dict_event("agent.code", payload)
+        description = (
+            f"prompt_render: {function_name}" if function_name else "prompt_render"
+        )
+        self.emit_event(ToolLogicEvent.create(description=description, rules=rules))
 
     def on_model_invoke(
         self,
@@ -285,40 +423,46 @@ class SemanticKernelAdapter(BaseAdapter):
         """
         Handle LLM call from SK service.
 
-        Emits model.invoke (L3) and cost.record (cross-cutting).
+        Emits a typed :class:`ModelInvokeEvent` (L3) and a paired
+        :class:`CostRecordEvent` (Cross) when token usage is known.
+        SK-specific provenance (``framework``, ``error``) is carried
+        on :attr:`ModelInfo.parameters`.
         """
-        payload: dict[str, Any] = {
-            "framework": "semantic_kernel",
-        }
-        if provider:
-            payload["provider"] = provider
-        if model:
-            payload["model"] = model
-        if prompt_tokens is not None:
-            payload["prompt_tokens"] = prompt_tokens
-        if completion_tokens is not None:
-            payload["completion_tokens"] = completion_tokens
-        if latency_ms is not None:
-            payload["latency_ms"] = latency_ms
+        model_name = model or "unknown"
+        resolved_provider = provider or "azure_openai"
+        parameters: dict[str, Any] = {"framework": "semantic_kernel"}
         if error:
-            payload["error"] = error
+            parameters["error"] = error
+        input_messages: list[dict[str, str]] | None = None
         if self._capture_config.capture_content and messages:
-            payload["messages"] = messages
+            input_messages = messages
 
-        self.emit_dict_event("model.invoke", payload)
+        self.emit_event(
+            ModelInvokeEvent.create(
+                provider=resolved_provider,
+                name=model_name,
+                version="unavailable",
+                parameters=parameters,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=(
+                    (prompt_tokens or 0) + (completion_tokens or 0)
+                    if (prompt_tokens or completion_tokens)
+                    else None
+                ),
+                latency_ms=latency_ms,
+                input_messages=input_messages,
+            )
+        )
 
         # Emit cost record
         if prompt_tokens or completion_tokens:
-            self.emit_dict_event(
-                "cost.record",
-                {
-                    "framework": "semantic_kernel",
-                    "provider": provider,
-                    "model": model,
-                    "prompt_tokens": prompt_tokens or 0,
-                    "completion_tokens": completion_tokens or 0,
-                    "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0),
-                },
+            self.emit_event(
+                CostRecordEvent.create(
+                    prompt_tokens=prompt_tokens or 0,
+                    completion_tokens=completion_tokens or 0,
+                    tokens=(prompt_tokens or 0) + (completion_tokens or 0),
+                )
             )
 
     def on_planner_step(
@@ -334,27 +478,34 @@ class SemanticKernelAdapter(BaseAdapter):
         """
         Handle planner execution step.
 
-        Emits agent.code (L2) for plan generation and step execution.
+        Emits a typed :class:`ToolLogicEvent` (L5b) for plan
+        generation and step execution. Same rationale as
+        :meth:`on_prompt_render` — planner steps are a stream of
+        reasoning rules (thought / action / observation) that map
+        cleanly onto L5b's ``description`` + ``rules`` slots without
+        violating the canonical schema.
         """
-        payload: dict[str, Any] = {
-            "framework": "semantic_kernel",
-            "event_subtype": "planner_step",
-            "planner_type": planner_type,
-        }
+        rules: list[str] = [
+            _kv_rule("framework", "semantic_kernel"),
+            _kv_rule("event_subtype", "planner_step"),
+            _kv_rule("planner_type", planner_type),
+        ]
         if step_index is not None:
-            payload["step_index"] = step_index
+            rules.append(_kv_rule("step_index", step_index))
         if plan is not None:
-            payload["plan_preview"] = self._truncate(str(plan), 1000)
+            rules.append(_kv_rule("plan_preview", self._truncate(str(plan), 1000)))
         if thought:
-            payload["thought"] = self._truncate(thought)
+            rules.append(_kv_rule("thought", self._truncate(thought)))
         if action:
-            payload["action"] = action
+            rules.append(_kv_rule("action", action))
         if observation:
-            payload["observation"] = self._truncate(observation)
+            rules.append(_kv_rule("observation", self._truncate(observation)))
         if status:
-            payload["status"] = status
+            rules.append(_kv_rule("status", status))
 
-        self.emit_dict_event("agent.code", payload)
+        step_label = f" step {step_index}" if step_index is not None else ""
+        description = f"planner_step: {planner_type}{step_label}"
+        self.emit_event(ToolLogicEvent.create(description=description, rules=rules))
 
     def on_memory_operation(
         self,
@@ -369,40 +520,62 @@ class SemanticKernelAdapter(BaseAdapter):
         """
         Handle memory operation (save, search, get).
 
-        Emits tool.call (L5a) for memory operations.
+        Emits a typed :class:`ToolCallEvent` (L5a) for memory
+        operations. The SK ``MemoryStore`` API is invoked in-process
+        from the host runtime, so the integration is
+        :class:`IntegrationType.LIBRARY`. The remote storage backend
+        (``qdrant``, ``redis``, ``pinecone``, etc.) is recorded as
+        ``backend_type`` provenance on the canonical input dict — the
+        *call* is still in-process even when the storage is remote.
         """
-        payload: dict[str, Any] = {
+        tool_name = f"memory.{operation}"
+        input_data: dict[str, Any] = {
             "framework": "semantic_kernel",
-            "tool_name": f"memory.{operation}",
             "operation": operation,
         }
         if collection:
-            payload["collection"] = collection
+            input_data["collection"] = collection
         if key:
-            payload["key"] = key
+            input_data["key"] = key
         if query:
-            payload["query_preview"] = self._truncate(query, 200)
-        if result_count is not None:
-            payload["result_count"] = result_count
-        if relevance_scores:
-            payload["relevance_scores"] = relevance_scores[:10]
+            input_data["query_preview"] = self._truncate(query, 200)
         if backend_type:
-            payload["backend_type"] = backend_type
+            input_data["backend_type"] = backend_type
 
-        self.emit_dict_event("tool.call", payload)
+        output_data: dict[str, Any] | None = None
+        if result_count is not None or relevance_scores:
+            output_data = {}
+            if result_count is not None:
+                output_data["result_count"] = result_count
+            if relevance_scores:
+                output_data["relevance_scores"] = relevance_scores[:10]
+
+        self.emit_event(
+            ToolCallEvent.create(
+                name=tool_name,
+                version="unavailable",
+                integration=IntegrationType.LIBRARY,
+                input_data=input_data,
+                output_data=output_data,
+            )
+        )
 
     def on_kernel_invoke_start(self, input_text: Any = None) -> None:
-        """Handle kernel invocation start. Emits agent.input (L1)."""
+        """Handle kernel invocation start. Emits typed :class:`AgentInputEvent` (L1)."""
         with self._adapter_lock:
             self._kernel_start_ns = time.time_ns()
 
-        self.emit_dict_event(
-            "agent.input",
-            {
-                "framework": "semantic_kernel",
-                "input": self._safe_serialize(input_text),
-                "timestamp_ns": self._kernel_start_ns,
-            },
+        raw_input = self._safe_serialize(input_text)
+        self.emit_event(
+            AgentInputEvent.create(
+                message=_stringify(raw_input),
+                role=MessageRole.HUMAN,
+                metadata={
+                    "framework": "semantic_kernel",
+                    "timestamp_ns": self._kernel_start_ns,
+                    "raw_input": raw_input,
+                },
+            )
         )
 
     def on_kernel_invoke_end(
@@ -410,24 +583,34 @@ class SemanticKernelAdapter(BaseAdapter):
         output: Any = None,
         error: Exception | None = None,
     ) -> None:
-        """Handle kernel invocation end. Emits agent.output (L1)."""
+        """Handle kernel invocation end. Emits typed :class:`AgentOutputEvent` (L1)."""
         end_ns = time.time_ns()
         duration_ns = end_ns - self._kernel_start_ns if self._kernel_start_ns else 0
 
-        payload: dict[str, Any] = {
+        raw_output = self._safe_serialize(output)
+        metadata: dict[str, Any] = {
             "framework": "semantic_kernel",
-            "output": self._safe_serialize(output),
             "duration_ns": duration_ns,
+            "raw_output": raw_output,
         }
         if error:
-            payload["error"] = str(error)
+            metadata["error"] = str(error)
 
-        self.emit_dict_event("agent.output", payload)
+        self.emit_event(
+            AgentOutputEvent.create(
+                message=_stringify(raw_output),
+                metadata=metadata,
+            )
+        )
 
     # --- Plugin discovery ---
 
     def _discover_plugins(self, kernel: Any) -> None:
-        """Discover and register plugins from the kernel."""
+        """Discover and register plugins from the kernel.
+
+        Emits one typed :class:`EnvironmentConfigEvent` per discovered
+        plugin (idempotent per plugin name).
+        """
         try:
             plugins = getattr(kernel, "plugins", None)
             if plugins is None:
@@ -441,13 +624,15 @@ class SemanticKernelAdapter(BaseAdapter):
                 with self._adapter_lock:
                     if name not in self._seen_plugins:
                         self._seen_plugins.add(name)
-                        self.emit_dict_event(
-                            "environment.config",
-                            {
-                                "framework": "semantic_kernel",
-                                "plugin_name": name,
-                                "event_subtype": "plugin_registered",
-                            },
+                        self.emit_event(
+                            EnvironmentConfigEvent.create(
+                                env_type=EnvironmentType.SIMULATED,
+                                attributes={
+                                    "framework": "semantic_kernel",
+                                    "plugin_name": name,
+                                    "event_subtype": "plugin_registered",
+                                },
+                            )
                         )
         except Exception:
             logger.debug("Error discovering SK plugins", exc_info=True)
