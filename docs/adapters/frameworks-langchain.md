@@ -66,9 +66,9 @@ Convenience helpers wrap whole objects:
 |---|---|---|
 | `model.invoke` | L3 | `on_llm_end` (success) and `on_llm_error` (failure). |
 | `tool.call` | L5a | `on_tool_end`, `on_tool_error`, and `on_agent_action` (the action is treated as a tool invocation). |
-| `agent.output` | L4a | `on_agent_finish`. |
-| `chain.start` / `chain.end` / `chain.error` | L4a | `on_chain_*`. |
-| `agent.state.change` | L4a | When a wrapped memory is updated via `wrap_memory`. |
+| `agent.input` | L1 | `on_chain_start` when the chain is a LangGraph node (i.e. `metadata.langgraph_node` is set). |
+| `agent.output` | L1 / L4a | `on_agent_finish`; also `on_chain_end` and `on_chain_error` for LangGraph nodes (error path attaches the exception to the `agent.output` payload). |
+| `agent.state.change` | cross-cutting | When a wrapped memory is updated via `wrap_memory`. |
 
 The `model.invoke` payload includes the resolved provider (extracted from
 the LangChain `serialized` dict — `openai`, `anthropic`, `bedrock`, etc.),
@@ -77,10 +77,12 @@ model name, prompts, generations, token usage if present, and latency.
 ## LangGraph nodes
 
 When the handler is used inside a LangGraph run, the `metadata.langgraph_node`
-field in the LangChain callback metadata is propagated to the chain-event
-payloads as `node_name`. This lets the platform correlate per-node events
-back to the graph topology — see also the `langgraph` adapter for full
-graph instrumentation.
+field in the LangChain callback metadata is required for the `on_chain_*`
+callbacks to emit anything — only chains with a `langgraph_node` set produce
+`agent.input` (start) / `agent.output` (end and error). The node name is
+propagated to those payloads as `node_name`. This lets the platform correlate
+per-node events back to the graph topology — see also the `langgraph` adapter
+for full graph instrumentation.
 
 ## Capture config
 
