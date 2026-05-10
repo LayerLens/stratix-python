@@ -110,10 +110,31 @@ Automatic heuristic detection is on the v1.8 roadmap — see
 
 ## Persistence
 
-If you pass a `store=` argument to `BenchmarkImportAdapter(...)` (something
-that exposes `save_benchmark(metadata, records)`), the adapter writes
-imported benchmarks through it. Otherwise records are returned to the
-caller and held in `adapter._benchmarks` keyed by `benchmark_id`.
+If you pass a `store=` argument to `BenchmarkImportAdapter(...)`, the
+adapter persists imported benchmarks through it. The `store` is
+duck-typed: it must expose a single method
+`insert_row(table_name: str, row: dict)`. The adapter writes one row to
+the `"benchmarks"` table containing `metadata.model_dump()`, then one
+row per imported record to the `"benchmark_records"` table (each record
+is augmented with `record["benchmark_id"] = metadata.benchmark_id`
+before insertion). See
+`src/layerlens/instrument/adapters/frameworks/benchmark_import/adapter.py:436-446`
+for the `_persist` implementation. Persistence failures are swallowed
+and logged at debug level — `import_*` will still return
+`success=True` even if the store raises.
+
+If `store` is `None`, the adapter only retains `BenchmarkMetadata`
+objects in-memory (`adapter._benchmarks`, keyed by `benchmark_id`, used
+by `list_benchmarks()` / `get_benchmark()`). The imported records
+themselves are NOT retained on the adapter — they are produced inside
+`import_*`, returned via `ImportResult.records_imported` (a count, not
+the rows), and otherwise discarded. Callers that need the rows without
+a real store should pass a shim whose `insert_row` captures them (e.g.
+an in-test list).
+
+For the deeper persistence contract, see
+[`docs/adapters/benchmark_import.md`](./benchmark_import.md) §3.4
+("Persistence contract").
 
 ## Events emitted
 
