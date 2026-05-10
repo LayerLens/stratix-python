@@ -1,5 +1,11 @@
 # A2A protocol adapter
 
+> **Canonical source:** [`protocols/a2a/adapter.py`](../../src/layerlens/instrument/adapters/protocols/a2a/adapter.py),
+> [`protocols/a2a/task_lifecycle.py`](../../src/layerlens/instrument/adapters/protocols/a2a/task_lifecycle.py),
+> and [`_vendored/events_protocol.py`](../../src/layerlens/instrument/_vendored/events_protocol.py).
+> Every event-name string and method signature in this doc matches the literal
+> `event_type` default and Python signature at source.
+
 `layerlens.instrument.adapters.protocols.a2a.A2AAdapter` instruments the
 [Agent-to-Agent (A2A) protocol](https://github.com/google/A2A) via
 dual-channel instrumentation: server-side wrapping intercepts incoming
@@ -64,14 +70,20 @@ sink.close()
 `A2AAdapter` provides a set of `on_*` methods that the host application
 calls at the appropriate hook points:
 
-- `register_agent_card(card_data, source)` — emits `protocol.agent_card`.
-- `on_task_submitted(task_id, ...)` — emits `protocol.task_submitted`.
+- `register_agent_card(card_data, source)` — emits `protocol.agent_card`
+  (`adapter.py:118`).
+- `on_task_submitted(task_id, receiver_url, ...)` — emits
+  `protocol.task.submitted` (`adapter.py:165`,
+  `events_protocol.py:138-141`).
 - `on_task_completed(task_id, final_status, ...)` — emits
-  `protocol.task_completed`.
-- `on_task_delegation(from_agent, to_agent, ...)` — emits
-  `protocol.task_delegation` and `agent.handoff`.
-- `on_stream_event(task_id, event_type, data)` — emits
-  `protocol.stream_event` for each SSE message.
+  `protocol.task.completed` (`adapter.py:199`,
+  `events_protocol.py:187-190`).
+- `on_task_delegation(from_agent, to_agent, context)` — emits
+  `agent.handoff` only (`adapter.py:291-308`). There is no separate
+  `protocol.task_delegation` event.
+- `on_stream_event(sequence, payload)` — emits `protocol.stream.event`
+  for each SSE message (`adapter.py:312-329`,
+  `events_protocol.py:290-293`).
 
 Server- and client-side wrappers (`A2AClient`, `A2AServer` helpers in
 `a2a/client.py` and `a2a/server.py`) automatically call these hooks from
@@ -82,11 +94,10 @@ the JSON-RPC layer.
 | Event | Layer | When |
 |---|---|---|
 | `protocol.agent_card` | L4a | Per `register_agent_card` call. |
-| `protocol.task_submitted` | L4a | Per outbound or inbound task submission. |
-| `protocol.task_completed` | L4a | Per task terminal status. |
-| `protocol.task_delegation` | L4a | Per cross-agent delegation. |
-| `protocol.stream_event` | L4a | Per SSE event in a streamed task. |
-| `agent.handoff` | L4a | Mirrors `protocol.task_delegation` for the agent timeline. |
+| `protocol.task.submitted` | cross-cutting | Per outbound or inbound task submission (`events_protocol.py:138-141`). |
+| `protocol.task.completed` | cross-cutting | Per task terminal status (`events_protocol.py:187-190`). |
+| `protocol.stream.event` | L6b | Per SSE event in a streamed task (`events_protocol.py:290-293`). |
+| `agent.handoff` | cross-cutting | Per `on_task_delegation` cross-agent delegation (`adapter.py:303-308`). |
 
 ## A2A specifics
 
@@ -94,8 +105,9 @@ the JSON-RPC layer.
   rewrites them to A2A shape before emission. The original protocol
   origin (`acp` vs `a2a`) is preserved on the event.
 - **Task state machine**: `TaskStateMachine` (in `a2a/task_lifecycle.py`)
-  validates terminal-state transitions; invalid transitions emit
-  `policy.violation` rather than `task_completed`.
+  validates terminal-state transitions. Invalid transitions are logged
+  as warnings and the call returns `False` — no event is emitted
+  (`task_lifecycle.py:85-92`).
 - **Memory sharing**: pass `memory_service=...` to the constructor and
   the adapter will store completed task contexts as episodic memory and
   share to a target agent via `AgentMemoryService.share_memory()`.
