@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from layerlens.instrument.adapters._base import AdapterStatus, CaptureConfig
+from layerlens.instrument.adapters._base.adapter import AdapterCapability
 from layerlens.instrument.adapters.frameworks.autogen import (
     ADAPTER_CLASS,
     AutoGenAdapter,
@@ -70,6 +71,22 @@ def test_adapter_info_and_health() -> None:
     assert info.name == "AutoGenAdapter"
     health = a.health_check()
     assert health.framework_name == "autogen"
+
+
+def test_declares_replay_capability() -> None:
+    """Catalog UI relies on declared capabilities. AutoGen implements
+    ``serialize_for_replay`` (returns a populated ReplayableTrace), so the
+    REPLAY capability must surface via ``info().capabilities``.
+
+    STREAMING is intentionally NOT declared: the AutoGen integration is
+    method-wrapping (send / receive / generate_reply / execute_code)
+    rather than per-chunk streaming. Per CLAUDE.md 'no fake claims',
+    the adapter does not declare a capability it does not implement.
+    """
+    a = AutoGenAdapter()
+    caps = a.info().capabilities
+    assert AdapterCapability.REPLAY in caps
+    assert AdapterCapability.STREAMING not in caps
 
 
 def test_connect_agents_wraps_methods_and_emits_config() -> None:
