@@ -2,9 +2,9 @@
 
 Constructs an in-memory A2A scenario — agent-card discovery, task
 submission, task completion — without contacting any real A2A server.
-The adapter emits ``protocol.agent_card`` + ``protocol.task_submitted`` +
-``protocol.task_completed`` events that ship to atlas-app via
-``HttpEventSink``.
+The adapter emits ``protocol.agent_card`` + ``protocol.task.submitted`` +
+``protocol.stream.event`` + ``protocol.task.completed`` events that ship to
+atlas-app via ``HttpEventSink``.
 
 This sample requires no external services: the protocol events are emitted
 purely from the in-process method calls.
