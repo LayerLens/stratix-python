@@ -2,6 +2,24 @@
 STRATIX LangChain Callback Handler
 
 Provides LangChain callback-based integration for STRATIX tracing.
+
+Typed-event migration (Bundle #6 — final):
+    The single ``self.emit_dict_event(...)`` site (the
+    :meth:`_emit_event` wrapper that dispatches ``model.invoke``,
+    ``tool.call``, ``agent.input``, ``agent.output`` from nine
+    callback hooks) was migrated to typed
+    :class:`ModelInvokeEvent` / :class:`ToolCallEvent` /
+    :class:`AgentInputEvent` / :class:`AgentOutputEvent` payloads
+    from :mod:`layerlens.instrument._compat.events`.
+
+    LangChain provenance (``run_id``, ``parent_run_id``,
+    ``node_name``, ``langgraph_step``, ``langgraph_triggers``,
+    ``invocation_params``) is folded onto canonical metadata /
+    parameters slots — no ad-hoc top-level fields ship on the
+    canonical schema. ``parent_run_id`` is used to attribute
+    nested LLM / tool calls back to their LangGraph node, with
+    the node name landing on
+    :class:`MessageContent.metadata.node_name`.
 """
 
 from __future__ import annotations
@@ -13,6 +31,14 @@ from typing import Any
 from dataclasses import dataclass
 from collections.abc import Callable
 
+from layerlens.instrument._compat.events import (
+    MessageRole,
+    ToolCallEvent,
+    AgentInputEvent,
+    IntegrationType,
+    AgentOutputEvent,
+    ModelInvokeEvent,
+)
 from layerlens.instrument.adapters._base.adapter import (
     AdapterInfo,
     BaseAdapter,
@@ -24,6 +50,24 @@ from layerlens.instrument.adapters._base.adapter import (
 from layerlens.instrument.adapters._base.capture import CaptureConfig
 from layerlens.instrument.adapters._base.pydantic_compat import PydanticCompat
 from layerlens.instrument.adapters._base.trace_container import SerializedTrace
+
+
+def _stringify(value: Any) -> str:
+    """Coerce ``value`` to a non-``None`` string for canonical message slots.
+
+    The canonical :class:`AgentInputEvent` and
+    :class:`AgentOutputEvent` require ``MessageContent.message: str`` —
+    LangChain delivers the underlying input/output as arbitrary
+    Python objects (LangGraph state dicts, ``return_values``, raw
+    output strings). This helper always returns a string so the typed
+    payload validates; the original payload is preserved on
+    :class:`MessageContent.metadata`.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
 
 
 @dataclass
@@ -385,22 +429,53 @@ class LayerLensCallbackHandler(BaseAdapter):
         output = self._extract_llm_output(response)
         token_usage = self._extract_token_usage(response)
 
-        payload = {
+        # Adapter-specific provenance folds onto ModelInfo.parameters
+        # (canonical schema does not declare run_id / prompts / output
+        # / duration_ns / invocation_params / node_name as top-level
+        # fields on ModelInvokeEvent).
+        parameters: dict[str, Any] = {
+            "framework": "langchain",
             "run_id": run_id_str,
-            "model": {"name": ctx.model or "unknown", "provider": ctx.provider or "unknown"},
             "prompts": ctx.prompts or [],
             "output": output,
             "token_usage": token_usage,
             "duration_ns": duration_ns,
-            "invocation_params": ctx.invocation_params,
         }
+        if ctx.invocation_params:
+            parameters["invocation_params"] = ctx.invocation_params
 
-        # Attribute to LangGraph node if parent chain is a node
+        # Attribute to LangGraph node if parent chain is a node.
         node_name = self._run_to_node.get(str(parent_run_id)) if parent_run_id else None
         if node_name:
-            payload["node_name"] = node_name
+            parameters["node_name"] = node_name
 
-        self._emit_event("model.invoke", payload)
+        # Token usage extraction may yield {prompt_tokens,
+        # completion_tokens, total_tokens} or None — pull them onto
+        # the canonical token slots.
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
+        total_tokens: int | None = None
+        if isinstance(token_usage, dict):
+            pt = token_usage.get("prompt_tokens")
+            ct = token_usage.get("completion_tokens")
+            tt = token_usage.get("total_tokens")
+            prompt_tokens = pt if isinstance(pt, int) else None
+            completion_tokens = ct if isinstance(ct, int) else None
+            total_tokens = tt if isinstance(tt, int) else None
+
+        self._emit_typed(
+            "model.invoke",
+            ModelInvokeEvent.create(
+                provider=ctx.provider or "unknown",
+                name=ctx.model or "unknown",
+                version="unavailable",
+                parameters=parameters,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                latency_ms=duration_ns / 1_000_000.0,
+            ),
+        )
 
     def on_llm_error(
         self,
@@ -423,20 +498,29 @@ class LayerLensCallbackHandler(BaseAdapter):
         end_time_ns = time.time_ns()
         duration_ns = end_time_ns - ctx.start_time_ns
 
-        payload = {
+        parameters: dict[str, Any] = {
+            "framework": "langchain",
             "run_id": run_id_str,
-            "model": {"name": ctx.model or "unknown", "provider": ctx.provider or "unknown"},
             "prompts": ctx.prompts or [],
             "error": str(error),
             "duration_ns": duration_ns,
         }
 
-        # Attribute to LangGraph node if parent chain is a node
+        # Attribute to LangGraph node if parent chain is a node.
         node_name = self._run_to_node.get(str(parent_run_id)) if parent_run_id else None
         if node_name:
-            payload["node_name"] = node_name
+            parameters["node_name"] = node_name
 
-        self._emit_event("model.invoke", payload)
+        self._emit_typed(
+            "model.invoke",
+            ModelInvokeEvent.create(
+                provider=ctx.provider or "unknown",
+                name=ctx.model or "unknown",
+                version="unavailable",
+                parameters=parameters,
+                latency_ms=duration_ns / 1_000_000.0,
+            ),
+        )
 
     # --- Tool Callbacks ---
 
@@ -487,20 +571,44 @@ class LayerLensCallbackHandler(BaseAdapter):
         end_time_ns = time.time_ns()
         duration_ns = end_time_ns - ctx.start_time_ns
 
-        payload = {
-            "run_id": run_id_str,
-            "tool_name": ctx.tool_name,
-            "input": ctx.tool_input,
-            "output": output,
-            "duration_ns": duration_ns,
-        }
+        # Canonical input slot is a dict — wrap raw scalars / strings
+        # / Nones on a ``value`` key to keep the schema contract.
+        if isinstance(ctx.tool_input, dict):
+            input_data: dict[str, Any] = dict(ctx.tool_input)
+        elif ctx.tool_input is None:
+            input_data = {}
+        else:
+            input_data = {"value": ctx.tool_input}
 
-        # Attribute to LangGraph node if parent chain is a node
+        # Provenance keys (run_id, node_name, framework) ride on
+        # namespaced ``_*`` keys so they do not collide with caller
+        # tool arguments.
+        input_data["_run_id"] = run_id_str
+        input_data["_framework"] = "langchain"
         node_name = self._run_to_node.get(str(parent_run_id)) if parent_run_id else None
         if node_name:
-            payload["node_name"] = node_name
+            input_data["_node_name"] = node_name
 
-        self._emit_event("tool.call", payload)
+        # Canonical output slot is Optional[dict] — LangChain's
+        # callback protocol types ``output`` as ``str``, so wrap the
+        # raw string on a ``value`` key. ``None`` strings (rare —
+        # protocol does not officially permit them) collapse to
+        # ``None`` so the canonical "no output yet" semantics hold.
+        output_data: dict[str, Any] | None = (
+            {"value": output} if output else None
+        )
+
+        self._emit_typed(
+            "tool.call",
+            ToolCallEvent.create(
+                name=ctx.tool_name,
+                version="unavailable",
+                integration=IntegrationType.LIBRARY,
+                input_data=input_data,
+                output_data=output_data,
+                latency_ms=duration_ns / 1_000_000.0,
+            ),
+        )
 
     def on_tool_error(
         self,
@@ -523,20 +631,30 @@ class LayerLensCallbackHandler(BaseAdapter):
         end_time_ns = time.time_ns()
         duration_ns = end_time_ns - ctx.start_time_ns
 
-        payload = {
-            "run_id": run_id_str,
-            "tool_name": ctx.tool_name,
-            "input": ctx.tool_input,
-            "error": str(error),
-            "duration_ns": duration_ns,
-        }
+        if isinstance(ctx.tool_input, dict):
+            input_data: dict[str, Any] = dict(ctx.tool_input)
+        elif ctx.tool_input is None:
+            input_data = {}
+        else:
+            input_data = {"value": ctx.tool_input}
 
-        # Attribute to LangGraph node if parent chain is a node
+        input_data["_run_id"] = run_id_str
+        input_data["_framework"] = "langchain"
         node_name = self._run_to_node.get(str(parent_run_id)) if parent_run_id else None
         if node_name:
-            payload["node_name"] = node_name
+            input_data["_node_name"] = node_name
 
-        self._emit_event("tool.call", payload)
+        self._emit_typed(
+            "tool.call",
+            ToolCallEvent.create(
+                name=ctx.tool_name,
+                version="unavailable",
+                integration=IntegrationType.LIBRARY,
+                input_data=input_data,
+                error=str(error),
+                latency_ms=duration_ns / 1_000_000.0,
+            ),
+        )
 
     # --- Agent Callbacks ---
 
@@ -565,13 +683,26 @@ class LayerLensCallbackHandler(BaseAdapter):
             action_input=action_input,
         )
 
-        self._emit_event(
+        # Agent action → tool.call: the tool invocation happens
+        # synchronously inside the agent's reasoning loop.
+        if isinstance(action_input, dict):
+            input_data: dict[str, Any] = dict(action_input)
+        elif action_input is None:
+            input_data = {}
+        else:
+            input_data = {"value": action_input}
+        input_data["_run_id"] = run_id_str
+        input_data["_framework"] = "langchain"
+        input_data["_source"] = "on_agent_action"
+
+        self._emit_typed(
             "tool.call",
-            {
-                "run_id": run_id_str,
-                "tool_name": action_str,
-                "tool_input": action_input,
-            },
+            ToolCallEvent.create(
+                name=action_str,
+                version="unavailable",
+                integration=IntegrationType.LIBRARY,
+                input_data=input_data,
+            ),
         )
 
     def on_agent_finish(
@@ -592,13 +723,20 @@ class LayerLensCallbackHandler(BaseAdapter):
         output = getattr(finish, "return_values", str(finish))
         log = getattr(finish, "log", None)
 
-        self._emit_event(
+        metadata: dict[str, Any] = {
+            "framework": "langchain",
+            "run_id": run_id_str,
+            "raw_output": output,
+        }
+        if log is not None:
+            metadata["log"] = log
+
+        self._emit_typed(
             "agent.output",
-            {
-                "run_id": run_id_str,
-                "output": output,
-                "log": log,
-            },
+            AgentOutputEvent.create(
+                message=_stringify(output),
+                metadata=metadata,
+            ),
         )
 
     # --- Chain Callbacks ---
@@ -637,16 +775,29 @@ class LayerLensCallbackHandler(BaseAdapter):
             self._run_to_node[run_id_str] = node_name
 
             if self._capture_config.is_layer_enabled("agent.input"):
-                input_summary = str(inputs)[:500] if inputs else None
-                self._emit_event(
+                input_summary = str(inputs)[:500] if inputs else ""
+                # ``meta`` already holds the LangChain-supplied
+                # callback metadata. We build ``event_metadata`` for
+                # the canonical envelope without shadowing the
+                # method parameter.
+                event_metadata: dict[str, Any] = {
+                    "framework": "langchain",
+                    "run_id": run_id_str,
+                    "node_name": node_name,
+                    "langgraph_step": meta.get("langgraph_step"),
+                    "langgraph_triggers": meta.get("langgraph_triggers"),
+                    "raw_input": inputs,
+                }
+                # LangGraph node executions originate from the graph
+                # runtime itself — not a human user — so the canonical
+                # role is AGENT.
+                self._emit_typed(
                     "agent.input",
-                    {
-                        "run_id": run_id_str,
-                        "node_name": node_name,
-                        "input": input_summary,
-                        "langgraph_step": meta.get("langgraph_step"),
-                        "langgraph_triggers": meta.get("langgraph_triggers"),
-                    },
+                    AgentInputEvent.create(
+                        message=input_summary,
+                        role=MessageRole.AGENT,
+                        metadata=event_metadata,
+                    ),
                 )
         elif parent_id_str and parent_id_str in self._run_to_node:
             # Sub-chain within a LangGraph node — inherit the node mapping
@@ -681,15 +832,19 @@ class LayerLensCallbackHandler(BaseAdapter):
         end_time_ns = time.time_ns()
         duration_ns = end_time_ns - ctx.start_time_ns
 
-        output_summary = str(outputs)[:500] if outputs else None
-        self._emit_event(
+        output_summary = str(outputs)[:500] if outputs else ""
+        self._emit_typed(
             "agent.output",
-            {
-                "run_id": run_id_str,
-                "node_name": ctx.node_name,
-                "output": output_summary,
-                "duration_ns": duration_ns,
-            },
+            AgentOutputEvent.create(
+                message=output_summary,
+                metadata={
+                    "framework": "langchain",
+                    "run_id": run_id_str,
+                    "node_name": ctx.node_name,
+                    "duration_ns": duration_ns,
+                    "raw_output": outputs,
+                },
+            ),
         )
 
     def on_chain_error(
@@ -714,14 +869,19 @@ class LayerLensCallbackHandler(BaseAdapter):
         end_time_ns = time.time_ns()
         duration_ns = end_time_ns - ctx.start_time_ns
 
-        self._emit_event(
+        self._emit_typed(
             "agent.output",
-            {
-                "run_id": run_id_str,
-                "node_name": ctx.node_name,
-                "error": str(error),
-                "duration_ns": duration_ns,
-            },
+            AgentOutputEvent.create(
+                message=str(error),
+                metadata={
+                    "framework": "langchain",
+                    "run_id": run_id_str,
+                    "node_name": ctx.node_name,
+                    "duration_ns": duration_ns,
+                    "error": str(error),
+                    "run_status": "run_failed",
+                },
+            ),
         )
 
     # --- Helper Methods ---
@@ -773,11 +933,25 @@ class LayerLensCallbackHandler(BaseAdapter):
             return response.llm_output.get("token_usage")  # type: ignore[no-any-return]
         return None
 
-    def _emit_event(self, event_type: str, payload: dict[str, Any]) -> None:
-        """Emit an STRATIX event through BaseAdapter's circuit-breaker path."""
-        event = {"type": event_type, "payload": payload}
-        self._events.append(event)
-        self.emit_dict_event(event_type, payload)
+    def _emit_typed(self, event_type: str, payload: Any) -> None:
+        """Record a typed Pydantic event payload and emit it.
+
+        Replaces the legacy :meth:`_emit_event` dispatcher. The
+        ``event_type`` argument is kept for the ``self._events``
+        debug/test ledger (mirrors the legacy shape so existing
+        ``get_events('model.invoke')`` filters still work). The
+        canonical Pydantic instance flows through
+        :meth:`BaseAdapter.emit_event` which validates the payload
+        against the canonical schema and stamps ``org_id`` per the
+        multi-tenancy contract.
+        """
+        from layerlens._compat.pydantic import model_dump
+
+        # Local debug/test ledger keeps a dict view so callers
+        # treating ``self._events`` as a sequence of
+        # ``{type, payload}`` records continue to work.
+        self._events.append({"type": event_type, "payload": model_dump(payload)})
+        self.emit_event(payload)
 
     # --- Testing/Debugging ---
 
