@@ -144,7 +144,7 @@ Currently priced model IDs:
 ## Sample
 
 A runnable, fully offline sample lives at
-`samples/instrument/providers/bedrock/`. It uses
+`samples/instrument/bedrock/`. It uses
 `botocore.stub.Stubber` so it requires no AWS credentials. Set
 `LAYERLENS_BEDROCK_LIVE=1` plus standard AWS env vars to drive the live API
 instead.

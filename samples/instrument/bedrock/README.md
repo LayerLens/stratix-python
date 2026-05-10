@@ -46,7 +46,7 @@ This pulls `boto3>=1.34`. The default `pip install layerlens` does NOT pull
 ## Run (offline, no AWS account needed)
 
 ```bash
-python -m samples.instrument.providers.bedrock.main
+python -m samples.instrument.bedrock.main
 ```
 
 You'll see the captured `model.invoke` and `cost.record` events streamed to
@@ -65,7 +65,7 @@ export AWS_PROFILE=my-sso-profile
 # OR
 # (rely on the IAM role of the EC2 / ECS / Lambda runtime)
 
-python -m samples.instrument.providers.bedrock.main
+python -m samples.instrument.bedrock.main
 ```
 
 Make sure your IAM principal has `bedrock:InvokeModel` (or

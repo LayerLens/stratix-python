@@ -17,7 +17,7 @@ a single low-cost ``Converse`` call against
 Run::
 
     pip install 'layerlens[providers-bedrock]'
-    python -m samples.instrument.providers.bedrock.main
+    python -m samples.instrument.bedrock.main
 """
 
 from __future__ import annotations
