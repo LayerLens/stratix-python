@@ -35,6 +35,7 @@ from typing import Any, Dict, List
 import pytest
 
 from layerlens.instrument.adapters._base import AdapterStatus, CaptureConfig
+from layerlens.instrument.adapters._base.adapter import AdapterCapability
 from layerlens.instrument.adapters.frameworks.langgraph import (
     ADAPTER_CLASS,
     TracedLLM,
@@ -140,6 +141,16 @@ def test_info_wrapper_also_reports_v2_only() -> None:
     """``info()`` (the BaseAdapter wrapper) must agree with the class attribute."""
     a = LayerLensLangGraphAdapter()
     assert a.info().requires_pydantic == PydanticCompat.V2_ONLY
+
+
+def test_declares_replay_and_streaming_capabilities() -> None:
+    """Catalog UI relies on declared capabilities; LangGraph wraps both
+    ``serialize_for_replay`` and a streaming entry-point (``llm.stream`` /
+    ``llm.astream``), so REPLAY and STREAMING must both be advertised."""
+    a = LayerLensLangGraphAdapter()
+    caps = a.info().capabilities
+    assert AdapterCapability.REPLAY in caps
+    assert AdapterCapability.STREAMING in caps
 
 
 # ---------------------------------------------------------------------------

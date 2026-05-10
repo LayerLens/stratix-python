@@ -174,6 +174,7 @@ class LayerLensLangGraphAdapter(BaseAdapter):
                 AdapterCapability.TRACE_STATE,
                 AdapterCapability.TRACE_HANDOFFS,
                 AdapterCapability.REPLAY,
+                AdapterCapability.STREAMING,
             ],
             description="LayerLens adapter for LangGraph agent framework",
             requires_pydantic=PydanticCompat.V2_ONLY,
