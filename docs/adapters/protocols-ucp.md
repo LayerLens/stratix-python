@@ -1,5 +1,10 @@
 # UCP (Universal Commerce Protocol) adapter
 
+> **Canonical source:** [`protocols/ucp.py`](../../src/layerlens/instrument/adapters/protocols/ucp.py)
+> and [`protocols/_commerce.py`](../../src/layerlens/instrument/adapters/protocols/_commerce.py).
+> Every event-name string and method signature in this doc matches the
+> literal `event_type` default and Python signature at source.
+
 `layerlens.instrument.adapters.protocols.ucp.UCPAdapter` instruments the
 Universal Commerce Protocol — supplier discovery, catalog browsing,
 checkout sessions, and order refunds.
@@ -74,12 +79,11 @@ and the duration is computed and logged.
 
 | Event | Layer | When |
 |---|---|---|
-| `commerce.supplier.discovered` | L7b | Per `on_supplier_discovered`. |
-| `commerce.catalog.browsed` | L7b | Per `on_catalog_browsed`. |
-| `commerce.checkout.created` | L7b | Per `on_checkout_created`. |
-| `commerce.checkout.completed` | L7b | Per `on_checkout_completed`. |
-| `commerce.order.refunded` | L7b | Per `on_order_refunded`. |
-| `commerce.supplier.event` | L7b | Per `on_supplier_event` callback (catch-all). |
+| `commerce.supplier.discovered` | L7b | Per `on_supplier_discovered` (`ucp.py:144`). |
+| `commerce.catalog.browsed` | L7b | Per `on_catalog_browsed` (`ucp.py:247`). |
+| `commerce.checkout.created` | L7b | Per `on_checkout_created` (`ucp.py:287`). |
+| `commerce.checkout.completed` | L7b | Per `on_checkout_completed` (`ucp.py:360`). |
+| `commerce.order.refunded` | L7b | Per `on_order_refunded` (`ucp.py:411`). |
 
 All `commerce.*` events bypass `CaptureConfig` gating via
 `ALWAYS_ENABLED_EVENT_TYPES`.
