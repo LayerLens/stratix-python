@@ -3,7 +3,17 @@
 `layerlens.instrument.adapters.frameworks.embedding.EmbeddingAdapter` and
 `VectorStoreAdapter` instrument embedding-creation calls and vector-store
 operations across the common providers. They emit `embedding.create` and
-`vector_store.query` events with dimension, batch size, and latency metadata.
+`retrieval.query` events with dimension, batch size, and latency metadata.
+
+> **Event taxonomy note:** vector-store retrieval is normalized to
+> `retrieval.query` regardless of backend — Pinecone, Weaviate, and Chroma
+> wrappers all emit the same event type (the literal string
+> `"retrieval.query"` is emitted at
+> `src/layerlens/instrument/adapters/frameworks/embedding/vector_store_adapter.py`
+> lines 167, 199, and 233). Backend-specific differences live in the event
+> payload (e.g. Pinecone's `namespace`, Weaviate's `query_type`, Chroma's
+> `distance_*`). See the canonical specification at
+> [`docs/adapters/embedding.md`](./embedding.md) for the full contract.
 
 ## Install
 
@@ -76,7 +86,7 @@ vs_adapter.connect()
 | Event | Layer | When |
 |---|---|---|
 | `embedding.create` | L3 | Per embedding call. Payload: `provider`, `model`, `batch_size`, `dimensions`, `total_tokens`, `latency_ms`. |
-| `vector_store.query` | L3 | Per vector-store query. Payload: `provider`, `top_k`, `result_count`, `latency_ms`, `index_name`. |
+| `retrieval.query` | L3 | Per vector-store query. Payload varies by backend (`provider`, `top_k`/`limit`/`n_results`, `result_count`/`match_count`, `has_filter`/`has_where`, `namespace` (Pinecone), `query_type` (Weaviate), `score_min`/`score_max`/`score_mean` (Pinecone), `distance_min`/`distance_max` (Chroma), `latency_ms`). See [`docs/adapters/embedding.md`](./embedding.md) §3.3 for the full payload schema. |
 
 ## Dimension tracking
 

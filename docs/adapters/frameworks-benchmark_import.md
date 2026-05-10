@@ -1,10 +1,21 @@
-# Benchmark import framework adapter
+# Benchmark import (data importer)
 
 `layerlens.instrument.adapters.frameworks.benchmark_import.BenchmarkImportAdapter`
 imports external benchmark datasets into Stratix evaluation spaces. Unlike
-the other framework adapters, this is a **data importer**, not a runtime
-instrumentation adapter — it reads benchmarks from disk or from
-HuggingFace and produces normalized rows.
+the other classes in `layerlens.instrument.adapters.frameworks.*`, this is
+a **data importer**, not a runtime instrumentation adapter — it reads
+benchmarks from disk or from HuggingFace and produces normalized rows.
+
+> **Architectural note:** `BenchmarkImportAdapter` is deliberately a
+> **bare class** — it does NOT extend `BaseAdapter`
+> (`src/layerlens/instrument/adapters/frameworks/benchmark_import/adapter.py:70`
+> declares `class BenchmarkImportAdapter:` with no superclass). It has no
+> `connect()` / `disconnect()` lifecycle, no `AdapterCapability`
+> declarations, no sinks, and emits no telemetry events. It is a one-shot
+> ETL pipeline rather than a runtime instrumentation adapter. See the
+> canonical specification at
+> [`docs/adapters/benchmark_import.md`](./benchmark_import.md) §1 for the
+> full architectural carve-out.
 
 ## Install
 
@@ -84,8 +95,18 @@ Stratix evaluation schema:
 | `difficulty` | `difficulty`, `level` |
 | `category` | `category`, `subject`, `topic` |
 
-When no mapping is provided, the adapter applies a small set of automatic
-heuristics (case-insensitive name match against the canonical fields).
+**Schema mapping is explicit-only in v1.x.** When no `schema_mapping` is
+provided, source field names pass through unchanged —
+`_apply_schema_mapping` short-circuits with `if not mapping: return record`
+(`src/layerlens/instrument/adapters/frameworks/benchmark_import/adapter.py:423-434`).
+There is **no automatic heuristic detection** (no case-insensitive
+matching, no fuzzy aliasing) in the current implementation. To map a
+source column to a canonical field, you must list it explicitly in
+`schema_mapping`.
+
+Automatic heuristic detection is on the v1.8 roadmap — see
+[`docs/adapters/benchmark_import.md`](./benchmark_import.md) §3.3 and §7
+("v1.8 — Schema-heuristic detection").
 
 ## Persistence
 
