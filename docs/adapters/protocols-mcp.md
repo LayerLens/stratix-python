@@ -1,5 +1,10 @@
 # MCP Extensions protocol adapter
 
+> **Canonical source:** [`protocols/mcp/adapter.py`](../../src/layerlens/instrument/adapters/protocols/mcp/adapter.py)
+> and [`_vendored/events_protocol.py`](../../src/layerlens/instrument/_vendored/events_protocol.py).
+> Every event-name string and method signature in this doc matches the literal
+> `event_type` default and Python signature at source.
+
 `layerlens.instrument.adapters.protocols.mcp.MCPExtensionsAdapter` instruments
 the [Model Context Protocol](https://modelcontextprotocol.io/) extensions
 introduced in 2025: elicitation, structured tool outputs, async tasks,
@@ -58,27 +63,31 @@ calls them at the appropriate extension points:
   per tool invocation.
 - `on_structured_output(tool_name, output, schema, validation_passed,
   validation_errors)` — per structured-output validation.
-- `on_elicitation_request(prompt_id, prompt, schema)` — when the server
-  prompts the user for structured input.
-- `on_elicitation_response(prompt_id, response, valid)` — user reply.
-- `on_async_task(task_id, status, ...)` — long-running tool task lifecycle.
-- `on_mcp_app_invocation(app_id, ...)` — interactive UI components
-  invoked as tools.
-- `on_auth_event(event_type, ...)` — OAuth 2.1 / OpenID Connect events
-  inside an MCP session.
+- `on_elicitation_request(elicitation_id, server_name, schema, title)` —
+  when an MCP server initiates a request for structured user input
+  (`adapter.py:212-218`).
+- `on_elicitation_response(elicitation_id, action, response, latency_ms)` —
+  user reply (`adapter.py:237-243`). `action` is `"submit"` or `"cancel"`.
+- `on_async_task(async_task_id, status, ...)` — long-running tool task
+  lifecycle (`adapter.py:259-267`).
+- `on_mcp_app_invocation(app_id, component_type, interaction_result, ...)` —
+  interactive UI components invoked as tools (`adapter.py:292-299`).
+- `on_auth_event(auth_type, success, details)` — OAuth 2.1 / OpenID Connect
+  events inside an MCP session (`adapter.py:319-324`). Surfaced as
+  `environment.config` (not a `protocol.*` event) with `auth_event` and
+  `auth_success` attributes on the payload.
 
 ## Events emitted
 
 | Event | Layer | When |
 |---|---|---|
 | `tool.call` | L5a | Per `on_tool_call`. |
-| `protocol.structured_output` | L4a | Per `on_structured_output`. |
-| `protocol.elicitation_request` | L4a | Per `on_elicitation_request`. |
-| `protocol.elicitation_response` | L4a | Per `on_elicitation_response`. |
-| `protocol.async_task` | L4a | Per `on_async_task`. |
-| `protocol.mcp_app_invocation` | L4a | Per `on_mcp_app_invocation`. |
-| `protocol.auth_event` | cross-cutting | Per `on_auth_event`. |
-| `policy.violation` | cross-cutting | When `validation_passed=False`. |
+| `protocol.tool.structured_output` | L5a | Per `on_structured_output` (`events_protocol.py:413-415`). |
+| `protocol.elicitation.request` | L5a | Per `on_elicitation_request` (`events_protocol.py:336-338`). |
+| `protocol.elicitation.response` | L5a | Per `on_elicitation_response` (`events_protocol.py:375-378`). |
+| `protocol.async_task` | cross-cutting | Per `on_async_task` (`events_protocol.py:236-238`). |
+| `protocol.mcp_app.invocation` | L5a | Per `on_mcp_app_invocation` (`events_protocol.py:457-459`). |
+| `environment.config` | L4 | Per `on_auth_event` — carries `auth_event` and `auth_success` in `attributes` (`adapter.py:331-338`). |
 
 ## MCP specifics
 
