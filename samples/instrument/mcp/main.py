@@ -2,7 +2,7 @@
 
 Walks through the four MCP extensions in-memory: tool call, structured
 output validation, elicitation request/response, and async task lifecycle.
-The adapter emits ``tool.call`` + ``protocol.structured_output`` +
+The adapter emits ``tool.call`` + ``protocol.tool.structured_output`` +
 ``protocol.elicitation_*`` + ``protocol.async_task`` events that ship to
 atlas-app via ``HttpEventSink``.
 

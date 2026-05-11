@@ -2,9 +2,9 @@
 
 Walks the three-stage AP2 authorization chain in-memory: intent mandate
 (with org-policy guardrail evaluation) → payment mandate signing →
-payment receipt issuance. The adapter emits ``commerce.intent.*`` +
-``commerce.mandate.*`` + ``commerce.payment.*`` events that ship to
-atlas-app via ``HttpEventSink``.
+payment receipt issuance. The adapter emits ``commerce.payment.intent_*`` +
+``commerce.payment.mandate_*`` + ``commerce.payment.receipt_*`` events that
+ship to atlas-app via ``HttpEventSink``.
 
 The sample uses a fake signature, fake merchant, and fake payment ID —
 no real payment processor is contacted.
