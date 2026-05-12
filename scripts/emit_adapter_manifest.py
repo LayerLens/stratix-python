@@ -169,6 +169,16 @@ _MATURE: set[str] = {
     "litellm",
     "cohere",
     "mistral",
+    # ``browser_use`` graduates from ``_LIFECYCLE_PREVIEW`` in this PR
+    # — it ships the full lifecycle hook surface (session/navigation/
+    # action/screenshot/DOM/LLM hooks), 40 unit tests covering every
+    # hook + truncation + multi-tenancy + resilience + error-aware
+    # emission + replay round-trip, the
+    # ``samples/instrument/browser_use/`` runnable offline demo, the
+    # ``docs/adapters/frameworks-browser_use.md`` reference doc, AND
+    # the STRATIXBrowserUseAdapter→BrowserUseAdapter deprecation
+    # alias.
+    "browser_use",
     # ``smolagents`` was previously listed here despite missing both its
     # reference doc (``docs/adapters/frameworks-smolagents.md``) and its
     # sample (``samples/instrument/smolagents/main.py``). The audit that
@@ -212,10 +222,6 @@ _LIFECYCLE_PREVIEW: set[str] = {
     # on the missing artifacts in the meantime so the deficiency stays
     # visible without blocking CI.
     "smolagents",
-    # ``browser_use`` will join this set once its lifecycle adapter PR
-    # lands. Listed in ``_CATEGORY`` / ``_EXTRAS`` already so the
-    # registration story is consistent across both sides.
-    "browser_use",
 }
 
 # Sanity: a single adapter cannot be both "mature" (has all artifacts)
