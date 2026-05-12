@@ -58,6 +58,12 @@ class BedrockAgentsAdapter(BaseAdapter):
         self._seen_agents: set[str] = set()
         self._framework_version: str | None = None
         self._invoke_starts: dict[int, int] = {}
+        # Per-thread cache of input + tool list for memory persistence.
+        # boto3 hooks fire on the thread that invoked the SDK call, so
+        # thread-id keying is safe and matches _invoke_starts.
+        self._invoke_inputs: dict[int, Any] = {}
+        self._invoke_agent_ids: dict[int, str] = {}
+        self._invoke_tools: dict[int, list[str]] = {}
 
     def connect(self) -> None:
         try:
@@ -87,6 +93,9 @@ class BedrockAgentsAdapter(BaseAdapter):
                 logger.debug("Could not unregister boto3 event hooks", exc_info=True)
         self._originals.clear()
         self._seen_agents.clear()
+        self._invoke_inputs.clear()
+        self._invoke_agent_ids.clear()
+        self._invoke_tools.clear()
         self._connected = False
         self._status = AdapterStatus.DISCONNECTED
 
@@ -116,6 +125,13 @@ class BedrockAgentsAdapter(BaseAdapter):
         )
 
     def serialize_for_replay(self) -> ReplayableTrace:
+        """Serialize the current trace data for replay.
+
+        Includes the per-adapter memory snapshot (cross-poll #1) under
+        ``metadata["memory_snapshot"]``. Bedrock session attributes are
+        consolidated into the snapshot at after_invoke so a replay
+        engine can reconstruct cross-session recall.
+        """
         return ReplayableTrace(
             adapter_name="BedrockAgentsAdapter",
             framework=self.FRAMEWORK,
@@ -123,6 +139,7 @@ class BedrockAgentsAdapter(BaseAdapter):
             events=list(self._trace_events),
             state_snapshots=[],
             config={"capture_config": self._capture_config.model_dump()},
+            metadata={"memory_snapshot": self.memory_snapshot_dict()},
         )
 
     # --- Framework Integration ---
@@ -153,9 +170,13 @@ class BedrockAgentsAdapter(BaseAdapter):
             params = kwargs.get("params", {})
             tid = threading.get_ident()
             start_ns = time.time_ns()
+            agent_id = params.get("agentId", "unknown")
+            input_text = params.get("inputText")
             with self._adapter_lock:
                 self._invoke_starts[tid] = start_ns
-            agent_id = params.get("agentId", "unknown")
+                self._invoke_inputs[tid] = input_text
+                self._invoke_agent_ids[tid] = agent_id
+                self._invoke_tools[tid] = []
             self._emit_agent_config(agent_id, params)
             self.emit_dict_event(
                 "agent.input",
@@ -163,7 +184,7 @@ class BedrockAgentsAdapter(BaseAdapter):
                     "framework": "bedrock_agents",
                     "agent_id": agent_id,
                     "session_id": params.get("sessionId"),
-                    "input": params.get("inputText"),
+                    "input": input_text,
                     "enable_trace": params.get("enableTrace", False),
                     "timestamp_ns": start_ns,
                 },
@@ -180,6 +201,9 @@ class BedrockAgentsAdapter(BaseAdapter):
             end_ns = time.time_ns()
             with self._adapter_lock:
                 start_ns = self._invoke_starts.pop(tid, 0)
+                input_text = self._invoke_inputs.pop(tid, None)
+                agent_id = self._invoke_agent_ids.pop(tid, "")
+                tool_names = self._invoke_tools.pop(tid, [])
             duration_ns = end_ns - start_ns if start_ns else 0
             output = self._extract_completion(parsed)
             self.emit_dict_event(
@@ -191,13 +215,36 @@ class BedrockAgentsAdapter(BaseAdapter):
                     "session_id": parsed.get("sessionId"),
                 },
             )
-            # Extract trace steps if available
-            self._process_trace(parsed)
+            # Extract trace steps if available — also populates
+            # _invoke_tools[tid] for the in-flight invocation when
+            # supervisor/collaborator orchestration emits action-group
+            # steps. The caller's ``tool_names`` list is appended to
+            # in-place by _process_trace.
+            self._process_trace(parsed, tool_names=tool_names)
+            # Cross-poll #1: persist this turn into memory.
+            self.record_memory_turn(
+                agent_name=agent_id,
+                input_data=self._safe_serialize(input_text),
+                output_data=self._safe_serialize(output),
+                tools=tool_names or None,
+            )
         except Exception:
             logger.warning("Error in _after_invoke_agent", exc_info=True)
 
-    def _process_trace(self, parsed: dict[str, Any]) -> None:
-        """Extract trace steps from Bedrock response and emit events."""
+    def _process_trace(
+        self,
+        parsed: dict[str, Any],
+        tool_names: list[str] | None = None,
+    ) -> None:
+        """Extract trace steps from Bedrock response and emit events.
+
+        Args:
+            parsed: The boto3-parsed InvokeAgent response.
+            tool_names: Mutable list the caller passed in to receive
+                the tool-name roll-up. When supplied, action-group /
+                knowledge-base step names are appended for memory
+                persistence at the caller's :meth:`record_memory_turn`.
+        """
         trace = parsed.get("trace", {})
         steps = trace.get("trace", {}).get("orchestrationTrace", {}).get("steps", [])
         if not steps and isinstance(trace, dict):
@@ -207,8 +254,15 @@ class BedrockAgentsAdapter(BaseAdapter):
             step_type = step.get("type", "")
             if step_type == "ACTION_GROUP":
                 self._emit_action_group(step)
+                if tool_names is not None:
+                    name = step.get("actionGroupName")
+                    if name:
+                        tool_names.append(str(name))
             elif step_type == "KNOWLEDGE_BASE":
                 self._emit_knowledge_base(step)
+                if tool_names is not None:
+                    name = step.get("knowledgeBaseId") or "knowledge_base"
+                    tool_names.append(str(name))
             elif step_type == "MODEL_INVOCATION":
                 self._emit_model_invocation(step)
             elif step_type == "AGENT_COLLABORATOR":
@@ -304,6 +358,8 @@ class BedrockAgentsAdapter(BaseAdapter):
         agent_id: str | None = None,
         output: Any = None,
         error: Exception | None = None,
+        input_data: Any = None,
+        tools: list[str] | None = None,
     ) -> None:
         if not self._connected:
             return
@@ -312,6 +368,15 @@ class BedrockAgentsAdapter(BaseAdapter):
             end_ns = time.time_ns()
             with self._adapter_lock:
                 start_ns = self._invoke_starts.pop(tid, 0)
+                if input_data is None:
+                    input_data = self._invoke_inputs.pop(tid, None)
+                else:
+                    self._invoke_inputs.pop(tid, None)
+                if tools is None:
+                    tools = self._invoke_tools.pop(tid, []) or None
+                else:
+                    self._invoke_tools.pop(tid, None)
+                self._invoke_agent_ids.pop(tid, None)
             duration_ns = end_ns - start_ns if start_ns else 0
             payload: dict[str, Any] = {
                 "framework": "bedrock_agents",
@@ -322,6 +387,14 @@ class BedrockAgentsAdapter(BaseAdapter):
             if error:
                 payload["error"] = str(error)
             self.emit_dict_event("agent.output", payload)
+            # Cross-poll #1: persist this turn into memory.
+            self.record_memory_turn(
+                agent_name=agent_id,
+                input_data=self._safe_serialize(input_data),
+                output_data=self._safe_serialize(output),
+                error=str(error) if error else None,
+                tools=tools,
+            )
         except Exception:
             logger.warning("Error in on_invoke_end", exc_info=True)
 

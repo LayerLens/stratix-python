@@ -127,7 +127,12 @@ class MSAgentAdapter(BaseAdapter):
         )
 
     def serialize_for_replay(self) -> ReplayableTrace:
-        """Serialize the current trace data for replay."""
+        """Serialize the current trace data for replay.
+
+        Includes the per-adapter memory snapshot (cross-poll #1) under
+        ``metadata["memory_snapshot"]``. Powers replay re-execution with
+        a deterministically-restored memory state.
+        """
         return ReplayableTrace(
             adapter_name="MSAgentAdapter",
             framework=self.FRAMEWORK,
@@ -135,6 +140,7 @@ class MSAgentAdapter(BaseAdapter):
             events=list(self._trace_events),
             state_snapshots=[],
             config={"capture_config": self._capture_config.model_dump()},
+            metadata={"memory_snapshot": self.memory_snapshot_dict()},
         )
 
     # --- Framework Integration ---
@@ -186,7 +192,16 @@ class MSAgentAdapter(BaseAdapter):
                 raise
             finally:
                 output = adapter._safe_serialize(results[-1]) if results else None
-                adapter.on_run_end(agent_name=agent_name, output=output, error=error)
+                # Roll up the tool names seen across the streamed turn for
+                # the memory recorder's procedural-pattern detector.
+                tool_names = adapter._collect_tool_names_from_messages(results)
+                adapter.on_run_end(
+                    agent_name=agent_name,
+                    output=output,
+                    error=error,
+                    input_data=input_data,
+                    tools=tool_names,
+                )
 
         traced_invoke._layerlens_original = original_invoke  # type: ignore[attr-defined]
         return traced_invoke
@@ -199,19 +214,29 @@ class MSAgentAdapter(BaseAdapter):
             chat_name = getattr(chat, "name", None) or "ms_agent_chat"
             agent = kwargs.get("agent") or (args[0] if args else None)
             agent_name = getattr(agent, "name", None) or chat_name if agent else chat_name
-            adapter.on_run_start(agent_name=agent_name, input_data=None)
+            input_data = kwargs.get("input") or kwargs.get("message")
+            adapter.on_run_start(agent_name=agent_name, input_data=input_data)
             error: Exception | None = None
             last_message = None
+            seen: list[Any] = []
             try:
                 async for message in original_invoke_stream(*args, **kwargs):
                     last_message = message
+                    seen.append(message)
                     yield message
             except Exception as exc:
                 error = exc
                 raise
             finally:
                 output = adapter._safe_serialize(last_message) if last_message else None
-                adapter.on_run_end(agent_name=agent_name, output=output, error=error)
+                tool_names = adapter._collect_tool_names_from_messages(seen)
+                adapter.on_run_end(
+                    agent_name=agent_name,
+                    output=output,
+                    error=error,
+                    input_data=input_data,
+                    tools=tool_names,
+                )
 
         traced_invoke_stream._layerlens_original = original_invoke_stream  # type: ignore[attr-defined]
         return traced_invoke_stream
@@ -311,6 +336,8 @@ class MSAgentAdapter(BaseAdapter):
         agent_name: str | None = None,
         output: Any = None,
         error: Exception | None = None,
+        input_data: Any = None,
+        tools: list[str] | None = None,
     ) -> None:
         """Emit agent.output event when a chat invocation ends."""
         if not self._connected:
@@ -337,6 +364,18 @@ class MSAgentAdapter(BaseAdapter):
                     "agent_name": agent_name,
                     "event_subtype": "run_complete" if not error else "run_failed",
                 },
+            )
+            # Cross-poll #1: persist the chat turn into memory.
+            # Episodic = the (input, final-output) pair; procedural
+            # patterns build up across chat turns within a recorder
+            # lifetime. Tools, when collected from the stream, feed
+            # the procedural-pattern detector.
+            self.record_memory_turn(
+                agent_name=agent_name,
+                input_data=self._safe_serialize(input_data),
+                output_data=self._safe_serialize(output),
+                error=str(error) if error else None,
+                tools=tools,
             )
         except Exception:
             logger.warning("Error in on_run_end", exc_info=True)
@@ -490,3 +529,23 @@ class MSAgentAdapter(BaseAdapter):
             return str(value)
         except Exception:
             return str(value)
+
+    def _collect_tool_names_from_messages(self, messages: list[Any]) -> list[str]:
+        """Collect distinct tool names invoked across a streamed turn.
+
+        Used by the memory recorder's procedural-pattern detector — only
+        the names are needed, not the full arguments.
+        """
+        names: list[str] = []
+        try:
+            for message in messages:
+                items = getattr(message, "items", None) or []
+                for item in items:
+                    item_type = type(item).__name__
+                    if "FunctionCall" in item_type or "ToolCall" in item_type:
+                        name = getattr(item, "name", None) or getattr(item, "function_name", None)
+                        if name:
+                            names.append(str(name))
+        except Exception:
+            logger.debug("Could not collect tool names from messages", exc_info=True)
+        return names

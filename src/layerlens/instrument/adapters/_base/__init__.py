@@ -13,6 +13,13 @@ from layerlens.instrument.adapters._base.sinks import (
     TraceStoreSink,
     IngestionPipelineSink,
 )
+from layerlens.instrument.adapters._base.memory import (
+    DEFAULT_MAX_EPISODIC,
+    DEFAULT_MAX_SEMANTIC,
+    DEFAULT_MAX_PROCEDURAL,
+    MemoryRecorder,
+    MemorySnapshot,
+)
 from layerlens.instrument.adapters._base.adapter import (
     ORG_ID_FIELD,
     AdapterInfo,
@@ -41,8 +48,13 @@ __all__ = [
     "AdapterStatus",
     "BaseAdapter",
     "CaptureConfig",
+    "DEFAULT_MAX_EPISODIC",
+    "DEFAULT_MAX_PROCEDURAL",
+    "DEFAULT_MAX_SEMANTIC",
     "EventSink",
     "IngestionPipelineSink",
+    "MemoryRecorder",
+    "MemorySnapshot",
     "ORG_ID_FIELD",
     "PydanticCompat",
     "ReplayableTrace",

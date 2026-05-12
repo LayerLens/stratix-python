@@ -60,6 +60,11 @@ class LlamaIndexAdapter(BaseAdapter):
         self._framework_version: str | None = None
         self._event_handler: Any | None = None
         self._agent_starts: dict[int, int] = {}  # thread_id -> start_ns
+        # Per-thread cache of agent input + tool list for memory persistence.
+        # LlamaIndex events arrive on the thread running the workflow,
+        # so thread-id keying matches the existing _agent_starts pattern.
+        self._agent_inputs: dict[int, Any] = {}
+        self._agent_tools: dict[int, list[str]] = {}
 
     def connect(self) -> None:
         try:
@@ -93,6 +98,8 @@ class LlamaIndexAdapter(BaseAdapter):
             self._event_handler = None
         self._originals.clear()
         self._seen_agents.clear()
+        self._agent_inputs.clear()
+        self._agent_tools.clear()
         self._connected = False
         self._status = AdapterStatus.DISCONNECTED
 
@@ -122,6 +129,13 @@ class LlamaIndexAdapter(BaseAdapter):
         )
 
     def serialize_for_replay(self) -> ReplayableTrace:
+        """Serialize the current trace data for replay.
+
+        Includes the per-adapter memory snapshot (cross-poll #1) under
+        ``metadata["memory_snapshot"]``. LlamaIndex's ``ChatMemoryBuffer``
+        is consolidated into the snapshot at workflow end so a replay
+        engine can re-hydrate cross-conversation context.
+        """
         return ReplayableTrace(
             adapter_name="LlamaIndexAdapter",
             framework=self.FRAMEWORK,
@@ -129,6 +143,7 @@ class LlamaIndexAdapter(BaseAdapter):
             events=list(self._trace_events),
             state_snapshots=[],
             config={"capture_config": self._capture_config.model_dump()},
+            metadata={"memory_snapshot": self.memory_snapshot_dict()},
         )
 
     # --- Framework Integration ---
@@ -229,15 +244,24 @@ class LlamaIndexAdapter(BaseAdapter):
             )
 
     def _on_tool_call(self, event: Any) -> None:
+        tool_name = getattr(event, "tool_name", None) or getattr(event, "name", "unknown")
         self.emit_dict_event(
             "tool.call",
             {
                 "framework": "llama_index",
-                "tool_name": getattr(event, "tool_name", None) or getattr(event, "name", "unknown"),
+                "tool_name": tool_name,
                 "tool_input": self._safe_serialize(getattr(event, "tool_input", None)),
                 "tool_output": self._safe_serialize(getattr(event, "tool_output", None)),
             },
         )
+        # Memory persistence: record this tool name under the in-flight
+        # agent step so the procedural-pattern detector sees it. Same
+        # thread as the agent step that triggered the tool call.
+        tid = threading.get_ident()
+        with self._adapter_lock:
+            bucket = self._agent_tools.get(tid)
+            if bucket is not None:
+                bucket.append(str(tool_name))
 
     def _on_retrieval_start(self, event: Any) -> None:
         pass  # Tracked on end
@@ -260,8 +284,17 @@ class LlamaIndexAdapter(BaseAdapter):
         self._emit_agent_config(agent_name, event)
         tid = threading.get_ident()
         start_ns = time.time_ns()
+        # Stash the step input + reset the per-step tool list for memory
+        # persistence at step_end.
+        step_input = (
+            getattr(event, "input", None)
+            or getattr(event, "step", None)
+            or getattr(event, "task", None)
+        )
         with self._adapter_lock:
             self._agent_starts[tid] = start_ns
+            self._agent_inputs[tid] = step_input
+            self._agent_tools[tid] = []
         self.emit_dict_event(
             "agent.input",
             {
@@ -278,15 +311,25 @@ class LlamaIndexAdapter(BaseAdapter):
         end_ns = time.time_ns()
         with self._adapter_lock:
             start_ns = self._agent_starts.pop(tid, 0)
+            step_input = self._agent_inputs.pop(tid, None)
+            tool_names = self._agent_tools.pop(tid, [])
         duration_ns = end_ns - start_ns if start_ns else 0
+        response = getattr(event, "response", None)
         self.emit_dict_event(
             "agent.output",
             {
                 "framework": "llama_index",
                 "agent_name": agent_name,
-                "output": self._safe_serialize(getattr(event, "response", None)),
+                "output": self._safe_serialize(response),
                 "duration_ns": duration_ns,
             },
+        )
+        # Cross-poll #1: persist this step into memory.
+        self.record_memory_turn(
+            agent_name=agent_name,
+            input_data=self._safe_serialize(step_input),
+            output_data=self._safe_serialize(response),
+            tools=tool_names or None,
         )
 
     # --- Lifecycle Hooks ---
@@ -316,6 +359,8 @@ class LlamaIndexAdapter(BaseAdapter):
         agent_name: str | None = None,
         output: Any = None,
         error: Exception | None = None,
+        input_data: Any = None,
+        tools: list[str] | None = None,
     ) -> None:
         if not self._connected:
             return
@@ -324,6 +369,16 @@ class LlamaIndexAdapter(BaseAdapter):
             end_ns = time.time_ns()
             with self._adapter_lock:
                 start_ns = self._agent_starts.pop(tid, 0)
+                # Pull thread-cached state if the public hook was used
+                # without the explicit kwargs.
+                if input_data is None:
+                    input_data = self._agent_inputs.pop(tid, None)
+                else:
+                    self._agent_inputs.pop(tid, None)
+                if tools is None:
+                    tools = self._agent_tools.pop(tid, []) or None
+                else:
+                    self._agent_tools.pop(tid, None)
             duration_ns = end_ns - start_ns if start_ns else 0
             payload: dict[str, Any] = {
                 "framework": "llama_index",
@@ -334,6 +389,14 @@ class LlamaIndexAdapter(BaseAdapter):
             if error:
                 payload["error"] = str(error)
             self.emit_dict_event("agent.output", payload)
+            # Cross-poll #1: persist this turn into memory.
+            self.record_memory_turn(
+                agent_name=agent_name,
+                input_data=self._safe_serialize(input_data),
+                output_data=self._safe_serialize(output),
+                error=str(error) if error else None,
+                tools=tools,
+            )
         except Exception:
             logger.warning("Error in on_agent_end", exc_info=True)
 

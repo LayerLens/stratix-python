@@ -63,6 +63,16 @@ class OpenAIAgentsAdapter(BaseAdapter):
         self._framework_version: str | None = None
         self._trace_processor: Any | None = None
         self._run_starts: dict[int, int] = {}  # thread_id -> start_ns
+        # Per-span input cache for memory persistence — _on_agent_span_start
+        # captures the agent input keyed by span_id so _on_agent_span_end
+        # can pair it with the output when calling record_memory_turn().
+        # Bounded by the max-concurrent-spans of the SDK runtime; cleared
+        # in disconnect().
+        self._span_inputs: dict[str, Any] = {}
+        # Per-span tool list for procedural-pattern detection. Tool spans
+        # arrive between agent_start and agent_end; we accumulate them
+        # under the parent agent span_id when available.
+        self._span_tools: dict[str, list[str]] = {}
 
     def connect(self) -> None:
         """Import openai-agents SDK and register trace processor."""
@@ -82,6 +92,8 @@ class OpenAIAgentsAdapter(BaseAdapter):
         # _connected guard in emit_dict_event instead.
         self._trace_processor = None
         self._seen_agents.clear()
+        self._span_inputs.clear()
+        self._span_tools.clear()
         self._connected = False
         self._status = AdapterStatus.DISCONNECTED
 
@@ -111,6 +123,13 @@ class OpenAIAgentsAdapter(BaseAdapter):
         )
 
     def serialize_for_replay(self) -> ReplayableTrace:
+        """Serialize the current trace data for replay.
+
+        Includes the per-adapter memory snapshot (cross-poll #1) under
+        ``metadata["memory_snapshot"]``. Combined with the SDK
+        ``Session``-style memory primitive, this lets a replay engine
+        re-hydrate the agent's recall state before re-execution.
+        """
         return ReplayableTrace(
             adapter_name="OpenAIAgentsAdapter",
             framework=self.FRAMEWORK,
@@ -118,6 +137,7 @@ class OpenAIAgentsAdapter(BaseAdapter):
             events=list(self._trace_events),
             state_snapshots=[],
             config={"capture_config": self._capture_config.model_dump()},
+            metadata={"memory_snapshot": self.memory_snapshot_dict()},
         )
 
     # --- Framework Integration ---
@@ -254,13 +274,27 @@ class OpenAIAgentsAdapter(BaseAdapter):
 
     def _on_agent_span_start(self, span: Any, data: Any) -> None:
         agent_name = getattr(data, "name", None) or "unknown"
+        span_id = getattr(span, "span_id", None)
         self._emit_agent_config(agent_name, data)
+        # Stash the input under span_id so _on_agent_span_end can pair
+        # it with the output for the memory recorder. The SDK's
+        # AgentSpanData carries the input in attributes that vary by
+        # SDK version — try the known keys.
+        if span_id:
+            input_data = (
+                getattr(data, "input", None)
+                or getattr(data, "input_messages", None)
+                or getattr(data, "messages", None)
+            )
+            with self._adapter_lock:
+                self._span_inputs[str(span_id)] = input_data
+                self._span_tools.setdefault(str(span_id), [])
         self.emit_dict_event(
             "agent.input",
             {
                 "framework": "openai_agents",
                 "agent_name": agent_name,
-                "span_id": getattr(span, "span_id", None),
+                "span_id": span_id,
                 "timestamp_ns": time.time_ns(),
             },
         )
@@ -268,14 +302,30 @@ class OpenAIAgentsAdapter(BaseAdapter):
     def _on_agent_span_end(self, span: Any, data: Any) -> None:
         agent_name = getattr(data, "name", None) or "unknown"
         output = getattr(data, "output", None)
+        span_id = getattr(span, "span_id", None)
         self.emit_dict_event(
             "agent.output",
             {
                 "framework": "openai_agents",
                 "agent_name": agent_name,
                 "output": self._safe_serialize(output),
-                "span_id": getattr(span, "span_id", None),
+                "span_id": span_id,
             },
+        )
+        # Cross-poll #1: persist this turn into memory. Pair the
+        # cached input with the output, and roll up the tool span
+        # names captured between start and end.
+        input_data: Any = None
+        tool_names: list[str] = []
+        if span_id:
+            with self._adapter_lock:
+                input_data = self._span_inputs.pop(str(span_id), None)
+                tool_names = self._span_tools.pop(str(span_id), [])
+        self.record_memory_turn(
+            agent_name=agent_name,
+            input_data=self._safe_serialize(input_data),
+            output_data=self._safe_serialize(output),
+            tools=tool_names or None,
         )
 
     def _on_generation_span_end(self, span: Any, data: Any) -> None:
@@ -317,6 +367,14 @@ class OpenAIAgentsAdapter(BaseAdapter):
                 "latency_ms": getattr(span, "duration_ms", None),
             },
         )
+        # Memory persistence: roll the tool name up to the parent agent
+        # span so the agent-level record_memory_turn() at span_end has
+        # the full tool list for procedural-pattern detection.
+        parent_id = getattr(span, "parent_id", None) or getattr(span, "parent_span_id", None)
+        if parent_id:
+            with self._adapter_lock:
+                bucket = self._span_tools.setdefault(str(parent_id), [])
+                bucket.append(str(tool_name))
 
     def _on_handoff_span_start(self, span: Any, data: Any) -> None:
         pass  # Start event captured on end for complete data
@@ -374,6 +432,8 @@ class OpenAIAgentsAdapter(BaseAdapter):
         agent_name: str | None = None,
         output: Any = None,
         error: Exception | None = None,
+        input_data: Any = None,
+        tools: list[str] | None = None,
     ) -> None:
         if not self._connected:
             return
@@ -392,6 +452,16 @@ class OpenAIAgentsAdapter(BaseAdapter):
             if error:
                 payload["error"] = str(error)
             self.emit_dict_event("agent.output", payload)
+            # Cross-poll #1: parallel memory persistence path for the
+            # Runner-wrapping integration (the TraceProcessor path
+            # records inside _on_agent_span_end).
+            self.record_memory_turn(
+                agent_name=agent_name,
+                input_data=self._safe_serialize(input_data),
+                output_data=self._safe_serialize(output),
+                error=str(error) if error else None,
+                tools=tools,
+            )
         except Exception:
             logger.warning("Error in on_run_end", exc_info=True)
 

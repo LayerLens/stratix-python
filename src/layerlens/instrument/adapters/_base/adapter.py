@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from layerlens.instrument.adapters._base.sinks import EventSink
 
 from layerlens._compat.pydantic import Field, BaseModel, model_dump
+from layerlens.instrument.adapters._base.memory import MemoryRecorder, MemorySnapshot
 from layerlens.instrument.adapters._base.capture import (
     ALWAYS_ENABLED_EVENT_TYPES,
     CaptureConfig,
@@ -292,6 +293,18 @@ class BaseAdapter(ABC):
         # the public API and may change in v2.
         self._event_sinks: List["EventSink"] = list(event_sinks) if event_sinks else []
 
+        # Cross-poll #1: per-adapter memory recorder. Bound to the same
+        # tenant as the adapter — :class:`MemoryRecorder` enforces the
+        # match on every :meth:`MemoryRecorder.restore`. Adapters call
+        # :meth:`record_memory_turn` after each ``agent.output``-style
+        # event so cross-conversation recall (episodic / procedural /
+        # semantic) lives alongside the trace events. The recorder is
+        # included in :meth:`serialize_for_replay` output via
+        # :meth:`memory_snapshot_dict` so a replay engine can deterministically
+        # reconstruct the agent's memory state before re-execution. See
+        # ``docs/adapters/memory-contract.md`` for the contract.
+        self._memory_recorder: MemoryRecorder = MemoryRecorder(org_id=self._org_id)
+
     # --- Sink management (public API) ---
 
     def add_sink(self, sink: "EventSink") -> None:
@@ -396,6 +409,88 @@ class BaseAdapter(ABC):
                 # Pydantic v1 path.
                 base_info = base_info.copy(update={"requires_pydantic": self.requires_pydantic})
         return base_info
+
+    # --- Memory persistence (cross-poll #1) ------------------------
+
+    @property
+    def memory_recorder(self) -> MemoryRecorder:
+        """The adapter's bound :class:`MemoryRecorder`.
+
+        Constructed in :meth:`__init__` and tenant-scoped to the same
+        ``org_id`` as the adapter. Adapters wire :meth:`record_memory_turn`
+        into their per-turn lifecycle hooks (typically alongside the
+        ``agent.output`` emission).
+        """
+        return self._memory_recorder
+
+    def record_memory_turn(
+        self,
+        *,
+        agent_name: Optional[str] = None,
+        input_data: Any = None,
+        output_data: Any = None,
+        error: Optional[str] = None,
+        tools: Optional[List[str]] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record a completed turn in the per-adapter memory recorder.
+
+        Adapters call this from their ``on_run_end`` / ``after_agent_callback``
+        / equivalent per-turn lifecycle hook *after* emitting the
+        ``agent.output`` event. The recorder is thread-safe and bounded
+        (see :class:`MemoryRecorder` defaults), so repeated calls under
+        concurrent execution are safe and never grow without bound.
+
+        Failures are swallowed and logged at DEBUG: memory persistence is
+        a best-effort cross-cutting concern and must not break the host
+        framework's run path. CLAUDE.md "tracing never breaks user code".
+
+        Args:
+            agent_name: The agent that produced this turn.
+            input_data: Input the agent received.
+            output_data: Output the agent produced.
+            error: Optional error string if the turn failed.
+            tools: Optional list of tool names invoked during the turn.
+            extra: Optional adapter-specific metadata. Keys are sorted
+                inside the recorder for hash determinism.
+        """
+        try:
+            self._memory_recorder.record_turn(
+                agent_name=agent_name,
+                input_data=input_data,
+                output_data=output_data,
+                error=error,
+                tools=tools,
+                extra=extra,
+            )
+        except Exception:
+            # Memory persistence is best-effort. A failure here must
+            # never propagate into the host framework's call stack.
+            logger.debug(
+                "MemoryRecorder.record_turn failed for adapter %s",
+                self.FRAMEWORK,
+                exc_info=True,
+            )
+
+    def memory_snapshot(self) -> MemorySnapshot:
+        """Return the current immutable :class:`MemorySnapshot`.
+
+        Convenience wrapper for :meth:`MemoryRecorder.snapshot` so
+        callers do not need to reach into the private recorder.
+        """
+        return self._memory_recorder.snapshot()
+
+    def memory_snapshot_dict(self) -> Dict[str, Any]:
+        """Return the memory snapshot as a JSON-serialisable dict.
+
+        Adapters embed this in :meth:`serialize_for_replay`'s
+        :class:`ReplayableTrace` ``metadata`` under the
+        ``"memory_snapshot"`` key so the replay engine can reconstruct
+        the recorder's state via :meth:`MemoryRecorder.restore` before
+        re-executing the agent. The shape is the public, content-addressable
+        contract documented in ``docs/adapters/memory-contract.md``.
+        """
+        return self._memory_recorder.snapshot().to_dict()
 
     @abstractmethod
     def serialize_for_replay(self) -> ReplayableTrace:
