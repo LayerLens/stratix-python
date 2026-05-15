@@ -1082,3 +1082,181 @@ class TestModelsClientSideFiltering:
         result = models_resource.get(regions=["ap-southeast-1"])
 
         assert result == []
+
+
+class TestModelsAddRemoveIncludesCustoms:
+    """Regression tests for the PR #1916 fix: add()/remove() now operate on
+    the full project model list (public + custom), not public only. The old
+    behavior silently wiped any custom model out of Project.Models on every
+    add/remove because the PATCH payload omitted them."""
+
+    @pytest.fixture
+    def mock_client(self):
+        client = Mock()
+        client.organization_id = "org-123"
+        client.project_id = "proj-456"
+        client.get_cast = Mock()
+        client.patch_cast = Mock()
+        return client
+
+    @pytest.fixture
+    def models_resource(self, mock_client):
+        return Models(mock_client)
+
+    def test_add_includes_customs_in_patch_payload(self, models_resource):
+        """add() must preserve already-attached custom models in the PATCH body."""
+        public_m = PublicModel(id="pub-1", key="pub-1", name="Pub1", description="")
+        custom_m = CustomModel(
+            id="cust-1",
+            key="cust-1",
+            name="Cust1",
+            description="",
+            max_tokens=2048,
+            api_url="https://x.example.com",
+            disabled=False,
+        )
+        models_resource.get = Mock(return_value=[public_m, custom_m])
+        models_resource._patch.return_value = {"id": "proj-456"}
+
+        result = models_resource.add("new-id")
+
+        assert result is True
+        models_resource.get.assert_called_once()
+        # Critical: the get call should NOT filter by type="public" anymore.
+        assert models_resource.get.call_args.kwargs.get("type") is None
+        call_body = models_resource._patch.call_args.kwargs["body"]
+        assert call_body == {"models": ["pub-1", "cust-1", "new-id"]}
+
+    def test_remove_preserves_unrelated_customs(self, models_resource):
+        """remove() of a public ID must leave attached customs untouched."""
+        public_m = PublicModel(id="pub-1", key="pub-1", name="Pub1", description="")
+        custom_m = CustomModel(
+            id="cust-1",
+            key="cust-1",
+            name="Cust1",
+            description="",
+            max_tokens=2048,
+            api_url="https://x.example.com",
+            disabled=False,
+        )
+        models_resource.get = Mock(return_value=[public_m, custom_m])
+        models_resource._patch.return_value = {"id": "proj-456"}
+
+        models_resource.remove("pub-1")
+
+        # Custom model must survive.
+        call_body = models_resource._patch.call_args.kwargs["body"]
+        assert call_body == {"models": ["cust-1"]}
+        assert models_resource.get.call_args.kwargs.get("type") is None
+
+
+class TestModelsUpdateCustom:
+    """Test Models.update_custom() method."""
+
+    @pytest.fixture
+    def mock_client(self):
+        client = Mock()
+        client.organization_id = "org-123"
+        client.project_id = "proj-456"
+        client.patch_cast = Mock()
+        return client
+
+    @pytest.fixture
+    def models_resource(self, mock_client):
+        return Models(mock_client)
+
+    def test_update_custom_api_url_only(self, models_resource):
+        """update_custom() sends only api_url in body when that's all that's provided."""
+        models_resource._patch.return_value = {"data": {"id": "model-1"}}
+
+        result = models_resource.update_custom("model-1", api_url="https://new.example.com/v1")
+
+        assert result is True
+        models_resource._patch.assert_called_once_with(
+            "/organizations/org-123/projects/proj-456/custom-models/model-1",
+            body={"api_url": "https://new.example.com/v1"},
+            timeout=DEFAULT_TIMEOUT,
+            cast_to=dict,
+        )
+
+    def test_update_custom_all_three_fields(self, models_resource):
+        """update_custom() sends all provided fields together."""
+        models_resource._patch.return_value = {"data": {"id": "model-1"}}
+
+        result = models_resource.update_custom(
+            "model-1",
+            api_url="https://x.io",
+            api_key="sk-new",
+            max_tokens=1024,
+        )
+
+        assert result is True
+        body = models_resource._patch.call_args.kwargs["body"]
+        assert body == {
+            "api_url": "https://x.io",
+            "api_key": "sk-new",
+            "max_tokens": 1024,
+        }
+
+    def test_update_custom_max_tokens_only(self, models_resource):
+        """update_custom() supports max_tokens-only updates."""
+        models_resource._patch.return_value = {"data": {"id": "model-1"}}
+
+        result = models_resource.update_custom("model-1", max_tokens=8192)
+
+        assert result is True
+        body = models_resource._patch.call_args.kwargs["body"]
+        assert body == {"max_tokens": 8192}
+
+    def test_update_custom_returns_false_on_error_envelope(self, models_resource):
+        """update_custom() returns False when response has no data field."""
+        models_resource._patch.return_value = {"code": "NOT_FOUND", "message": "missing"}
+
+        result = models_resource.update_custom("model-1", api_url="https://x.io")
+
+        assert result is False
+
+    def test_update_custom_returns_false_when_response_not_dict(self, models_resource):
+        """update_custom() returns False when response isn't a dict."""
+        models_resource._patch.return_value = httpx.Response(404)
+
+        result = models_resource.update_custom("model-1", api_url="https://x.io")
+
+        assert result is False
+
+
+class TestModelsDeleteCustom:
+    """Test Models.delete_custom() method."""
+
+    @pytest.fixture
+    def mock_client(self):
+        client = Mock()
+        client.organization_id = "org-123"
+        client.project_id = "proj-456"
+        client.delete_cast = Mock()
+        return client
+
+    @pytest.fixture
+    def models_resource(self, mock_client):
+        return Models(mock_client)
+
+    def test_delete_custom_happy_path(self, models_resource):
+        """delete_custom() hits the right URL and returns True on success."""
+        models_resource._delete.return_value = {"data": {"id": "model-1"}}
+
+        result = models_resource.delete_custom("model-1")
+
+        assert result is True
+        models_resource._delete.assert_called_once_with(
+            "/organizations/org-123/projects/proj-456/custom-models/model-1",
+            timeout=DEFAULT_TIMEOUT,
+            cast_to=dict,
+        )
+
+    def test_delete_custom_returns_false_on_error(self, models_resource):
+        """delete_custom() returns False when response has no data field."""
+        models_resource._delete.return_value = {"code": "NOT_FOUND"}
+
+        result = models_resource.delete_custom("model-1")
+
+        assert result is False

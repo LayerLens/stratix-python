@@ -169,10 +169,10 @@ class Models(SyncAPIResource):
         *model_ids: str,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
-        """Add models to the project by their IDs."""
-        # Only fetch public (platform) models — custom models are managed
-        # separately and must not be included in the project patch payload.
-        current = self.get(timeout=timeout, type="public") or []
+        """Add models (public or custom) to the project by their IDs."""
+        # Fetch the full current list (public + custom). The project's
+        # PATCH endpoint expects the complete model set in a single payload.
+        current = self.get(timeout=timeout) or []
         current_ids = [str(m.id) for m in current]
         new_ids = list(dict.fromkeys(current_ids + list(model_ids)))
         return self._patch_project_models(new_ids, timeout)
@@ -182,10 +182,13 @@ class Models(SyncAPIResource):
         *model_ids: str,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
-        """Remove models from the project by their IDs."""
-        # Only fetch public (platform) models — custom models are managed
-        # separately and must not be included in the project patch payload.
-        current = self.get(timeout=timeout, type="public") or []
+        """Remove models (public or custom) from the project's model list.
+
+        Note: this only detaches the models from the project. The underlying
+        records are not deleted — use ``delete_custom`` to fully tear down a
+        custom model.
+        """
+        current = self.get(timeout=timeout) or []
         remove_set = set(model_ids)
         new_ids = [str(m.id) for m in current if str(m.id) not in remove_set]
         return self._patch_project_models(new_ids, timeout)
@@ -255,6 +258,61 @@ class Models(SyncAPIResource):
         if isinstance(resp, dict) and "model_id" in resp:
             return CreateModelResponse(**resp)
         return None
+
+    def update_custom(
+        self,
+        model_id: str,
+        *,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Update a custom model's mutable fields.
+
+        At least one of ``api_url``, ``api_key``, or ``max_tokens`` must be
+        provided. Returns ``True`` on success.
+
+        Primary use case: repointing ``api_url`` for ephemeral vLLM endpoints
+        behind cloudflared tunnels whose URL changes between sessions.
+
+        Args:
+            model_id: ID of the custom model to update.
+            api_url: New base URL for the OpenAI-compatible API endpoint.
+            api_key: New API key for the model provider.
+            max_tokens: New maximum tokens value.
+            timeout: Request timeout override.
+        """
+        url = (
+            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/custom-models/{model_id}"
+        )
+        body: Dict[str, Any] = {}
+        if api_url is not None:
+            body["api_url"] = api_url
+        if api_key is not None:
+            body["api_key"] = api_key
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
+        resp = self._patch(url, body=body, timeout=timeout, cast_to=dict)
+        return isinstance(resp, dict) and "data" in resp
+
+    def delete_custom(
+        self,
+        model_id: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Disable a custom model and detach it from the project.
+
+        The backend tears down the model's S3 yaml artifacts and the AWS
+        secret, marks the record as disabled (preserving evaluation
+        references), and removes the model ID from ``Project.Models``.
+        """
+        url = (
+            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/custom-models/{model_id}"
+        )
+        resp = self._delete(url, timeout=timeout, cast_to=dict)
+        return isinstance(resp, dict) and "data" in resp
 
 
 class AsyncModels(AsyncAPIResource):
@@ -368,10 +426,10 @@ class AsyncModels(AsyncAPIResource):
         *model_ids: str,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
-        """Add models to the project by their IDs."""
-        # Only fetch public (platform) models — custom models are managed
-        # separately and must not be included in the project patch payload.
-        current = await self.get(timeout=timeout, type="public") or []
+        """Add models (public or custom) to the project by their IDs."""
+        # Fetch the full current list (public + custom). The project's
+        # PATCH endpoint expects the complete model set in a single payload.
+        current = await self.get(timeout=timeout) or []
         current_ids = [str(m.id) for m in current]
         new_ids = list(dict.fromkeys(current_ids + list(model_ids)))
         return await self._patch_project_models(new_ids, timeout)
@@ -381,10 +439,13 @@ class AsyncModels(AsyncAPIResource):
         *model_ids: str,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
-        """Remove models from the project by their IDs."""
-        # Only fetch public (platform) models — custom models are managed
-        # separately and must not be included in the project patch payload.
-        current = await self.get(timeout=timeout, type="public") or []
+        """Remove models (public or custom) from the project's model list.
+
+        Note: this only detaches the models from the project. The underlying
+        records are not deleted — use ``delete_custom`` to fully tear down a
+        custom model.
+        """
+        current = await self.get(timeout=timeout) or []
         remove_set = set(model_ids)
         new_ids = [str(m.id) for m in current if str(m.id) not in remove_set]
         return await self._patch_project_models(new_ids, timeout)
@@ -454,3 +515,43 @@ class AsyncModels(AsyncAPIResource):
         if isinstance(resp, dict) and "model_id" in resp:
             return CreateModelResponse(**resp)
         return None
+
+    async def update_custom(
+        self,
+        model_id: str,
+        *,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Update a custom model's mutable fields.
+
+        At least one of ``api_url``, ``api_key``, or ``max_tokens`` must be
+        provided. Returns ``True`` on success.
+        """
+        url = (
+            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/custom-models/{model_id}"
+        )
+        body: Dict[str, Any] = {}
+        if api_url is not None:
+            body["api_url"] = api_url
+        if api_key is not None:
+            body["api_key"] = api_key
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
+        resp = await self._patch(url, body=body, timeout=timeout, cast_to=dict)
+        return isinstance(resp, dict) and "data" in resp
+
+    async def delete_custom(
+        self,
+        model_id: str,
+        *,
+        timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Disable a custom model and detach it from the project."""
+        url = (
+            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/custom-models/{model_id}"
+        )
+        resp = await self._delete(url, timeout=timeout, cast_to=dict)
+        return isinstance(resp, dict) and "data" in resp
