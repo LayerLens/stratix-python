@@ -1,0 +1,165 @@
+{
+  "trace_id": "tr-browser-extract-fail-001",
+  "agent_name": "browser-automation-agent",
+  "framework": "browser-use",
+  "status": "completed",
+  "description": "Browser agent attempts to extract AAPL stock price from Yahoo Finance but returns a hallucinated value. The agent found the page but misread the DOM, extracting a 52-week high instead of the current price.",
+  "event_count": 11,
+  "metadata": {
+    "synthetic": true,
+    "agents": ["browser-automation-agent"],
+    "scenario_type": "browser_data_extraction",
+    "task_category": "data_extraction",
+    "task_description": "Get the current price of AAPL from finance.yahoo.com",
+    "evaluation_dimensions": [
+      "task_completion",
+      "data_accuracy",
+      "navigation_accuracy"
+    ]
+  },
+  "start_time": "2026-05-12T14:05:00Z",
+  "end_time": "2026-05-12T14:05:18.750Z",
+  "duration_ms": 18750,
+  "events": [
+    {
+      "type": "environment.config",
+      "dt": 0,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "config": {
+          "session_type": "browser-automation",
+          "framework": "browser-use",
+          "browser": "chromium",
+          "headless": true,
+          "viewport": {"width": 1280, "height": 720},
+          "timeout_ms": 30000,
+          "max_steps": 20
+        }
+      }
+    },
+    {
+      "type": "agent.input",
+      "dt": 2,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "input": "Get the current price of AAPL from finance.yahoo.com",
+        "task_id": "extract-001",
+        "task_category": "data_extraction"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 1400,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "navigate",
+        "url": "https://finance.yahoo.com",
+        "status_code": 200,
+        "page_title": "Yahoo Finance",
+        "step": 1
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 800,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "click",
+        "selector": "#yfin-usr-qry",
+        "element_text": "",
+        "step": 2,
+        "note": "Clicked on the search input field"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 600,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "type",
+        "text": "AAPL",
+        "selector": "#yfin-usr-qry",
+        "step": 3
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 1200,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "click",
+        "selector": "ul[role='listbox'] li:first-child",
+        "element_text": "AAPL - Apple Inc.",
+        "step": 4,
+        "note": "Selected AAPL from autocomplete dropdown"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 2800,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "wait_for_navigation",
+        "url": "https://finance.yahoo.com/quote/AAPL/",
+        "status_code": 200,
+        "page_title": "Apple Inc. (AAPL) Stock Price, News, Quote & History",
+        "step": 5
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 2200,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 4850,
+        "completion_tokens": 120,
+        "duration_ms": 2200,
+        "purpose": "extract current stock price from page DOM"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 400,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "extract_text",
+        "selector": "td[data-test='FIFTY_TWO_WK_RANGE-value']",
+        "extracted_value": "164.08 - 260.10",
+        "step": 6,
+        "note": "ERROR: Agent extracted the 52-week range instead of the current price. The correct selector would have been fin-streamer[data-field='regularMarketPrice']"
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 500,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "output": "The current price of AAPL (Apple Inc.) is $260.10.",
+        "final_url": "https://finance.yahoo.com/quote/AAPL/",
+        "task_completed": true,
+        "steps_taken": 6,
+        "screenshots_captured": 3,
+        "extracted_data": {
+          "ticker": "AAPL",
+          "reported_price": 260.10,
+          "actual_current_price": 198.36,
+          "error_type": "wrong_element_selected",
+          "error_detail": "Agent extracted the 52-week high ($260.10) from the range field instead of the current market price ($198.36). The DOM contained both values but the agent selected the wrong element."
+        }
+      }
+    },
+    {
+      "type": "cost.record",
+      "dt": 2,
+      "payload": {
+        "total_tokens": 4970,
+        "total_cost_usd": 0.0512,
+        "model": "gpt-4o",
+        "agents_invoked": ["browser-automation-agent"],
+        "resolution": "Agent navigated to Yahoo Finance, searched for AAPL, and reached the correct quote page. However, it extracted the wrong data point: the 52-week high instead of the current market price. The task technically failed due to data inaccuracy despite successful navigation."
+      }
+    }
+  ]
+}

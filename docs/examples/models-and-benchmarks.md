@@ -137,6 +137,69 @@ if __name__ == "__main__":
     main()
 ```
 
+## Repointing a Custom Model's `api_url`
+
+Use this when your model's endpoint URL changes — for example, when serving a vLLM instance behind a cloudflared tunnel that rotates its hostname between sessions.
+
+```python
+from layerlens import Stratix
+
+
+def main():
+    client = Stratix()
+
+    result = client.models.create_custom(
+        name="My Tunnel-backed Model",
+        key="my-org/tunnel-model-v1",
+        description="vLLM served behind a cloudflared tunnel",
+        api_url="https://tunnel-1.example.com/v1",
+        api_key="my-provider-api-key",
+        max_tokens=4096,
+    )
+    assert result is not None
+
+    # Later, when the tunnel URL changes:
+    client.models.update_custom(
+        result.model_id,
+        api_url="https://tunnel-2.example.com/v1",
+    )
+
+    # Run evaluations as usual — the model now points at the new endpoint.
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## Replacing a Custom Model
+
+`delete_custom` releases the model's name so it can be reused. This is useful for replacing a misconfigured model without picking a new name.
+
+```python
+from layerlens import Stratix
+
+
+def main():
+    client = Stratix()
+
+    # Tear down the old version
+    client.models.delete_custom("old-model-id")
+
+    # Recreate with the same name (now free)
+    client.models.create_custom(
+        name="My Custom Model",
+        key="my-org/custom-model-v2",
+        description="Replacement after schema migration",
+        api_url="https://my-endpoint.example.com/v1",
+        api_key="my-provider-api-key",
+        max_tokens=4096,
+    )
+
+
+if __name__ == "__main__":
+    main()
+```
+
 ## Creating a Custom Benchmark
 
 > Source: [`samples/core/custom_benchmark.py`](../../samples/core/custom_benchmark.py)

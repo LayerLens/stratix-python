@@ -36,6 +36,7 @@ CORE_SAMPLES = [
     "basic_trace",
     "benchmark_evaluation",
     "compare_evaluations",
+    "compound_failure_calculator",
     "create_judge",
     "custom_benchmark",
     "custom_model",
@@ -82,6 +83,7 @@ MODALITY_SAMPLES = [
 
 INTEGRATION_SAMPLES = [
     "anthropic_traced",
+    "browser_agent_evaluator",
     "langchain_instrumented",
     "openai_instrumented",
     "openai_traced",
@@ -173,6 +175,12 @@ _EXTERNAL_SDK_SAMPLES = {"langchain_instrumented", "openai_instrumented"}
 # Samples that need special argv or patches
 _SPECIAL_ARGV: dict[tuple[str, str], list[str]] = {
     ("cicd", "quality_gate"): ["test", "--threshold", "0.0"],
+    ("core", "compound_failure_calculator"): [
+        "test",
+        "--simulate",
+        "7",
+        "--skip-evaluation",
+    ],
     ("openclaw/layerlens_skill/scripts", "evaluate"): [
         "test",
         "--input",
@@ -356,6 +364,8 @@ def mock_stratix():
     client.models.add.return_value = True
     client.models.remove.return_value = True
     client.models.create_custom.return_value = MagicMock(model_id="model-custom-001")
+    client.models.update_custom.return_value = True
+    client.models.delete_custom.return_value = True
 
     # --- benchmarks ---
     benchmark = MagicMock()
@@ -564,6 +574,8 @@ def mock_async_stratix(mock_stratix):
     client.models.add.return_value = True
     client.models.remove.return_value = True
     client.models.create_custom.return_value = MagicMock(model_id="model-custom-001")
+    client.models.update_custom.return_value = True
+    client.models.delete_custom.return_value = True
 
     # --- benchmarks (async) ---
     benchmark = MagicMock()
@@ -2218,9 +2230,9 @@ class TestSampleCompleteness:
         assert os.path.isfile(script), f"Missing: {script}"
 
     def test_all_54_samples_covered(self):
-        """Verify ALL_SAMPLE_PATHS contains exactly 58 entries."""
-        assert len(ALL_SAMPLE_PATHS) == 58, (
-            f"Expected 58 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
+        """Verify ALL_SAMPLE_PATHS contains exactly 60 entries."""
+        assert len(ALL_SAMPLE_PATHS) == 60, (
+            f"Expected 60 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
         )
 
     def test_all_sample_paths_exist(self):
@@ -2233,7 +2245,7 @@ class TestSampleCompleteness:
         assert not missing, f"Sample files not found: {missing}"
 
     def test_mocked_samples_cover_all(self):
-        """ALL_MOCKED_SAMPLES should produce exactly 58 entries."""
-        assert len(ALL_MOCKED_SAMPLES) == 58, (
-            f"Expected 58 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
+        """ALL_MOCKED_SAMPLES should produce exactly 60 entries."""
+        assert len(ALL_MOCKED_SAMPLES) == 60, (
+            f"Expected 60 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
         )

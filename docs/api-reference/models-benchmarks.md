@@ -101,7 +101,7 @@ Returns an `Optional[Model]` - a single `Model` object if found, or `None` if th
 
 ### `add(*model_ids, timeout=None)`
 
-Adds public models to the project by their IDs.
+Adds models (public or custom) to the project by their IDs.
 
 #### Parameters
 
@@ -123,7 +123,7 @@ success = client.models.add("model-id-1", "model-id-2")
 
 ### `remove(*model_ids, timeout=None)`
 
-Removes models from the project by their IDs.
+Removes models (public or custom) from the project's model list. The underlying records are not deleted — use `delete_custom` to fully tear down a custom model.
 
 #### Parameters
 
@@ -185,6 +185,58 @@ result = client.models.create_custom(
 
 if result:
     print(f"Created model: {result.model_id}")
+```
+
+### `update_custom(model_id, *, api_url=None, api_key=None, max_tokens=None, timeout=None)`
+
+Updates a custom model's mutable fields. At least one of `api_url`, `api_key`, or `max_tokens` must be provided. Primary use case: repointing `api_url` for ephemeral vLLM endpoints behind cloudflared tunnels whose URL changes between sessions.
+
+#### Parameters
+
+| Parameter    | Type                             | Required | Description                                              |
+| ------------ | -------------------------------- | -------- | -------------------------------------------------------- |
+| `model_id`   | `str`                            | Yes      | ID of the custom model to update                         |
+| `api_url`    | `str \| None`                    | No       | New base URL for the OpenAI-compatible API endpoint      |
+| `api_key`    | `str \| None`                    | No       | New API key for the model provider                       |
+| `max_tokens` | `int \| None`                    | No       | New maximum tokens value                                 |
+| `timeout`    | `float \| httpx.Timeout \| None` | No       | Override request timeout                                 |
+
+#### Returns
+
+Returns `bool` — `True` on success, `False` otherwise.
+
+#### Example
+
+```python
+client = Stratix()
+
+# Repoint the api_url without re-creating the model
+client.models.update_custom(
+    "model-id-from-create-custom",
+    api_url="https://my-new-endpoint.example.com/v1",
+)
+```
+
+### `delete_custom(model_id, *, timeout=None)`
+
+Disables a custom model and removes it from `Project.Models`. The backend tears down the model's S3 yaml artifacts and AWS secret, and marks the record as disabled (preserving any evaluation references). Public models cannot be deleted via the SDK.
+
+#### Parameters
+
+| Parameter  | Type                             | Required | Description                       |
+| ---------- | -------------------------------- | -------- | --------------------------------- |
+| `model_id` | `str`                            | Yes      | ID of the custom model to delete  |
+| `timeout`  | `float \| httpx.Timeout \| None` | No       | Override request timeout          |
+
+#### Returns
+
+Returns `bool` — `True` on success, `False` otherwise.
+
+#### Example
+
+```python
+client = Stratix()
+client.models.delete_custom("model-id-from-create-custom")
 ```
 
 ## Benchmarks

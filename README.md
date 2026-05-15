@@ -169,6 +169,17 @@ Stratix powers evaluation workflows at LayerLens and across teams building produ
 
 If your team uses Stratix, [open a PR](https://github.com/LayerLens/stratix-python/pulls) to add your logo here.
 
+## Join the Community
+
+The LayerLens Discord is the best place to:
+- Get help with the SDK and trace evaluations
+- Share your custom judges and agent workflows
+- Access free Stratix Premium Credits for active contributors
+- Join weekly Eval Office Hours & model comparison discussions
+- Influence the roadmap
+
+[Join the LayerLens Discord!](https://discord.gg/layerlens)
+
 ## Documentation
 
 Full documentation is available at [layerlens.gitbook.io/stratix-python-sdk](https://layerlens.gitbook.io/stratix-python-sdk).

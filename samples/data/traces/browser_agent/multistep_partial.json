@@ -1,0 +1,218 @@
+{
+  "trace_id": "tr-browser-multistep-partial-001",
+  "agent_name": "browser-automation-agent",
+  "framework": "browser-use",
+  "status": "partial",
+  "description": "Browser agent attempts a multi-step workflow: search GitHub for 'stratix', navigate to the first result, check the README, and report the star count. Agent completes steps 1-3 but fails on step 4 when the star count element is behind a lazy-loaded component.",
+  "event_count": 15,
+  "metadata": {
+    "synthetic": true,
+    "agents": ["browser-automation-agent"],
+    "scenario_type": "browser_multistep_workflow",
+    "task_category": "multi_step",
+    "task_description": "Search for 'stratix' on GitHub and navigate to the first result",
+    "evaluation_dimensions": [
+      "task_completion",
+      "navigation_accuracy",
+      "efficiency",
+      "error_recovery"
+    ]
+  },
+  "start_time": "2026-05-12T14:10:00Z",
+  "end_time": "2026-05-12T14:10:32.180Z",
+  "duration_ms": 32180,
+  "events": [
+    {
+      "type": "environment.config",
+      "dt": 0,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "config": {
+          "session_type": "browser-automation",
+          "framework": "browser-use",
+          "browser": "chromium",
+          "headless": true,
+          "viewport": {"width": 1280, "height": 720},
+          "timeout_ms": 30000,
+          "max_steps": 20
+        }
+      }
+    },
+    {
+      "type": "agent.input",
+      "dt": 2,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "input": "Search for 'stratix' on GitHub, navigate to the first result, read the README, and report the repository star count.",
+        "task_id": "multi-001",
+        "task_category": "multi_step",
+        "expected_steps": 4
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 1100,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "navigate",
+        "url": "https://github.com",
+        "status_code": 200,
+        "page_title": "GitHub: Let's build from here",
+        "step": 1,
+        "workflow_step": "1/4 - Navigate to GitHub"
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 1500,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 2100,
+        "completion_tokens": 65,
+        "duration_ms": 1500,
+        "purpose": "identify search input and plan search action"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 400,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "click",
+        "selector": "input[name='q']",
+        "element_text": "",
+        "step": 2,
+        "workflow_step": "2/4 - Enter search query"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 300,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "type",
+        "text": "stratix",
+        "selector": "input[name='q']",
+        "step": 3
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 200,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "key_press",
+        "key": "Enter",
+        "step": 4
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 2400,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "wait_for_navigation",
+        "url": "https://github.com/search?q=stratix&type=repositories",
+        "status_code": 200,
+        "page_title": "Repository search results",
+        "step": 5,
+        "workflow_step": "2/4 - Search results loaded"
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 1800,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 3800,
+        "completion_tokens": 90,
+        "duration_ms": 1800,
+        "purpose": "identify first search result and extract repository link"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 350,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "click",
+        "selector": "div.search-title a:first-child",
+        "element_text": "layerlens/stratix",
+        "step": 6,
+        "workflow_step": "3/4 - Click first result"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 2800,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "wait_for_navigation",
+        "url": "https://github.com/layerlens/stratix",
+        "status_code": 200,
+        "page_title": "layerlens/stratix: Continuous Evaluation Infrastructure for AI",
+        "step": 7,
+        "workflow_step": "3/4 - Repository page loaded"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 1200,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "scroll",
+        "direction": "down",
+        "pixels": 800,
+        "step": 8,
+        "workflow_step": "3/4 - Scrolling to README content"
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 2400,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 6200,
+        "completion_tokens": 45,
+        "duration_ms": 2400,
+        "purpose": "attempt to locate star count element in DOM"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 5000,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "extract_text",
+        "selector": "#repo-stars-counter-star",
+        "extracted_value": null,
+        "step": 9,
+        "workflow_step": "4/4 - FAILED: star count element not found",
+        "error": "ElementNotFoundError: Selector '#repo-stars-counter-star' did not match any element within 5000ms timeout. The star counter uses a client-side rendered component that had not hydrated in headless mode."
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 500,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "output": "Partially completed. Successfully searched GitHub for 'stratix', navigated to the first result (layerlens/stratix), and read the README content. The repository is described as 'Continuous Evaluation Infrastructure for AI'. However, I was unable to extract the star count because the counter element did not render in headless browser mode.",
+        "final_url": "https://github.com/layerlens/stratix",
+        "task_completed": false,
+        "partial_completion": true,
+        "steps_completed": 3,
+        "steps_total": 4,
+        "steps_taken": 9,
+        "screenshots_captured": 4,
+        "failure_reason": "Star count element uses client-side rendering that did not hydrate in headless Chromium. The agent did not attempt a fallback strategy such as using the GitHub API or waiting for hydration.",
+        "readme_excerpt_found": true
+      }
+    }
+  ]
+}
