@@ -58,6 +58,32 @@ def main() -> None:
     else:
         print("\nNo custom models found in project")
 
+    if not result:
+        return
+
+    # ── Update mutable fields (e.g. repoint api_url) ──────────────────
+    #
+    # Use this when your endpoint URL changes -- common for vLLM
+    # instances served behind cloudflared tunnels whose hostname
+    # rotates between sessions.
+
+    updated = client.models.update_custom(
+        result.model_id,
+        api_url="https://my-new-endpoint.example.com/v1",
+    )
+    if updated:
+        print(f"\nCustom model {result.model_id} api_url updated")
+
+    # ── Full teardown ─────────────────────────────────────────────────
+    #
+    # ``delete_custom`` disables the model, removes it from
+    # ``Project.Models``, and releases its name for reuse. Evaluation
+    # references to the disabled record are preserved.
+
+    deleted = client.models.delete_custom(result.model_id)
+    if deleted:
+        print(f"Custom model {result.model_id} deleted")
+
 
 if __name__ == "__main__":
     main()

@@ -364,6 +364,8 @@ def mock_stratix():
     client.models.add.return_value = True
     client.models.remove.return_value = True
     client.models.create_custom.return_value = MagicMock(model_id="model-custom-001")
+    client.models.update_custom.return_value = True
+    client.models.delete_custom.return_value = True
 
     # --- benchmarks ---
     benchmark = MagicMock()
@@ -572,6 +574,8 @@ def mock_async_stratix(mock_stratix):
     client.models.add.return_value = True
     client.models.remove.return_value = True
     client.models.create_custom.return_value = MagicMock(model_id="model-custom-001")
+    client.models.update_custom.return_value = True
+    client.models.delete_custom.return_value = True
 
     # --- benchmarks (async) ---
     benchmark = MagicMock()
