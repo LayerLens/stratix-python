@@ -284,8 +284,7 @@ class Models(SyncAPIResource):
             timeout: Request timeout override.
         """
         url = (
-            f"/organizations/{self._client.organization_id}"
-            f"/projects/{self._client.project_id}/custom-models/{model_id}"
+            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/custom-models/{model_id}"
         )
         body: Dict[str, Any] = {}
         if api_url is not None:
@@ -310,8 +309,7 @@ class Models(SyncAPIResource):
         references), and removes the model ID from ``Project.Models``.
         """
         url = (
-            f"/organizations/{self._client.organization_id}"
-            f"/projects/{self._client.project_id}/custom-models/{model_id}"
+            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/custom-models/{model_id}"
         )
         resp = self._delete(url, timeout=timeout, cast_to=dict)
         return isinstance(resp, dict) and "data" in resp
@@ -533,8 +531,7 @@ class AsyncModels(AsyncAPIResource):
         provided. Returns ``True`` on success.
         """
         url = (
-            f"/organizations/{self._client.organization_id}"
-            f"/projects/{self._client.project_id}/custom-models/{model_id}"
+            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/custom-models/{model_id}"
         )
         body: Dict[str, Any] = {}
         if api_url is not None:
@@ -554,8 +551,7 @@ class AsyncModels(AsyncAPIResource):
     ) -> bool:
         """Disable a custom model and detach it from the project."""
         url = (
-            f"/organizations/{self._client.organization_id}"
-            f"/projects/{self._client.project_id}/custom-models/{model_id}"
+            f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/custom-models/{model_id}"
         )
         resp = await self._delete(url, timeout=timeout, cast_to=dict)
         return isinstance(resp, dict) and "data" in resp

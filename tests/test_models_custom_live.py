@@ -61,9 +61,7 @@ def test_custom_model_lifecycle_live() -> None:
         assert deleted, "delete_custom returned False"
 
         remaining = client.models.get(type="custom") or []
-        assert all(m.id != model_id for m in remaining), (
-            f"deleted custom model {model_id} still visible in models.get"
-        )
+        assert all(m.id != model_id for m in remaining), f"deleted custom model {model_id} still visible in models.get"
     except Exception:
         # Best-effort teardown on any assertion / API failure mid-test so a
         # broken run doesn't leak project-scoped resources.
