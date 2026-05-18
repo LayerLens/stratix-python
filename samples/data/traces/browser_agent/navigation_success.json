@@ -1,0 +1,122 @@
+{
+  "trace_id": "tr-browser-nav-001",
+  "agent_name": "browser-automation-agent",
+  "framework": "browser-use",
+  "status": "completed",
+  "description": "Browser agent successfully navigating to Stripe pricing page. Demonstrates clean navigation with no unnecessary detours.",
+  "event_count": 8,
+  "metadata": {
+    "synthetic": true,
+    "agents": ["browser-automation-agent"],
+    "scenario_type": "browser_navigation",
+    "task_category": "navigation",
+    "task_description": "Find the pricing page on stripe.com",
+    "evaluation_dimensions": [
+      "task_completion",
+      "navigation_accuracy",
+      "efficiency"
+    ]
+  },
+  "start_time": "2026-05-12T14:00:00Z",
+  "end_time": "2026-05-12T14:00:08.420Z",
+  "duration_ms": 8420,
+  "events": [
+    {
+      "type": "environment.config",
+      "dt": 0,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "config": {
+          "session_type": "browser-automation",
+          "framework": "browser-use",
+          "browser": "chromium",
+          "headless": true,
+          "viewport": {"width": 1280, "height": 720},
+          "timeout_ms": 30000,
+          "max_steps": 20
+        }
+      }
+    },
+    {
+      "type": "agent.input",
+      "dt": 2,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "input": "Find the pricing page on stripe.com",
+        "task_id": "nav-001",
+        "task_category": "navigation"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 1200,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "navigate",
+        "url": "https://stripe.com",
+        "status_code": 200,
+        "page_title": "Stripe | Financial Infrastructure for the Internet",
+        "step": 1
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 1800,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 1420,
+        "completion_tokens": 85,
+        "duration_ms": 1800,
+        "purpose": "analyze page DOM and identify pricing link"
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 350,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "click",
+        "selector": "a[href='/pricing']",
+        "element_text": "Pricing",
+        "step": 2
+      }
+    },
+    {
+      "type": "browser.action",
+      "dt": 2100,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "action": "wait_for_navigation",
+        "url": "https://stripe.com/pricing",
+        "status_code": 200,
+        "page_title": "Pricing & Fees | Stripe",
+        "step": 3
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 500,
+      "payload": {
+        "agent_name": "browser-automation-agent",
+        "output": "Successfully navigated to Stripe's pricing page at https://stripe.com/pricing. The page displays integrated pricing for payments (2.9% + 30 cents per successful card charge), billing, invoicing, and other financial products.",
+        "final_url": "https://stripe.com/pricing",
+        "task_completed": true,
+        "steps_taken": 3,
+        "screenshots_captured": 2
+      }
+    },
+    {
+      "type": "cost.record",
+      "dt": 2,
+      "payload": {
+        "total_tokens": 1505,
+        "total_cost_usd": 0.0152,
+        "model": "gpt-4o",
+        "agents_invoked": ["browser-automation-agent"],
+        "resolution": "Agent loaded stripe.com, identified the Pricing link in the navigation bar, clicked it, and confirmed arrival at the pricing page. Completed in 3 browser actions with no detours."
+      }
+    }
+  ]
+}

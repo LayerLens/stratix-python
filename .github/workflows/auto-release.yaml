@@ -1,0 +1,74 @@
+name: Auto Release
+
+on:
+  push:
+    branches:
+      - release
+
+jobs:
+  auto-tag-and-publish:
+    runs-on: ubuntu-latest
+    environment: production
+
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from _version.py
+        id: get_version
+        run: |
+          chmod +x ./scripts/get_version.sh
+          VERSION=$(./scripts/get_version.sh)
+          if [ -z "$VERSION" ]; then
+            echo "Error: Could not extract version"
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: ${TAG}"
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          TAG="${{ steps.get_version.outputs.tag }}"
+          git fetch --tags --prune --force
+          if git rev-parse --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on origin — nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag ${TAG} does not exist — will create."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure git
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.get_version.outputs.tag }}"
+          git tag "${TAG}" "${GITHUB_SHA}"
+          git push origin "${TAG}"
+          echo "Pushed tag ${TAG} at ${GITHUB_SHA}"
+
+      - name: Dispatch publish-to-aws workflow
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.get_version.outputs.tag }}"
+          gh workflow run publish-to-aws.yaml \
+            --ref "${TAG}" \
+            -f release_tag="${TAG}"
+          echo "Dispatched publish-to-aws.yaml for ${TAG}"

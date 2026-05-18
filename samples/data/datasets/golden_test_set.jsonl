@@ -1,0 +1,10 @@
+{"id":"golden_0001","question":"What is 2 + 2?","expected_answer":"4","category":"factual","difficulty":"easy"}
+{"id":"golden_0002","question":"What color do you get when you mix red and blue?","expected_answer":"Purple","category":"factual","difficulty":"easy"}
+{"id":"golden_0003","question":"In Python, what does len([1, 2, 3]) return?","expected_answer":"3","category":"factual","difficulty":"easy"}
+{"id":"golden_0004","question":"What is the chemical symbol for water?","expected_answer":"H2O","category":"factual","difficulty":"easy"}
+{"id":"golden_0005","question":"How many bits are in a byte?","expected_answer":"8","category":"factual","difficulty":"easy"}
+{"id":"golden_0006","question":"What HTTP method is used to retrieve a resource?","expected_answer":"GET","category":"factual","difficulty":"easy"}
+{"id":"golden_0007","question":"What is the output of: print(type(42))?","expected_answer":"<class 'int'>","category":"factual","difficulty":"easy"}
+{"id":"golden_0008","question":"In JSON, what are the two collection types?","expected_answer":"Object (key-value pairs denoted by curly braces) and Array (ordered list denoted by square brackets)","category":"factual","difficulty":"medium"}
+{"id":"golden_0009","question":"What does the acronym API stand for?","expected_answer":"Application Programming Interface","category":"factual","difficulty":"easy"}
+{"id":"golden_0010","question":"What is the Big O notation for looking up a key in a hash map?","expected_answer":"O(1) average case","category":"factual","difficulty":"easy"}

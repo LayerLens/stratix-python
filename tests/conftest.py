@@ -14,6 +14,11 @@ def _upload_sync_mode():
     _upload._sync_mode = False
 
 
+def pytest_configure(config):
+    """Register custom markers."""
+    config.addinivalue_line("markers", "live: run against the real LayerLens API")
+
+
 @pytest.fixture
 def env_vars():
     """Clean environment variables for testing."""

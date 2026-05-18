@@ -4,7 +4,7 @@ Examples for browsing, filtering, creating, and managing models and benchmarks u
 
 ## Filtering Models
 
-> Source: [`examples/get_models.py`](../../examples/get_models.py)
+> Source: [`samples/core/model_benchmark_management.py`](../../samples/core/model_benchmark_management.py)
 
 ```python
 import asyncio
@@ -56,7 +56,7 @@ if __name__ == "__main__":
 
 ## Filtering Benchmarks
 
-> Source: [`examples/get_benchmarks.py`](../../examples/get_benchmarks.py)
+> Source: [`samples/core/model_benchmark_management.py`](../../samples/core/model_benchmark_management.py)
 
 ```python
 import asyncio
@@ -98,7 +98,7 @@ if __name__ == "__main__":
 
 ## Creating a Custom Model
 
-> Source: [`examples/create_custom_model.py`](../../examples/create_custom_model.py)
+> Source: [`samples/core/custom_model.py`](../../samples/core/custom_model.py)
 
 Custom models let you evaluate any model accessible via an OpenAI-compatible chat completions endpoint.
 
@@ -137,9 +137,72 @@ if __name__ == "__main__":
     main()
 ```
 
+## Repointing a Custom Model's `api_url`
+
+Use this when your model's endpoint URL changes — for example, when serving a vLLM instance behind a cloudflared tunnel that rotates its hostname between sessions.
+
+```python
+from layerlens import Stratix
+
+
+def main():
+    client = Stratix()
+
+    result = client.models.create_custom(
+        name="My Tunnel-backed Model",
+        key="my-org/tunnel-model-v1",
+        description="vLLM served behind a cloudflared tunnel",
+        api_url="https://tunnel-1.example.com/v1",
+        api_key="my-provider-api-key",
+        max_tokens=4096,
+    )
+    assert result is not None
+
+    # Later, when the tunnel URL changes:
+    client.models.update_custom(
+        result.model_id,
+        api_url="https://tunnel-2.example.com/v1",
+    )
+
+    # Run evaluations as usual — the model now points at the new endpoint.
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## Replacing a Custom Model
+
+`delete_custom` releases the model's name so it can be reused. This is useful for replacing a misconfigured model without picking a new name.
+
+```python
+from layerlens import Stratix
+
+
+def main():
+    client = Stratix()
+
+    # Tear down the old version
+    client.models.delete_custom("old-model-id")
+
+    # Recreate with the same name (now free)
+    client.models.create_custom(
+        name="My Custom Model",
+        key="my-org/custom-model-v2",
+        description="Replacement after schema migration",
+        api_url="https://my-endpoint.example.com/v1",
+        api_key="my-provider-api-key",
+        max_tokens=4096,
+    )
+
+
+if __name__ == "__main__":
+    main()
+```
+
 ## Creating a Custom Benchmark
 
-> Source: [`examples/create_custom_benchmark.py`](../../examples/create_custom_benchmark.py)
+> Source: [`samples/core/custom_benchmark.py`](../../samples/core/custom_benchmark.py)
 
 Custom benchmarks are created from JSONL files with `input` and `truth` fields.
 
@@ -197,7 +260,7 @@ Optional field: `subset` (for grouping prompts into categories).
 
 ## Creating a Smart Benchmark
 
-> Source: [`examples/create_smart_benchmark.py`](../../examples/create_smart_benchmark.py)
+> Source: [`samples/core/custom_benchmark.py`](../../samples/core/custom_benchmark.py)
 
 Smart benchmarks use AI to automatically generate benchmark prompts from uploaded documents. Supported file types: `.txt`, `.pdf`, `.html`, `.docx`, `.csv`, `.json`, `.jsonl`, `.parquet`.
 
@@ -238,7 +301,7 @@ if __name__ == "__main__":
 
 ## Managing Project Models and Benchmarks
 
-> Source: [`examples/manage_project_models_benchmarks.py`](../../examples/manage_project_models_benchmarks.py)
+> Source: [`samples/core/model_benchmark_management.py`](../../samples/core/model_benchmark_management.py)
 
 Add and remove public models and benchmarks from your project.
 

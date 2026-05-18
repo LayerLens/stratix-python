@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "app/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@layerlens/copilotkit-cards",
+    "utils": "@layerlens/copilotkit-cards/lib/utils",
+    "ui": "@layerlens/copilotkit-cards/ui",
+    "lib": "@layerlens/copilotkit-cards/lib",
+    "hooks": "@/hooks"
+  },
+  "iconLibrary": "lucide"
+}

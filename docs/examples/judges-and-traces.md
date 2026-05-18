@@ -4,7 +4,7 @@ Examples for working with judges, traces, and trace evaluations on the Stratix p
 
 ## Creating and Managing Judges
 
-> Source: [`examples/judges.py`](../../examples/judges.py)
+> Source: [`samples/core/create_judge.py`](../../samples/core/create_judge.py)
 
 ```python
 import time
@@ -51,7 +51,7 @@ print(f"Deleted judge {deleted.id}")
 
 ## Uploading and Managing Traces
 
-> Source: [`examples/traces.py`](../../examples/traces.py)
+> Source: [`samples/core/basic_trace.py`](../../samples/core/basic_trace.py)
 
 ```python
 import os
@@ -94,7 +94,7 @@ print(f"Deleted: {deleted}")
 
 ## Running Trace Evaluations
 
-> Source: [`examples/trace_evaluations.py`](../../examples/trace_evaluations.py)
+> Source: [`samples/core/trace_evaluation.py`](../../samples/core/trace_evaluation.py)
 
 ```python
 import time
@@ -150,7 +150,7 @@ client.judges.delete(judge.id)
 
 ## Judge Optimizations
 
-> Source: [`examples/judge_optimizations.py`](../../examples/judge_optimizations.py)
+> Source: [`samples/core/judge_optimization.py`](../../samples/core/judge_optimization.py)
 
 Optimization requires that the judge has at least 10 annotations (trace evaluation results). Run trace evaluations first to build up annotation data.
 
@@ -221,7 +221,7 @@ client.judges.delete(judge.id)
 
 ## Async Judges and Traces
 
-> Source: [`examples/async_judges_and_traces.py`](../../examples/async_judges_and_traces.py)
+> Source: [`samples/core/async_results.py`](../../samples/core/async_results.py)
 
 ```python
 import os

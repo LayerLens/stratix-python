@@ -1,313 +1,227 @@
-# LayerLens Stratix Python SDK
+<p align="center">
+  <a href="https://layerlens.ai">
+    <img src="https://layerlens.ai/assets/logo-dark.svg" alt="LayerLens" width="280" />
+  </a>
+</p>
 
-The official Python library for the [LayerLens Stratix](https://app.layerlens.ai) evaluation API.
+<h1 align="center">Stratix Python SDK</h1>
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+<p align="center">
+  <strong>Ship AI that actually works. Evaluate 200+ models across 100+ benchmarks, trace agent behavior, build custom judges, and gate CI/CD on eval results.</strong>
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/layerlens/"><img src="https://img.shields.io/pypi/v/layerlens?color=blue" alt="PyPI" /></a>
+  <a href="https://pypi.org/project/layerlens/"><img src="https://img.shields.io/pypi/pyversions/layerlens" alt="Python" /></a>
+  <a href="https://github.com/LayerLens/stratix-python/stargazers"><img src="https://img.shields.io/github/stars/LayerLens/stratix-python?style=social" alt="GitHub Stars" /></a>
+  <a href="https://github.com/LayerLens/stratix-python/actions"><img src="https://github.com/LayerLens/stratix-python/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://codecov.io/gh/LayerLens/stratix-python"><img src="https://codecov.io/gh/LayerLens/stratix-python/branch/main/graph/badge.svg" alt="Coverage" /></a>
+  <a href="https://github.com/LayerLens/stratix-python/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License" /></a>
+  <!-- Replace with actual Discord server ID once created -->
+  <a href="https://discord.gg/layerlens"><img src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+</p>
+
+<p align="center">
+  <a href="#installation">Install</a> &middot;
+  <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#how-stratix-compares">Compare</a> &middot;
+  <a href="https://layerlens.gitbook.io/stratix-python-sdk">Docs</a> &middot;
+  <a href="#examples">Examples</a> &middot;
+  <a href="https://discord.gg/layerlens">Discord</a>
+</p>
+
+---
+
+## Why Stratix?
+
+Stratix is built differently. It gives you production-grade evaluation infrastructure out of the box: rich public benchmarks, powerful custom judges, full agent trace analysis, playback, bulk evaluation, and CI/CD gates.
+
+**What makes it click:**
+
+- **200+ models and 100+ benchmarks, ready to query.** No scraping leaderboards, no CSV wrangling. `pc.models.get()` and you're looking at real evaluation data.
+- **Prompt-level comparisons.** Not just "Model A scores 82%." You get the exact prompts where Model A passes and Model B fails, with outcome filters to find the interesting divergences.
+- **A 4-generation eval ladder.** Start with heuristic checks, graduate to model-graded scoring, add deliberation panels, then build auto-optimized GEPA judges. One SDK covers the full spectrum.
+- **Agent trace evaluation.** Upload a multi-step agent trace, replay it, and judge every step. Built for the world where agents do real work.
+- **CI/CD eval gates.** `layerlens ci run --threshold 0.8` in your pipeline. Non-zero exit on regression. No custom scripts needed.
+
+## How Stratix Compares
+
+| Capability              | **Stratix**                                    | LangSmith                  | Langfuse                | DeepEval            | Phoenix (Arize)        |
+| ----------------------- | ---------------------------------------------- | -------------------------- | ----------------------- | ------------------- | ---------------------- |
+| Pre-built benchmarks    | 100+ benchmarks, 200+ models                   | No public benchmarks       | No public benchmarks    | ~14 metrics         | Bring your own         |
+| Prompt-level comparison | Native head-to-head with outcome filters       | Side-by-side runs (manual) | Not built-in            | Manual setup        | Not built-in           |
+| Custom judge builder    | Auto-optimized GEPA judges with budget control | LLM-as-judge (manual)      | LLM-as-judge (manual)   | Basic LLM judges    | LLM-as-judge templates |
+| Agent trace evaluation  | Upload, replay, judge every step               | Trace logging + annotation | Trace logging + scoring | Trace logging only  | Trace visualization    |
+| Eval generation ladder  | Heuristic > model-graded > deliberation > GEPA | Single generation          | Single generation       | Single generation   | Single generation      |
+| CI/CD eval gate         | `layerlens ci run` with threshold              | Custom integration         | Custom integration      | `deepeval test`     | Manual integration     |
+| Evaluation Spaces       | Collaborative eval environments                | Hub (paid)                 | Not available           | Not available       | Not available          |
+| Dataset versioning      | Pin evals to versions, diff between runs       | Dataset management         | Not built-in            | Basic support       | Dataset management     |
+| OpenTelemetry export    | Native OTLP exporter                           | Not built-in               | Native OTLP             | Not built-in        | Native (OpenInference) |
+| Pricing model           | Free public data; premium for org features     | Per-trace pricing          | Per-event pricing       | Open source + cloud | Open source + cloud    |
 
 ## Installation
 
 ```bash
-pip install layerlens --extra-index-url https://sdk.layerlens.ai/package
+# Recommended (includes CLI, rich output, and examples)
+pip install layerlens[cli]
 ```
 
-## Authentication
-
-Set your API key as an environment variable:
-
-```bash
-export LAYERLENS_STRATIX_API_KEY="your-api-key"
-```
-
-Or pass it directly when creating a client:
-
-```python
-from layerlens import Stratix
-
-client = Stratix(api_key="your-api-key")
-```
+> **Note:** During early access the package is hosted on a private index. Use:
+>
+> ```bash
+> pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
+> ```
 
 ## Quick Start
 
-### Run an evaluation
+**Easiest way** — use the one-command template:
+
+```bash
+stratix init my-first-eval
+cd my-first-eval
+python main.py
+```
+
+Or wire it up yourself in Python:
 
 ```python
-import os
-from layerlens import Stratix
+from layerlens import PublicClient, Stratix
 
-client = Stratix(api_key=os.environ.get("LAYERLENS_STRATIX_API_KEY"))
+# Public data (models, benchmarks, evaluations)
+pc = PublicClient(api_key="your-api-key")
 
-# Get a model and benchmark by key
-model = client.models.get_by_key("openai/gpt-4o")
-benchmark = client.benchmarks.get_by_key("arc-agi-2")
+models = pc.models.get(page_size=200)
+print(f"{models.total_count} models available")
 
-# Create an evaluation (pass the full model and benchmark objects)
-evaluation = client.evaluations.create(
-    model=model,
-    benchmark=benchmark,
+# Compare two models head-to-head at prompt level
+comparison = pc.comparisons.compare_models(
+    benchmark_id="benchmark-id",
+    model_id_1="model-a",
+    model_id_2="model-b",
+    outcome_filter="comparison_fails",  # where model B fails
 )
 
-# Wait for results (pass the evaluation object, not just the ID)
-result = client.evaluations.wait_for_completion(evaluation)
-print(f"Accuracy: {result.accuracy}")
-```
+# Premium features (traces, judges, scorers)
+client = Stratix(api_key="your-api-key")
 
-### Async usage
-
-```python
-import os
-import asyncio
-from layerlens import AsyncStratix
-
-async def main():
-    client = AsyncStratix(api_key=os.environ.get("LAYERLENS_STRATIX_API_KEY"))
-
-    model = await client.models.get_by_key("openai/gpt-4o")
-    benchmark = await client.benchmarks.get_by_key("arc-agi-2")
-
-    evaluation = await client.evaluations.create(
-        model=model,
-        benchmark=benchmark,
-    )
-
-    result = await client.evaluations.wait_for_completion(evaluation)
-    print(f"Accuracy: {result.accuracy}")
-
-asyncio.run(main())
-```
-
-### Public endpoints
-
-Public models, benchmarks, and evaluations are accessible through `client.public`. Note: the public client still requires an API key.
-
-```python
-import os
-from layerlens import Stratix
-
-client = Stratix(api_key=os.environ.get("LAYERLENS_STRATIX_API_KEY"))
-
-# Browse public models
-models = client.public.models.get()
-for model in models.models:
-    print(f"{model.key}: {model.name}")
-```
-
-Or instantiate the public client directly:
-
-```python
-import os
-from layerlens import PublicClient
-
-public = PublicClient(api_key=os.environ.get("LAYERLENS_STRATIX_API_KEY"))
-models = public.models.get()
-```
-
-## Resources
-
-The SDK provides access to these resource types:
-
-| Resource                     | Description                                                                   |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| `client.models`              | Manage models (get, get_by_key, add, remove, create_custom)                   |
-| `client.benchmarks`          | Manage benchmarks (get, get_by_key, add, remove, create_custom, create_smart) |
-| `client.evaluations`         | Create evaluations and wait for results                                       |
-| `client.judges`              | CRUD operations for evaluation judges                                         |
-| `client.traces`              | Upload trace files and manage traces                                          |
-| `client.trace_evaluations`   | Run trace-level evaluations with judges                                       |
-| `client.judge_optimizations` | Optimize judge configurations                                                 |
-| `client.results`             | Retrieve evaluation results                                                   |
-| `client.public`              | Public models, benchmarks, evaluations, and comparisons                       |
-
-Every resource is available in both sync (`Stratix`) and async (`AsyncStratix`) clients.
-
-## Examples
-
-### Working with judges
-
-```python
-# Create a judge (name and evaluation_goal are required)
-judge = client.judges.create(
-    name="Response Quality Judge",
-    evaluation_goal="Rate whether the response is accurate, complete, and well-structured",
+# Upload and evaluate an agent trace
+client.traces.upload("trace.json")
+eval_result = client.trace_evaluations.create(
+    trace_id="trace-id",
+    judge_id="judge-id",
 )
-
-# List judges (returns a JudgesResponse with .judges list)
-response = client.judges.get_many()
-for j in response.judges:
-    print(f"{j.name} (id: {j.id})")
-
-# Update a judge
-client.judges.update(judge.id, name="Updated Judge Name")
-
-# Delete a judge
-client.judges.delete(judge.id)
 ```
-
-### Uploading and evaluating traces
-
-Trace upload works with JSON or JSONL files (up to 50 MB). The SDK handles presigned S3 uploads automatically.
-
-```python
-# Upload a trace file (pass a file path, not raw data)
-result = client.traces.upload("./my_traces.json")
-print(f"Uploaded trace IDs: {result.trace_ids}")
-
-# List traces
-traces = client.traces.get_many()
-for t in traces.traces:
-    print(f"Trace {t.id}")
-
-# Create a trace evaluation
-trace_eval = client.trace_evaluations.create(
-    trace_id=t.id,
-    judge_id=judge.id,
-)
-
-# Get results
-results = client.trace_evaluations.get_results(trace_eval.id)
-```
-
-### Custom models
-
-Custom models require an OpenAI-compatible API endpoint.
-
-```python
-response = client.models.create_custom(
-    name="My Fine-tuned Model",
-    key="my-org/custom-model-v1",
-    description="Fine-tuned GPT for medical Q&A",
-    api_url="https://my-api.example.com/v1",
-    max_tokens=4096,
-    api_key=os.environ.get("MY_PROVIDER_API_KEY"),  # optional
-)
-print(f"Created model: {response.model_id}")
-```
-
-## Client aliases
-
-For backward compatibility, multiple import names are available:
-
-```python
-from layerlens import Stratix          # Primary
-from layerlens import AsyncStratix     # Async primary
-from layerlens import Client           # Alias for Stratix
-from layerlens import AsyncClient      # Alias for AsyncStratix
-from layerlens import Atlas            # Legacy alias
-from layerlens import AsyncAtlas       # Legacy alias
-from layerlens import PublicClient     # Public endpoints
-from layerlens import AsyncPublicClient
-```
-
-## Configuration
-
-| Environment Variable         | Description               | Default                           |
-| ---------------------------- | ------------------------- | --------------------------------- |
-| `LAYERLENS_STRATIX_API_KEY`  | Your API key              | (required)                        |
-| `LAYERLENS_STRATIX_BASE_URL` | Override the API base URL | `https://api.layerlens.ai/api/v1` |
-
-Legacy env vars (`LAYERLENS_ATLAS_API_KEY`, `LAYERLENS_ATLAS_BASE_URL`) are also supported.
-
-## Error handling
-
-The SDK raises typed exceptions for API errors:
-
-```python
-import os
-from layerlens import Stratix, StratixError, APIError, BadRequestError, NotFoundError
-
-client = Stratix(api_key=os.environ.get("LAYERLENS_STRATIX_API_KEY"))
-
-try:
-    result = client.models.get_by_id("nonexistent-id")
-except NotFoundError as e:
-    print(f"Not found (HTTP {e.status_code}): {e.message}")
-except BadRequestError as e:
-    print(f"Bad request: {e.message}")
-except APIError as e:
-    print(f"API error: {e.message}")
-except StratixError as e:
-    print(f"Client error: {e}")
-```
-
-Catch the most specific exception first. The hierarchy:
-
-- `StratixError` (base for all SDK errors)
-  - `APIError` (base for all API-related errors)
-    - `APIConnectionError` (network issues)
-      - `APITimeoutError` (request timed out)
-    - `APIResponseValidationError` (response didn't match expected schema)
-    - `APIStatusError` (HTTP 4xx/5xx)
-      - `BadRequestError` (400)
-      - `AuthenticationError` (401)
-      - `PermissionDeniedError` (403)
-      - `NotFoundError` (404)
-      - `ConflictError` (409)
-      - `UnprocessableEntityError` (422)
-      - `RateLimitError` (429)
-      - `InternalServerError` (500+)
-
-Note: Only `StratixError`, `APIError`, `BadRequestError`, `AuthenticationError`, and `NotFoundError` are exported from the top-level package. For other exception types, import from `layerlens._exceptions`.
 
 ## CLI
 
-The LayerLens CLI lets you manage traces, judges, evaluations, integrations, and more from the terminal.
-
-### Install
+The SDK ships with a full CLI for managing evaluations from your terminal or CI pipeline:
 
 ```bash
-pip install layerlens[cli] --extra-index-url https://sdk.layerlens.ai/package
-```
-
-### Configure
-
-```bash
+# Set your API key
 export LAYERLENS_STRATIX_API_KEY="your-api-key"
+
+# List traces
+layerlens trace list
+
+# Run a judge evaluation
+layerlens judge run --judge-id <id> --trace-id <id>
+
+# Evaluate in CI mode (exits non-zero on failure)
+layerlens ci run --judge-id <id> --trace-id <id> --threshold 0.8
 ```
 
-### Usage
+## Architecture
 
-```bash
-stratix --help                   # Show all commands
-stratix trace list               # List traces
-stratix evaluate run \
-  --model openai/gpt-4o \
-  --benchmark arc-agi-2 --wait     # Run an evaluation and wait for results
-stratix judge create \
-  --name "Quality" \
-  --goal "Rate response quality" \
-  --model-id <MODEL_ID>            # Create a judge
-stratix ci report -o summary.md  # Generate CI report
+```
+layerlens/
+  _client.py          # Stratix (premium) client
+  _public_client.py   # PublicClient (open data)
+  cli/                # Click-based CLI with rich output
+    commands/         # trace, judge, evaluate, scorer, space, bulk, ci
+  models/             # Pydantic response models
+  resources/          # API resource implementations
+  contrib/
+    rich_output.py    # Rich terminal tables & progress bars
+    otel.py           # OpenTelemetry integration
+    tracing.py        # @stratix.trace decorator
+    datasets.py       # Dataset versioning & diffs
+    error_suggestions.py  # Context-aware error messages
 ```
 
-Shell completions are available for bash, zsh, fish, and powershell:
+## Examples
 
-```bash
-stratix completion bash          # Print setup instructions
-```
+See the [`examples/`](./examples) directory for integration patterns:
 
-Full CLI docs: [docs/cli/](docs/cli/)
+| Example                                                   | Description                            |
+| --------------------------------------------------------- | -------------------------------------- |
+| [LangGraph](./examples/integrations/langgraph_example.py) | Trace and evaluate a LangGraph agent   |
+| [CrewAI](./examples/integrations/crewai_example.py)       | Evaluate CrewAI multi-agent workflows  |
+| [AutoGen](./examples/integrations/autogen_example.py)     | Instrument AutoGen conversations       |
+| [CI/CD Gate](./examples/cookbook/ci_eval_gate.py)         | Block deploys on eval regression       |
+| [Custom Judge](./examples/cookbook/custom_judge.py)       | Build and optimize a domain judge      |
+| [Prompt Playground](./examples/playground/)               | Compare prompt variations side-by-side |
 
-| Guide | Description |
-| --- | --- |
-| [Getting Started](docs/cli/getting-started.md) | Installation, configuration, first commands |
-| [Command Reference](docs/cli/commands.md) | All commands and options |
-| [Examples](docs/cli/examples.md) | 15 common workflows as copy-paste shell sessions |
+## Used By
 
-## Requirements
+<!-- Update this section as adoption grows -->
 
-- Python 3.8+
-- Dependencies: `httpx`, `pydantic`, `requests`
-- CLI extra: `click>=8.0.0`
+Stratix powers evaluation workflows at LayerLens and across teams building production AI systems. The public benchmark data is queried thousands of times per week via the SDK and [stratix.layerlens.ai](https://stratix.layerlens.ai).
+
+If your team uses Stratix, [open a PR](https://github.com/LayerLens/stratix-python/pulls) to add your logo here.
+
+## Join the Community
+
+The LayerLens Discord is the best place to:
+- Get help with the SDK and trace evaluations
+- Share your custom judges and agent workflows
+- Access free Stratix Premium Credits for active contributors
+- Join weekly Eval Office Hours & model comparison discussions
+- Influence the roadmap
+
+[Join the LayerLens Discord!](https://discord.gg/layerlens)
 
 ## Documentation
 
-Full API reference and examples are available in the [docs/](docs/) directory:
+Full documentation is available at [layerlens.gitbook.io/stratix-python-sdk](https://layerlens.gitbook.io/stratix-python-sdk).
 
-- [CLI Guide](docs/cli/) (getting started, command reference, workflow examples)
-- [API Reference](docs/api-reference/) (client config, all resource methods, error handling)
-- [Code Examples](docs/examples/) (evaluations, judges, traces)
-- [Troubleshooting](docs/troubleshooting/) (auth issues, error codes)
+To build docs locally:
+
+```bash
+pip install layerlens[docs]
+mkdocs serve
+```
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
+## Security
+
+To report a vulnerability, see [SECURITY.md](./SECURITY.md).
 
 ## License
 
-Apache 2.0. See [LICENSE](LICENSE) for details.
+Apache 2.0. See [LICENSE](./LICENSE).
+
+## Next Steps
+
+**Get started in under 2 minutes:**
+
+```bash
+pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
+stratix init my-first-eval
+cd my-first-eval && python main.py
+```
+
+Then explore the [Quick Start guide](https://layerlens.gitbook.io/stratix-python-sdk), try a [cookbook recipe](./examples/cookbook/), or [join the Discord](https://discord.gg/layerlens) to ask questions and share what you're building.
+
+---
+
+<p align="center">
+  ⭐ <strong>Star us if you found this useful!</strong> ⭐<br />
+  It helps more developers discover Stratix.
+</p>
+
+<p align="center">
+  Built by <a href="https://layerlens.ai">LayerLens</a> &middot; <a href="https://discord.gg/layerlens">Discord</a> &middot; <a href="https://twitter.com/LayerLens_AI">Twitter</a>
+</p>

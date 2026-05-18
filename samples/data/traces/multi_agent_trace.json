@@ -1,0 +1,185 @@
+{
+  "trace_id": "tr-scn-multi-agent-001",
+  "agent_name": "market-research-crew",
+  "framework": "crewai",
+  "status": "completed",
+  "description": "Multi-agent crew - researcher gathers, fact-verifier challenges, analyst synthesizes into executive brief with peer review and one corrected error",
+  "event_count": 11,
+  "metadata": {
+    "synthetic": true,
+    "agents": [
+      "researcher-agent",
+      "fact-verifier",
+      "analyst-agent"
+    ],
+    "scenario_type": "multi_agent_crew",
+    "crew_name": "market-research-crew",
+    "collaboration_pattern": "research_verify_synthesize_with_peer_review",
+    "evaluation_dimensions": [
+      "factual_accuracy",
+      "helpfulness",
+      "tool_usage",
+      "instruction_following"
+    ]
+  },
+  "start_time": "2026-04-14T08:15:00Z",
+  "end_time": "2026-04-14T08:15:08.840Z",
+  "duration_ms": 8840,
+  "events": [
+    {
+      "type": "environment.config",
+      "dt": 0,
+      "payload": {
+        "agent_name": "orchestrator",
+        "config": {
+          "session_type": "multi-agent",
+          "framework": "crewai",
+          "crew_name": "market-research-crew",
+          "model_default": "gpt-4o",
+          "tools_available": [
+            "web_search",
+            "financial_data_api",
+            "scientific_paper_search"
+          ],
+          "agents_available": [
+            "researcher-agent",
+            "fact-verifier",
+            "analyst-agent"
+          ],
+          "peer_review_enabled": true
+        }
+      }
+    },
+    {
+      "type": "agent.input",
+      "dt": 3,
+      "payload": {
+        "agent_name": "researcher-agent",
+        "input": "Brief me on the EV battery cell-to-pack (CTP) and cell-to-chassis (CTC) market. I need: top 5 manufacturers by 2025 volume share, current pack-level cost trajectory, where structural-battery technology differentiation is heading for 2026-2028, and any geopolitical supply concentration risk. Output as a 200-word executive brief suitable for a board pre-read.",
+        "requestor": "product-strategy-team",
+        "output_format": "executive_brief",
+        "word_target": 200,
+        "deadline_minutes": 15
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 4,
+      "payload": {
+        "agent_name": "researcher-agent",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 312,
+        "completion_tokens": 482,
+        "duration_ms": 2840,
+        "purpose": "comprehensive market research using web_search and financial_data_api tools across 4 sub-questions"
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 3,
+      "payload": {
+        "agent_name": "researcher-agent",
+        "output": "Research complete across 4 sub-questions, 18 sources consulted (BloombergNEF, S&P Global Mobility, IEA, Reuters, company filings).\n\nManufacturer share 2025 (CTP/CTC pack volumes for EV passenger vehicles): CATL 35.2%, BYD 16.8%, LG Energy Solution 13.1%, Panasonic 6.4%, Samsung SDI 4.9%. Note CATL share includes Qilin platform; BYD share reflects vertical integration with own EVs (not merchant sales).\n\nCost: pack-level $115/kWh (2022) -> $98/kWh (2023) -> $89/kWh (2024) -> $82/kWh (2025), tracking $70-72/kWh by 2027 per BNEF Lithium-Ion Battery Price Survey 2025. The $100/kWh barrier breached 2024.\n\nStructural battery: Tesla 4680 + Cybertruck shipping; BYD Seal e-Platform 3.0 in production; Leapmotor B10 launched late 2025. Direction: cell-to-chassis (CTC) eliminates pack housing, 30-40% parts reduction, but ties customer to single-vendor stack and complicates collision repair (pack cannot be replaced as unit).\n\nGeopolitical: 2025 China-origin share of CTP/CTC supply ~78% (CATL+BYD+CALB+EVE). U.S. IRA Section 30D tightens 'foreign entity of concern' rules for 2025+, reducing eligibility for Chinese-content packs. EU Critical Raw Materials Act (eff 2024) targets 65% from any single non-EU country by 2030.",
+        "sources_consulted": 18,
+        "sub_questions_addressed": 4,
+        "confidence_high": true
+      }
+    },
+    {
+      "type": "agent.handoff",
+      "dt": 3,
+      "payload": {
+        "from_agent": "researcher-agent",
+        "to_agent": "fact-verifier",
+        "reason": "Research complete with specific numeric claims (volume share, cost figures, regulatory dates) that must be verified before being put in front of the board - peer review is mandatory in this crew",
+        "context": {
+          "specific_claims_to_verify": [
+            "CATL 35.2 pct",
+            "pack cost $82/kWh 2025",
+            "CTC parts reduction 30-40 pct",
+            "China origin share 78 pct"
+          ]
+        }
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 3,
+      "payload": {
+        "agent_name": "fact-verifier",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 612,
+        "completion_tokens": 288,
+        "duration_ms": 1680,
+        "purpose": "independent verification of 4 numeric claims against primary sources"
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 3,
+      "payload": {
+        "agent_name": "fact-verifier",
+        "output": "Verification complete. THREE claims verified, ONE correction needed.\n\n(1) CATL 2025 share 35.2% - VERIFIED against SNE Research October 2025 monthly report (35.1%) and BNEF Q3 2025 (35.4%) - the 35.2% figure is within the source range, accept.\n\n(2) Pack-level $82/kWh 2025 - VERIFIED against BNEF Lithium-Ion Battery Price Survey 2025 (volume-weighted average $82/kWh) and Goldman Sachs December 2025 estimate ($83/kWh).\n\n(3) CTC parts reduction 30-40% - VERIFIED in concept but the specific 30-40% range comes from Tesla Battery Day 2020 and BYD whitepaper - it is the manufacturer's own claim, not independent measurement. Recommend qualifying as 'manufacturer-claimed' rather than asserting as fact.\n\n(4) China-origin CTP/CTC supply 78% - INCORRECT. Researcher conflated cell production share (~78%) with pack-level CTP/CTC supply share (~62% per BNEF supply chain report). The 78% figure is correct for cells, not for finished CTP/CTC packs because LG Energy Solution and Panasonic also produce pack-level CTP designs. Correction required.",
+        "claims_verified": 3,
+        "claims_corrected": 1,
+        "correction_severity": "material"
+      }
+    },
+    {
+      "type": "agent.handoff",
+      "dt": 3,
+      "payload": {
+        "from_agent": "fact-verifier",
+        "to_agent": "analyst-agent",
+        "reason": "Verification surfaced one material correction (China supply share 78% -> 62%) and one nuance (manufacturer-claimed parts reduction) - analyst must integrate corrections into the final brief, not reproduce the original error",
+        "context": {
+          "corrections_required": 1,
+          "qualifications_required": 1,
+          "original_research_otherwise_sound": true
+        }
+      }
+    },
+    {
+      "type": "model.invoke",
+      "dt": 3,
+      "payload": {
+        "agent_name": "analyst-agent",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "prompt_tokens": 1240,
+        "completion_tokens": 312,
+        "duration_ms": 2240,
+        "purpose": "synthesize verified research into 200-word board-pre-read brief with strategic frame"
+      }
+    },
+    {
+      "type": "agent.output",
+      "dt": 3,
+      "payload": {
+        "agent_name": "analyst-agent",
+        "output": "**EV Battery CTP/CTC Market - Board Pre-Read**\n\n**Players:** CATL leads at 35% global share (Qilin platform), BYD second at 17% (vertically integrated, not merchant), LG Energy Solution 13%, Panasonic 6%, Samsung SDI 5%. The market is consolidating.\n\n**Cost:** Pack-level cost has fallen from $115/kWh (2022) to $82/kWh (2025), with a clear trajectory toward $70-72/kWh by 2027 per BNEF. The $100/kWh barrier - long held as the threshold for EV TCO parity with ICE - was decisively breached in 2024.\n\n**Tech direction:** Structural battery (cell-to-chassis) is the 2026-2028 frontier. Tesla, BYD, and Leapmotor have shipping products. Manufacturers claim 30-40% parts reduction, though this is vendor-asserted rather than independently measured. CTC reduces unit cost but creates customer lock-in to a single vendor stack and complicates collision repair.\n\n**Geopolitical risk:** China supplies ~78% of cells globally and ~62% of finished CTP/CTC packs. The U.S. Inflation Reduction Act Section 30D and the EU Critical Raw Materials Act both restrict China-origin content for compliance, creating real near-term pressure on non-China supply build-out (LGES, Panasonic, Samsung SDI).\n\n*Source-verified by independent peer-review pass; one figure corrected from initial draft.*",
+        "brief_word_count": 206,
+        "corrections_integrated": 1,
+        "qualifications_integrated": 1,
+        "peer_reviewed": true
+      }
+    },
+    {
+      "type": "cost.record",
+      "dt": 2,
+      "payload": {
+        "total_tokens": 3246,
+        "total_cost_usd": 0.026,
+        "model": "gpt-4o",
+        "agents_invoked": [
+          "researcher-agent",
+          "fact-verifier",
+          "analyst-agent"
+        ],
+        "resolution": "Board-quality 206-word executive brief delivered after research, peer-review verification (1 material correction), and synthesis. Demonstrates the value of fact-verifier in catching the cell-share-vs-pack-share conflation that would have shipped to leadership unchecked."
+      }
+    }
+  ]
+}
