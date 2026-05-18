@@ -2,14 +2,31 @@ from __future__ import annotations
 
 import time
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 from ._utils import safe_serialize
+from ._handoff import scrub_context
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
+from ....attestation._hash import compute_hash
 
 log = logging.getLogger(__name__)
+
+# CrewAI's built-in delegation tools (case-insensitive substring match).
+# https://docs.crewai.com/concepts/agents#agent-delegation
+_DELEGATION_TOOL_PATTERNS: Tuple[str, ...] = (
+    "delegate work to coworker",
+    "ask question to coworker",
+)
+
+
+def _is_delegation_tool(tool_name: Optional[str]) -> bool:
+    if not tool_name:
+        return False
+    low = tool_name.lower()
+    return any(pat in low for pat in _DELEGATION_TOOL_PATTERNS)
+
 
 try:
     from crewai.events import BaseEventListener as _BaseEventListener  # pyright: ignore[reportMissingImports]
@@ -43,9 +60,13 @@ class CrewAIAdapter(FrameworkAdapter):
         self._current_task_span_id: Optional[str] = None
         self._agent_span_ids: Dict[str, str] = {}
         self._current_agent_span_id: Optional[str] = None
+        self._current_agent_role: Optional[str] = None
         self._tool_span_ids: Dict[str, str] = {}
         self._timers: Dict[str, int] = {}
         self._llm_in_flight_model: Optional[str] = None
+        # Delegation chain bookkeeping (hierarchical crews).
+        self._delegation_seq: int = 0
+        self._delegation_chain: List[Tuple[str, str]] = []
 
     @staticmethod
     def _llm_timer_key(event: Any) -> str:
@@ -198,8 +219,11 @@ class CrewAIAdapter(FrameworkAdapter):
             self._current_task_span_id = None
             self._agent_span_ids.clear()
             self._current_agent_span_id = None
+            self._current_agent_role = None
             self._tool_span_ids.clear()
             self._timers.clear()
+            self._delegation_seq = 0
+            self._delegation_chain.clear()
         if collector is not None:
             collector.flush()
 
@@ -326,6 +350,7 @@ class CrewAIAdapter(FrameworkAdapter):
         with self._lock:
             self._agent_span_ids[agent_role] = span_id
             self._current_agent_span_id = span_id
+            self._current_agent_role = agent_role
             parent = self._current_task_span_id or self._crew_span_id
         payload = self._payload(agent_role=agent_role)
         # Capture manager-agent context so hierarchical crews are visible.
@@ -383,6 +408,72 @@ class CrewAIAdapter(FrameworkAdapter):
     # Delegation / handoff (hierarchical crews)
     # ------------------------------------------------------------------
 
+    def _next_delegation_seq(self, from_agent: str, to_agent: str) -> int:
+        """Bump the delegation counter and record the (from, to) pair.
+
+        Returns the new sequence number. Bookkeeping protected by ``self._lock``.
+        """
+        with self._lock:
+            self._delegation_seq += 1
+            self._delegation_chain.append((from_agent, to_agent))
+            return self._delegation_seq
+
+    @staticmethod
+    def _extract_delegation_args(tool_args: Any) -> Dict[str, Any]:
+        """Pull ``task`` / ``context`` / ``coworker`` out of whatever crewai passed in.
+
+        ``tool_args`` may be a dict, a JSON-encoded string, or ``None``.
+        """
+        if tool_args is None:
+            return {}
+        if isinstance(tool_args, dict):
+            return tool_args
+        if isinstance(tool_args, str):
+            import json
+
+            try:
+                parsed = json.loads(tool_args)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (ValueError, TypeError):
+                pass
+        return {}
+
+    def _emit_delegation_from_tool(self, event: Any, tool_name: str, tool_span_id: str) -> None:
+        """Emit ``agent.handoff`` for a built-in coworker-delegation tool call.
+
+        Bridges the gap between crewai versions: newer versions fire
+        ``AgentDelegationStartedEvent`` which we handle below; older
+        versions only emit the tool call, so we synthesize the handoff
+        from the tool args.
+        """
+        tool_args = self._extract_delegation_args(getattr(event, "tool_args", None))
+        to_agent = str(tool_args.get("coworker") or "unknown")
+        from_agent = self._current_agent_role or "unknown"
+        seq = self._next_delegation_seq(from_agent, to_agent)
+
+        summary = scrub_context(
+            {
+                "task": tool_args.get("task"),
+                "context": tool_args.get("context"),
+            }
+        )
+        payload = self._payload(
+            from_agent=from_agent,
+            to_agent=to_agent,
+            reason="delegation",
+            delegation_seq=seq,
+            tool_name=tool_name,
+        )
+        if summary:
+            try:
+                payload["handoff_context_hash"] = compute_hash(summary)
+            except TypeError:
+                payload["handoff_context_hash"] = compute_hash({"_repr": repr(summary)})
+            if self._config.capture_content:
+                payload["context"] = summary
+        self._fire("agent.handoff", payload, parent_span_id=tool_span_id)
+
     def _on_delegation_started(self, source: Any, event: Any) -> None:
         from_role = (
             getattr(event, "from_agent", None)
@@ -396,8 +487,15 @@ class CrewAIAdapter(FrameworkAdapter):
             or getattr(event, "target_agent", None)
             or "worker"
         )
+        seq = self._next_delegation_seq(str(from_role), str(to_role))
         task_name = self._get_task_name(event) or getattr(event, "description", "") or ""
-        payload = self._payload(from_agent=str(from_role), to_agent=str(to_role), phase="start")
+        payload = self._payload(
+            from_agent=str(from_role),
+            to_agent=str(to_role),
+            phase="start",
+            reason="delegation",
+            delegation_seq=seq,
+        )
         if task_name:
             payload["task"] = str(task_name)[:200]
         self._set_if_capturing(payload, "context", safe_serialize(getattr(event, "context", None)))
@@ -468,6 +566,12 @@ class CrewAIAdapter(FrameworkAdapter):
         payload = self._payload(tool_name=tool_name)
         self._set_if_capturing(payload, "input", safe_serialize(getattr(event, "tool_args", None)))
         self._fire("tool.call", payload, span_id=span_id, parent_span_id=self._leaf_parent())
+
+        # Detect delegation invoked via the built-in coworker tools — older
+        # crewai versions don't fire typed delegation events, so without this
+        # the handoff is invisible in the trace.
+        if _is_delegation_tool(tool_name):
+            self._emit_delegation_from_tool(event, tool_name, span_id)
 
     def _on_tool_finished(self, source: Any, event: Any) -> None:
         tool_name = getattr(event, "tool_name", None) or "unknown"

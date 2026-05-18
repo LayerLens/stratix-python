@@ -842,3 +842,127 @@ class TestAgentExecutionLifecycle:
         # LLM event should be parented to agent execution
         model_invoke = find_event(events, "model.invoke")
         assert model_invoke["parent_span_id"] == agent_span
+
+
+class TestDelegation:
+    """Delegation-chain tracking — bridges crewai versions whose typed
+    AgentDelegationStartedEvent isn't fired by emitting agent.handoff
+    from the built-in coworker-delegation tool calls.
+    """
+
+    def _begin_crew_with_agent(self, adapter, role: str = "manager"):
+        adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
+        adapter._on_agent_execution_started(None, AgentExecutionStartedEvent.model_construct(agent_role=role))
+
+    def _end_crew(self, adapter):
+        to = TaskOutput(description="t", raw="ok", agent="R")
+        adapter._on_crew_completed(None, CrewKickoffCompletedEvent(crew_name="C", output=to))
+
+    def test_delegate_work_to_coworker_emits_handoff(self, adapter_and_trace):
+        adapter, uploaded = adapter_and_trace
+        self._begin_crew_with_agent(adapter, role="manager")
+
+        evt = ToolUsageStartedEvent(
+            tool_name="Delegate work to coworker",
+            tool_args={
+                "task": "Research the latest AI safety papers",
+                "coworker": "researcher",
+                "context": "Focus on alignment work",
+            },
+            agent_key="manager_1",
+        )
+        adapter._on_tool_started(None, evt)
+        self._end_crew(adapter)
+
+        handoff = find_event(uploaded["events"], "agent.handoff")
+        assert handoff["payload"]["from_agent"] == "manager"
+        assert handoff["payload"]["to_agent"] == "researcher"
+        assert handoff["payload"]["reason"] == "delegation"
+        assert handoff["payload"]["delegation_seq"] == 1
+        assert handoff["payload"]["tool_name"] == "Delegate work to coworker"
+        assert handoff["payload"]["handoff_context_hash"].startswith("sha256:")
+
+    def test_ask_question_variant_also_detected(self, adapter_and_trace):
+        adapter, uploaded = adapter_and_trace
+        self._begin_crew_with_agent(adapter, role="planner")
+
+        evt = ToolUsageStartedEvent(
+            tool_name="Ask question to coworker",
+            tool_args={"question": "What is the deadline?", "coworker": "manager", "context": ""},
+            agent_key="planner_1",
+        )
+        adapter._on_tool_started(None, evt)
+        self._end_crew(adapter)
+
+        handoff = find_event(uploaded["events"], "agent.handoff")
+        assert handoff["payload"]["from_agent"] == "planner"
+        assert handoff["payload"]["to_agent"] == "manager"
+        assert handoff["payload"]["reason"] == "delegation"
+
+    def test_regular_tool_does_not_emit_handoff(self, adapter_and_trace):
+        adapter, uploaded = adapter_and_trace
+        self._begin_crew_with_agent(adapter)
+
+        evt = ToolUsageStartedEvent(tool_name="web_search", tool_args="query", agent_key="r1")
+        adapter._on_tool_started(None, evt)
+        self._end_crew(adapter)
+
+        assert find_events(uploaded["events"], "agent.handoff") == []
+
+    def test_delegation_seq_increments_across_calls(self, adapter_and_trace):
+        adapter, uploaded = adapter_and_trace
+        self._begin_crew_with_agent(adapter, role="manager")
+
+        for coworker in ["researcher", "writer", "reviewer"]:
+            adapter._on_tool_started(
+                None,
+                ToolUsageStartedEvent(
+                    tool_name="Delegate work to coworker",
+                    tool_args={"task": f"task for {coworker}", "coworker": coworker},
+                    agent_key="manager_1",
+                ),
+            )
+        self._end_crew(adapter)
+
+        handoffs = find_events(uploaded["events"], "agent.handoff")
+        assert [h["payload"]["delegation_seq"] for h in handoffs] == [1, 2, 3]
+        assert [h["payload"]["to_agent"] for h in handoffs] == ["researcher", "writer", "reviewer"]
+
+    def test_string_tool_args_are_parsed(self, adapter_and_trace):
+        """crewai sometimes passes tool_args as a JSON string."""
+        adapter, uploaded = adapter_and_trace
+        self._begin_crew_with_agent(adapter, role="manager")
+
+        import json
+
+        adapter._on_tool_started(
+            None,
+            ToolUsageStartedEvent(
+                tool_name="Delegate work to coworker",
+                tool_args=json.dumps({"task": "t", "coworker": "researcher", "context": "c"}),
+                agent_key="manager_1",
+            ),
+        )
+        self._end_crew(adapter)
+
+        handoff = find_event(uploaded["events"], "agent.handoff")
+        assert handoff["payload"]["to_agent"] == "researcher"
+
+    def test_delegation_state_clears_on_end_trace(self, adapter_and_trace):
+        """After a crew completes, the delegation counter resets so the next
+        trace starts at 1 again."""
+        adapter, _ = adapter_and_trace
+        self._begin_crew_with_agent(adapter, role="manager")
+        adapter._on_tool_started(
+            None,
+            ToolUsageStartedEvent(
+                tool_name="Delegate work to coworker",
+                tool_args={"task": "t", "coworker": "researcher"},
+                agent_key="m1",
+            ),
+        )
+        self._end_crew(adapter)
+
+        # Inspect post-end state directly
+        assert adapter._delegation_seq == 0
+        assert adapter._delegation_chain == []
