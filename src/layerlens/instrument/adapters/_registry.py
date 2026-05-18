@@ -32,6 +32,10 @@ _FRAMEWORK_PACKAGES: Dict[str, str] = {
     "autogen": "autogen",
     "agno": "agno",
     "bedrock_agents": "boto3",
+    # MS Agent Framework ships as part of semantic-kernel; we share the
+    # detection key. Both adapters can coexist — they instrument different
+    # surface areas (filters vs AgentChat wrapping).
+    "ms_agent_framework": "semantic_kernel",
 }
 
 _PROVIDER_PACKAGES: Dict[str, str] = {
@@ -61,6 +65,10 @@ _FRAMEWORK_ADAPTERS: Dict[str, Tuple[str, str]] = {
     "autogen": ("layerlens.instrument.adapters.frameworks.autogen", "AutoGenAdapter"),
     "agno": ("layerlens.instrument.adapters.frameworks.agno", "AgnoAdapter"),
     "bedrock_agents": ("layerlens.instrument.adapters.frameworks.bedrock_agents", "BedrockAgentsAdapter"),
+    "ms_agent_framework": (
+        "layerlens.instrument.adapters.frameworks.ms_agent_framework",
+        "MSAgentFrameworkAdapter",
+    ),
 }
 
 
