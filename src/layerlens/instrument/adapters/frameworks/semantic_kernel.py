@@ -56,14 +56,19 @@ class SemanticKernelAdapter(FrameworkAdapter):
         if target is None:
             raise ValueError("SemanticKernelAdapter requires a target kernel: adapter.connect(target=kernel)")
 
-        from semantic_kernel.filters.filter_types import FilterTypes  # pyright: ignore[reportMissingImports]
+        from semantic_kernel.filters.filter_types import (
+            FilterTypes,
+        )  # pyright: ignore[reportMissingImports]
 
         self._kernel = target
 
         filters = [
             (FilterTypes.FUNCTION_INVOCATION, self._function_invocation_filter),
             (FilterTypes.PROMPT_RENDERING, self._prompt_rendering_filter),
-            (FilterTypes.AUTO_FUNCTION_INVOCATION, self._auto_function_invocation_filter),
+            (
+                FilterTypes.AUTO_FUNCTION_INVOCATION,
+                self._auto_function_invocation_filter,
+            ),
         ]
         for filter_type, handler in filters:
             target.add_filter(filter_type, handler)
@@ -83,7 +88,11 @@ class SemanticKernelAdapter(FrameworkAdapter):
                 try:
                     self._kernel.remove_filter(filter_type, filter_id=filter_id)
                 except Exception:
-                    log.debug("layerlens: could not remove SK filter %s/%s", filter_type, filter_id)
+                    log.debug(
+                        "layerlens: could not remove SK filter %s/%s",
+                        filter_type,
+                        filter_id,
+                    )
         self._unpatch_chat_services()
         self._filter_ids.clear()
         self._seen_plugins.clear()
@@ -129,7 +138,10 @@ class SemanticKernelAdapter(FrameworkAdapter):
             original = service._inner_get_chat_message_contents
 
             async def _traced_inner(
-                chat_history: Any, settings: Any, _orig: Any = original, _svc: Any = service
+                chat_history: Any,
+                settings: Any,
+                _orig: Any = original,
+                _svc: Any = service,
             ) -> Any:
                 span_id = adapter._new_span_id()
                 adapter._start_timer(span_id)
@@ -184,7 +196,10 @@ class SemanticKernelAdapter(FrameworkAdapter):
                     try:
                         service._inner_get_chat_message_contents = original
                     except Exception:
-                        log.debug("layerlens: could not restore SK chat service %s", service_id)
+                        log.debug(
+                            "layerlens: could not restore SK chat service %s",
+                            service_id,
+                        )
         self._patched_services.clear()
 
     def _extract_usage_from_response(self, result: Any) -> Dict[str, Any]:

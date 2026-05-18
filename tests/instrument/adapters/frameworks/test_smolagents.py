@@ -19,7 +19,9 @@ from smolagents.memory import Timing, CallbackRegistry  # noqa: E402
 from smolagents.monitoring import TokenUsage  # noqa: E402
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
-from layerlens.instrument.adapters.frameworks.smolagents import SmolAgentsAdapter  # noqa: E402
+from layerlens.instrument.adapters.frameworks.smolagents import (
+    SmolAgentsAdapter,
+)  # noqa: E402
 
 from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
@@ -59,7 +61,10 @@ def _make_action_step(
     code_action: Optional[str] = None,
     duration: float = 1.5,
 ) -> ActionStep:
-    step = ActionStep(step_number=step_number, timing=Timing(start_time=100.0, end_time=100.0 + duration))
+    step = ActionStep(
+        step_number=step_number,
+        timing=Timing(start_time=100.0, end_time=100.0 + duration),
+    )
     step.tool_calls = tool_calls
     step.token_usage = token_usage or TokenUsage(input_tokens=100, output_tokens=50)
     step.model_output = model_output
@@ -85,7 +90,12 @@ def _make_planning_step(
     return step
 
 
-def _simulate_run(adapter: SmolAgentsAdapter, agent: Any, task: str = "test task", steps: Optional[list] = None) -> Any:
+def _simulate_run(
+    adapter: SmolAgentsAdapter,
+    agent: Any,
+    task: str = "test task",
+    steps: Optional[list] = None,
+) -> Any:
     """Call the traced run wrapper, firing step callbacks in between."""
     if steps is None:
         steps = [_make_action_step()]

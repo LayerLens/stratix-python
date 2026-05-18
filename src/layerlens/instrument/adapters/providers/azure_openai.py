@@ -23,7 +23,10 @@ class AzureOpenAIProvider(OpenAIProvider):
     def extract_meta(response: Any) -> Dict[str, Any]:
         meta = OpenAIProvider.extract_meta(response)
         # Surface Azure-specific attributes when the SDK attaches them.
-        for attr, key in (("api_version", "azure_api_version"), ("deployment", "azure_deployment")):
+        for attr, key in (
+            ("api_version", "azure_api_version"),
+            ("deployment", "azure_deployment"),
+        ):
             val = getattr(response, attr, None)
             if val is not None:
                 meta[key] = val

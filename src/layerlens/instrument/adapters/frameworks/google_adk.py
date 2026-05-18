@@ -13,7 +13,9 @@ log = logging.getLogger(__name__)
 
 _HAS_GOOGLE_ADK = False
 try:
-    from google.adk.plugins import BasePlugin as _BasePlugin  # pyright: ignore[reportMissingImports]
+    from google.adk.plugins import (
+        BasePlugin as _BasePlugin,
+    )  # pyright: ignore[reportMissingImports]
 
     _HAS_GOOGLE_ADK = True
 except ImportError:
@@ -204,7 +206,13 @@ class GoogleADKAdapter(FrameworkAdapter):
         payload = self._payload(agent_name=name)
         user_content = getattr(callback_context, "user_content", None)
         self._set_if_capturing(payload, "input", safe_serialize(user_content))
-        self._fire("agent.input", payload, span_id=span_id, parent_span_id=self._run_span_id, span_name=f"agent:{name}")
+        self._fire(
+            "agent.input",
+            payload,
+            span_id=span_id,
+            parent_span_id=self._run_span_id,
+            span_name=f"agent:{name}",
+        )
 
     def _on_after_agent(self, agent: Any, callback_context: Any) -> None:
         name = _agent_name(agent)
@@ -218,7 +226,11 @@ class GoogleADKAdapter(FrameworkAdapter):
         if latency_ms is not None:
             payload["duration_ns"] = int(latency_ms * 1_000_000)
         self._fire(
-            "agent.output", payload, span_id=span_id, parent_span_id=self._run_span_id, span_name=f"agent:{name}"
+            "agent.output",
+            payload,
+            span_id=span_id,
+            parent_span_id=self._run_span_id,
+            span_name=f"agent:{name}",
         )
 
     # ------------------------------------------------------------------
@@ -297,11 +309,23 @@ class GoogleADKAdapter(FrameworkAdapter):
         self._set_if_capturing(call_payload, "input", safe_serialize(tool_args))
         if latency_ms is not None:
             call_payload["latency_ms"] = latency_ms
-        self._fire("tool.call", call_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
+        self._fire(
+            "tool.call",
+            call_payload,
+            span_id=span_id,
+            parent_span_id=parent,
+            span_name=f"tool:{tool_name}",
+        )
 
         result_payload = self._payload(tool_name=tool_name)
         self._set_if_capturing(result_payload, "output", safe_serialize(result))
-        self._fire("tool.result", result_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
+        self._fire(
+            "tool.result",
+            result_payload,
+            span_id=span_id,
+            parent_span_id=parent,
+            span_name=f"tool:{tool_name}",
+        )
 
     def _on_tool_error(self, tool: Any, tool_args: Any, tool_context: Any, error: Exception) -> None:
         tool_name = getattr(tool, "name", None) or "unknown"
@@ -367,7 +391,12 @@ class GoogleADKAdapter(FrameworkAdapter):
             if sid:
                 payload["session_id"] = str(sid)
 
-        self._fire("environment.config", payload, parent_span_id=self._run_span_id, span_name=f"config:{name}")
+        self._fire(
+            "environment.config",
+            payload,
+            parent_span_id=self._run_span_id,
+            span_name=f"config:{name}",
+        )
 
 
 # -- Plugin factory --------------------------------------------------------

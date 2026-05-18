@@ -41,7 +41,10 @@ class TestDiscoverInstalled:
         def fake_is_installed(pkg: str) -> bool:
             return pkg in installed
 
-        with patch("layerlens.instrument.adapters._registry._is_installed", side_effect=fake_is_installed):
+        with patch(
+            "layerlens.instrument.adapters._registry._is_installed",
+            side_effect=fake_is_installed,
+        ):
             result = discover_installed()
 
         assert "langchain" in result["frameworks"]
@@ -79,8 +82,12 @@ class TestAuto:
         fake_module = Mock()
         fake_module.LangChainCallbackHandler = fake_adapter_cls
 
-        with patch("layerlens.instrument.adapters._registry._is_installed", side_effect=fake_is_installed), patch(
-            "layerlens.instrument.adapters._registry.importlib.import_module", return_value=fake_module
+        with patch(
+            "layerlens.instrument.adapters._registry._is_installed",
+            side_effect=fake_is_installed,
+        ), patch(
+            "layerlens.instrument.adapters._registry.importlib.import_module",
+            return_value=fake_module,
         ):
             connected = auto(client)
 
@@ -99,7 +106,8 @@ class TestAuto:
         fake_module.CrewAIAdapter = fake_adapter_cls
 
         with patch("layerlens.instrument.adapters._registry._is_installed", return_value=True), patch(
-            "layerlens.instrument.adapters._registry.importlib.import_module", return_value=fake_module
+            "layerlens.instrument.adapters._registry.importlib.import_module",
+            return_value=fake_module,
         ):
             connected = auto(client, skip=["langchain"])
 
@@ -120,8 +128,12 @@ class TestAuto:
         fake_module = Mock()
         fake_module.LangChainCallbackHandler = broken_cls
 
-        with patch("layerlens.instrument.adapters._registry._is_installed", side_effect=fake_is_installed), patch(
-            "layerlens.instrument.adapters._registry.importlib.import_module", return_value=fake_module
+        with patch(
+            "layerlens.instrument.adapters._registry._is_installed",
+            side_effect=fake_is_installed,
+        ), patch(
+            "layerlens.instrument.adapters._registry.importlib.import_module",
+            return_value=fake_module,
         ):
             connected = auto(client)
 
@@ -139,8 +151,12 @@ class TestAuto:
         def fake_is_installed(pkg: str) -> bool:
             return pkg == "langchain_core"
 
-        with patch("layerlens.instrument.adapters._registry._is_installed", side_effect=fake_is_installed), patch(
-            "layerlens.instrument.adapters._registry.importlib.import_module", return_value=fake_module
+        with patch(
+            "layerlens.instrument.adapters._registry._is_installed",
+            side_effect=fake_is_installed,
+        ), patch(
+            "layerlens.instrument.adapters._registry.importlib.import_module",
+            return_value=fake_module,
         ):
             auto(client, capture_config=fake_config)
 

@@ -79,7 +79,12 @@ def generate_sample_traces() -> str:
             "metadata": {"model": "gpt-4o", "source": "trace-eval-sample"},
         },
         {
-            "input": [{"role": "user", "content": "Explain quantum computing in simple terms."}],
+            "input": [
+                {
+                    "role": "user",
+                    "content": "Explain quantum computing in simple terms.",
+                }
+            ],
             "output": "Quantum computing uses quantum bits (qubits) that can exist in multiple states simultaneously, enabling certain calculations to be performed much faster than classical computers.",
             "metadata": {"model": "gpt-4o", "source": "trace-eval-sample"},
         },
@@ -101,7 +106,11 @@ def main() -> None:
         logger.error("Failed to initialize client: %s", exc)
         sys.exit(1)
 
-    logger.info("Connected to LayerLens (org=%s, project=%s)", client.organization_id, client.project_id)
+    logger.info(
+        "Connected to LayerLens (org=%s, project=%s)",
+        client.organization_id,
+        client.project_id,
+    )
 
     created_trace_ids = []
     created_judge_id = None
@@ -157,7 +166,11 @@ def main() -> None:
         if not trace_eval:
             logger.error("Failed to create trace evaluation")
             sys.exit(1)
-        logger.info("Trace evaluation created: %s (status=%s)", trace_eval.id, getattr(trace_eval, "status", "unknown"))
+        logger.info(
+            "Trace evaluation created: %s (status=%s)",
+            trace_eval.id,
+            getattr(trace_eval, "status", "unknown"),
+        )
 
         # --- Step 5: Poll and fetch results ---
         logger.info("Step 5: Fetch results")
@@ -166,7 +179,12 @@ def main() -> None:
         if eval_results:
             logger.info("Got %d result(s)", len(eval_results))
             for r in eval_results:
-                logger.info("  Score: %s  Passed: %s  Reasoning: %s", r.score, r.passed, (r.reasoning or "")[:80])
+                logger.info(
+                    "  Score: %s  Passed: %s  Reasoning: %s",
+                    r.score,
+                    r.passed,
+                    (r.reasoning or "")[:80],
+                )
         else:
             logger.info("No results yet (evaluation may still be processing)")
 
@@ -179,7 +197,11 @@ def main() -> None:
                 logger.info("  Reasoning: %s", (result.reasoning or "")[:80])
                 if result.steps:
                     for step in result.steps:
-                        logger.info("    Tool: %s, Result: %s", step.tool, (step.result or "")[:80])
+                        logger.info(
+                            "    Tool: %s, Result: %s",
+                            step.tool,
+                            (step.result or "")[:80],
+                        )
                 else:
                     logger.info("  No steps in result")
             else:

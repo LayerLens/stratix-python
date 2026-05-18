@@ -84,7 +84,11 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
             try:
                 setattr(chat, method_name, original)
             except Exception:
-                log.debug("layerlens.ms_agent_framework: could not unwrap %s", method_name, exc_info=True)
+                log.debug(
+                    "layerlens.ms_agent_framework: could not unwrap %s",
+                    method_name,
+                    exc_info=True,
+                )
 
     # ------------------------------------------------------------------
     # Public API
@@ -184,7 +188,10 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
                 # Group-chat turn transition.
                 self._handoff_detector.detect(
                     msg_agent,
-                    context={"prev_agent": current_agent, "message": safe_serialize(message)},
+                    context={
+                        "prev_agent": current_agent,
+                        "message": safe_serialize(message),
+                    },
                     reason="group_chat_turn",
                 )
 

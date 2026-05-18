@@ -179,7 +179,13 @@ class StochasticProvider(SyntheticProvider):
                 )
         if category == "multi-agent":
             for j in range(max(1, parameters.get("agents", 2)) - 1):
-                events.append({"type": "agent.handoff", "from": f"agent_{j}", "to": f"agent_{j + 1}"})
+                events.append(
+                    {
+                        "type": "agent.handoff",
+                        "from": f"agent_{j}",
+                        "to": f"agent_{j + 1}",
+                    }
+                )
         events.append(
             {
                 "type": "model.invoke",

@@ -185,7 +185,12 @@ class TestGeneratorComponents:
             "model": "gpt-4o",
             "output": {
                 "replies": ["answer"],
-                "meta": [{"model": "gpt-4o", "usage": {"prompt_tokens": 100, "completion_tokens": 50}}],
+                "meta": [
+                    {
+                        "model": "gpt-4o",
+                        "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+                    }
+                ],
             },
         }
         base.update(overrides)
@@ -222,7 +227,10 @@ class TestGeneratorComponents:
         _simulate_pipeline(
             adapter._tracer,
             components=[
-                {"name": "c", "type": "haystack.components.generators.chat.openai.OpenAIChatGenerator"},
+                {
+                    "name": "c",
+                    "type": "haystack.components.generators.chat.openai.OpenAIChatGenerator",
+                },
             ],
         )
         assert len(find_events(uploaded["events"], "model.invoke")) == 1
@@ -249,7 +257,12 @@ class TestGeneratorComponents:
                     "type": "ChatGenerator",
                     "output": {
                         "replies": ["ok"],
-                        "meta": [{"model": "claude-3", "usage": {"prompt_tokens": 5, "completion_tokens": 3}}],
+                        "meta": [
+                            {
+                                "model": "claude-3",
+                                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+                            }
+                        ],
                     },
                 }
             ],
@@ -270,7 +283,12 @@ class TestToolComponents:
         _simulate_pipeline(
             adapter._tracer,
             components=[
-                {"name": "my_retriever", "type": "BM25Retriever", "input": {"q": "find"}, "output": {"docs": ["d1"]}},
+                {
+                    "name": "my_retriever",
+                    "type": "BM25Retriever",
+                    "input": {"q": "find"},
+                    "output": {"docs": ["d1"]},
+                },
             ],
         )
 
@@ -290,7 +308,12 @@ class TestToolComponents:
         _simulate_pipeline(
             adapter._tracer,
             components=[
-                {"name": "r", "type": "Retriever", "input": "secret", "output": "classified"},
+                {
+                    "name": "r",
+                    "type": "Retriever",
+                    "input": "secret",
+                    "output": "classified",
+                },
             ],
         )
         assert "input" not in find_event(uploaded["events"], "tool.call")["payload"]
@@ -315,7 +338,12 @@ class TestToolComponents:
         _simulate_pipeline(
             adapter._tracer,
             components=[
-                {"name": "pb", "type": "PromptBuilder", "input": {"tpl": "hi"}, "output": {"prompt": "hi"}},
+                {
+                    "name": "pb",
+                    "type": "PromptBuilder",
+                    "input": {"tpl": "hi"},
+                    "output": {"prompt": "hi"},
+                },
             ],
         )
         assert len(find_events(uploaded["events"], "tool.call")) == 1
@@ -375,7 +403,10 @@ class TestTraceIntegrity:
                 {
                     "name": "g",
                     "type": "ChatGenerator",
-                    "output": {"replies": ["ok"], "meta": [{"usage": {"prompt_tokens": 1, "completion_tokens": 1}}]},
+                    "output": {
+                        "replies": ["ok"],
+                        "meta": [{"usage": {"prompt_tokens": 1, "completion_tokens": 1}}],
+                    },
                 },
             ],
         )

@@ -68,7 +68,11 @@ class A2UIProtocolAdapter(BaseProtocolAdapter):
     ) -> None:
         self.emit(
             COMMERCE_UI_SURFACE_CREATED,
-            {"surface_id": surface_id, "surface_type": surface_type, "item_count": item_count},
+            {
+                "surface_id": surface_id,
+                "surface_type": surface_type,
+                "item_count": item_count,
+            },
         )
 
     def record_user_action(

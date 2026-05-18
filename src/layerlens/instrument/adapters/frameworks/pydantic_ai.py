@@ -10,7 +10,9 @@ from ..._capture_config import CaptureConfig
 log = logging.getLogger(__name__)
 
 try:
-    from pydantic_ai import Agent as _AgentCheck  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from pydantic_ai import (
+        Agent as _AgentCheck,
+    )  # pyright: ignore[reportMissingImports]  # noqa: F401
 
     _HAS_PYDANTIC_AI = True
     del _AgentCheck
@@ -53,7 +55,9 @@ class PydanticAIAdapter(FrameworkAdapter):
         if target is None:
             raise ValueError("PydanticAIAdapter requires a target agent: adapter.connect(target=agent)")
 
-        from pydantic_ai.capabilities.hooks import Hooks  # pyright: ignore[reportMissingImports]
+        from pydantic_ai.capabilities.hooks import (
+            Hooks,
+        )  # pyright: ignore[reportMissingImports]
 
         self._target = target
         self._hooks = Hooks()

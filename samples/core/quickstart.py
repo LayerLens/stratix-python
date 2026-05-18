@@ -52,7 +52,9 @@ def main() -> None:
 
     try:
         # --- 4. Run a trace evaluation
-        evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge.id)
+        evaluation = client.trace_evaluations.create(
+            trace_id=trace_id, judge_id=judge.id
+        )
         print(f"Evaluation started: {evaluation.id}")
 
         # --- 5. Poll for results

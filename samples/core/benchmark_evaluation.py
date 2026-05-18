@@ -134,7 +134,9 @@ def main() -> None:
         logger.error("Failed to initialize client: %s", exc)
         sys.exit(1)
 
-    logger.info("Connected (org=%s, project=%s)", client.organization_id, client.project_id)
+    logger.info(
+        "Connected (org=%s, project=%s)", client.organization_id, client.project_id
+    )
 
     # --- Step 1: Find model and benchmark ---
     logger.info("=" * 60)
@@ -177,7 +179,9 @@ def main() -> None:
     logger.info("=" * 60)
 
     if not evaluation.is_success:
-        logger.warning("Evaluation did not succeed (status=%s). No results.", evaluation.status)
+        logger.warning(
+            "Evaluation did not succeed (status=%s). No results.", evaluation.status
+        )
         return
 
     # Page 1
@@ -187,7 +191,11 @@ def main() -> None:
         page_size=args.page_size,
     )
     if results_page and results_page.results:
-        total = results_page.metrics.total_count if hasattr(results_page, "metrics") and results_page.metrics else "?"
+        total = (
+            results_page.metrics.total_count
+            if hasattr(results_page, "metrics") and results_page.metrics
+            else "?"
+        )
         logger.info("  Page 1 of results (%s total):", total)
         for r in results_page.results:
             score = getattr(r, "score", "N/A")
@@ -196,7 +204,11 @@ def main() -> None:
                 if hasattr(r, "prompt") and r.prompt and len(r.prompt) > 60
                 else getattr(r, "prompt", "")
             )
-            logger.info("    score=%.4f  prompt=%s", score if isinstance(score, (int, float)) else 0, prompt_preview)
+            logger.info(
+                "    score=%.4f  prompt=%s",
+                score if isinstance(score, (int, float)) else 0,
+                prompt_preview,
+            )
     else:
         logger.info("  No results returned.")
 
@@ -205,7 +217,11 @@ def main() -> None:
     logger.info("  Total results (all pages): %d", len(all_results))
 
     if all_results:
-        scores = [r.score for r in all_results if hasattr(r, "score") and isinstance(r.score, (int, float))]
+        scores = [
+            r.score
+            for r in all_results
+            if hasattr(r, "score") and isinstance(r.score, (int, float))
+        ]
         if scores:
             avg = sum(scores) / len(scores)
             logger.info("  Average score: %.4f", avg)

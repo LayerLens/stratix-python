@@ -48,7 +48,11 @@ class AP2ProtocolAdapter(BaseProtocolAdapter):
 
     def connect(self, target: Any = None, **kwargs: Any) -> Any:  # noqa: ARG002
         self._client = target
-        for method in ("create_intent_mandate", "sign_payment_mandate", "issue_receipt"):
+        for method in (
+            "create_intent_mandate",
+            "sign_payment_mandate",
+            "issue_receipt",
+        ):
             if hasattr(target, method):
                 orig = getattr(target, method)
                 self._originals[method] = orig

@@ -24,10 +24,14 @@ def main() -> None:
         return
 
     if not any(os.environ.get(k) for k in ("AWS_ACCESS_KEY_ID", "AWS_PROFILE")):
-        print("Configure AWS credentials (AWS_ACCESS_KEY_ID or AWS_PROFILE) to run against Bedrock.")
+        print(
+            "Configure AWS credentials (AWS_ACCESS_KEY_ID or AWS_PROFILE) to run against Bedrock."
+        )
         return
 
-    client = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+    client = boto3.client(
+        "bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1")
+    )
     instrument_bedrock(client)
     try:
         with capture_events("bedrock_invoke"):

@@ -11,7 +11,9 @@ from ..._capture_config import CaptureConfig
 log = logging.getLogger(__name__)
 
 try:
-    from autogen_core import EVENT_LOGGER_NAME as _EVENT_LOGGER_NAME  # pyright: ignore[reportMissingImports]
+    from autogen_core import (
+        EVENT_LOGGER_NAME as _EVENT_LOGGER_NAME,
+    )  # pyright: ignore[reportMissingImports]
 
     _HAS_AUTOGEN = True
 except ImportError:
@@ -232,7 +234,12 @@ class AutoGenAdapter(FrameworkAdapter):
         conv_id = str(topic_id) if topic_id is not None else f"{sender}->{receiver}"
         state = self._conversations.setdefault(
             conv_id,
-            {"participants": set(), "turn_count": 0, "message_count": 0, "last_sender": None},
+            {
+                "participants": set(),
+                "turn_count": 0,
+                "message_count": 0,
+                "last_sender": None,
+            },
         )
         if sender is not None:
             state["participants"].add(str(sender))
@@ -288,7 +295,7 @@ class AutoGenAdapter(FrameworkAdapter):
         exc = _get_field(event, "exception")
         payload = self._payload(
             error=str(exc) if exc else "unknown error",
-            error_type=type(exc).__name__ if isinstance(exc, BaseException) else "Exception",
+            error_type=(type(exc).__name__ if isinstance(exc, BaseException) else "Exception"),
         )
         if agent_id is not None:
             payload["agent_id"] = str(agent_id)
@@ -299,7 +306,7 @@ class AutoGenAdapter(FrameworkAdapter):
         exc = _get_field(event, "exception")
         payload = self._payload(
             error=str(exc) if exc else "construction failed",
-            error_type=type(exc).__name__ if isinstance(exc, BaseException) else "Exception",
+            error_type=(type(exc).__name__ if isinstance(exc, BaseException) else "Exception"),
         )
         if agent_id is not None:
             payload["agent_id"] = str(agent_id)

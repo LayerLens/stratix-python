@@ -33,7 +33,11 @@ def trace(
                 try:
                     collector.emit(
                         "agent.input",
-                        {"name": span_name, "input": _capture_input(args, kwargs), **(metadata or {})},
+                        {
+                            "name": span_name,
+                            "input": _capture_input(args, kwargs),
+                            **(metadata or {}),
+                        },
                         span_id=root_span_id,
                         span_name=span_name,
                     )
@@ -75,7 +79,11 @@ def trace(
                 try:
                     collector.emit(
                         "agent.input",
-                        {"name": span_name, "input": _capture_input(args, kwargs), **(metadata or {})},
+                        {
+                            "name": span_name,
+                            "input": _capture_input(args, kwargs),
+                            **(metadata or {}),
+                        },
                         span_id=root_span_id,
                         span_name=span_name,
                     )

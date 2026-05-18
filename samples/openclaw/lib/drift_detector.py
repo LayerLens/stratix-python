@@ -124,8 +124,12 @@ class DriftDetector:
         self.min_observations = min_observations
         self.latency_sigma_threshold = latency_sigma_threshold or sigma_threshold
 
-        self._score_stats: dict[tuple[str, str], _RollingStats] = defaultdict(lambda: _RollingStats(window_size))
-        self._latency_stats: dict[tuple[str, str], _RollingStats] = defaultdict(lambda: _RollingStats(window_size))
+        self._score_stats: dict[tuple[str, str], _RollingStats] = defaultdict(
+            lambda: _RollingStats(window_size)
+        )
+        self._latency_stats: dict[tuple[str, str], _RollingStats] = defaultdict(
+            lambda: _RollingStats(window_size)
+        )
         self._alerts: list[DriftAlert] = []
 
     def record_and_check(

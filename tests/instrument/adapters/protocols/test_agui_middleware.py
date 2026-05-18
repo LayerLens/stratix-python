@@ -87,7 +87,10 @@ class TestASGIMiddleware:
         payload = adapter.emit.call_args.args[1]
         assert payload["agui_event"] == "RUN_STARTED"
         # Original messages still flow to the real send.
-        assert [m["type"] for m in sent] == ["http.response.start", "http.response.body"]
+        assert [m["type"] for m in sent] == [
+            "http.response.start",
+            "http.response.body",
+        ]
 
     def test_non_sse_response_not_processed(self):
         adapter = MagicMock()

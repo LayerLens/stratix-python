@@ -13,7 +13,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from adapters._shared import capture_events  # type: ignore[import-not-found]
 
-from layerlens.instrument.adapters.providers.openai import instrument_openai, uninstrument_openai
+from layerlens.instrument.adapters.providers.openai import (
+    instrument_openai,
+    uninstrument_openai,
+)
 
 
 def main() -> None:

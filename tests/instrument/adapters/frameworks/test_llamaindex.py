@@ -182,7 +182,10 @@ class TestLLMChatEvents:
         msg = ChatMessage(role=MessageRole.USER, content="What is Python?")
         response = ChatResponse(
             message=ChatMessage(role=MessageRole.ASSISTANT, content="Python is a programming language."),
-            raw={"model": "gpt-4", "usage": {"prompt_tokens": 15, "completion_tokens": 10}},
+            raw={
+                "model": "gpt-4",
+                "usage": {"prompt_tokens": 15, "completion_tokens": 10},
+            },
         )
 
         event = LLMChatEndEvent(messages=[msg], response=response, span_id=root)
@@ -205,7 +208,10 @@ class TestLLMChatEvents:
         msg = ChatMessage(role=MessageRole.USER, content="hi")
         response = ChatResponse(
             message=ChatMessage(role=MessageRole.ASSISTANT, content="hello"),
-            raw={"model": "gpt-4o", "usage": {"prompt_tokens": 5, "completion_tokens": 3}},
+            raw={
+                "model": "gpt-4o",
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+            },
         )
 
         event = LLMChatEndEvent(messages=[msg], response=response, span_id=root)
@@ -238,7 +244,10 @@ class TestLLMChatEvents:
         # Send end event
         response = ChatResponse(
             message=ChatMessage(role=MessageRole.ASSISTANT, content="hello"),
-            raw={"model": "gpt-4", "usage": {"prompt_tokens": 5, "completion_tokens": 3}},
+            raw={
+                "model": "gpt-4",
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+            },
         )
         end_event = LLMChatEndEvent(
             messages=[ChatMessage(role=MessageRole.USER, content="hi")],
@@ -297,7 +306,10 @@ class TestLLMCompletionEvents:
 
         response = CompletionResponse(
             text="Python is great!",
-            raw={"model": "gpt-3.5-turbo-instruct", "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+            raw={
+                "model": "gpt-3.5-turbo-instruct",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            },
         )
         event = LLMCompletionEndEvent(prompt="What is Python?", response=response, span_id=root)
         _emit_event_via_dispatcher(event, span_id=root)
@@ -588,7 +600,10 @@ class TestFullFlow:
         msgs = [ChatMessage(role=MessageRole.USER, content="What is RAG?")]
         response = ChatResponse(
             message=ChatMessage(role=MessageRole.ASSISTANT, content="RAG is a technique..."),
-            raw={"model": "gpt-4", "usage": {"prompt_tokens": 50, "completion_tokens": 30}},
+            raw={
+                "model": "gpt-4",
+                "usage": {"prompt_tokens": 50, "completion_tokens": 30},
+            },
         )
         _emit_event_via_dispatcher(
             LLMChatEndEvent(messages=msgs, response=response, span_id=root),
@@ -597,7 +612,11 @@ class TestFullFlow:
 
         # 4. Query end
         _emit_event_via_dispatcher(
-            QueryEndEvent(query="What is RAG?", response=LlamaResponse(response="RAG is a technique..."), span_id=root),
+            QueryEndEvent(
+                query="What is RAG?",
+                response=LlamaResponse(response="RAG is a technique..."),
+                span_id=root,
+            ),
             span_id=root,
         )
 
@@ -623,7 +642,10 @@ class TestCaptureConfigGating:
         msg = ChatMessage(role=MessageRole.USER, content="hi")
         response = ChatResponse(
             message=ChatMessage(role=MessageRole.ASSISTANT, content="hello"),
-            raw={"model": "gpt-4", "usage": {"prompt_tokens": 5, "completion_tokens": 3}},
+            raw={
+                "model": "gpt-4",
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+            },
         )
         _emit_event_via_dispatcher(
             LLMChatEndEvent(messages=[msg], response=response, span_id=root),
@@ -700,7 +722,10 @@ class TestConcurrency:
                 msg = ChatMessage(role=MessageRole.USER, content=f"Query {thread_id}")
                 response = ChatResponse(
                     message=ChatMessage(role=MessageRole.ASSISTANT, content=f"Answer {thread_id}"),
-                    raw={"model": "gpt-4", "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+                    raw={
+                        "model": "gpt-4",
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+                    },
                 )
                 _emit_event_via_dispatcher(
                     LLMChatEndEvent(messages=[msg], response=response, span_id=root),

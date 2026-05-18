@@ -27,7 +27,10 @@ if TYPE_CHECKING:
     from .resources.integrations import Integrations, AsyncIntegrations
     from .resources.evaluation_spaces import EvaluationSpaces, AsyncEvaluationSpaces
     from .resources.trace_evaluations import TraceEvaluations, AsyncTraceEvaluations
-    from .resources.judge_optimizations import JudgeOptimizations, AsyncJudgeOptimizations
+    from .resources.judge_optimizations import (
+        JudgeOptimizations,
+        AsyncJudgeOptimizations,
+    )
 
 
 __all__ = ["Stratix", "Client"]

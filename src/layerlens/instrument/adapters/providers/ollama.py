@@ -11,7 +11,18 @@ from typing import Any, Dict
 
 from ._base_provider import MonkeyPatchProvider
 
-_CAPTURE_PARAMS = frozenset({"model", "messages", "prompt", "stream", "options", "format", "template", "keep_alive"})
+_CAPTURE_PARAMS = frozenset(
+    {
+        "model",
+        "messages",
+        "prompt",
+        "stream",
+        "options",
+        "format",
+        "template",
+        "keep_alive",
+    }
+)
 
 
 class OllamaProvider(MonkeyPatchProvider):
@@ -31,13 +42,19 @@ class OllamaProvider(MonkeyPatchProvider):
         if isinstance(response, dict):
             msg = response.get("message")
             if isinstance(msg, dict):
-                return {"role": msg.get("role", "assistant"), "content": msg.get("content", "")}
+                return {
+                    "role": msg.get("role", "assistant"),
+                    "content": msg.get("content", ""),
+                }
             # ``generate`` returns {"response": "..."}
             if "response" in response:
                 return {"role": "assistant", "content": response.get("response", "")}
             # ``embeddings`` returns {"embedding": [...]}
             if "embedding" in response:
-                return {"type": "embedding", "dim": len(response.get("embedding") or [])}
+                return {
+                    "type": "embedding",
+                    "dim": len(response.get("embedding") or []),
+                }
         return None
 
     @staticmethod

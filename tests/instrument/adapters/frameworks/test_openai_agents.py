@@ -32,7 +32,9 @@ from agents.tracing.span_data import (  # noqa: E402
 )
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
-from layerlens.instrument.adapters.frameworks.openai_agents import OpenAIAgentsAdapter  # noqa: E402
+from layerlens.instrument.adapters.frameworks.openai_agents import (
+    OpenAIAgentsAdapter,
+)  # noqa: E402
 
 from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
@@ -225,7 +227,13 @@ class TestAgentSpans:
         adapter.on_span_start(parent)
 
         # Child agent
-        child = _make_span(adapter, "t_nested", "s_child", AgentSpanData(name="researcher"), parent_id="s_parent")
+        child = _make_span(
+            adapter,
+            "t_nested",
+            "s_child",
+            AgentSpanData(name="researcher"),
+            parent_id="s_parent",
+        )
         child.start()
         adapter.on_span_start(child)
         child.finish()
@@ -554,7 +562,12 @@ class TestFullAgentFlow:
         adapter.on_trace_start(trace)
 
         # Agent span
-        agent = _make_span(adapter, "t_flow", "s_agent", AgentSpanData(name="triage", tools=["classify"]))
+        agent = _make_span(
+            adapter,
+            "t_flow",
+            "s_agent",
+            AgentSpanData(name="triage", tools=["classify"]),
+        )
         agent.start()
         adapter.on_span_start(agent)
 

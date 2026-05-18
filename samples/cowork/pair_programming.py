@@ -60,7 +60,9 @@ TEST_CASES: list[dict[str, Any]] = [
     {
         "label": "Poor: incorrect information",
         "input": "Explain the difference between a list and a tuple in Python.",
-        "output": ("Lists and tuples are the same thing in Python. They both use square brackets and are mutable."),
+        "output": (
+            "Lists and tuples are the same thing in Python. They both use square brackets and are mutable."
+        ),
         "expected_quality": "low",
     },
 ]
@@ -185,11 +187,20 @@ def main() -> None:
             print(f"--- Round {round_num} ---\n")
 
             # Rubric Tester: run test suite
-            print(f"[RubricTester] Testing judge {judge_id} with {len(TEST_CASES)} cases...")
+            print(
+                f"[RubricTester] Testing judge {judge_id} with {len(TEST_CASES)} cases..."
+            )
             results = run_test_suite(client, judge_id, round_num)
 
             for r in results:
-                marker = "PASS" if ((r["score"] >= QUALITY_THRESHOLD) == (r["expected_quality"] == "high")) else "MISS"
+                marker = (
+                    "PASS"
+                    if (
+                        (r["score"] >= QUALITY_THRESHOLD)
+                        == (r["expected_quality"] == "high")
+                    )
+                    else "MISS"
+                )
                 print(
                     f'[RubricTester]   {marker} "{r["label"]}" '
                     f"score={r['score']:.2f} (expected={r['expected_quality']})"
@@ -204,7 +215,9 @@ def main() -> None:
 
             if round_num - 1 < len(refined_goals):
                 new_goal = refined_goals[round_num - 1]
-                print(f"\n[RubricWriter] Refining judge goal (round {round_num + 1})...")
+                print(
+                    f"\n[RubricWriter] Refining judge goal (round {round_num + 1})..."
+                )
                 client.judges.update(judge_id, evaluation_goal=new_goal)
                 print(f'[RubricWriter] Updated goal: "{new_goal[:80]}..."\n')
             else:

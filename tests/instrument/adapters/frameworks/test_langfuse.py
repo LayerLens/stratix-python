@@ -696,7 +696,11 @@ class TestErrorIsolation:
         mock_http.post.side_effect = _post_side_effect
 
         events = [
-            {"event_type": "agent.input", "span_id": "s1", "payload": {"content": "hi"}},
+            {
+                "event_type": "agent.input",
+                "span_id": "s1",
+                "payload": {"content": "hi"},
+            },
         ]
         count = adapter.export_traces(
             events_by_trace={

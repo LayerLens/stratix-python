@@ -281,7 +281,11 @@ class AgentforceAdapter(FrameworkAdapter):
                 if start_time and (max_cursor is None or str(start_time) > str(max_cursor)):
                     max_cursor = str(start_time)
             except Exception:
-                log.warning("layerlens: error importing session %s", session.get("Id"), exc_info=True)
+                log.warning(
+                    "layerlens: error importing session %s",
+                    session.get("Id"),
+                    exc_info=True,
+                )
                 summary["errors"] += 1
 
         if max_cursor is not None:
@@ -314,14 +318,24 @@ class AgentforceAdapter(FrameworkAdapter):
                 channel=session.get("Channel", ""),
                 start_time=session.get("StartTime", ""),
             )
-            self._emit("agent.input", payload, span_id=root, parent_span_id=None, span_name="session")
+            self._emit(
+                "agent.input",
+                payload,
+                span_id=root,
+                parent_span_id=None,
+                span_name="session",
+            )
             emitted += 1
 
             # -- interaction steps --
             try:
                 interactions = conn.query(_SOQL_INTERACTIONS.format(session_id=session_id))
             except Exception:
-                log.warning("layerlens: failed to query interactions for %s", session_id, exc_info=True)
+                log.warning(
+                    "layerlens: failed to query interactions for %s",
+                    session_id,
+                    exc_info=True,
+                )
                 interactions = []
 
             for step in interactions:
@@ -384,7 +398,12 @@ class AgentforceAdapter(FrameworkAdapter):
             payload["tokens_total"] = prompt_tokens + completion_tokens
         self._set_if_capturing(payload, "messages", truncate(step.get("Input"), 4000))
         self._set_if_capturing(payload, "output_message", truncate(step.get("Output"), 4000))
-        self._emit("model.invoke", payload, span_id=span_id, span_name=step.get("StepName", "llm_call"))
+        self._emit(
+            "model.invoke",
+            payload,
+            span_id=span_id,
+            span_name=step.get("StepName", "llm_call"),
+        )
         emitted += 1
 
         if prompt_tokens or completion_tokens:
@@ -406,8 +425,16 @@ class AgentforceAdapter(FrameworkAdapter):
             step_type=step.get("StepType", ""),
         )
         self._set_if_capturing(payload, "input", truncate(step.get("ToolInput") or step.get("Input"), 4000))
-        self._set_if_capturing(payload, "output", truncate(step.get("ToolOutput") or step.get("Output"), 4000))
-        self._emit("tool.call", payload, span_name=step.get("ToolName") or step.get("StepName", "tool_call"))
+        self._set_if_capturing(
+            payload,
+            "output",
+            truncate(step.get("ToolOutput") or step.get("Output"), 4000),
+        )
+        self._emit(
+            "tool.call",
+            payload,
+            span_name=step.get("ToolName") or step.get("StepName", "tool_call"),
+        )
         return 1
 
     def _on_handoff_step(self, step: Dict[str, Any]) -> int:
@@ -430,7 +457,11 @@ class AgentforceAdapter(FrameworkAdapter):
         try:
             records = conn.query(_SOQL_AGENT_CONFIG.format(agent_id=agent_id))
         except Exception:
-            log.debug("layerlens: could not fetch agent config for %s", agent_id, exc_info=True)
+            log.debug(
+                "layerlens: could not fetch agent config for %s",
+                agent_id,
+                exc_info=True,
+            )
             return 0
         if not records:
             return 0

@@ -98,7 +98,10 @@ def inject_headers(headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     except ImportError:
         pass
     except Exception:  # pragma: no cover — defensive against OTel version drift
-        log.debug("layerlens._w3c: OpenTelemetry propagator raised; falling back", exc_info=True)
+        log.debug(
+            "layerlens._w3c: OpenTelemetry propagator raised; falling back",
+            exc_info=True,
+        )
 
     collector = _current_collector.get()
     span_id = _current_span_id.get()

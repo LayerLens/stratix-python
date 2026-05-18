@@ -18,14 +18,23 @@ from layerlens.instrument.adapters.protocols.ap2 import (
 
 class _FakeAP2Client:
     def create_intent_mandate(
-        self, *, mandate_id: str, amount: float, merchant: str, expires_at: float | None = None
+        self,
+        *,
+        mandate_id: str,
+        amount: float,
+        merchant: str,
+        expires_at: float | None = None,
     ) -> dict:
         return {"mandate_id": mandate_id}
 
-    def sign_payment_mandate(self, *, mandate_id: str, amount: float, merchant: str) -> dict:
+    def sign_payment_mandate(
+        self, *, mandate_id: str, amount: float, merchant: str
+    ) -> dict:
         return {"mandate_id": mandate_id, "signature": "sig-xyz"}
 
-    def issue_receipt(self, *, receipt_id: str, mandate_id: str, amount: float, merchant: str) -> dict:
+    def issue_receipt(
+        self, *, receipt_id: str, mandate_id: str, amount: float, merchant: str
+    ) -> dict:
         return {"receipt_id": receipt_id}
 
 
@@ -35,9 +44,15 @@ def main() -> None:
     instrument_ap2(client, guardrails=guardrails)
     try:
         with capture_events("ap2"):
-            client.create_intent_mandate(mandate_id="m-1", amount=50, merchant="Bookstore")
-            client.sign_payment_mandate(mandate_id="m-1", amount=50, merchant="Bookstore")
-            client.issue_receipt(receipt_id="r-1", mandate_id="m-1", amount=50, merchant="Bookstore")
+            client.create_intent_mandate(
+                mandate_id="m-1", amount=50, merchant="Bookstore"
+            )
+            client.sign_payment_mandate(
+                mandate_id="m-1", amount=50, merchant="Bookstore"
+            )
+            client.issue_receipt(
+                receipt_id="r-1", mandate_id="m-1", amount=50, merchant="Bookstore"
+            )
     finally:
         uninstrument_ap2()
 

@@ -29,8 +29,17 @@ def main() -> None:
         backstory="curious",
         allow_delegation=False,
     )
-    writer = Agent(role="writer", goal="summarize in one line", backstory="terse", allow_delegation=False)
-    task = Task(description="Produce one line about the moon.", agent=researcher, expected_output="a one-liner")
+    writer = Agent(
+        role="writer",
+        goal="summarize in one line",
+        backstory="terse",
+        allow_delegation=False,
+    )
+    task = Task(
+        description="Produce one line about the moon.",
+        agent=researcher,
+        expected_output="a one-liner",
+    )
     crew = Crew(agents=[researcher, writer], tasks=[task])
 
     CrewAIAdapter().connect(crew)

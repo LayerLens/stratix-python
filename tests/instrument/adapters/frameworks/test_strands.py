@@ -23,7 +23,9 @@ from strands.hooks.events import (  # noqa: E402
 )
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
-from layerlens.instrument.adapters.frameworks.strands import StrandsAdapter  # noqa: E402
+from layerlens.instrument.adapters.frameworks.strands import (
+    StrandsAdapter,
+)  # noqa: E402
 
 from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 
@@ -116,9 +118,18 @@ def _simulate_invocation(
     # Tool calls
     if tool_calls:
         for tc in tool_calls:
-            tool_use = {"name": tc["name"], "toolUseId": tc.get("id", "tc-1"), "input": tc.get("input", {})}
+            tool_use = {
+                "name": tc["name"],
+                "toolUseId": tc.get("id", "tc-1"),
+                "input": tc.get("input", {}),
+            }
             tool_result = tc.get(
-                "result", {"toolUseId": tc.get("id", "tc-1"), "status": "success", "content": [{"text": "ok"}]}
+                "result",
+                {
+                    "toolUseId": tc.get("id", "tc-1"),
+                    "status": "success",
+                    "content": [{"text": "ok"}],
+                },
             )
             before_tool = BeforeToolCallEvent(
                 agent=agent,
@@ -354,7 +365,11 @@ class TestToolCalls:
                     "name": "web_search",
                     "id": "tc-123",
                     "input": {"query": "AI safety"},
-                    "result": {"toolUseId": "tc-123", "status": "success", "content": [{"text": "Found 5 results"}]},
+                    "result": {
+                        "toolUseId": "tc-123",
+                        "status": "success",
+                        "content": [{"text": "Found 5 results"}],
+                    },
                 }
             ],
         )
@@ -428,7 +443,11 @@ class TestToolCalls:
                     "name": "search",
                     "id": "tc-1",
                     "input": {"secret": "data"},
-                    "result": {"toolUseId": "tc-1", "status": "success", "content": [{"text": "secret result"}]},
+                    "result": {
+                        "toolUseId": "tc-1",
+                        "status": "success",
+                        "content": [{"text": "secret result"}],
+                    },
                 }
             ],
         )

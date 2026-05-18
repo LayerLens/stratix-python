@@ -124,7 +124,11 @@ class BenchmarkImporter:
             )
 
         try:
-            load_kwargs: Dict[str, Any] = {"path": dataset_name, "split": split, "streaming": True}
+            load_kwargs: Dict[str, Any] = {
+                "path": dataset_name,
+                "split": split,
+                "streaming": True,
+            }
             if subset:
                 load_kwargs["name"] = subset
             ds = hf_datasets.load_dataset(**load_kwargs)
@@ -170,7 +174,7 @@ class BenchmarkImporter:
         records = [self._apply_schema_mapping(r, schema_mapping) for r in raw_records]
 
         metadata = BenchmarkMetadata(
-            name=blob.get("name") or path.split("/")[-1] if isinstance(blob, dict) else path,
+            name=(blob.get("name") or path.split("/")[-1] if isinstance(blob, dict) else path),
             source="helm",
             source_identifier=path,
             record_count=len(records),

@@ -3,7 +3,12 @@ from unittest.mock import Mock, call
 import httpx
 import pytest
 
-from layerlens.models import CustomModel, PublicModel, ModelsResponse, CreateModelResponse
+from layerlens.models import (
+    CustomModel,
+    PublicModel,
+    ModelsResponse,
+    CreateModelResponse,
+)
 from layerlens._constants import DEFAULT_TIMEOUT
 from layerlens.resources.models.models import Models
 
@@ -832,7 +837,10 @@ class TestModelsCreateCustom:
 
     def test_create_custom_returns_none_on_error_envelope(self, models_resource):
         """create_custom() returns None when response has no model_id."""
-        models_resource._post.return_value = {"status": "error", "data": {"message": "failed"}}
+        models_resource._post.return_value = {
+            "status": "error",
+            "data": {"message": "failed"},
+        }
 
         result = models_resource.create_custom(
             name="M",
@@ -1210,7 +1218,10 @@ class TestModelsUpdateCustom:
 
     def test_update_custom_returns_false_on_error_envelope(self, models_resource):
         """update_custom() returns False when response has no data field."""
-        models_resource._patch.return_value = {"code": "NOT_FOUND", "message": "missing"}
+        models_resource._patch.return_value = {
+            "code": "NOT_FOUND",
+            "message": "missing",
+        }
 
         result = models_resource.update_custom("model-1", api_url="https://x.io")
 

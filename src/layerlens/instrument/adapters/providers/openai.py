@@ -68,7 +68,7 @@ class OpenAIProvider(MonkeyPatchProvider):
             try:
                 val = getattr(response, attr, None)
                 if isinstance(val, (str, int, float, bool)):
-                    meta["response_model" if attr == "model" else f"response_{attr}" if attr == "id" else attr] = val
+                    meta[("response_model" if attr == "model" else f"response_{attr}" if attr == "id" else attr)] = val
             except AttributeError:
                 pass
         # finish_reason from first choice
@@ -268,7 +268,12 @@ class _StreamedChatResponse:
             for tc in getattr(delta, "tool_calls", None) or []:
                 idx = getattr(tc, "index", 0) or 0
                 slot = tool_fragments.setdefault(
-                    idx, {"id": None, "type": "function", "function": {"name": None, "arguments": ""}}
+                    idx,
+                    {
+                        "id": None,
+                        "type": "function",
+                        "function": {"name": None, "arguments": ""},
+                    },
                 )
                 if getattr(tc, "id", None):
                     slot["id"] = tc.id

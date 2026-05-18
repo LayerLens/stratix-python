@@ -11,7 +11,11 @@ from layerlens.instrument.adapters.providers.litellm import (
     uninstrument_litellm,
 )
 
-from .conftest import make_openai_response, make_openai_response_no_usage, make_openai_response_empty_choices
+from .conftest import (
+    make_openai_response,
+    make_openai_response_no_usage,
+    make_openai_response_empty_choices,
+)
 from ...conftest import find_event
 
 # ---------------------------------------------------------------------------

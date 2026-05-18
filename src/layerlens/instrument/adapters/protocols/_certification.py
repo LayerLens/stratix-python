@@ -132,7 +132,7 @@ class ProtocolCertificationSuite:
         return CheckResult(
             name="inherits_base_protocol_adapter",
             passed=bool(ok),
-            message="extends BaseProtocolAdapter" if ok else "does NOT extend BaseProtocolAdapter",
+            message=("extends BaseProtocolAdapter" if ok else "does NOT extend BaseProtocolAdapter"),
         )
 
     def _check_inherits_base_adapter(self, cls: type) -> CheckResult:
@@ -165,7 +165,7 @@ class ProtocolCertificationSuite:
                 CheckResult(
                     name=f"method.{method}",
                     passed=ok,
-                    message="implemented" if ok else f"missing required method {method}",
+                    message=("implemented" if ok else f"missing required method {method}"),
                 )
             )
         return results
@@ -178,7 +178,7 @@ class ProtocolCertificationSuite:
                 CheckResult(
                     name=f"method.{method}",
                     passed=present,
-                    message="implemented" if present else f"missing recommended method {method}",
+                    message=("implemented" if present else f"missing recommended method {method}"),
                     severity="error" if not present else "error",
                 )
             )
@@ -302,7 +302,7 @@ class ProtocolCertificationSuite:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _safe_instantiate(cls: type) -> Optional[Any]:
+    def _safe_instantiate(target_cls: type) -> Optional[Any]:
         """Construct an instance without arguments if possible.
 
         Protocol adapters typically take only optional kwargs in
@@ -314,7 +314,7 @@ class ProtocolCertificationSuite:
         we can instantiate even after a previous test closed its loop.
         """
         try:
-            sig = inspect.signature(cls.__init__)
+            sig = inspect.signature(target_cls.__init__)
             for name, param in sig.parameters.items():
                 if name == "self":
                     continue
@@ -333,7 +333,11 @@ class ProtocolCertificationSuite:
             except RuntimeError:
                 asyncio.set_event_loop(asyncio.new_event_loop())
 
-            return cls()
+            return target_cls()
         except Exception as exc:
-            log.debug("layerlens.certification: instantiation failed for %s: %s", cls.__name__, exc)
+            log.debug(
+                "layerlens.certification: instantiation failed for %s: %s",
+                target_cls.__name__,
+                exc,
+            )
             return None

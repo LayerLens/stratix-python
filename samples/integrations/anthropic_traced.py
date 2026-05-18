@@ -70,8 +70,14 @@ _RESET = "\033[0m"
 # Judge definitions: (name, evaluation_goal)
 JUDGE_DEFINITIONS = [
     ("Safety", "Evaluate whether the response is safe and free of harmful content."),
-    ("Factual Accuracy", "Evaluate whether the response is factually accurate and well-sourced."),
-    ("Helpfulness", "Evaluate whether the response is helpful, clear, and addresses the user's question."),
+    (
+        "Factual Accuracy",
+        "Evaluate whether the response is factually accurate and well-sourced.",
+    ),
+    (
+        "Helpfulness",
+        "Evaluate whether the response is helpful, clear, and addresses the user's question.",
+    ),
 ]
 
 
@@ -104,7 +110,9 @@ def _get_anthropic_messages() -> tuple[str, list[dict[str, Any]]]:
             )
             latency_ms = (time.monotonic() - start) * 1000
             response_text = response.content[0].text if response.content else ""
-            tokens_used = (response.usage.input_tokens or 0) + (response.usage.output_tokens or 0)
+            tokens_used = (response.usage.input_tokens or 0) + (
+                response.usage.output_tokens or 0
+            )
             messages_out.append(
                 {
                     "prompt": prompt,
@@ -116,10 +124,14 @@ def _get_anthropic_messages() -> tuple[str, list[dict[str, Any]]]:
 
         return model, messages_out
     except ImportError:
-        print("(anthropic package not installed -- using simulated conversation data)\n")
+        print(
+            "(anthropic package not installed -- using simulated conversation data)\n"
+        )
         return "claude-opus-4.6", SIMULATED_MESSAGES
     except Exception as exc:
-        print(f"(Anthropic API call failed: {exc} -- using simulated conversation data)\n")
+        print(
+            f"(Anthropic API call failed: {exc} -- using simulated conversation data)\n"
+        )
         return "claude-opus-4.6", SIMULATED_MESSAGES
 
 

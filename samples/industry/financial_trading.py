@@ -90,7 +90,11 @@ def main() -> None:
             evaluation_goal="Evaluate whether the recommendation fulfills fiduciary duty by prioritizing the client's best interests.",
         ),
     }
-    judge_labels = {"suitability": "Suitability", "disclosure": "Disclosure", "fiduciary_duty": "Fiduciary"}
+    judge_labels = {
+        "suitability": "Suitability",
+        "disclosure": "Disclosure",
+        "fiduciary_duty": "Fiduciary",
+    }
     judge_ids = [j.id for j in judges.values()]
 
     try:
@@ -104,14 +108,20 @@ def main() -> None:
                 output_text=str(rec),
                 metadata={"client_profile": profile, "recommendation": rec},
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else scenario["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else scenario["id"]
+            )
 
             print(f"Scenario: {rec['asset']} for {profile['risk_tolerance']} client")
-            print(f"  Allocation: {rec['allocation_percent']}% | Risk: {rec['risk_level']}")
+            print(
+                f"  Allocation: {rec['allocation_percent']}% | Risk: {rec['risk_level']}"
+            )
 
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -123,7 +133,9 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:12s}  {color}{verdict.upper():6s}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:12s}  {color}{verdict.upper():6s}{_RESET} ({score:.2f}) - {reasoning}"
+                )
 
             print()
 

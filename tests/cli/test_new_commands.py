@@ -38,7 +38,15 @@ class TestSyntheticCommands:
     def test_generate_to_stdout(self, runner):
         result = runner.invoke(
             cli,
-            ["--quiet", "synthetic", "generate", "--template", "llm.chat.basic", "--count", "2"],
+            [
+                "--quiet",
+                "synthetic",
+                "generate",
+                "--template",
+                "llm.chat.basic",
+                "--count",
+                "2",
+            ],
         )
         assert result.exit_code == 0
         lines = [line for line in result.output.splitlines() if line.startswith("{")]

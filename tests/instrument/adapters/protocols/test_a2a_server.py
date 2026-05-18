@@ -46,7 +46,13 @@ class TestTaskSend:
 
         wrapper = A2AServerWrapper(adapter, original_handler=handler)
         try:
-            wrapper.handle_request({"method": "tasks/send", "id": "req-1", "params": {"task": {"id": "t1"}}})
+            wrapper.handle_request(
+                {
+                    "method": "tasks/send",
+                    "id": "req-1",
+                    "params": {"task": {"id": "t1"}},
+                }
+            )
         except RuntimeError as exc:
             assert "500" in str(exc)
         else:  # pragma: no cover - should have raised
@@ -85,7 +91,16 @@ class TestHandlerDelegation:
     def test_returns_none_when_no_handler_registered(self):
         adapter = MagicMock()
         wrapper = A2AServerWrapper(adapter)
-        assert wrapper.handle_request({"method": "tasks/send", "id": "req-1", "params": {"task": {"id": "t1"}}}) is None
+        assert (
+            wrapper.handle_request(
+                {
+                    "method": "tasks/send",
+                    "id": "req-1",
+                    "params": {"task": {"id": "t1"}},
+                }
+            )
+            is None
+        )
 
 
 class TestAgentCard:

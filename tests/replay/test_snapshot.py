@@ -23,7 +23,10 @@ def _make_collector(client):
 class TestDump:
     def test_dump_creates_file(self, tmp_path: Path):
         path = tmp_path / "snap.json"
-        payload = {"trace_id": "abc", "events": [{"event_type": "agent.input", "payload": {}}]}
+        payload = {
+            "trace_id": "abc",
+            "events": [{"event_type": "agent.input", "payload": {}}],
+        }
         result = dump(payload, str(path))
         assert result == str(path)
         assert path.exists()
@@ -103,7 +106,10 @@ class TestSerializeAdapter:
 
         adapter = Mock()
         adapter.adapter_info.return_value = AdapterInfo(
-            name="test", adapter_type="framework", version="1.2.3", metadata={"key": "value"}
+            name="test",
+            adapter_type="framework",
+            version="1.2.3",
+            metadata={"key": "value"},
         )
         result = serialize_adapter(adapter)
         assert result["adapter"]["name"] == "test"
@@ -133,7 +139,12 @@ class TestCollectorToReplayDict:
         collector.emit("agent.input", {}, span_id="s1")
         public = collector.to_replay_dict()
         # Same shape as the internal payload
-        assert set(public.keys()) >= {"trace_id", "events", "capture_config", "attestation"}
+        assert set(public.keys()) >= {
+            "trace_id",
+            "events",
+            "capture_config",
+            "attestation",
+        }
 
     def test_round_trips_through_json(self):
         client = Mock()

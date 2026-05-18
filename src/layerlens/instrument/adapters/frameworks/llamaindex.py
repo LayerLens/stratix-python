@@ -16,7 +16,9 @@ try:
     from llama_index.core.instrumentation import (
         get_dispatcher as _get_dispatcher,  # pyright: ignore[reportMissingImports]
     )
-    from llama_index.core.instrumentation.span import BaseSpan as _BaseSpan  # pyright: ignore[reportMissingImports]
+    from llama_index.core.instrumentation.span import (
+        BaseSpan as _BaseSpan,
+    )  # pyright: ignore[reportMissingImports]
     from llama_index.core.instrumentation.span_handlers import (
         BaseSpanHandler as _BaseSpanHandler,  # pyright: ignore[reportMissingImports]
     )
@@ -455,7 +457,7 @@ class LlamaIndexAdapter(FrameworkAdapter):
         exc = getattr(event, "exception", None)
         payload = self._payload(
             error=str(exc) if exc else "unknown error",
-            error_type=type(exc).__name__ if isinstance(exc, BaseException) else "Exception",
+            error_type=(type(exc).__name__ if isinstance(exc, BaseException) else "Exception"),
         )
         self._fire("agent.error", payload, span_id=span_id)
 
@@ -485,12 +487,22 @@ def _make_span_handler(adapter: LlamaIndexAdapter) -> Any:
             return adapter._on_span_enter(id_, parent_span_id)
 
         def prepare_to_exit_span(
-            self, id_: str, bound_args: Any, instance: Any = None, result: Any = None, **kw: Any
+            self,
+            id_: str,
+            bound_args: Any,
+            instance: Any = None,
+            result: Any = None,
+            **kw: Any,
         ) -> Any:
             return adapter._on_span_exit(id_)
 
         def prepare_to_drop_span(
-            self, id_: str, bound_args: Any, instance: Any = None, err: Any = None, **kw: Any
+            self,
+            id_: str,
+            bound_args: Any,
+            instance: Any = None,
+            err: Any = None,
+            **kw: Any,
         ) -> Any:
             return adapter._on_span_drop(id_)
 

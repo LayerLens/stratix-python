@@ -133,9 +133,11 @@ class AGUIProtocolAdapter(BaseProtocolAdapter):
         if etype:
             mapping = map_agui_to_stratix(etype)
             self.emit(
-                PROTOCOL_STREAM_EVENT
-                if mapping["stratix_event"] == "protocol.stream.event"
-                else mapping["stratix_event"],
+                (
+                    PROTOCOL_STREAM_EVENT
+                    if mapping["stratix_event"] == "protocol.stream.event"
+                    else mapping["stratix_event"]
+                ),
                 {
                     "agui_event": etype,
                     "category": mapping["category"],

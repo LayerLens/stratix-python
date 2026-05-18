@@ -115,7 +115,10 @@ class UploadChannel:
             self._queue.put_nowait((client, payload))
             return True
         except queue.Full:
-            log.warning("layerlens: upload queue full, dropping trace %s", payload.get("trace_id", "?"))
+            log.warning(
+                "layerlens: upload queue full, dropping trace %s",
+                payload.get("trace_id", "?"),
+            )
             return False
 
     def _upload_sync(self, client: Any, payload: Dict[str, Any]) -> None:

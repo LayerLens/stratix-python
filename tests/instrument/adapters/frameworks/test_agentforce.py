@@ -428,7 +428,12 @@ class TestFullInvocation:
             sessions=[_make_session()],
             interactions=[
                 _make_interaction(step_type="llm"),
-                _make_interaction(step_type="action", ToolName="search", ToolInput="{}", ToolOutput="found"),
+                _make_interaction(
+                    step_type="action",
+                    ToolName="search",
+                    ToolInput="{}",
+                    ToolOutput="found",
+                ),
             ],
             agent_config=[_make_agent_config()],
         )
@@ -463,7 +468,10 @@ class TestTraceIntegrity:
         adapter, uploaded, _ = _setup(
             mock_client,
             sessions=[_make_session()],
-            interactions=[_make_interaction(), _make_interaction(step_type="action", ToolName="t")],
+            interactions=[
+                _make_interaction(),
+                _make_interaction(step_type="action", ToolName="t"),
+            ],
         )
         adapter.import_sessions()
         seq = [e["sequence_id"] for e in uploaded["events"]]

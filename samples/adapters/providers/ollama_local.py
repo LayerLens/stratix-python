@@ -9,7 +9,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from adapters._shared import capture_events  # type: ignore[import-not-found]
 
-from layerlens.instrument.adapters.providers.ollama import instrument_ollama, uninstrument_ollama
+from layerlens.instrument.adapters.providers.ollama import (
+    instrument_ollama,
+    uninstrument_ollama,
+)
 
 
 def main() -> None:
@@ -29,7 +32,9 @@ def main() -> None:
                     messages=[{"role": "user", "content": "Name a mountain."}],
                 )
             except Exception as exc:
-                print(f"Ollama unavailable ({type(exc).__name__}): start 'ollama serve' locally.")
+                print(
+                    f"Ollama unavailable ({type(exc).__name__}): start 'ollama serve' locally."
+                )
                 return
             print("reply:", resp["message"]["content"])
     finally:

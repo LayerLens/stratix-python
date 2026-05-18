@@ -1,4 +1,5 @@
 """Tests for CLI authentication: credential storage, token refresh, login flow."""
+
 # ruff: noqa: ARG002  # creds_dir fixture is used for its monkeypatch side effect
 
 from __future__ import annotations
@@ -310,7 +311,11 @@ class TestCLILogin:
 
         with patch("layerlens.cli._auth.httpx.post", return_value=login_resp):
             with patch("layerlens.cli._auth.httpx.get", return_value=config_resp):
-                result = cli_login("user@example.com", "pass123", base_url="https://api.test.com/api/v1")
+                result = cli_login(
+                    "user@example.com",
+                    "pass123",
+                    base_url="https://api.test.com/api/v1",
+                )
 
         assert result["access_token"] == "access-tok"
         assert result["user"]["email"] == "user@example.com"
@@ -372,7 +377,10 @@ class TestLoginCommand:
         from layerlens.cli._auth import LoginError
 
         with patch("layerlens.cli._auth.load_credentials", return_value=None):
-            with patch("layerlens.cli._auth.cli_login", side_effect=LoginError("Invalid email or password.")):
+            with patch(
+                "layerlens.cli._auth.cli_login",
+                side_effect=LoginError("Invalid email or password."),
+            ):
                 result = runner.invoke(cli, ["login"], input="bad@test.com\nwrong\n")
 
         assert result.exit_code != 0
@@ -418,7 +426,11 @@ class TestWhoamiCommand:
         with patch("layerlens.cli._auth.get_valid_token", return_value="tok"):
             with patch(
                 "layerlens.cli._auth.get_user_info",
-                return_value={"email": "user@example.com", "name": "Test User", "sub": "abc-123"},
+                return_value={
+                    "email": "user@example.com",
+                    "name": "Test User",
+                    "sub": "abc-123",
+                },
             ):
                 result = runner.invoke(cli, ["whoami"])
 

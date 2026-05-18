@@ -48,7 +48,10 @@ class TestInheritedBehavior:
         )
         llm_response = Mock()
         llm_response.generations = [[Mock(text="output")]]
-        llm_response.llm_output = {"model_name": "gpt-4", "token_usage": {"total_tokens": 10}}
+        llm_response.llm_output = {
+            "model_name": "gpt-4",
+            "token_usage": {"total_tokens": 10},
+        }
         handler.on_llm_end(llm_response, run_id=llm_id)
         handler.on_chain_end({}, run_id=chain_id)
 
@@ -344,11 +347,17 @@ class TestHandoffDetection:
 
         handoffs = find_events(uploaded["events"], "agent.handoff")
         assert len(handoffs) == 2
-        assert (handoffs[0]["payload"]["from_agent"], handoffs[0]["payload"]["to_agent"]) == (
+        assert (
+            handoffs[0]["payload"]["from_agent"],
+            handoffs[0]["payload"]["to_agent"],
+        ) == (
             "supervisor",
             "researcher",
         )
-        assert (handoffs[1]["payload"]["from_agent"], handoffs[1]["payload"]["to_agent"]) == (
+        assert (
+            handoffs[1]["payload"]["from_agent"],
+            handoffs[1]["payload"]["to_agent"],
+        ) == (
             "researcher",
             "writer",
         )
@@ -382,7 +391,10 @@ class TestHandoffDetection:
             handler,
             "researcher",
             parent_run_id=root,
-            inputs={"task": "summarize", "messages": ["m"] * 50},  # long list -> placeholder
+            inputs={
+                "task": "summarize",
+                "messages": ["m"] * 50,
+            },  # long list -> placeholder
         )
         handler.on_chain_end({}, run_id=root)
 

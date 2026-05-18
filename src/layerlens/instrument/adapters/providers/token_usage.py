@@ -47,7 +47,12 @@ class NormalizedTokenUsage(BaseModel):
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
         }
-        for key in ("cached_tokens", "cache_creation_tokens", "reasoning_tokens", "thinking_tokens"):
+        for key in (
+            "cached_tokens",
+            "cache_creation_tokens",
+            "reasoning_tokens",
+            "thinking_tokens",
+        ):
             val = getattr(self, key)
             if val is not None:
                 out[key] = val

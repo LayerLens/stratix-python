@@ -15,7 +15,9 @@ from layerlens.instrument.adapters.protocols.a2ui import A2UIProtocolAdapter
 def main() -> None:
     adapter = A2UIProtocolAdapter()
     with capture_events("a2ui"):
-        adapter.record_surface_created(surface_id="cart-1", surface_type="cart", item_count=3)
+        adapter.record_surface_created(
+            surface_id="cart-1", surface_type="cart", item_count=3
+        )
         adapter.record_user_action(
             surface_id="cart-1",
             action_type="add_to_cart",

@@ -132,7 +132,9 @@ async def list_judges(
     resp = client.judges.get_many()
     judges: list[dict[str, Any]] = []
     if resp is not None:
-        judges = [{"id": j.id, "name": j.name, "goal": j.evaluation_goal} for j in resp.judges]
+        judges = [
+            {"id": j.id, "name": j.name, "goal": j.evaluation_goal} for j in resp.judges
+        ]
     # Push state to the frontend immediately so the canvas updates as
     # this tool completes — without this, ag-ui-langgraph batches state
     # snapshots until the LLM's tool-calling round wraps up, which makes
@@ -171,7 +173,9 @@ async def list_recent_traces(
     frontend's ``TraceCard`` can render real per-trace metrics.
     """
     client = _get_client()
-    resp = client.traces.get_many(page_size=limit, sort_by="created_at", sort_order="desc")
+    resp = client.traces.get_many(
+        page_size=limit, sort_by="created_at", sort_order="desc"
+    )
     traces: list[dict[str, Any]] = []
     if resp is not None:
         for t in resp.traces:
@@ -183,9 +187,14 @@ async def list_recent_traces(
                     "id": t.id,
                     "filename": t.filename,
                     "created_at": t.created_at,
-                    "model": (data.get("model") if isinstance(data, dict) else None) or "",
-                    "duration_ms": (data.get("latency_ms") if isinstance(data, dict) else None) or 0,
-                    "tokens": (data.get("tokens") if isinstance(data, dict) else None) or 0,
+                    "model": (data.get("model") if isinstance(data, dict) else None)
+                    or "",
+                    "duration_ms": (
+                        data.get("latency_ms") if isinstance(data, dict) else None
+                    )
+                    or 0,
+                    "tokens": (data.get("tokens") if isinstance(data, dict) else None)
+                    or 0,
                     "evaluations_count": getattr(t, "evaluations_count", 0) or 0,
                 }
             )

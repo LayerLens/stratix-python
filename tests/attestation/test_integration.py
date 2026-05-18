@@ -112,7 +112,10 @@ class TestTraceAttestation:
         @trace(client)
         def my_agent(query: str):
             with span("llm-call"):
-                emit("model.invoke", {"name": "gpt-4", "output_message": "the real answer"})
+                emit(
+                    "model.invoke",
+                    {"name": "gpt-4", "output_message": "the real answer"},
+                )
             return "done"
 
         my_agent("test")
@@ -137,7 +140,10 @@ class TestTraceAttestation:
 
         # Tamper: change the model output in the second event
         tampered_events = [dict(e) for e in original_events]
-        tampered_events[1] = {**tampered_events[1], "payload": {"name": "gpt-4", "output_message": "a forged answer"}}
+        tampered_events[1] = {
+            **tampered_events[1],
+            "payload": {"name": "gpt-4", "output_message": "a forged answer"},
+        }
 
         tampered = detect_tampering(envelopes, tampered_events)
         assert tampered.tampered

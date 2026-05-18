@@ -105,7 +105,11 @@ def main():
     print("  [PASS] Config discovery works\n")
 
     # Test 2: Credential storage round-trip
-    from layerlens.cli._auth import load_credentials, save_credentials, clear_credentials
+    from layerlens.cli._auth import (
+        load_credentials,
+        save_credentials,
+        clear_credentials,
+    )
 
     test_creds = {"access_token": "test-tok", "auth_config": config}
     save_credentials(test_creds)

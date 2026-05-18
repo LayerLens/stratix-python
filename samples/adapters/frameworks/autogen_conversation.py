@@ -19,10 +19,17 @@ def main() -> None:
         print("Install: pip install 'layerlens[autogen]' pyautogen")
         return
 
-    config = {"config_list": [{"model": "gpt-4o-mini", "api_key": os.environ.get("OPENAI_API_KEY", "")}]}
+    config = {
+        "config_list": [
+            {"model": "gpt-4o-mini", "api_key": os.environ.get("OPENAI_API_KEY", "")}
+        ]
+    }
     assistant = AssistantAgent(name="assistant", llm_config=config)
     user = UserProxyAgent(
-        name="user", human_input_mode="NEVER", max_consecutive_auto_reply=1, code_execution_config=False
+        name="user",
+        human_input_mode="NEVER",
+        max_consecutive_auto_reply=1,
+        code_execution_config=False,
     )
 
     AutoGenAdapter(None).connect([assistant, user])

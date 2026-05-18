@@ -51,20 +51,50 @@ _PROVIDER_PACKAGES: Dict[str, str] = {
 # Map adapter name -> (module path, class name) for ``auto()`` instantiation.
 # Only frameworks that can connect with just a layerlens client are listed.
 _FRAMEWORK_ADAPTERS: Dict[str, Tuple[str, str]] = {
-    "langchain": ("layerlens.instrument.adapters.frameworks.langchain", "LangChainCallbackHandler"),
-    "langgraph": ("layerlens.instrument.adapters.frameworks.langgraph", "LangGraphCallbackHandler"),
+    "langchain": (
+        "layerlens.instrument.adapters.frameworks.langchain",
+        "LangChainCallbackHandler",
+    ),
+    "langgraph": (
+        "layerlens.instrument.adapters.frameworks.langgraph",
+        "LangGraphCallbackHandler",
+    ),
     "crewai": ("layerlens.instrument.adapters.frameworks.crewai", "CrewAIAdapter"),
-    "openai_agents": ("layerlens.instrument.adapters.frameworks.openai_agents", "OpenAIAgentsAdapter"),
-    "semantic_kernel": ("layerlens.instrument.adapters.frameworks.semantic_kernel", "SemanticKernelAdapter"),
-    "pydantic_ai": ("layerlens.instrument.adapters.frameworks.pydantic_ai", "PydanticAIAdapter"),
-    "google_adk": ("layerlens.instrument.adapters.frameworks.google_adk", "GoogleADKAdapter"),
+    "openai_agents": (
+        "layerlens.instrument.adapters.frameworks.openai_agents",
+        "OpenAIAgentsAdapter",
+    ),
+    "semantic_kernel": (
+        "layerlens.instrument.adapters.frameworks.semantic_kernel",
+        "SemanticKernelAdapter",
+    ),
+    "pydantic_ai": (
+        "layerlens.instrument.adapters.frameworks.pydantic_ai",
+        "PydanticAIAdapter",
+    ),
+    "google_adk": (
+        "layerlens.instrument.adapters.frameworks.google_adk",
+        "GoogleADKAdapter",
+    ),
     "strands": ("layerlens.instrument.adapters.frameworks.strands", "StrandsAdapter"),
-    "smolagents": ("layerlens.instrument.adapters.frameworks.smolagents", "SmolAgentsAdapter"),
-    "llamaindex": ("layerlens.instrument.adapters.frameworks.llamaindex", "LlamaIndexAdapter"),
-    "haystack": ("layerlens.instrument.adapters.frameworks.haystack", "HaystackAdapter"),
+    "smolagents": (
+        "layerlens.instrument.adapters.frameworks.smolagents",
+        "SmolAgentsAdapter",
+    ),
+    "llamaindex": (
+        "layerlens.instrument.adapters.frameworks.llamaindex",
+        "LlamaIndexAdapter",
+    ),
+    "haystack": (
+        "layerlens.instrument.adapters.frameworks.haystack",
+        "HaystackAdapter",
+    ),
     "autogen": ("layerlens.instrument.adapters.frameworks.autogen", "AutoGenAdapter"),
     "agno": ("layerlens.instrument.adapters.frameworks.agno", "AgnoAdapter"),
-    "bedrock_agents": ("layerlens.instrument.adapters.frameworks.bedrock_agents", "BedrockAgentsAdapter"),
+    "bedrock_agents": (
+        "layerlens.instrument.adapters.frameworks.bedrock_agents",
+        "BedrockAgentsAdapter",
+    ),
     "ms_agent_framework": (
         "layerlens.instrument.adapters.frameworks.ms_agent_framework",
         "MSAgentFrameworkAdapter",
@@ -178,7 +208,11 @@ def auto(
             )
             adapter.connect()
         except Exception:
-            log.warning("layerlens.instrument.auto: could not wire %s adapter", name, exc_info=True)
+            log.warning(
+                "layerlens.instrument.auto: could not wire %s adapter",
+                name,
+                exc_info=True,
+            )
             continue
         register(name, adapter)
         connected[name] = adapter

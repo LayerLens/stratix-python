@@ -97,13 +97,17 @@ class ComparativeJudge:
         if uncertain_threshold is not None:
             self.uncertain_threshold = uncertain_threshold
 
-    def evaluate(self, trace_id: str, output: str, context: dict[str, Any]) -> dict[str, Any]:
+    def evaluate(
+        self, trace_id: str, output: str, context: dict[str, Any]
+    ) -> dict[str, Any]:
         task = context.get("task", "")
         model_id = context.get("model_id", "unknown")
         scores = _deterministic_scores(model_id, task)
         aggregate = self._compute_aggregate(scores)
         verdict, severity = _classify_verdict(
-            aggregate, pass_threshold=self.pass_threshold, uncertain_threshold=self.uncertain_threshold
+            aggregate,
+            pass_threshold=self.pass_threshold,
+            uncertain_threshold=self.uncertain_threshold,
         )
         best_dim = max(scores, key=scores.get)  # type: ignore[arg-type]
         worst_dim = min(scores, key=scores.get)  # type: ignore[arg-type]
@@ -136,16 +140,22 @@ class ComparativeJudge:
         return self.rank(results)
 
     def rank(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        sorted_results = sorted(results, key=lambda r: r.get("aggregate_score", 0.0), reverse=True)
+        sorted_results = sorted(
+            results, key=lambda r: r.get("aggregate_score", 0.0), reverse=True
+        )
         for i, r in enumerate(sorted_results, 1):
             r["rank"] = i
         return sorted_results
 
     def _compute_aggregate(self, scores: dict[str, float]) -> float:
-        total_weight = sum(self._weights[d]["weight"] for d in scores if d in self._weights)
+        total_weight = sum(
+            self._weights[d]["weight"] for d in scores if d in self._weights
+        )
         if total_weight == 0:
             return round(sum(scores.values()) / max(len(scores), 1), 1)
-        weighted_sum = sum(scores[d] * self._weights[d]["weight"] for d in scores if d in self._weights)
+        weighted_sum = sum(
+            scores[d] * self._weights[d]["weight"] for d in scores if d in self._weights
+        )
         return round(weighted_sum / total_weight, 1)
 
     def get_dimensions(self) -> dict[str, dict[str, Any]]:

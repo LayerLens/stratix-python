@@ -19,7 +19,9 @@ def main() -> None:
     handler = LangChainCallbackHandler(client)
 
     # Build a simple chain
-    prompt = ChatPromptTemplate.from_template("Answer this question concisely: {question}")
+    prompt = ChatPromptTemplate.from_template(
+        "Answer this question concisely: {question}"
+    )
     llm = ChatOpenAI(model="gpt-4o")
     chain = prompt | llm | StrOutputParser()
 

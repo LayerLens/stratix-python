@@ -507,7 +507,10 @@ class TestEvaluationModelFields:
                     "challenges": ["Abstract math", "Ambiguous questions"],
                 },
                 "error_analysis": {
-                    "common_failure_modes": ["Off-by-one errors", "Misinterpreting negation"],
+                    "common_failure_modes": [
+                        "Off-by-one errors",
+                        "Misinterpreting negation",
+                    ],
                     "example": "Q: Which is NOT true? A: Selected a true statement.",
                 },
                 "analysis_summary": {

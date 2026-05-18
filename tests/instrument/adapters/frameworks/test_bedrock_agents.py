@@ -661,7 +661,11 @@ class TestTraceIntegrity:
             output_text="ok",
             trace_steps=[
                 {"type": "ACTION_GROUP", "actionGroupName": "a"},
-                {"type": "MODEL_INVOCATION", "foundationModel": "m", "modelInvocationOutput": {}},
+                {
+                    "type": "MODEL_INVOCATION",
+                    "foundationModel": "m",
+                    "modelInvocationOutput": {},
+                },
             ],
         )
         adapter, uploaded, boto, stubber = _setup(mock_client, injector=injector)

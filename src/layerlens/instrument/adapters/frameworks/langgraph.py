@@ -90,7 +90,12 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
             }
             enter_payload = self._payload(node=node_name, step=step)
             self._set_if_capturing(enter_payload, "input", inputs)
-            self._emit("agent.node.enter", enter_payload, run_id=run_id, parent_run_id=parent_run_id)
+            self._emit(
+                "agent.node.enter",
+                enter_payload,
+                run_id=run_id,
+                parent_run_id=parent_run_id,
+            )
             if self._handoff_detector is not None:
                 self._handoff_detector.detect(node_name, context=inputs)
 
@@ -119,7 +124,12 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
                 latency_ms=(time.time_ns() - node["entered_at_ns"]) / 1_000_000,
             )
             self._set_if_capturing(exit_payload, "output", outputs)
-            self._emit("agent.node.exit", exit_payload, run_id=run_id, parent_run_id=parent_run_id)
+            self._emit(
+                "agent.node.exit",
+                exit_payload,
+                run_id=run_id,
+                parent_run_id=parent_run_id,
+            )
             if self._emit_state_hash:
                 self._emit_node_state_change(
                     node_name=node["node"],

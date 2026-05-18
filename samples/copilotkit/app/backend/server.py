@@ -208,9 +208,7 @@ def get_evaluation(evaluation_id: str) -> dict:
             **base,
             "passed": bool(getattr(details, "passed", False)) if details else False,
             "score": 0.0,
-            "reasoning": (
-                getattr(details, "reasoning", None) if details else None
-            )
+            "reasoning": (getattr(details, "reasoning", None) if details else None)
             or "Evaluation completed without a numerical score.",
         }
     return {

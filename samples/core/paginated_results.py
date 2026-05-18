@@ -96,7 +96,9 @@ def main() -> None:
             print(f"Total results: {total_count:,}")
             print(f"Total pages: {total_pages}")
 
-        print(f"Page {page}: Retrieved {len(results_data.results)} results (running total: {len(all_results):,})")
+        print(
+            f"Page {page}: Retrieved {len(results_data.results)} results (running total: {len(all_results):,})"
+        )
 
         # Check if we have reached the last page
         if page >= results_data.pagination.total_pages:

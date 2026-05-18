@@ -232,7 +232,9 @@ def create_server() -> Server:
 
 async def _handle_list_traces(client: Stratix, arguments: dict) -> list[TextContent]:
     limit = arguments.get("limit", 20)
-    resp = await asyncio.to_thread(client.traces.get_many, page_size=limit, sort_by="created_at", sort_order="desc")
+    resp = await asyncio.to_thread(
+        client.traces.get_many, page_size=limit, sort_by="created_at", sort_order="desc"
+    )
     if resp is None:
         return [TextContent(type="text", text="No traces found.")]
 
@@ -241,7 +243,9 @@ async def _handle_list_traces(client: Stratix, arguments: dict) -> list[TextCont
         eval_info = ""
         if t.evaluations_count:
             eval_info = f" | {t.evaluations_count} evaluation(s)"
-        lines.append(f"  - {t.id}  created={t.created_at}  file={t.filename}{eval_info}")
+        lines.append(
+            f"  - {t.id}  created={t.created_at}  file={t.filename}{eval_info}"
+        )
     return [TextContent(type="text", text="\n".join(lines))]
 
 
@@ -256,7 +260,9 @@ async def _handle_get_trace(client: Stratix, arguments: dict) -> list[TextConten
 async def _handle_run_evaluation(client: Stratix, arguments: dict) -> list[TextContent]:
     trace_id: str = arguments["trace_id"]
     judge_id: str = arguments["judge_id"]
-    evaluation = await asyncio.to_thread(client.trace_evaluations.create, trace_id=trace_id, judge_id=judge_id)
+    evaluation = await asyncio.to_thread(
+        client.trace_evaluations.create, trace_id=trace_id, judge_id=judge_id
+    )
     if evaluation is None:
         return [TextContent(type="text", text="Failed to create evaluation.")]
     return [
@@ -290,7 +296,9 @@ async def _handle_get_evaluation(client: Stratix, arguments: dict) -> list[TextC
         and evaluation.status.value == "success"
         or str(evaluation.status) == "success"
     ):
-        results_resp = await asyncio.to_thread(client.trace_evaluations.get_results, id=eid)
+        results_resp = await asyncio.to_thread(
+            client.trace_evaluations.get_results, id=eid
+        )
         if results_resp and results_resp.score is not None:
             r = results_resp
             parts.append("")
@@ -307,7 +315,9 @@ async def _handle_get_evaluation(client: Stratix, arguments: dict) -> list[TextC
 async def _handle_create_judge(client: Stratix, arguments: dict) -> list[TextContent]:
     name: str = arguments["name"]
     goal: str = arguments["goal"]
-    judge = await asyncio.to_thread(_create_judge_helper, client, name=name, evaluation_goal=goal)
+    judge = await asyncio.to_thread(
+        _create_judge_helper, client, name=name, evaluation_goal=goal
+    )
     if judge is None:
         return [TextContent(type="text", text="Failed to create judge.")]
     return [

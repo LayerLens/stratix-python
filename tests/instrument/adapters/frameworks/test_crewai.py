@@ -161,7 +161,12 @@ class TestTaskEvents:
 
         # Task lifecycle
         adapter._on_task_started(
-            None, TaskStartedEvent(context="research context", task_name="Research Task", agent_role="Researcher")
+            None,
+            TaskStartedEvent(
+                context="research context",
+                task_name="Research Task",
+                agent_role="Researcher",
+            ),
         )
         to = TaskOutput(description="Research Task", raw="found it", agent="Researcher")
         adapter._on_task_completed(None, TaskCompletedEvent(output=to, task_name="Research Task"))
@@ -205,7 +210,10 @@ class TestLLMEvents:
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
 
         # LLM call with token usage in response
-        response = {"content": "hello", "usage": {"prompt_tokens": 100, "completion_tokens": 50}}
+        response = {
+            "content": "hello",
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+        }
         evt = LLMCallCompletedEvent(model="gpt-4o", call_id="call_1", call_type="llm_call", response=response)
         adapter._on_llm_completed(None, evt)
 
@@ -369,12 +377,18 @@ class TestFullCrewLifecycle:
 
         # 1. Crew starts
         adapter._on_crew_started(
-            None, CrewKickoffStartedEvent(crew_name="Analysis Crew", inputs={"topic": "quantum computing"})
+            None,
+            CrewKickoffStartedEvent(crew_name="Analysis Crew", inputs={"topic": "quantum computing"}),
         )
 
         # 2. Task 1: Research
         adapter._on_task_started(
-            None, TaskStartedEvent(context="research quantum computing", task_name="Research", agent_role="Researcher")
+            None,
+            TaskStartedEvent(
+                context="research quantum computing",
+                task_name="Research",
+                agent_role="Researcher",
+            ),
         )
 
         # 2a. Agent execution starts within task 1
@@ -391,7 +405,13 @@ class TestFullCrewLifecycle:
             "usage": {"prompt_tokens": 200, "completion_tokens": 100},
         }
         adapter._on_llm_completed(
-            None, LLMCallCompletedEvent(model="claude-3-opus", call_id="c1", call_type="llm_call", response=response)
+            None,
+            LLMCallCompletedEvent(
+                model="claude-3-opus",
+                call_id="c1",
+                call_type="llm_call",
+                response=response,
+            ),
         )
 
         # 4. Tool use within task 1 (start + finish)
@@ -399,7 +419,9 @@ class TestFullCrewLifecycle:
         adapter._on_tool_started(
             None,
             ToolUsageStartedEvent(
-                tool_name="arxiv_search", tool_args="quantum computing 2024", agent_key="researcher_1"
+                tool_name="arxiv_search",
+                tool_args="quantum computing 2024",
+                agent_key="researcher_1",
             ),
         )
         adapter._on_tool_finished(
@@ -416,7 +438,8 @@ class TestFullCrewLifecycle:
 
         # 4a. Agent execution completes
         adapter._on_agent_execution_completed(
-            None, AgentExecutionCompletedEvent.model_construct(agent_role="Researcher", output="Research complete")
+            None,
+            AgentExecutionCompletedEvent.model_construct(agent_role="Researcher", output="Research complete"),
         )
 
         # 5. Task 1 completes
@@ -426,23 +449,30 @@ class TestFullCrewLifecycle:
         # 6. Task 2: Writing
         adapter._on_task_started(
             None,
-            TaskStartedEvent(context="write about quantum computing", task_name="Write Report", agent_role="Writer"),
+            TaskStartedEvent(
+                context="write about quantum computing",
+                task_name="Write Report",
+                agent_role="Writer",
+            ),
         )
 
         # 6a. Agent execution starts within task 2
         adapter._on_agent_execution_started(
-            None, AgentExecutionStartedEvent.model_construct(agent_role="Writer", task_prompt="Write the report")
+            None,
+            AgentExecutionStartedEvent.model_construct(agent_role="Writer", task_prompt="Write the report"),
         )
 
         # 7. Another LLM call
         response2 = {"content": "Final report..."}
         adapter._on_llm_completed(
-            None, LLMCallCompletedEvent(model="gpt-4o", call_id="c2", call_type="llm_call", response=response2)
+            None,
+            LLMCallCompletedEvent(model="gpt-4o", call_id="c2", call_type="llm_call", response=response2),
         )
 
         # 7a. Agent execution completes
         adapter._on_agent_execution_completed(
-            None, AgentExecutionCompletedEvent.model_construct(agent_role="Writer", output="Report written")
+            None,
+            AgentExecutionCompletedEvent.model_construct(agent_role="Writer", output="Report written"),
         )
 
         # 8. Task 2 completes
@@ -452,7 +482,8 @@ class TestFullCrewLifecycle:
         # 9. Crew completes
         final = TaskOutput(description="final", raw="All done", agent="Writer")
         adapter._on_crew_completed(
-            None, CrewKickoffCompletedEvent(crew_name="Analysis Crew", output=final, total_tokens=1500)
+            None,
+            CrewKickoffCompletedEvent(crew_name="Analysis Crew", output=final, total_tokens=1500),
         )
 
         # Verify full event trace
@@ -508,7 +539,10 @@ class TestEventBusIntegration:
             # Current crewai dispatches handlers on an executor; ``emit`` now
             # returns a Future that resolves once every handler has finished
             # (and the previous ``flush`` API was removed).
-            fut1 = crewai_event_bus.emit(None, event=CrewKickoffStartedEvent(crew_name="BusCrew", inputs={"x": 1}))
+            fut1 = crewai_event_bus.emit(
+                None,
+                event=CrewKickoffStartedEvent(crew_name="BusCrew", inputs={"x": 1}),
+            )
             if fut1 is not None:
                 fut1.result(timeout=5.0)
 
@@ -556,16 +590,33 @@ class TestCaptureConfigGating:
             adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
 
             # These should be filtered by CaptureConfig
-            response = {"content": "hi", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}
+            response = {
+                "content": "hi",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            }
             adapter._on_llm_completed(
-                None, LLMCallCompletedEvent(model="gpt-4o", call_id="c1", call_type="llm_call", response=response)
+                None,
+                LLMCallCompletedEvent(
+                    model="gpt-4o",
+                    call_id="c1",
+                    call_type="llm_call",
+                    response=response,
+                ),
             )
             now = datetime.datetime.now()
-            adapter._on_tool_started(None, ToolUsageStartedEvent(tool_name="x", tool_args="y", agent_key="a1"))
+            adapter._on_tool_started(
+                None,
+                ToolUsageStartedEvent(tool_name="x", tool_args="y", agent_key="a1"),
+            )
             adapter._on_tool_finished(
                 None,
                 ToolUsageFinishedEvent(
-                    tool_name="x", tool_args="y", agent_key="a1", started_at=now, finished_at=now, output="z"
+                    tool_name="x",
+                    tool_args="y",
+                    agent_key="a1",
+                    started_at=now,
+                    finished_at=now,
+                    output="z",
                 ),
             )
 
@@ -696,7 +747,10 @@ class TestLLMLatencyTracking:
         time.sleep(0.01)
 
         # Complete event computes latency
-        response = {"content": "hi", "usage": {"prompt_tokens": 5, "completion_tokens": 3}}
+        response = {
+            "content": "hi",
+            "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+        }
         adapter._on_llm_completed(
             None,
             LLMCallCompletedEvent(
@@ -722,7 +776,10 @@ class TestAgentExecutionLifecycle:
     def test_agent_execution_started(self, adapter_and_trace):
         adapter, uploaded = adapter_and_trace
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
-        adapter._on_task_started(None, TaskStartedEvent(context="ctx", task_name="T", agent_role="Researcher"))
+        adapter._on_task_started(
+            None,
+            TaskStartedEvent(context="ctx", task_name="T", agent_role="Researcher"),
+        )
 
         adapter._on_agent_execution_started(
             None,
@@ -750,7 +807,8 @@ class TestAgentExecutionLifecycle:
 
         adapter._on_agent_execution_started(None, AgentExecutionStartedEvent.model_construct(agent_role="Writer"))
         adapter._on_agent_execution_completed(
-            None, AgentExecutionCompletedEvent.model_construct(agent_role="Writer", output="Final draft")
+            None,
+            AgentExecutionCompletedEvent.model_construct(agent_role="Writer", output="Final draft"),
         )
 
         to = TaskOutput(description="t", raw="ok", agent="R")
@@ -769,7 +827,8 @@ class TestAgentExecutionLifecycle:
 
         adapter._on_agent_execution_started(None, AgentExecutionStartedEvent.model_construct(agent_role="Researcher"))
         adapter._on_agent_execution_error(
-            None, AgentExecutionErrorEvent.model_construct(agent_role="Researcher", error="agent crashed")
+            None,
+            AgentExecutionErrorEvent.model_construct(agent_role="Researcher", error="agent crashed"),
         )
 
         adapter._on_crew_failed(None, CrewKickoffFailedEvent(crew_name="C", error="agent fail"))
@@ -788,7 +847,8 @@ class TestAgentExecutionLifecycle:
 
         adapter._on_agent_execution_started(None, AgentExecutionStartedEvent.model_construct(agent_role="R"))
         adapter._on_agent_execution_completed(
-            None, AgentExecutionCompletedEvent.model_construct(agent_role="R", output="done")
+            None,
+            AgentExecutionCompletedEvent.model_construct(agent_role="R", output="done"),
         )
 
         to = TaskOutput(description="t", raw="ok", agent="R")
@@ -817,13 +877,18 @@ class TestAgentExecutionLifecycle:
 
         adapter._on_agent_execution_started(None, AgentExecutionStartedEvent.model_construct(agent_role="R"))
 
-        response = {"content": "hi", "usage": {"prompt_tokens": 5, "completion_tokens": 3}}
+        response = {
+            "content": "hi",
+            "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+        }
         adapter._on_llm_completed(
-            None, LLMCallCompletedEvent(model="gpt-4o", call_id="c1", call_type="llm_call", response=response)
+            None,
+            LLMCallCompletedEvent(model="gpt-4o", call_id="c1", call_type="llm_call", response=response),
         )
 
         adapter._on_agent_execution_completed(
-            None, AgentExecutionCompletedEvent.model_construct(agent_role="R", output="done")
+            None,
+            AgentExecutionCompletedEvent.model_construct(agent_role="R", output="done"),
         )
 
         to = TaskOutput(description="t", raw="ok", agent="R")
@@ -888,7 +953,11 @@ class TestDelegation:
 
         evt = ToolUsageStartedEvent(
             tool_name="Ask question to coworker",
-            tool_args={"question": "What is the deadline?", "coworker": "manager", "context": ""},
+            tool_args={
+                "question": "What is the deadline?",
+                "coworker": "manager",
+                "context": "",
+            },
             agent_key="planner_1",
         )
         adapter._on_tool_started(None, evt)
@@ -926,7 +995,11 @@ class TestDelegation:
 
         handoffs = find_events(uploaded["events"], "agent.handoff")
         assert [h["payload"]["delegation_seq"] for h in handoffs] == [1, 2, 3]
-        assert [h["payload"]["to_agent"] for h in handoffs] == ["researcher", "writer", "reviewer"]
+        assert [h["payload"]["to_agent"] for h in handoffs] == [
+            "researcher",
+            "writer",
+            "reviewer",
+        ]
 
     def test_string_tool_args_are_parsed(self, adapter_and_trace):
         """crewai sometimes passes tool_args as a JSON string."""

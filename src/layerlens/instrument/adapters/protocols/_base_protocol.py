@@ -78,7 +78,7 @@ class BaseProtocolAdapter(BaseAdapter, abc.ABC):
             adapter_type="protocol",
             version=self.PROTOCOL_VERSION or "0.1.0",
             connected=self._client is not None,
-            metadata={"negotiated_version": self._negotiated_version} if self._negotiated_version else {},
+            metadata=({"negotiated_version": self._negotiated_version} if self._negotiated_version else {}),
         )
 
     # --- Version negotiation ---
@@ -97,13 +97,22 @@ class BaseProtocolAdapter(BaseAdapter, abc.ABC):
 
     # --- Health probing (subclasses implement) ---
 
-    def probe_health(self, endpoint: Optional[str] = None) -> ProtocolHealth:  # noqa: ARG002
+    def probe_health(
+        self,
+        endpoint: Optional[str] = None,  # noqa: ARG002
+    ) -> ProtocolHealth:
         """Default: treat "connected" as healthy. Subclasses override for real probes."""
         return ProtocolHealth(reachable=self._client is not None, latency_ms=0.0)
 
     # --- Event emission ---
 
-    def emit(self, event_name: str, payload: Dict[str, Any], *, parent_span_id: Optional[str] = None) -> None:
+    def emit(
+        self,
+        event_name: str,
+        payload: Dict[str, Any],
+        *,
+        parent_span_id: Optional[str] = None,
+    ) -> None:
         collector = _current_collector.get()
         if collector is None:
             return

@@ -31,7 +31,11 @@ _VALID_TRANSITIONS: dict[TaskState, set[TaskState]] = {
         TaskState.CANCELLED,
         TaskState.INPUT_REQUIRED,
     },
-    TaskState.INPUT_REQUIRED: {TaskState.WORKING, TaskState.CANCELLED, TaskState.FAILED},
+    TaskState.INPUT_REQUIRED: {
+        TaskState.WORKING,
+        TaskState.CANCELLED,
+        TaskState.FAILED,
+    },
     TaskState.COMPLETED: set(),
     TaskState.FAILED: set(),
     TaskState.CANCELLED: set(),

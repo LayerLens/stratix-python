@@ -9,7 +9,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from adapters._shared import capture_events  # type: ignore[import-not-found]
 
-from layerlens.instrument.adapters.providers.litellm import instrument_litellm, uninstrument_litellm
+from layerlens.instrument.adapters.providers.litellm import (
+    instrument_litellm,
+    uninstrument_litellm,
+)
 
 
 def main() -> None:
@@ -20,7 +23,10 @@ def main() -> None:
         return
 
     # LiteLLM proxies many providers — default route is OpenAI, so require that key.
-    if not any(os.environ.get(k) for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LITELLM_API_KEY")):
+    if not any(
+        os.environ.get(k)
+        for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LITELLM_API_KEY")
+    ):
         print("Set OPENAI_API_KEY (or another provider key) to run LiteLLM live.")
         return
 

@@ -14,7 +14,11 @@ class TestStochasticProvider:
         provider = StochasticProvider(seed=7)
         result = provider.generate(
             template_id="llm.chat.basic",
-            parameters={"model": "gpt-4o-mini", "prompt_tokens_avg": 100, "completion_tokens_avg": 50},
+            parameters={
+                "model": "gpt-4o-mini",
+                "prompt_tokens_avg": 100,
+                "completion_tokens_avg": 50,
+            },
             count=5,
         )
         assert result.errors == []

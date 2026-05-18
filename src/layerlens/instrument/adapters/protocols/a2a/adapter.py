@@ -77,7 +77,11 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                 adapter._task_fsms[task_id] = TaskStateMachine(task_id)
                 adapter.emit(
                     A2A_TASK_CREATED,
-                    {"task_id": task_id, "method": method, "request": _summarize(kwargs)},
+                    {
+                        "task_id": task_id,
+                        "method": method,
+                        "request": _summarize(kwargs),
+                    },
                     parent_span_id=parent,
                 )
                 adapter.emit(

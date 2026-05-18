@@ -321,7 +321,13 @@ class StrandsAdapter(FrameworkAdapter):
             self._set_if_capturing(call_payload, "input", safe_serialize(tool_input))
             if latency_ms is not None:
                 call_payload["latency_ms"] = latency_ms
-            self._fire("tool.call", call_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}")
+            self._fire(
+                "tool.call",
+                call_payload,
+                span_id=span_id,
+                parent_span_id=parent,
+                span_name=f"tool:{tool_name}",
+            )
 
             result = getattr(event, "result", None)
             result_payload = self._payload(tool_name=tool_name)
@@ -338,7 +344,11 @@ class StrandsAdapter(FrameworkAdapter):
                 result_payload["error_type"] = type(exception).__name__
 
             self._fire(
-                "tool.result", result_payload, span_id=span_id, parent_span_id=parent, span_name=f"tool:{tool_name}"
+                "tool.result",
+                result_payload,
+                span_id=span_id,
+                parent_span_id=parent,
+                span_name=f"tool:{tool_name}",
             )
         except Exception:
             log.warning("layerlens: error in Strands after_tool", exc_info=True)
@@ -367,7 +377,12 @@ class StrandsAdapter(FrameworkAdapter):
         if tool_names:
             payload["tools"] = list(tool_names)
 
-        self._fire("environment.config", payload, parent_span_id=self._run_span_id, span_name=f"config:{name}")
+        self._fire(
+            "environment.config",
+            payload,
+            parent_span_id=self._run_span_id,
+            span_name=f"config:{name}",
+        )
 
     def _emit_per_cycle_tokens(self, agent: Any) -> None:
         """Emit cost.record per model call using per-cycle token data.

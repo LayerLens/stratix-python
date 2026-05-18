@@ -253,7 +253,13 @@ class AgnoAdapter(FrameworkAdapter):
         if model:
             payload["model"] = model
         self._set_if_capturing(payload, "input", safe_serialize(input_data))
-        self._emit("agent.input", payload, span_id=root, parent_span_id=None, span_name=f"agno:{name}")
+        self._emit(
+            "agent.input",
+            payload,
+            span_id=root,
+            parent_span_id=None,
+            span_name=f"agno:{name}",
+        )
 
     def _on_run_end(self, agent: Any, result: Any, error: Optional[Exception]) -> None:
         self._emit_output(agent, result, error)
@@ -281,7 +287,13 @@ class AgnoAdapter(FrameworkAdapter):
             payload["error"] = str(error)
             payload["error_type"] = type(error).__name__
         self._set_if_capturing(payload, "output", safe_serialize(output))
-        self._emit("agent.output", payload, span_id=root, parent_span_id=None, span_name=f"agno:{name}")
+        self._emit(
+            "agent.output",
+            payload,
+            span_id=root,
+            parent_span_id=None,
+            span_name=f"agno:{name}",
+        )
 
     def _emit_model(self, agent: Any, result: Any) -> None:
         model = _model_id(agent)
@@ -293,7 +305,13 @@ class AgnoAdapter(FrameworkAdapter):
         span_id = self._new_span_id()
         payload = self._payload(model=model)
         payload.update(tokens)
-        self._emit("model.invoke", payload, span_id=span_id, parent_span_id=root, span_name="model.invoke")
+        self._emit(
+            "model.invoke",
+            payload,
+            span_id=span_id,
+            parent_span_id=root,
+            span_name="model.invoke",
+        )
 
         if tokens:
             cost_payload = self._payload(model=model)

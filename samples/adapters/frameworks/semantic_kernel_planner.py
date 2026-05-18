@@ -10,7 +10,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from adapters._shared import capture_events  # type: ignore[import-not-found]
 
-from layerlens.instrument.adapters.frameworks.semantic_kernel import SemanticKernelAdapter
+from layerlens.instrument.adapters.frameworks.semantic_kernel import (
+    SemanticKernelAdapter,
+)
 
 
 async def run() -> None:
@@ -26,7 +28,9 @@ async def run() -> None:
         return
 
     kernel = Kernel()
-    kernel.add_service(OpenAIChatCompletion(service_id="chat", ai_model_id="gpt-4o-mini"))
+    kernel.add_service(
+        OpenAIChatCompletion(service_id="chat", ai_model_id="gpt-4o-mini")
+    )
     fn = kernel.add_function(
         plugin_name="demo",
         function_name="greet",

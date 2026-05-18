@@ -296,7 +296,11 @@ class BedrockAgentsAdapter(FrameworkAdapter):
         # Collaborator metadata: the supervisor's rationale for delegating
         # ("why this agent?") and the task it's handing off. This is what
         # makes a multi-agent trace readable without replaying every step.
-        for key in ("collaboratorName", "collaboratorDescription", "collaboratorInvocationType"):
+        for key in (
+            "collaboratorName",
+            "collaboratorDescription",
+            "collaboratorInvocationType",
+        ):
             val = step.get(key)
             if val:
                 payload[_snake(key)] = val

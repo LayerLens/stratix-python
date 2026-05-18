@@ -14,7 +14,10 @@ from layerlens.instrument.adapters.protocols.ucp import instrument_ucp, uninstru
 
 class _FakeUCPClient:
     def discover_suppliers(self, *, query: str):
-        return [{"id": "acme", "name": "Acme"}, {"id": "widgets", "name": "Widgets Inc"}]
+        return [
+            {"id": "acme", "name": "Acme"},
+            {"id": "widgets", "name": "Widgets Inc"},
+        ]
 
     def browse_catalog(self, *, supplier_id: str, query: str):
         return [{"id": f"item-{i}"} for i in range(5)]

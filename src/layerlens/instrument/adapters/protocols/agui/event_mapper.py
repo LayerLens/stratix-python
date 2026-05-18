@@ -42,8 +42,14 @@ _AGUI_EVENT_MAP: dict[str, dict[str, str]] = {
     "RUN_STARTED": {"stratix_event": "agent.state.change", "category": "lifecycle"},
     "RUN_FINISHED": {"stratix_event": "agent.state.change", "category": "lifecycle"},
     "RUN_ERROR": {"stratix_event": "agent.state.change", "category": "lifecycle"},
-    "TEXT_MESSAGE_START": {"stratix_event": "protocol.stream.event", "category": "text"},
-    "TEXT_MESSAGE_CONTENT": {"stratix_event": "protocol.stream.event", "category": "text"},
+    "TEXT_MESSAGE_START": {
+        "stratix_event": "protocol.stream.event",
+        "category": "text",
+    },
+    "TEXT_MESSAGE_CONTENT": {
+        "stratix_event": "protocol.stream.event",
+        "category": "text",
+    },
     "TEXT_MESSAGE_END": {"stratix_event": "protocol.stream.event", "category": "text"},
     "TOOL_CALL_START": {"stratix_event": "tool.call", "category": "tool"},
     "TOOL_CALL_ARGS": {"stratix_event": "protocol.stream.event", "category": "tool"},

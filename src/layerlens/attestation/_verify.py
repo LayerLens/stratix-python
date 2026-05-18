@@ -113,7 +113,11 @@ def verify_trial(
             signatures_valid = False
             errors.append("Missing signature on trial envelope")
         else:
-            if not hmac_verify(signing_secret, trial_envelope.hash.encode("utf-8"), trial_envelope.signature):
+            if not hmac_verify(
+                signing_secret,
+                trial_envelope.hash.encode("utf-8"),
+                trial_envelope.signature,
+            ):
                 signatures_valid = False
                 errors.append("Invalid signature on trial envelope")
 

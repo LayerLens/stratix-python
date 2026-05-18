@@ -19,7 +19,9 @@ pytest.importorskip("pydantic_ai.capabilities.hooks")
 from pydantic_ai import Agent  # noqa: E402
 from pydantic_ai.models.test import TestModel  # noqa: E402
 
-from layerlens.instrument.adapters.frameworks.pydantic_ai import PydanticAIAdapter  # noqa: E402
+from layerlens.instrument.adapters.frameworks.pydantic_ai import (
+    PydanticAIAdapter,
+)  # noqa: E402
 
 
 def _make_agent(output_text: str = "Hello!", tools: list | None = None) -> Agent:

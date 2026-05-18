@@ -89,13 +89,25 @@ class HaystackAdapter(FrameworkAdapter):
         max_runs = tags.get("haystack.pipeline.max_runs_per_component")
         if max_runs is not None:
             inp["max_runs_per_component"] = max_runs
-        self._emit("agent.input", inp, span_id=root, parent_span_id=None, span_name="haystack:pipeline")
+        self._emit(
+            "agent.input",
+            inp,
+            span_id=root,
+            parent_span_id=None,
+            span_name="haystack:pipeline",
+        )
 
         out = self._payload(latency_ms=elapsed_ms)
         self._set_if_capturing(out, "output", safe_serialize(tags.get("haystack.pipeline.output_data")))
         if tags.get("error"):
             out["error"] = str(tags.get("error.message", "unknown"))
-        self._emit("agent.output", out, span_id=root, parent_span_id=None, span_name="haystack:pipeline")
+        self._emit(
+            "agent.output",
+            out,
+            span_id=root,
+            parent_span_id=None,
+            span_name="haystack:pipeline",
+        )
 
         self._end_run()
 
@@ -153,7 +165,11 @@ class HaystackAdapter(FrameworkAdapter):
         call = self._payload(tool_name=name, component_type=comp_type)
         self._set_if_capturing(call, "input", safe_serialize(tags.get("haystack.component.input")))
         self._emit(
-            "tool.call", call, span_id=span.span_id, parent_span_id=span._parent_span_id, span_name=f"component:{name}"
+            "tool.call",
+            call,
+            span_id=span.span_id,
+            parent_span_id=span._parent_span_id,
+            span_name=f"component:{name}",
         )
 
         result = self._payload(tool_name=name, component_type=comp_type, latency_ms=elapsed_ms)
@@ -199,7 +215,7 @@ class _LayerLensTracer:
         span = _LayerLensSpan(
             self._adapter,
             operation_name,
-            self._adapter._get_root_span() if is_pipeline else self._adapter._new_span_id(),
+            (self._adapter._get_root_span() if is_pipeline else self._adapter._new_span_id()),
             getattr(parent_span, "span_id", None),
             tags or {},
             is_pipeline,

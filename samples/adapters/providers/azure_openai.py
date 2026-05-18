@@ -28,7 +28,9 @@ def main() -> None:
 
     required = {"AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY"}
     if not required.issubset(os.environ):
-        print("Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY to run against Azure.")
+        print(
+            "Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY to run against Azure."
+        )
         return
 
     client = AzureOpenAI(

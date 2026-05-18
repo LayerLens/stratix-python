@@ -89,7 +89,11 @@ def main() -> None:
         logger.error("Failed to initialize client: %s", exc)
         sys.exit(1)
 
-    logger.info("Connected to LayerLens (org=%s, project=%s)", client.organization_id, client.project_id)
+    logger.info(
+        "Connected to LayerLens (org=%s, project=%s)",
+        client.organization_id,
+        client.project_id,
+    )
 
     # --- Get or create judge ---
     if args.judge_id:
@@ -147,7 +151,9 @@ def main() -> None:
         )
     except layerlens.BadRequestError as e:
         logger.error("Cannot start optimization (insufficient annotations?): %s", e)
-        logger.info("Tip: Run trace evaluations with this judge first to build up annotations.")
+        logger.info(
+            "Tip: Run trace evaluations with this judge first to build up annotations."
+        )
         sys.exit(1)
 
     if not run:
@@ -167,13 +173,17 @@ def main() -> None:
     for attempt in range(1, max_attempts + 1):
         run_status = client.judge_optimizations.get(run.id)
         if not run_status:
-            logger.warning("Could not fetch run status (attempt %d/%d)", attempt, max_attempts)
+            logger.warning(
+                "Could not fetch run status (attempt %d/%d)", attempt, max_attempts
+            )
             time.sleep(poll_delay)
             poll_delay = min(poll_delay * backoff_factor, max_delay)
             continue
 
         status = getattr(run_status, "status", "unknown")
-        logger.info("  Run %s: status=%s (attempt %d/%d)", run.id, status, attempt, max_attempts)
+        logger.info(
+            "  Run %s: status=%s (attempt %d/%d)", run.id, status, attempt, max_attempts
+        )
 
         if status in ("completed", "failed", "cancelled", "success", "failure"):
             # --- Additional: Access optimization accuracy & goal details ---
@@ -181,12 +191,18 @@ def main() -> None:
                 logger.info("  Baseline accuracy: %s", run_status.baseline_accuracy)
                 logger.info("  Optimized accuracy: %s", run_status.optimized_accuracy)
                 if run_status.original_goal:
-                    logger.info("  Original goal: %s", (run_status.original_goal or "")[:80])
+                    logger.info(
+                        "  Original goal: %s", (run_status.original_goal or "")[:80]
+                    )
                 if run_status.optimized_goal:
-                    logger.info("  Optimized goal: %s", (run_status.optimized_goal or "")[:80])
+                    logger.info(
+                        "  Optimized goal: %s", (run_status.optimized_goal or "")[:80]
+                    )
                 logger.info("  Actual cost: $%.4f", run_status.actual_cost)
             except AttributeError:
-                logger.info("  (Detailed accuracy/goal fields not available on this response)")
+                logger.info(
+                    "  (Detailed accuracy/goal fields not available on this response)"
+                )
             break
 
         time.sleep(poll_delay)
@@ -208,7 +224,11 @@ def main() -> None:
         logger.info("No optimization runs found")
 
     # --- Step 5: Apply results ---
-    if not args.skip_apply and run_status and getattr(run_status, "status", "") == "completed":
+    if (
+        not args.skip_apply
+        and run_status
+        and getattr(run_status, "status", "") == "completed"
+    ):
         logger.info("=" * 60)
         logger.info("Step 5: Apply optimization results")
         logger.info("=" * 60)

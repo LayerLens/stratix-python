@@ -35,10 +35,19 @@ def bulk() -> None:
     help='JSONL file with evaluation jobs (each line: {"model": ..., "benchmark": ...}).',
 )
 @click.option("--model", "model_id", default=None, help="Model ID/name (use with --benchmark).")
-@click.option("--benchmark", "benchmark_id", default=None, help="Benchmark ID/name (use with --model).")
+@click.option(
+    "--benchmark",
+    "benchmark_id",
+    default=None,
+    help="Benchmark ID/name (use with --model).",
+)
 @click.option("--judge-id", default=None, help="Judge ID (use with --traces).")
 @click.option(
-    "--traces", "traces_file", type=click.Path(exists=True), default=None, help="File with trace IDs (one per line)."
+    "--traces",
+    "traces_file",
+    type=click.Path(exists=True),
+    default=None,
+    help="File with trace IDs (one per line).",
 )
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without executing.")
 @click.option("--wait", is_flag=True, default=False, help="Wait for all evaluations to complete.")
@@ -98,7 +107,8 @@ def bulk_eval(
             b = resolve_benchmark(client, job["benchmark"])
             if m is None or b is None:
                 click.echo(
-                    f"  [{i}] SKIP - model={job.get('model')} or benchmark={job.get('benchmark')} not found", err=True
+                    f"  [{i}] SKIP - model={job.get('model')} or benchmark={job.get('benchmark')} not found",
+                    err=True,
                 )
                 continue
 
@@ -129,7 +139,10 @@ def bulk_eval(
             sys.exit(1)
 
         if traces_file:
-            click.echo("Error: --traces requires --judge-id, not --model/--benchmark.", err=True)
+            click.echo(
+                "Error: --traces requires --judge-id, not --model/--benchmark.",
+                err=True,
+            )
             sys.exit(1)
 
         else:

@@ -8,7 +8,15 @@ from ._base_provider import MonkeyPatchProvider
 log = logging.getLogger(__name__)
 
 _CAPTURE_PARAMS = frozenset(
-    {"temperature", "max_output_tokens", "top_p", "top_k", "stream", "generation_config", "tools"}
+    {
+        "temperature",
+        "max_output_tokens",
+        "top_p",
+        "top_k",
+        "stream",
+        "generation_config",
+        "tools",
+    }
 )
 
 

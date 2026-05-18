@@ -581,7 +581,11 @@ class TestHelpers:
             metrics = RunMetrics(input_tokens=10, output_tokens=5, total_tokens=15)
 
         tokens = _extract_tokens(_Result())
-        assert tokens == {"tokens_prompt": 10, "tokens_completion": 5, "tokens_total": 15}
+        assert tokens == {
+            "tokens_prompt": 10,
+            "tokens_completion": 5,
+            "tokens_total": 15,
+        }
 
     def test_extract_tokens_none(self):
         class _Result:

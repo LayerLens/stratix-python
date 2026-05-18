@@ -29,7 +29,9 @@ def main() -> None:
 
     HaystackAdapter(None).connect(pipeline)
     with capture_events("haystack_pipeline"):
-        result = pipeline.run({"retriever": {"query": "Why is grass green?", "top_k": 1}})
+        result = pipeline.run(
+            {"retriever": {"query": "Why is grass green?", "top_k": 1}}
+        )
         print("docs:", [d.content for d in result["retriever"]["documents"]])
 
 

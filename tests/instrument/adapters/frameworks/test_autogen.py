@@ -120,7 +120,10 @@ class TestLLMCall:
             adapter,
             LLMCallEvent(
                 messages=[{"role": "user", "content": "What is 2+2?"}],
-                response={"model": "gpt-4o", "choices": [{"message": {"content": "4"}}]},
+                response={
+                    "model": "gpt-4o",
+                    "choices": [{"message": {"content": "4"}}],
+                },
                 prompt_tokens=50,
                 completion_tokens=10,
             ),
@@ -204,7 +207,10 @@ class TestLLMCall:
             adapter,
             LLMCallEvent(
                 messages=[{"role": "user", "content": "secret"}],
-                response={"model": "gpt-4o", "choices": [{"message": {"content": "classified"}}]},
+                response={
+                    "model": "gpt-4o",
+                    "choices": [{"message": {"content": "classified"}}],
+                },
                 prompt_tokens=10,
                 completion_tokens=5,
             ),

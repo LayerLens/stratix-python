@@ -54,7 +54,11 @@ async def main() -> None:
         logger.error("Failed to initialize async client: %s", exc)
         sys.exit(1)
 
-    logger.info("Connected to LayerLens (org=%s, project=%s)", client.organization_id, client.project_id)
+    logger.info(
+        "Connected to LayerLens (org=%s, project=%s)",
+        client.organization_id,
+        client.project_id,
+    )
 
     # --- Step 1: Concurrent fetch ---
     logger.info("=" * 60)
@@ -152,7 +156,9 @@ async def main() -> None:
             if evaluation2.is_success:
                 results = await evaluation2.get_results_async()
                 if results and results.results:
-                    logger.info("Instance get_results: %d result(s)", len(results.results))
+                    logger.info(
+                        "Instance get_results: %d result(s)", len(results.results)
+                    )
                 else:
                     logger.info("Instance get_results: no results")
     except AttributeError:

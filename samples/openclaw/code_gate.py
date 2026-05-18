@@ -54,10 +54,22 @@ class CodeGateRunner(DemoRunner):
 
     def build_parser(self) -> argparse.ArgumentParser:
         parser = super().build_parser()
-        parser.add_argument("--task", default=DEFAULT_TASK, help="Task specification for code generation.")
-        parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help="Gate threshold (default: 7.5).")
         parser.add_argument(
-            "--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS, help="Max pipeline iterations (default: 3)."
+            "--task",
+            default=DEFAULT_TASK,
+            help="Task specification for code generation.",
+        )
+        parser.add_argument(
+            "--threshold",
+            type=float,
+            default=DEFAULT_THRESHOLD,
+            help="Gate threshold (default: 7.5).",
+        )
+        parser.add_argument(
+            "--max-iterations",
+            type=int,
+            default=DEFAULT_MAX_ITERATIONS,
+            help="Max pipeline iterations (default: 3).",
         )
         return parser
 
@@ -92,7 +104,11 @@ class CodeGateRunner(DemoRunner):
         trace_id = self.upload_trace(
             input_text=task,
             output_text=final_eval.get("rationale", ""),
-            metadata={"demo": self.demo_id, "verdict": pipeline_result["final_verdict"], "source": "openclaw"},
+            metadata={
+                "demo": self.demo_id,
+                "verdict": pipeline_result["final_verdict"],
+                "source": "openclaw",
+            },
         )
         if trace_id:
             logger.info("Trace uploaded: %s", trace_id)
@@ -105,7 +121,11 @@ class CodeGateRunner(DemoRunner):
         if trace_id and sdk_judge_id:
             sdk_result = self.evaluate_trace(trace_id, sdk_judge_id)
             if sdk_result:
-                logger.info("SDK evaluation: score=%.2f passed=%s", sdk_result["score"], sdk_result["passed"])
+                logger.info(
+                    "SDK evaluation: score=%.2f passed=%s",
+                    sdk_result["score"],
+                    sdk_result["passed"],
+                )
 
         if sdk_result and not self.args.json:
             sdk_status = "PASS" if sdk_result["passed"] else "FAIL"
@@ -149,12 +169,18 @@ class CodeGateRunner(DemoRunner):
         print(f"  Final Score: {score:.1f} / 10.0")
         print(f"{'-' * 60}")
         for it in iterations:
-            print(f"  Iteration {it['iteration']}: {it['verdict']:<5} ({it['aggregate_score']:.1f})")
+            print(
+                f"  Iteration {it['iteration']}: {it['verdict']:<5} ({it['aggregate_score']:.1f})"
+            )
         print(f"{'=' * 60}")
 
         final_eval = result.get("final_evaluation", {})
         if final_eval:
-            _print_scores(final_eval.get("scores", {}), final_eval.get("aggregate_score", 0.0), verdict=verdict)
+            _print_scores(
+                final_eval.get("scores", {}),
+                final_eval.get("aggregate_score", 0.0),
+                verdict=verdict,
+            )
             suggestions = final_eval.get("suggestions", [])
             if suggestions:
                 print("  Improvement suggestions:")

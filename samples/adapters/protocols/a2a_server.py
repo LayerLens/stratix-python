@@ -32,7 +32,9 @@ def main() -> None:
     try:
         with capture_events("a2a"):
             client.get_agent_card("agent-1")
-            client.send_task(agent_id="agent-1", skill="summarize", payload={"text": "hi"})
+            client.send_task(
+                agent_id="agent-1", skill="summarize", payload={"text": "hi"}
+            )
     finally:
         uninstrument_a2a()
 

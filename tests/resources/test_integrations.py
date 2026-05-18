@@ -56,7 +56,10 @@ class TestIntegrations:
 
     def test_get_with_envelope(self, integrations_resource, sample_integration_data):
         """get handles {status, data} envelope."""
-        integrations_resource._get.return_value = {"status": "success", "data": sample_integration_data}
+        integrations_resource._get.return_value = {
+            "status": "success",
+            "data": sample_integration_data,
+        }
 
         result = integrations_resource.get("int-123")
 
@@ -74,7 +77,11 @@ class TestIntegrations:
         """get_many returns IntegrationsResponse."""
         integrations_resource._get.return_value = {
             "status": "success",
-            "data": {"integrations": [sample_integration_data], "count": 1, "total_count": 1},
+            "data": {
+                "integrations": [sample_integration_data],
+                "count": 1,
+                "total_count": 1,
+            },
         }
 
         result = integrations_resource.get_many()
@@ -100,7 +107,11 @@ class TestIntegrations:
         """get_many passes pagination parameters."""
         integrations_resource._get.return_value = {
             "status": "success",
-            "data": {"integrations": [sample_integration_data], "count": 1, "total_count": 10},
+            "data": {
+                "integrations": [sample_integration_data],
+                "count": 1,
+                "total_count": 10,
+            },
         }
 
         integrations_resource.get_many(page=2, page_size=5)

@@ -53,7 +53,11 @@ TEMPLATE_LIBRARY: Dict[str, TraceTemplate] = {
             _p("prompt_tokens_avg", "int", default=300),
             _p("completion_tokens_avg", "int", default=120),
         ],
-        defaults={"model": "gpt-4o-mini", "prompt_tokens_avg": 300, "completion_tokens_avg": 120},
+        defaults={
+            "model": "gpt-4o-mini",
+            "prompt_tokens_avg": 300,
+            "completion_tokens_avg": 120,
+        },
         provider_hint="stochastic",
     ),
     "agent.tool_calling": TraceTemplate(

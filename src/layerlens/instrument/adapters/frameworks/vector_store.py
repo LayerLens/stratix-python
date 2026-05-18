@@ -110,7 +110,11 @@ class VectorStoreAdapter(FrameworkAdapter):
                 continue
             original = getattr(query_obj, method_name)
             self._originals[key] = (query_obj, original, method_name)
-            setattr(query_obj, method_name, self._make_weaviate_wrapper(original, method_name))
+            setattr(
+                query_obj,
+                method_name,
+                self._make_weaviate_wrapper(original, method_name),
+            )
         return collection
 
     # ------------------------------------------------------------------

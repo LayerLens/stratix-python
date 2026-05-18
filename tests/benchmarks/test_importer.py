@@ -36,7 +36,10 @@ class TestCSV:
             schema_mapping={"question": "prompt", "answer": "expected_output"},
         )
         assert result.records[0] == {"prompt": "q1", "expected_output": "a1"}
-        assert result.metadata.schema_mapping == {"question": "prompt", "answer": "expected_output"}
+        assert result.metadata.schema_mapping == {
+            "question": "prompt",
+            "answer": "expected_output",
+        }
 
     def test_missing_file_returns_failure(self, importer: BenchmarkImporter):
         result = importer.import_csv("/no/such/file.csv")

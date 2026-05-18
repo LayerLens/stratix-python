@@ -42,7 +42,12 @@ def _print_events(collector: TraceCollector) -> None:
     events = getattr(collector, "_events", [])
     print(f"\n--- captured {len(events)} events ---")
     for ev in events:
-        print(json.dumps({"type": ev.get("event_type"), "payload": ev.get("payload")}, default=str)[:500])
+        print(
+            json.dumps(
+                {"type": ev.get("event_type"), "payload": ev.get("payload")},
+                default=str,
+            )[:500]
+        )
 
 
 def pretty(value: Any) -> str:

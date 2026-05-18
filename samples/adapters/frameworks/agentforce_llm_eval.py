@@ -19,7 +19,9 @@ def main() -> None:
         "instance_url": os.environ.get("SF_INSTANCE_URL", ""),
     }
     if not creds["client_id"]:
-        print("Set SF_CLIENT_ID / SF_CLIENT_SECRET / SF_INSTANCE_URL to run against a live org.")
+        print(
+            "Set SF_CLIENT_ID / SF_CLIENT_SECRET / SF_INSTANCE_URL to run against a live org."
+        )
         return
 
     adapter = AgentforceAdapter(None)

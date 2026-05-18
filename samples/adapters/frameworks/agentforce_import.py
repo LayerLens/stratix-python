@@ -22,7 +22,9 @@ from adapters._shared import capture_events  # type: ignore[import-not-found]
 
 def main() -> None:
     try:
-        from layerlens.instrument.adapters.frameworks.agentforce import AgentforceAdapter
+        from layerlens.instrument.adapters.frameworks.agentforce import (
+            AgentforceAdapter,
+        )
     except ImportError:
         print("Install: pip install 'layerlens[agentforce]' httpx")
         return
@@ -33,7 +35,9 @@ def main() -> None:
         with capture_events("agentforce_import"):
             info = adapter.adapter_info()
             print(f"adapter loaded: {info.name} (connected={info.connected})")
-        print("Set SF_CLIENT_ID / SF_CLIENT_SECRET / SF_INSTANCE_URL to run a real import.")
+        print(
+            "Set SF_CLIENT_ID / SF_CLIENT_SECRET / SF_INSTANCE_URL to run a real import."
+        )
         return
 
     adapter = AgentforceAdapter(client=Mock())

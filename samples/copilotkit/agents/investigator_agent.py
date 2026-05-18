@@ -160,10 +160,24 @@ def _extract_events(trace_data: Dict[str, Any]) -> List[TraceEvent]:
                 duration_ms=_safe_float(raw.get("duration_ms", raw.get("duration"))),
                 status=raw.get("status", raw.get("status_code")),
                 error=raw.get(
-                    "error", raw.get("exception", {}).get("message") if isinstance(raw.get("exception"), dict) else None
+                    "error",
+                    (
+                        raw.get("exception", {}).get("message")
+                        if isinstance(raw.get("exception"), dict)
+                        else None
+                    ),
                 ),
-                tokens_in=_safe_int(raw.get("tokens_in", raw.get("prompt_tokens", raw.get("input_tokens")))),
-                tokens_out=_safe_int(raw.get("tokens_out", raw.get("completion_tokens", raw.get("output_tokens")))),
+                tokens_in=_safe_int(
+                    raw.get(
+                        "tokens_in", raw.get("prompt_tokens", raw.get("input_tokens"))
+                    )
+                ),
+                tokens_out=_safe_int(
+                    raw.get(
+                        "tokens_out",
+                        raw.get("completion_tokens", raw.get("output_tokens")),
+                    )
+                ),
                 model=raw.get("model", raw.get("model_id")),
                 metadata={
                     k: v
@@ -371,7 +385,8 @@ async def fetch_trace_node(state: InvestigatorState) -> Dict[str, Any]:
         return {
             "step": "error",
             "error": "No trace ID provided.",
-            "messages": state.messages + [AIMessage(content="Please provide a trace ID to investigate.")],
+            "messages": state.messages
+            + [AIMessage(content="Please provide a trace ID to investigate.")],
         }
 
     data = await asyncio.to_thread(_get_trace, trace_id)
@@ -380,10 +395,16 @@ async def fetch_trace_node(state: InvestigatorState) -> Dict[str, Any]:
             "step": "error",
             "error": f"Trace '{trace_id}' not found.",
             "messages": state.messages
-            + [AIMessage(content=f"Could not find trace `{trace_id}`. Please check the ID.")],
+            + [
+                AIMessage(
+                    content=f"Could not find trace `{trace_id}`. Please check the ID."
+                )
+            ],
         }
 
-    msg = f"Fetched trace `{trace_id}` ({data.get('filename', 'unknown')}). Analyzing..."
+    msg = (
+        f"Fetched trace `{trace_id}` ({data.get('filename', 'unknown')}). Analyzing..."
+    )
     return {
         "trace_id": trace_id,
         "trace_data": data,
@@ -411,7 +432,9 @@ async def analyze_node(state: InvestigatorState) -> Dict[str, Any]:
     # Build summary line
     error_count = sum(1 for i in issues if i.severity == "error")
     warning_count = sum(1 for i in issues if i.severity == "warning")
-    summary = f"{len(events)} event(s), {error_count} error(s), {warning_count} warning(s)."
+    summary = (
+        f"{len(events)} event(s), {error_count} error(s), {warning_count} warning(s)."
+    )
 
     report = InvestigationReport(
         trace_id=state.trace_id or "",
@@ -435,8 +458,12 @@ async def analyze_node(state: InvestigatorState) -> Dict[str, Any]:
     if issues:
         lines.append("**Issues:**")
         for issue in issues:
-            icon = {"error": "!!!", "warning": "(!)", "info": "(i)"}.get(issue.severity, "   ")
-            lines.append(f"  {icon} [{issue.category}] {issue.title}: {issue.description}")
+            icon = {"error": "!!!", "warning": "(!)", "info": "(i)"}.get(
+                issue.severity, "   "
+            )
+            lines.append(
+                f"  {icon} [{issue.category}] {issue.title}: {issue.description}"
+            )
         lines.append("")
 
     lines.append("**Suggestions:**")

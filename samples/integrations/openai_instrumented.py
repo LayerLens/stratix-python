@@ -27,7 +27,10 @@ def main() -> None:
         # Manual span for a retrieval step
         with span("retrieve", kind="retriever") as s:
             # In a real app, this would query a vector database
-            docs = ["Python is a programming language.", "It was created by Guido van Rossum."]
+            docs = [
+                "Python is a programming language.",
+                "It was created by Guido van Rossum.",
+            ]
             s.output = docs
 
         # The OpenAI call is automatically instrumented — no span() needed

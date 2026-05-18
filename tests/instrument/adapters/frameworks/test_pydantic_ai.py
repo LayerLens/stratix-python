@@ -22,7 +22,9 @@ from pydantic_ai import Agent  # noqa: E402
 from pydantic_ai.models.test import TestModel  # noqa: E402
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
-from layerlens.instrument.adapters.frameworks.pydantic_ai import PydanticAIAdapter  # noqa: E402
+from layerlens.instrument.adapters.frameworks.pydantic_ai import (
+    PydanticAIAdapter,
+)  # noqa: E402
 
 from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
 

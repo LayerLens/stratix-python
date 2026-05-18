@@ -12,7 +12,12 @@ are out of scope until we have concrete product requirements.
 
 from __future__ import annotations
 
-from .batch import BatchReplayer, BatchReplayResult, BatchReplayRequest, BatchReplaySummary
+from .batch import (
+    BatchReplayer,
+    BatchReplayResult,
+    BatchReplayRequest,
+    BatchReplaySummary,
+)
 from .store import ReplayStore, InMemoryReplayStore
 from .models import (
     ReplayDiff,

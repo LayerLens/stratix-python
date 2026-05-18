@@ -92,7 +92,10 @@ class SyntheticDataBuilder:
                 errors=errors,
             )
 
-        bounded = max(template.min_traces, min(count, template.max_traces, provider.info.max_batch_size))
+        bounded = max(
+            template.min_traces,
+            min(count, template.max_traces, provider.info.max_batch_size),
+        )
         return provider.generate(
             template_id=template_id,
             parameters=merged,

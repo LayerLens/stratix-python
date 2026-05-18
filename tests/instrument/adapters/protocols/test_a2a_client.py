@@ -26,7 +26,12 @@ class TestSendTask:
     def test_emits_task_created(self):
         adapter = MagicMock()
         wrapper = A2AClientWrapper(adapter, target_url="https://peer")
-        wrapper.send_task("t1", [{"role": "user", "content": "hi"}], task_type="plan", agent_id="agent-42")
+        wrapper.send_task(
+            "t1",
+            [{"role": "user", "content": "hi"}],
+            task_type="plan",
+            agent_id="agent-42",
+        )
         names = _emitted_event_names(adapter)
         assert A2A_TASK_CREATED in names
         created = _last_payload_for(adapter, A2A_TASK_CREATED)

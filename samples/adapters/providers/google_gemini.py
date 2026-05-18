@@ -22,8 +22,12 @@ def main() -> None:
         print("Install the Vertex extra: pip install 'layerlens[google-vertex]'")
         return
 
-    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") and not os.environ.get("GOOGLE_CLOUD_PROJECT"):
-        print("Set GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_CLOUD_PROJECT to run against Vertex AI.")
+    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") and not os.environ.get(
+        "GOOGLE_CLOUD_PROJECT"
+    ):
+        print(
+            "Set GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_CLOUD_PROJECT to run against Vertex AI."
+        )
         return
 
     model = GenerativeModel("gemini-1.5-flash")

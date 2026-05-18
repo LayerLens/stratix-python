@@ -31,7 +31,9 @@ def _auto_flush(fn):  # type: ignore[type-arg]
 
 
 try:
+    # fmt: off
     from langchain_core.callbacks import BaseCallbackHandler  # pyright: ignore[reportAssignmentType]
+    # fmt: on
 except ImportError:
 
     class BaseCallbackHandler:  # type: ignore[no-redef]
@@ -96,7 +98,10 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         **kwargs: Any,
     ) -> None:
         self._emit(
-            "agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id
+            "agent.error",
+            self._payload(error=str(error), status="error"),
+            run_id=run_id,
+            parent_run_id=parent_run_id,
         )
 
     # ------------------------------------------------------------------
@@ -261,7 +266,12 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
             tc_payload = self._payload(**tc)
             if model_name:
                 tc_payload["model"] = model_name
-            self._emit("tool.call", tc_payload, run_id=run_id, parent_run_id=pending.get("parent_run_id"))
+            self._emit(
+                "tool.call",
+                tc_payload,
+                run_id=run_id,
+                parent_run_id=pending.get("parent_run_id"),
+            )
 
         # Separate cost.record if we have token data
         if tokens:
@@ -269,7 +279,12 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
             if model_name:
                 cost_payload["model"] = model_name
             cost_payload.update(tokens)
-            self._emit("cost.record", cost_payload, run_id=run_id, parent_run_id=pending.get("parent_run_id"))
+            self._emit(
+                "cost.record",
+                cost_payload,
+                run_id=run_id,
+                parent_run_id=pending.get("parent_run_id"),
+            )
 
     @_auto_flush
     def on_llm_error(
@@ -288,7 +303,12 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         latency_ms = self._stop_timer(str(run_id))
         if latency_ms is not None:
             payload["latency_ms"] = latency_ms
-        self._emit("model.invoke", payload, run_id=run_id, parent_run_id=pending.get("parent_run_id"))
+        self._emit(
+            "model.invoke",
+            payload,
+            run_id=run_id,
+            parent_run_id=pending.get("parent_run_id"),
+        )
 
         self._emit(
             "agent.error",
@@ -338,7 +358,10 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         **kwargs: Any,
     ) -> None:
         self._emit(
-            "agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id
+            "agent.error",
+            self._payload(error=str(error), status="error"),
+            run_id=run_id,
+            parent_run_id=parent_run_id,
         )
 
     # ------------------------------------------------------------------
@@ -386,7 +409,10 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         **kwargs: Any,
     ) -> None:
         self._emit(
-            "agent.error", self._payload(error=str(error), status="error"), run_id=run_id, parent_run_id=parent_run_id
+            "agent.error",
+            self._payload(error=str(error), status="error"),
+            run_id=run_id,
+            parent_run_id=parent_run_id,
         )
 
     # ------------------------------------------------------------------

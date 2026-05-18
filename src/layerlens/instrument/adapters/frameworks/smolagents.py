@@ -307,7 +307,11 @@ class SmolAgentsAdapter(FrameworkAdapter):
         if code_action and self._config.capture_content:
             step_payload["code_action"] = str(code_action)[:2000]
 
-        self._set_if_capturing(step_payload, "observations", safe_serialize(getattr(step, "observations", None)))
+        self._set_if_capturing(
+            step_payload,
+            "observations",
+            safe_serialize(getattr(step, "observations", None)),
+        )
         self._fire(
             "agent.step",
             step_payload,
@@ -329,7 +333,12 @@ class SmolAgentsAdapter(FrameworkAdapter):
             cost_payload = self._payload(**tokens)
             if model_id:
                 cost_payload["model"] = model_id
-            self._fire("cost.record", cost_payload, span_id=span_id, parent_span_id=parent_span_id)
+            self._fire(
+                "cost.record",
+                cost_payload,
+                span_id=span_id,
+                parent_span_id=parent_span_id,
+            )
 
     def _emit_tool_calls(self, tool_calls: List[Any], step: Any, parent_span_id: str) -> None:
         observations = getattr(step, "observations", None) or ""
@@ -340,10 +349,20 @@ class SmolAgentsAdapter(FrameworkAdapter):
             span_id = self._new_span_id()
             call_payload = self._payload(tool_name=name)
             self._set_if_capturing(call_payload, "input", safe_serialize(getattr(tc, "arguments", None)))
-            self._fire("tool.call", call_payload, span_id=span_id, parent_span_id=parent_span_id)
+            self._fire(
+                "tool.call",
+                call_payload,
+                span_id=span_id,
+                parent_span_id=parent_span_id,
+            )
             result_payload = self._payload(tool_name=name)
             self._set_if_capturing(result_payload, "output", safe_serialize(observations))
-            self._fire("tool.result", result_payload, span_id=span_id, parent_span_id=parent_span_id)
+            self._fire(
+                "tool.result",
+                result_payload,
+                span_id=span_id,
+                parent_span_id=parent_span_id,
+            )
 
     # ------------------------------------------------------------------
     # PlanningStep processing
@@ -373,7 +392,13 @@ class SmolAgentsAdapter(FrameworkAdapter):
             if summary:
                 payload["plan_summary"] = summary
         self._set_if_capturing(payload, "plan", safe_serialize(plan))
-        self._fire("agent.step", payload, span_id=span_id, parent_span_id=self._run_span_id, span_name="planning")
+        self._fire(
+            "agent.step",
+            payload,
+            span_id=span_id,
+            parent_span_id=self._run_span_id,
+            span_name="planning",
+        )
 
         # model.invoke for the planning LLM call
         token_usage = getattr(step, "token_usage", None)

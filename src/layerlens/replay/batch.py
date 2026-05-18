@@ -5,7 +5,11 @@ from __future__ import annotations
 import time
 import uuid
 from typing import Dict, List, Callable, Iterable, Optional
-from concurrent.futures import Future, TimeoutError as FuturesTimeoutError, ThreadPoolExecutor
+from concurrent.futures import (
+    Future,
+    TimeoutError as FuturesTimeoutError,
+    ThreadPoolExecutor,
+)
 
 from pydantic import Field, BaseModel
 

@@ -32,7 +32,9 @@ def main() -> None:
         with capture_events("langfuse_migration"):
             info = adapter.adapter_info()
             print(f"adapter loaded: {info.name} (connected={info.connected})")
-        print("Set LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST to migrate real traces.")
+        print(
+            "Set LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST to migrate real traces."
+        )
         return
 
     adapter = LangfuseAdapter(client=Mock())

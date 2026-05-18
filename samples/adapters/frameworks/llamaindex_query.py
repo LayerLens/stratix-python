@@ -17,7 +17,9 @@ def main() -> None:
         from llama_index.core import Document, VectorStoreIndex  # type: ignore[import-not-found]
         from llama_index.embeddings.openai import OpenAIEmbedding  # type: ignore[import-not-found]  # noqa: F401
     except ImportError:
-        print("Install: pip install 'layerlens[llamaindex]' llama-index llama-index-embeddings-openai")
+        print(
+            "Install: pip install 'layerlens[llamaindex]' llama-index llama-index-embeddings-openai"
+        )
         return
 
     if not os.environ.get("OPENAI_API_KEY"):
