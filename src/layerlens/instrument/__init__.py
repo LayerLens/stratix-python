@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ._w3c import inject_headers, extract_headers, new_traceparent
 from ._emit import emit
 from ._span import span
 from ._collector import TraceCollector
@@ -17,7 +18,10 @@ __all__ = [
     "auto",
     "discover_installed",
     "emit",
+    "extract_headers",
     "get_trace_context",
+    "inject_headers",
+    "new_traceparent",
     "span",
     "trace",
     "trace_context",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Dict, Callable, Optional
 
+from ..._w3c import gen_ai_attributes
 from .._base import AdapterInfo  # noqa: F401  (re-exported for typing)
 from .pricing import PRICING, calculate_cost
 from ..._events import (
@@ -13,6 +14,18 @@ from ..._events import (
 )
 from ..._context import _current_span_id, _current_collector
 from .token_usage import NormalizedTokenUsage
+
+
+def _derive_operation(name: str) -> str:
+    """Derive the OTel gen_ai.operation.name from our event name string."""
+    low = name.lower()
+    if "embedding" in low:
+        return "embeddings"
+    if "responses" in low:
+        return "responses"
+    if "completion" in low and "chat" not in low:
+        return "text_completion"
+    return "chat"
 
 
 def emit_llm_events(
@@ -47,6 +60,15 @@ def emit_llm_events(
     if extra_params:
         parameters.update(extra_params)
 
+    provider = name.split(".")[0]
+    otel_attrs = gen_ai_attributes(
+        provider=provider,
+        operation=_derive_operation(name),
+        parameters=parameters,
+        response_meta=response_meta,
+        usage=response_meta.get("usage"),
+    )
+
     collector.emit(
         MODEL_INVOKE,
         {
@@ -56,6 +78,7 @@ def emit_llm_events(
             "parameters": parameters,
             "messages": _extract_messages(kwargs),
             "output_message": extract_output(response),
+            "otel_gen_ai": otel_attrs,
             **response_meta,
         },
         span_id=span_id,
