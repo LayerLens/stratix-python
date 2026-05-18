@@ -7,6 +7,14 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
+from ._langchain_memory import TracedMemory, MemoryMutationTracker, wrap_memory
+
+__all__ = [
+    "LangChainCallbackHandler",
+    "MemoryMutationTracker",
+    "TracedMemory",
+    "wrap_memory",
+]
 
 
 def _auto_flush(fn):  # type: ignore[type-arg]
