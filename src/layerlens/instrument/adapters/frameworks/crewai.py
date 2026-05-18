@@ -136,18 +136,25 @@ class CrewAIAdapter(FrameworkAdapter):
     def _subscribe(self) -> None:
         import crewai.events as ev  # pyright: ignore[reportMissingImports]
 
-        for event_name, method_name in self._EVENT_MAP:
-            event_cls = getattr(ev, event_name)
-            method = getattr(self, method_name)
-
-            def _handler(source: Any, event: Any, _m: Any = method) -> None:
+        # crewai >=1.x inspects the handler's param count and passes a
+        # third `state` positional when there are 3 params, which would
+        # silently clobber a default-arg closure. Bind via a factory so
+        # the visible signature is exactly (source, event).
+        def _make_handler(target):
+            def _handler(source: Any, event: Any) -> None:
                 try:
-                    _m(source, event)
+                    target(source, event)
                 except Exception:
                     log.warning("layerlens: error in CrewAI event handler", exc_info=True)
 
-            ev.crewai_event_bus.on(event_cls)(_handler)
-            self._registered_handlers.append((event_cls, _handler))
+            return _handler
+
+        for event_name, method_name in self._EVENT_MAP:
+            event_cls = getattr(ev, event_name)
+            method = getattr(self, method_name)
+            handler = _make_handler(method)
+            ev.crewai_event_bus.on(event_cls)(handler)
+            self._registered_handlers.append((event_cls, handler))
 
         # Delegation events are optional — not every crewai version ships them.
         for event_name, method_name in self._DELEGATION_EVENT_MAP:
@@ -155,15 +162,9 @@ class CrewAIAdapter(FrameworkAdapter):
             if event_cls is None:
                 continue
             method = getattr(self, method_name)
-
-            def _delegation_handler(source: Any, event: Any, _m: Any = method) -> None:
-                try:
-                    _m(source, event)
-                except Exception:
-                    log.warning("layerlens: error in CrewAI delegation handler", exc_info=True)
-
-            ev.crewai_event_bus.on(event_cls)(_delegation_handler)
-            self._registered_handlers.append((event_cls, _delegation_handler))
+            handler = _make_handler(method)
+            ev.crewai_event_bus.on(event_cls)(handler)
+            self._registered_handlers.append((event_cls, handler))
 
     def _unsubscribe(self) -> None:
         try:
