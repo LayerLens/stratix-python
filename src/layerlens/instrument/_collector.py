@@ -84,22 +84,59 @@ class TraceCollector:
             self._chain.add_event(event)
             self._events.append(event)
 
-    def _build_trace_payload(self) -> Dict[str, Any]:
-        """Build the attestation envelope and trace payload."""
+    @property
+    def events(self) -> List[Dict[str, Any]]:
+        """Read-only snapshot of the events captured so far."""
+        with self._lock:
+            return list(self._events)
+
+    def to_replay_dict(self) -> Dict[str, Any]:
+        """Return the trace as a replay-ready dict.
+
+        Same shape as the payload uploaded to the API: ``trace_id``,
+        ``events``, ``capture_config``, ``attestation``. Safe to call at
+        any time — even before flush — and idempotent (does not seal the
+        collector or the hash chain). Use this to persist a trace for
+        later replay via :mod:`layerlens.replay.snapshot`.
+        """
+        with self._lock:
+            return self._build_trace_payload(seal=False)
+
+    def _build_trace_payload(self, *, seal: bool = True) -> Dict[str, Any]:
+        """Build the attestation envelope and trace payload.
+
+        When ``seal`` is True (default, used by :meth:`flush`) the hash
+        chain is finalized — no more events can be added. When False
+        (used by :meth:`to_replay_dict`) the root hash is computed
+        non-destructively so the collector stays usable.
+        """
         try:
-            trial = self._chain.finalize()
+            if seal:
+                trial = self._chain.finalize()
+                root_hash: Optional[str] = trial.hash
+            else:
+                # Non-destructive: compute root_hash without finalizing.
+                envelopes = self._chain.envelopes
+                if envelopes:
+                    from layerlens.attestation._hash import compute_hash
+
+                    event_hashes = [e.hash for e in envelopes]
+                    root_hash = compute_hash({"event_hashes": event_hashes})
+                else:
+                    root_hash = None
             attestation: Dict[str, Any] = {
                 "chain": self._chain.to_dict(),
-                "root_hash": trial.hash,
                 "schema_version": "1.0",
             }
+            if root_hash is not None:
+                attestation["root_hash"] = root_hash
         except Exception as exc:
             log.warning("Failed to build attestation chain", exc_info=True)
             attestation = {"attestation_error": str(exc)}
 
         trace_payload: Dict[str, Any] = {
             "trace_id": self._trace_id,
-            "events": self._events,
+            "events": list(self._events) if not seal else self._events,
             "capture_config": self._config.to_dict(),
             "attestation": attestation,
         }

@@ -22,6 +22,13 @@ from .models import (
     EventDiffDetail,
     BatchReplayFilter,
 )
+from .snapshot import (
+    dump as dump_snapshot,
+    load_snapshot,
+    replay_events,
+    dump_collector,
+    serialize_adapter,
+)
 from .controller import ReplayFn, ReplayController
 from .diff_engine import DiffEngine, similarity
 
@@ -41,5 +48,10 @@ __all__ = [
     "ReplayResult",
     "ReplayStatus",
     "ReplayStore",
+    "dump_collector",
+    "dump_snapshot",
+    "load_snapshot",
+    "replay_events",
+    "serialize_adapter",
     "similarity",
 ]
