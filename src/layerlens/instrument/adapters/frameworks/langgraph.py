@@ -18,6 +18,10 @@ Three additions over the base LangChain handler:
   Use ``state_include_keys`` / ``state_exclude_keys`` (constructor args) to
   scope the hash to a subset of the state dict; set ``emit_state_hash=False``
   to disable entirely.
+* Detect agent-to-agent handoffs by tracking node-name transitions. When
+  the active node changes between distinct named agents, emit an
+  ``agent.handoff`` event via :class:`HandoffDetector`. Set
+  ``detect_handoffs=False`` to disable.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import logging
 from uuid import UUID
 from typing import Any, Dict, List, Optional
 
+from ._handoff import HandoffDetector
 from .langchain import LangChainCallbackHandler
 from ....attestation._hash import compute_hash
 
@@ -44,6 +49,7 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
         emit_state_hash: bool = True,
         state_include_keys: Optional[List[str]] = None,
         state_exclude_keys: Optional[List[str]] = None,
+        detect_handoffs: bool = True,
     ) -> None:
         super().__init__(client, capture_config=capture_config)
         # run_id -> node metadata (node_name, step, entered_at_ns)
@@ -51,6 +57,8 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
         self._emit_state_hash = emit_state_hash
         self._state_include_keys = frozenset(state_include_keys) if state_include_keys is not None else None
         self._state_exclude_keys = frozenset(state_exclude_keys) if state_exclude_keys is not None else None
+        self._detect_handoffs = detect_handoffs
+        self._handoff_detector = HandoffDetector() if detect_handoffs else None
 
     # ------------------------------------------------------------------
     # Chain callbacks — enrich with node-level detection
@@ -83,6 +91,8 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
             enter_payload = self._payload(node=node_name, step=step)
             self._set_if_capturing(enter_payload, "input", inputs)
             self._emit("agent.node.enter", enter_payload, run_id=run_id, parent_run_id=parent_run_id)
+            if self._handoff_detector is not None:
+                self._handoff_detector.detect(node_name, context=inputs)
 
         name = node_name or serialized.get("name") or serialized.get("id", ["unknown"])[-1]
         payload = self._payload(name=name)

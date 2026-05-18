@@ -299,3 +299,95 @@ class TestStateHashing:
         assert state_change["payload"]["state_hash"].startswith("sha256:")
         # state_keys is still set since the outer container is a dict
         assert state_change["payload"]["state_keys"] == ["obj"]
+
+
+# ---------------------------------------------------------------------------
+# LangGraph-specific: handoff detection
+# ---------------------------------------------------------------------------
+
+
+class TestHandoffDetection:
+    def _enter_node(self, handler, node, *, run_id=None, parent_run_id=None, inputs=None):
+        rid = run_id or uuid4()
+        handler.on_chain_start(
+            {"name": "Seq"},
+            inputs or {},
+            run_id=rid,
+            parent_run_id=parent_run_id,
+            metadata={"langgraph_node": node},
+        )
+        return rid
+
+    def test_two_node_transition_emits_handoff(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangGraphCallbackHandler(mock_client)
+
+        root = self._enter_node(handler, "supervisor")
+        # Second node is a child of the first run — same graph invocation
+        self._enter_node(handler, "researcher", parent_run_id=root)
+        handler.on_chain_end({}, run_id=root)
+
+        handoffs = find_events(uploaded["events"], "agent.handoff")
+        assert len(handoffs) == 1
+        assert handoffs[0]["payload"]["from_agent"] == "supervisor"
+        assert handoffs[0]["payload"]["to_agent"] == "researcher"
+        assert "timestamp_ns" in handoffs[0]["payload"]
+
+    def test_three_node_transitions_emit_two_handoffs(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangGraphCallbackHandler(mock_client)
+
+        root = self._enter_node(handler, "supervisor")
+        self._enter_node(handler, "researcher", parent_run_id=root)
+        self._enter_node(handler, "writer", parent_run_id=root)
+        handler.on_chain_end({}, run_id=root)
+
+        handoffs = find_events(uploaded["events"], "agent.handoff")
+        assert len(handoffs) == 2
+        assert (handoffs[0]["payload"]["from_agent"], handoffs[0]["payload"]["to_agent"]) == (
+            "supervisor",
+            "researcher",
+        )
+        assert (handoffs[1]["payload"]["from_agent"], handoffs[1]["payload"]["to_agent"]) == (
+            "researcher",
+            "writer",
+        )
+
+    def test_revisit_same_node_does_not_emit_handoff(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangGraphCallbackHandler(mock_client)
+
+        root = self._enter_node(handler, "researcher")
+        self._enter_node(handler, "researcher", parent_run_id=root)
+        handler.on_chain_end({}, run_id=root)
+
+        assert find_events(uploaded["events"], "agent.handoff") == []
+
+    def test_disabled_via_detect_handoffs_false(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangGraphCallbackHandler(mock_client, detect_handoffs=False)
+
+        root = self._enter_node(handler, "supervisor")
+        self._enter_node(handler, "researcher", parent_run_id=root)
+        handler.on_chain_end({}, run_id=root)
+
+        assert find_events(uploaded["events"], "agent.handoff") == []
+
+    def test_context_is_scrubbed_and_hashed(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangGraphCallbackHandler(mock_client)
+
+        root = self._enter_node(handler, "supervisor", inputs={"task": "summarize"})
+        self._enter_node(
+            handler,
+            "researcher",
+            parent_run_id=root,
+            inputs={"task": "summarize", "messages": ["m"] * 50},  # long list -> placeholder
+        )
+        handler.on_chain_end({}, run_id=root)
+
+        handoff = find_event(uploaded["events"], "agent.handoff")
+        assert handoff["payload"]["context"]["task"] == "summarize"
+        # Long list collapsed to summary placeholder
+        assert handoff["payload"]["context"]["messages"] == "[50 items]"
+        assert handoff["payload"]["handoff_context_hash"].startswith("sha256:")
