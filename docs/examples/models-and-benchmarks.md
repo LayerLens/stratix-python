@@ -115,7 +115,7 @@ def main():
         name="My Custom Model",
         key="my-org/custom-model-v1",
         description="Custom fine-tuned model served via vLLM",
-        api_url="https://my-model-endpoint.example.com/v1",
+        api_url="https://my-model-endpoint.example.com/v1/chat/completions",
         api_key=os.environ["MY_PROVIDER_API_KEY"],
         max_tokens=4096,
     )
@@ -152,7 +152,7 @@ def main():
         name="My Tunnel-backed Model",
         key="my-org/tunnel-model-v1",
         description="vLLM served behind a cloudflared tunnel",
-        api_url="https://tunnel-1.example.com/v1",
+        api_url="https://tunnel-1.example.com/v1/chat/completions",
         api_key="my-provider-api-key",
         max_tokens=4096,
     )
@@ -161,7 +161,7 @@ def main():
     # Later, when the tunnel URL changes:
     client.models.update_custom(
         result.model_id,
-        api_url="https://tunnel-2.example.com/v1",
+        api_url="https://tunnel-2.example.com/v1/chat/completions",
     )
 
     # Run evaluations as usual — the model now points at the new endpoint.
@@ -190,7 +190,7 @@ def main():
         name="My Custom Model",
         key="my-org/custom-model-v2",
         description="Replacement after schema migration",
-        api_url="https://my-endpoint.example.com/v1",
+        api_url="https://my-endpoint.example.com/v1/chat/completions",
         api_key="my-provider-api-key",
         max_tokens=4096,
     )

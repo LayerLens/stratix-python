@@ -13,6 +13,8 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 
 ### Added
 
+- `extra_payload` parameter on `models.create_custom` and `models.update_custom` (sync + async). Optional JSON object merged into every outgoing chat-completions request body; customer values win on conflict with our hardcoded defaults. Lets customers add provider-specific fields (`top_p`, `max_completion_tokens`) or override values like `temperature` for providers that reject our defaults.
+
 ### Changed
 
 ### Fixed

@@ -38,7 +38,7 @@ model = client.models.create_custom(
     name="My Custom Model",
     key="my-custom-model",
     description="Fine-tuned GPT for legal analysis",
-    api_url="https://api.example.com/v1/completions",
+    api_url="https://api.example.com/v1/chat/completions",
     max_tokens=4096,
     api_key="sk-...",
 )
