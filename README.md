@@ -31,6 +31,9 @@
 </p>
 
 ---
+<p align="center">
+  <img src="./demo-stratix.gif" alt="Stratix Python SDK demo: list 217 frontier models in 5 lines of Python" width="720">
+</p>
 
 ## Why Stratix?
 
