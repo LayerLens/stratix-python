@@ -188,6 +188,21 @@ _GEN_AI_SYSTEM: Dict[str, str] = {
     "litellm": "litellm",
 }
 
+# Vendor-namespaced response attributes. Only emitted when the provider is the
+# vendor in question; harmless on other providers because the source field
+# won't be present in their response_meta.
+_OPENAI_RESPONSE_ATTR: Dict[str, str] = {
+    "system_fingerprint": "gen_ai.openai.response.system_fingerprint",
+    "service_tier": "gen_ai.openai.response.service_tier",
+}
+
+# Vendor-namespaced request attributes — mapped from capture_params for the
+# matching provider only. Generic (un-namespaced) mappings live in
+# ``_GEN_AI_REQUEST_ATTR`` above.
+_OPENAI_REQUEST_ATTR: Dict[str, str] = {
+    "seed": "gen_ai.openai.request.seed",
+}
+
 
 def gen_ai_attributes(
     *,
@@ -223,9 +238,21 @@ def gen_ai_attributes(
     response_id = response_meta.get("response_id")
     if response_id:
         attrs["gen_ai.response.id"] = response_id
-    finish_reason = response_meta.get("finish_reason")
+    # OpenAI emits ``finish_reason``; Anthropic emits ``stop_reason``. OTel
+    # unifies both under ``gen_ai.response.finish_reasons``.
+    finish_reason = response_meta.get("finish_reason") or response_meta.get("stop_reason")
     if finish_reason:
         attrs["gen_ai.response.finish_reasons"] = [finish_reason]
+
+    if provider in ("openai", "azure_openai"):
+        for key, attr in _OPENAI_RESPONSE_ATTR.items():
+            val = response_meta.get(key)
+            if val is not None:
+                attrs[attr] = val
+        for key, attr in _OPENAI_REQUEST_ATTR.items():
+            val = parameters.get(key)
+            if val is not None:
+                attrs[attr] = val
 
     if usage:
         prompt = usage.get("prompt_tokens") or usage.get("input_tokens")
@@ -234,5 +261,23 @@ def gen_ai_attributes(
             attrs["gen_ai.usage.input_tokens"] = int(prompt)
         if completion is not None:
             attrs["gen_ai.usage.output_tokens"] = int(completion)
+        cache_read = usage.get("cache_read_input_tokens") or usage.get("cached_tokens")
+        if cache_read is not None:
+            attrs["gen_ai.usage.cache_read_input_tokens"] = int(cache_read)
+        cache_creation = usage.get("cache_creation_input_tokens")
+        if cache_creation is not None:
+            attrs["gen_ai.usage.cache_creation_input_tokens"] = int(cache_creation)
+        reasoning = usage.get("reasoning_tokens") or usage.get("thinking_tokens")
+        if reasoning is not None:
+            attrs["gen_ai.usage.reasoning_tokens"] = int(reasoning)
+        # Vendor-namespaced Anthropic cache attrs per TEL-028 (LAY-2881):
+        # ``gen_ai.anthropic.*`` only fire for Anthropic spans; the un-namespaced
+        # versions above remain emitted as aliases for backends that key off the
+        # generic OTel GenAI spec names.
+        if provider == "anthropic":
+            if cache_read is not None:
+                attrs["gen_ai.anthropic.cache_read_input_tokens"] = int(cache_read)
+            if cache_creation is not None:
+                attrs["gen_ai.anthropic.cache_creation_input_tokens"] = int(cache_creation)
 
     return attrs

@@ -18,6 +18,7 @@ import time
 import logging
 from typing import Any, Dict
 
+from ..._w3c import gen_ai_attributes
 from .._base import AdapterInfo, BaseAdapter
 from .pricing import BEDROCK_PRICING
 from ..._events import AGENT_ERROR, MODEL_INVOKE
@@ -112,6 +113,14 @@ class BedrockProvider(BaseAdapter):
 
             output = _extract_invoke_output(body_data, family)
             usage = _extract_invoke_usage(body_data, family)
+            extra: Dict[str, Any] = {"family": family}
+            response_id = _bedrock_response_id(response)
+            if response_id:
+                extra["response_id"] = response_id
+            # Family-specific stop_reason from the parsed body.
+            stop_reason = _extract_invoke_stop_reason(body_data, family)
+            if stop_reason:
+                extra["stop_reason"] = stop_reason
             _emit_invoke(
                 event="aws_bedrock.invoke_model",
                 model_id=model_id,
@@ -120,7 +129,7 @@ class BedrockProvider(BaseAdapter):
                 messages=input_messages,
                 output=output,
                 usage=usage,
-                extra={"family": family},
+                extra=extra,
             )
             return response
 
@@ -148,6 +157,9 @@ class BedrockProvider(BaseAdapter):
             stop_reason = response.get("stopReason") if isinstance(response, dict) else None
             if stop_reason:
                 metadata_extra["stop_reason"] = stop_reason
+            response_id = _bedrock_response_id(response)
+            if response_id:
+                metadata_extra["response_id"] = response_id
             _emit_invoke(
                 event="aws_bedrock.converse",
                 model_id=model_id,
@@ -264,6 +276,46 @@ def _extract_invoke_output(data: Dict[str, Any], family: str) -> dict[str, str] 
     return {"role": "assistant", "content": content} if content else None
 
 
+def _extract_invoke_stop_reason(data: Dict[str, Any], family: str) -> str | None:
+    """Family-specific stop reason from invoke_model body (TEL-029 / LAY-2883)."""
+    if not data:
+        return None
+    if family == "anthropic":
+        val = data.get("stop_reason")
+        return val if isinstance(val, str) else None
+    if family == "meta":
+        val = data.get("stop_reason")
+        return val if isinstance(val, str) else None
+    if family == "cohere":
+        gens = data.get("generations") or []
+        if gens and isinstance(gens[0], dict):
+            val = gens[0].get("finish_reason")
+            return val if isinstance(val, str) else None
+    if family == "amazon":
+        results = data.get("results") or []
+        if results and isinstance(results[0], dict):
+            val = results[0].get("completionReason")
+            return val if isinstance(val, str) else None
+    if family == "mistral":
+        outputs = data.get("outputs") or []
+        if outputs and isinstance(outputs[0], dict):
+            val = outputs[0].get("stop_reason")
+            return val if isinstance(val, str) else None
+    return None
+
+
+def _bedrock_response_id(response: Any) -> str | None:
+    """Pull AWS RequestId — every boto3 Bedrock response has one in
+    ``ResponseMetadata.RequestId``."""
+    if not isinstance(response, dict):
+        return None
+    metadata = response.get("ResponseMetadata") or {}
+    if not isinstance(metadata, dict):
+        return None
+    rid = metadata.get("RequestId")
+    return rid if isinstance(rid, str) and rid else None
+
+
 def _extract_invoke_usage(data: Dict[str, Any], family: str) -> NormalizedTokenUsage | None:
     if not data:
         return None
@@ -336,17 +388,34 @@ def _emit_invoke(
         return
     span_id = uuid.uuid4().hex[:16]
     parent_span_id = _current_span_id.get()
+    parameters = {k: kwargs[k] for k in _CAPTURE_PARAMS if k in kwargs}
     payload: Dict[str, Any] = {
         "name": event,
         "model": model_id,
         "latency_ms": latency_ms,
-        "parameters": {k: kwargs[k] for k in _CAPTURE_PARAMS if k in kwargs},
+        "parameters": parameters,
         "messages": messages,
         "output_message": output,
     }
     if usage is not None:
         payload["usage"] = usage.as_event_dict()
     payload.update(extra)
+    # OTel GenAI semantic-convention attributes (TEL-029 / LAY-2883). Bedrock's
+    # emit path is bespoke (no _base_provider wrap), so we plumb gen_ai_attributes
+    # in directly here using extra + usage dicts.
+    response_meta: Dict[str, Any] = {}
+    if "response_id" in extra:
+        response_meta["response_id"] = extra["response_id"]
+    if "stop_reason" in extra:
+        response_meta["stop_reason"] = extra["stop_reason"]
+    response_meta["response_model"] = model_id
+    payload["otel_gen_ai"] = gen_ai_attributes(
+        provider="bedrock",
+        operation="chat",
+        parameters=parameters,
+        response_meta=response_meta,
+        usage=usage.as_event_dict() if usage is not None else None,
+    )
     collector.emit(MODEL_INVOKE, payload, span_id=span_id, parent_span_id=parent_span_id)
 
     if usage is not None:

@@ -253,3 +253,167 @@ class TestGenAiAttributes:
         # `custom_internal_flag` has no mapping -> not in attrs
         for key in attrs:
             assert "custom_internal_flag" not in key
+
+    def test_anthropic_stop_reason_becomes_finish_reasons(self):
+        # Anthropic stores ``stop_reason`` rather than ``finish_reason``; the
+        # mapper should still emit ``gen_ai.response.finish_reasons``.
+        attrs = gen_ai_attributes(
+            provider="anthropic",
+            operation="chat",
+            parameters={},
+            response_meta={"stop_reason": "end_turn"},
+        )
+        assert attrs["gen_ai.response.finish_reasons"] == ["end_turn"]
+
+    def test_anthropic_cache_tokens_mapped(self):
+        attrs = gen_ai_attributes(
+            provider="anthropic",
+            operation="chat",
+            parameters={},
+            response_meta={},
+            usage={
+                "input_tokens": 50,
+                "output_tokens": 20,
+                "cache_read_input_tokens": 120,
+                "cache_creation_input_tokens": 300,
+            },
+        )
+        assert attrs["gen_ai.usage.cache_read_input_tokens"] == 120
+        assert attrs["gen_ai.usage.cache_creation_input_tokens"] == 300
+
+    def test_openai_cached_tokens_alias(self):
+        # OpenAI exposes cached prompt tokens under ``cached_tokens``; the
+        # mapper should normalise to ``gen_ai.usage.cache_read_input_tokens``.
+        attrs = gen_ai_attributes(
+            provider="openai",
+            operation="chat",
+            parameters={},
+            response_meta={},
+            usage={"prompt_tokens": 100, "completion_tokens": 30, "cached_tokens": 64},
+        )
+        assert attrs["gen_ai.usage.cache_read_input_tokens"] == 64
+        # Anthropic-only field is absent.
+        assert "gen_ai.usage.cache_creation_input_tokens" not in attrs
+
+    def test_reasoning_tokens_mapped_openai(self):
+        attrs = gen_ai_attributes(
+            provider="openai",
+            operation="chat",
+            parameters={},
+            response_meta={},
+            usage={"prompt_tokens": 10, "completion_tokens": 50, "reasoning_tokens": 1024},
+        )
+        assert attrs["gen_ai.usage.reasoning_tokens"] == 1024
+
+    def test_reasoning_tokens_mapped_anthropic_thinking_alias(self):
+        # Anthropic's extended-thinking budget surfaces as ``thinking_tokens``;
+        # OTel uses the unified ``reasoning_tokens`` attribute.
+        attrs = gen_ai_attributes(
+            provider="anthropic",
+            operation="chat",
+            parameters={},
+            response_meta={},
+            usage={"input_tokens": 12, "output_tokens": 80, "thinking_tokens": 2048},
+        )
+        assert attrs["gen_ai.usage.reasoning_tokens"] == 2048
+
+    def test_openai_system_fingerprint_and_service_tier(self):
+        attrs = gen_ai_attributes(
+            provider="openai",
+            operation="chat",
+            parameters={},
+            response_meta={
+                "system_fingerprint": "fp_abc123",
+                "service_tier": "scale",
+            },
+        )
+        assert attrs["gen_ai.openai.response.system_fingerprint"] == "fp_abc123"
+        assert attrs["gen_ai.openai.response.service_tier"] == "scale"
+
+    def test_openai_namespaced_attrs_not_emitted_for_other_providers(self):
+        # ``system_fingerprint`` / ``service_tier`` are OpenAI-specific; even
+        # if a non-OpenAI provider somehow surfaced them in meta, they must
+        # not be emitted under the OpenAI namespace.
+        attrs = gen_ai_attributes(
+            provider="anthropic",
+            operation="chat",
+            parameters={},
+            response_meta={"system_fingerprint": "fp_should_be_ignored"},
+        )
+        for key in attrs:
+            assert "gen_ai.openai." not in key
+
+    def test_azure_openai_inherits_openai_response_namespace(self):
+        # Azure OpenAI is the same vendor; namespaced attrs should still apply.
+        attrs = gen_ai_attributes(
+            provider="azure_openai",
+            operation="chat",
+            parameters={},
+            response_meta={"system_fingerprint": "fp_azure"},
+        )
+        assert attrs["gen_ai.openai.response.system_fingerprint"] == "fp_azure"
+
+    # ------------------------------------------------------------------
+    # TEL-026 / LAY-2879: ``gen_ai.openai.request.seed``
+    # ------------------------------------------------------------------
+
+    def test_openai_seed_emitted_under_vendor_namespace(self):
+        attrs = gen_ai_attributes(
+            provider="openai",
+            operation="chat",
+            parameters={"model": "gpt-4o", "seed": 42},
+            response_meta={},
+        )
+        # Vendor-namespaced per TEL-026 acceptance criteria.
+        assert attrs["gen_ai.openai.request.seed"] == 42
+        # Generic version retained as alias so generic OTel backends still see it.
+        assert attrs["gen_ai.request.seed"] == 42
+
+    def test_seed_not_vendor_namespaced_for_non_openai(self):
+        attrs = gen_ai_attributes(
+            provider="anthropic",
+            operation="chat",
+            parameters={"seed": 42},
+            response_meta={},
+        )
+        # Anthropic doesn't have a seed concept; even if a caller passes it, it
+        # must not be emitted under the OpenAI vendor namespace.
+        for key in attrs:
+            assert "gen_ai.openai." not in key
+
+    # ------------------------------------------------------------------
+    # TEL-028 / LAY-2881: ``gen_ai.anthropic.cache_*_input_tokens``
+    # ------------------------------------------------------------------
+
+    def test_anthropic_cache_tokens_emitted_under_vendor_namespace(self):
+        attrs = gen_ai_attributes(
+            provider="anthropic",
+            operation="chat",
+            parameters={},
+            response_meta={},
+            usage={
+                "input_tokens": 50,
+                "output_tokens": 20,
+                "cache_read_input_tokens": 120,
+                "cache_creation_input_tokens": 300,
+            },
+        )
+        # Vendor-namespaced per TEL-028 acceptance criteria.
+        assert attrs["gen_ai.anthropic.cache_read_input_tokens"] == 120
+        assert attrs["gen_ai.anthropic.cache_creation_input_tokens"] == 300
+        # Un-namespaced alias retained.
+        assert attrs["gen_ai.usage.cache_read_input_tokens"] == 120
+        assert attrs["gen_ai.usage.cache_creation_input_tokens"] == 300
+
+    def test_anthropic_cache_namespace_not_emitted_for_openai(self):
+        # OpenAI also exposes cached prompt tokens, but the Anthropic-namespaced
+        # attributes must only fire on Anthropic spans per TEL-028.
+        attrs = gen_ai_attributes(
+            provider="openai",
+            operation="chat",
+            parameters={},
+            response_meta={},
+            usage={"prompt_tokens": 100, "completion_tokens": 30, "cached_tokens": 64},
+        )
+        for key in attrs:
+            assert "gen_ai.anthropic." not in key

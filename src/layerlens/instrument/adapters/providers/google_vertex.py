@@ -64,6 +64,13 @@ class GoogleVertexProvider(MonkeyPatchProvider):
             fr = getattr(candidates[0], "finish_reason", None)
             if fr is not None:
                 meta["finish_reason"] = getattr(fr, "name", None) or str(fr)
+        # Vertex surfaces a response identifier on newer SDKs (per TEL-029
+        # / LAY-2883). Capture whichever field the running SDK exposes.
+        for attr in ("response_id", "id"):
+            rid = getattr(response, attr, None)
+            if isinstance(rid, str) and rid:
+                meta["response_id"] = rid
+                break
         return meta
 
     @staticmethod
