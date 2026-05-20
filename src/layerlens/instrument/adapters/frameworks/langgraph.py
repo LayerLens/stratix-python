@@ -40,6 +40,8 @@ log = logging.getLogger(__name__)
 
 class LangGraphCallbackHandler(LangChainCallbackHandler):
     name = "langgraph"
+    # LangGraph 0.2+ is Pydantic v2-only (LAY-3446 catalog manifest AC).
+    requires_pydantic: str = "2"
 
     def __init__(
         self,

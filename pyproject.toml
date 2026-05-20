@@ -40,6 +40,14 @@ google-vertex = ["google-cloud-aiplatform>=1.38"]
 bedrock = ["boto3>=1.34"]
 ollama = ["ollama>=0.1"]
 langchain = ["langchain-core>=0.1.0"]
+# LangGraph 0.2+ is Pydantic v2-only — see ``LangGraphCallbackHandler.requires_pydantic`` (LAY-3446).
+langgraph = ["langgraph>=0.2.0", "langchain-core>=0.1.0"]
+# CrewAI 0.30+ is Pydantic v2-only — see ``CrewAIAdapter.requires_pydantic`` (LAY-3447).
+crewai = ["crewai>=0.30.0"]
+# AutoGen split at 0.4: the new ``autogen-agentchat`` package is the runtime layer (LAY-3448).
+autogen = ["autogen-agentchat>=0.4.0"]
+# Agentforce adapter uses Salesforce REST + Data Cloud APIs via httpx (LAY-3449).
+agentforce = ["httpx>=0.27.0"]
 litellm = ["litellm>=1.0.0"]
 pydantic-ai = ["pydantic-ai>=0.2.0"]
 openai-agents = ["openai-agents>=0.1.0"]
@@ -60,6 +68,16 @@ all-providers = [
 all-protocols = [
   "mcp>=0.9; python_version >= '3.10'",
   "a2a-sdk>=0.1; python_version >= '3.10'",
+]
+all-frameworks = [
+  "langchain-core>=0.1.0",
+  "langgraph>=0.2.0",
+  "crewai>=0.30.0",
+  "autogen-agentchat>=0.4.0",
+  "httpx>=0.27.0",
+  "semantic-kernel>=1.0.0; python_version >= '3.10'",
+  "pydantic-ai>=0.2.0",
+  "openai-agents>=0.1.0",
 ]
 
 [project.urls]
