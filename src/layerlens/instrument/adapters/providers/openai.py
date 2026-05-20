@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict
 
 from ._base_provider import MonkeyPatchProvider
+
+log: logging.Logger = logging.getLogger(__name__)
 
 _CAPTURE_PARAMS = frozenset(
     {
@@ -184,11 +187,19 @@ def _serialize_tool_call(tc: Any) -> Dict[str, Any]:
 
 
 def _maybe_load_json(s: Any) -> Any:
+    """Parse JSON-looking tool args. Per LAY-3331 AC, malformed JSON logs a
+    WARNING and we surface the raw string rather than crashing the trace."""
     if not isinstance(s, str):
+        return s
+    if not s.strip():
         return s
     try:
         return json.loads(s)
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError) as exc:
+        # Truncate the offending string in the log to keep arbitrary tool
+        # arguments out of long-lived log files.
+        snippet = s if len(s) <= 200 else s[:200] + "..."
+        log.warning("malformed tool_call JSON arguments (%s): %r", exc, snippet)
         return s
 
 

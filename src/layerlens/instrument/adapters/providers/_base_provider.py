@@ -7,6 +7,7 @@ from typing import Any, Dict, Callable, Iterator, Optional, AsyncIterator
 
 from .._base import AdapterInfo, BaseAdapter
 from ..._context import _current_collector
+from ._streaming import stream_chunks_sync, stream_chunks_async
 from ._emit_helpers import emit_llm_error, emit_llm_events
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -127,36 +128,22 @@ class MonkeyPatchProvider(BaseAdapter):
         stream: Iterator[Any],
         start: float,
     ) -> Iterator[Any]:
+        # Delegates to :mod:`_streaming` so the OpenAI and Anthropic adapters
+        # share one timing + accumulation implementation (LAY-3329).
         extractors = self._extractors()
-        aggregate = type(self).aggregate_stream
-        chunks: list[Any] = []
-
-        def generator() -> Iterator[Any]:
-            try:
-                for chunk in stream:
-                    chunks.append(chunk)
-                    yield chunk
-            except Exception as exc:
-                emit_llm_error(event_name, exc, (time.time() - start) * 1000)
-                raise
-            latency_ms = (time.time() - start) * 1000
-            response = aggregate(chunks)
-            if response is None:
-                return
-            emit_llm_events(
-                event_name,
-                kwargs,
-                response,
-                extractors.output,
-                extractors.meta,
-                self.capture_params,
-                latency_ms,
-                pricing_table=self.pricing_table,
-                extract_tool_calls=extractors.tool_calls,
-                extra_params=type(self).derive_params(kwargs),
-            )
-
-        return generator()
+        return stream_chunks_sync(
+            event_name=event_name,
+            kwargs=kwargs,
+            stream=stream,
+            start=start,
+            aggregate=type(self).aggregate_stream,
+            extract_output=extractors.output,
+            extract_meta=extractors.meta,
+            extract_tool_calls=extractors.tool_calls,
+            capture_params=self.capture_params,
+            pricing_table=self.pricing_table,
+            extra_params=type(self).derive_params(kwargs),
+        )
 
     def _wrap_async_stream_iterator(
         self,
@@ -166,35 +153,19 @@ class MonkeyPatchProvider(BaseAdapter):
         start: float,
     ) -> AsyncIterator[Any]:
         extractors = self._extractors()
-        aggregate = type(self).aggregate_stream
-        chunks: list[Any] = []
-
-        async def generator() -> AsyncIterator[Any]:
-            try:
-                async for chunk in stream:
-                    chunks.append(chunk)
-                    yield chunk
-            except Exception as exc:
-                emit_llm_error(event_name, exc, (time.time() - start) * 1000)
-                raise
-            latency_ms = (time.time() - start) * 1000
-            response = aggregate(chunks)
-            if response is None:
-                return
-            emit_llm_events(
-                event_name,
-                kwargs,
-                response,
-                extractors.output,
-                extractors.meta,
-                self.capture_params,
-                latency_ms,
-                pricing_table=self.pricing_table,
-                extract_tool_calls=extractors.tool_calls,
-                extra_params=type(self).derive_params(kwargs),
-            )
-
-        return generator()
+        return stream_chunks_async(
+            event_name=event_name,
+            kwargs=kwargs,
+            stream=stream,
+            start=start,
+            aggregate=type(self).aggregate_stream,
+            extract_output=extractors.output,
+            extract_meta=extractors.meta,
+            extract_tool_calls=extractors.tool_calls,
+            capture_params=self.capture_params,
+            pricing_table=self.pricing_table,
+            extra_params=type(self).derive_params(kwargs),
+        )
 
     def disconnect(self) -> None:
         if self._client is None:

@@ -40,6 +40,8 @@ def emit_llm_events(
     pricing_table: Optional[dict[str, dict[str, float]]] = None,
     extract_tool_calls: Optional[Callable[[Any], list[dict[str, Any]]]] = None,
     extra_params: Optional[Dict[str, Any]] = None,
+    ttft_ms: Optional[float] = None,
+    streaming_duration_ms: Optional[float] = None,
 ) -> None:
     """Emit ``model.invoke`` + optional ``tool.call`` + ``cost.record`` events.
 
@@ -69,6 +71,12 @@ def emit_llm_events(
         usage=response_meta.get("usage"),
     )
 
+    streaming_timing: Dict[str, float] = {}
+    if ttft_ms is not None:
+        streaming_timing["ttft_ms"] = ttft_ms
+    if streaming_duration_ms is not None:
+        streaming_timing["streaming_duration_ms"] = streaming_duration_ms
+
     collector.emit(
         MODEL_INVOKE,
         {
@@ -79,6 +87,7 @@ def emit_llm_events(
             "messages": _extract_messages(kwargs),
             "output_message": extract_output(response),
             "otel_gen_ai": otel_attrs,
+            **streaming_timing,
             **response_meta,
         },
         span_id=span_id,
@@ -119,16 +128,36 @@ def emit_llm_error(
     name: str,
     error: Exception,
     latency_ms: float,
+    *,
+    partial_meta: Optional[Dict[str, Any]] = None,
+    partial_chunks: Optional[int] = None,
 ) -> None:
-    """Emit agent.error for a failed LLM call."""
+    """Emit agent.error for a failed LLM call.
+
+    When the failure happened mid-stream, callers pass ``partial_meta`` with
+    whatever was accumulated before the exception (token counts, response_id,
+    stop_reason, etc.) along with ``partial_chunks`` — the number of chunks
+    or events received pre-error. This satisfies the LAY-3329 / LAY-3332
+    "partial event with error metadata" acceptance criterion.
+    """
     collector = _current_collector.get()
     parent_span_id = _current_span_id.get()
     if collector is None:
         return
     span_id = uuid.uuid4().hex[:16]
+    payload: Dict[str, Any] = {
+        "name": name,
+        "error": str(error),
+        "error_type": type(error).__name__,
+        "latency_ms": latency_ms,
+    }
+    if partial_chunks is not None:
+        payload["partial_chunks"] = partial_chunks
+    if partial_meta:
+        payload["partial_meta"] = partial_meta
     collector.emit(
         AGENT_ERROR,
-        {"name": name, "error": str(error), "latency_ms": latency_ms},
+        payload,
         span_id=span_id,
         parent_span_id=parent_span_id,
     )
