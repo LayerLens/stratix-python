@@ -39,9 +39,14 @@ def main() -> None:
         name="My Custom Model",
         key="my-org/custom-model-v1",
         description="Custom fine-tuned model served via vLLM",
-        api_url="https://my-model-endpoint.example.com/v1",
+        api_url="https://my-model-endpoint.example.com/v1/chat/completions",
         api_key="my-provider-api-key",
         max_tokens=4096,
+        # Optional -- merged into every outgoing request body. Customer
+        # values win on conflict with our hardcoded defaults (we send
+        # `temperature: 0` for reproducible evals; override here for
+        # providers that reject it, e.g. {"temperature": 1}).
+        extra_payload={"top_p": 0.9},
     )
 
     if result:
@@ -69,7 +74,7 @@ def main() -> None:
 
     updated = client.models.update_custom(
         result.model_id,
-        api_url="https://my-new-endpoint.example.com/v1",
+        api_url="https://my-new-endpoint.example.com/v1/chat/completions",
     )
     if updated:
         print(f"\nCustom model {result.model_id} api_url updated")

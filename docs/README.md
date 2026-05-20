@@ -176,9 +176,12 @@ response = client.models.create_custom(
     name="My Fine-tuned Model",
     key="my-org/custom-model-v1",
     description="Fine-tuned GPT for medical Q&A",
-    api_url="https://my-api.example.com/v1",
+    api_url="https://my-api.example.com/v1/chat/completions",
     max_tokens=4096,
     api_key=os.environ.get("MY_PROVIDER_API_KEY"),  # optional
+    # Optional — merged into every request body. Useful for provider-specific
+    # fields or for overriding our defaults (e.g. {"temperature": 1}).
+    extra_payload={"top_p": 0.9},
 )
 print(f"Created model: {response.model_id}")
 ```
