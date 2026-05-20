@@ -52,8 +52,8 @@ Stratix is built differently. It gives you production-grade evaluation infrastru
 
 | Capability              | **Stratix**                                    | LangSmith                  | Langfuse                | DeepEval            | Phoenix (Arize)        |
 | ----------------------- | ---------------------------------------------- | -------------------------- | ----------------------- | ------------------- | ---------------------- |
-| Pre-built benchmarks    | 100+ benchmarks, 200+ models                   | No public benchmarks       | No public benchmarks    | 30+ metrics         | Bring your own         |
-| Prompt-level comparison | Native head-to-head with outcome filters       | Side-by-side runs (manual) | Prompt experiments + side-by-side (UI)            | Manual setup        | Not built-in           |
+| Pre-built benchmarks    | 100+ benchmarks, 200+ models                   | No public benchmarks       | No public benchmarks    | 50+ metrics         | Bring your own         |
+| Prompt-level comparison | Native head-to-head with outcome filters       | Side-by-side runs (manual) | Side-by-side runs + Playground/Experiments (UI Supported)            | Manual setup        | Not built-in           |
 | Custom judge builder    | Auto-optimized GEPA judges with budget control | LLM-as-judge (manual)      | LLM-as-judge (manual)   | Basic LLM judges    | LLM-as-judge templates |
 | Agent trace evaluation  | Upload, replay, judge every step               | Trace logging + annotation | Trace logging + scoring | Trace logging only  | Trace visualization    |
 | Eval generation ladder  | Heuristic > model-graded > deliberation > GEPA | Single generation          | Single generation       | Single generation   | Single generation      |
@@ -117,7 +117,7 @@ comparison = pc.comparisons.compare_models(
 print(comparison)
 ```
 
-That's it — you're comparing frontier models on real benchmark data. **[See full results in the dashboard →](https://stratix.layerlens.ai)**
+That's it! You're comparing frontier models on real benchmark data. **[See full results in the dashboard →](https://stratix.layerlens.ai)**
 
 ### Next steps
 
@@ -221,9 +221,9 @@ Apache 2.0. See [LICENSE](./LICENSE).
 **Get started in under 2 minutes:**
 
 ```bash
-pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
-stratix init my-first-eval
-cd my-first-eval && python main.py
+pip install --extra-index-url https://sdk.layerlens.ai/package "layerlens[cli]"
+export LAYERLENS_STRATIX_API_KEY="your-api-key"
+python3 -c "from layerlens import PublicClient; pc = PublicClient(); print(pc.models.get(page_size=5))"
 ```
 
 Then explore the [Quick Start guide](https://layerlens.gitbook.io/stratix-python-sdk), try a [cookbook recipe](./examples/cookbook/), or [join the Discord](https://discord.gg/layerlens) to ask questions and share what you're building.
