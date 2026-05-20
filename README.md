@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://layerlens.ai">
-    <img src="https://layerlens.ai/assets/logo-dark.svg" alt="LayerLens" width="280" />
+    <img src="https://layerlens-public-assets.s3.us-east-1.amazonaws.com/logo-full.png" alt="LayerLens" width="280" />
   </a>
 </p>
 
@@ -61,56 +61,61 @@ Stratix is built differently. It gives you production-grade evaluation infrastru
 
 ## Installation
 
-```bash
-# Recommended (includes CLI, rich output, and examples)
-pip install layerlens[cli]
-```
+> [!NOTE]
+> `layerlens` is hosted on a private index during early access. Use the command below — the plain `pip install layerlens[cli]` will not work yet.
 
-> **Note:** During early access the package is hosted on a private index. Use:
->
-> ```bash
-> pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
-> ```
+```bash
+pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
+```
 
 ## Quick Start
 
-**Easiest way** — use the one-command template:
+> [!NOTE]
+> **Two clients, one SDK.** Use `PublicClient` for models, benchmarks, and comparisons. Use `Stratix` for traces, custom judges, scorers, and CI gates. Both take the same API key.
+
+### 1. Install
 
 ```bash
-stratix init my-first-eval
-cd my-first-eval
-python main.py
+pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
 ```
 
-Or wire it up yourself in Python:
+### 2. Set your API key
+
+Get a key from [app.layerlens.ai](https://app.layerlens.ai) → Settings → API Keys.
+
+```bash
+export LAYERLENS_STRATIX_API_KEY="your-api-key"
+```
+
+### 3. Run your first comparison
 
 ```python
-from layerlens import PublicClient, Stratix
+from layerlens import PublicClient
 
-# Public data (models, benchmarks, evaluations)
-pc = PublicClient(api_key="your-api-key")
+pc = PublicClient()
 
-models = pc.models.get(page_size=200)
+# List available models
+models = pc.models.get(page_size=10)
 print(f"{models.total_count} models available")
 
-# Compare two models head-to-head at prompt level
+# Compare two models head-to-head on a benchmark
 comparison = pc.comparisons.compare_models(
-    benchmark_id="benchmark-id",
-    model_id_1="model-a",
-    model_id_2="model-b",
-    outcome_filter="comparison_fails",  # where model B fails
+    benchmark_id="aime2024",
+    model_id_1="openai/gpt-4o",
+    model_id_2="anthropic/claude-opus-4",
+    outcome_filter="comparison_fails",  # prompts where model 2 fails
 )
 
-# Premium features (traces, judges, scorers)
-client = Stratix(api_key="your-api-key")
-
-# Upload and evaluate an agent trace
-client.traces.upload("trace.json")
-eval_result = client.trace_evaluations.create(
-    trace_id="trace-id",
-    judge_id="judge-id",
-)
+print(comparison)
 ```
+
+That's it — you're comparing frontier models on real benchmark data. **[See full results in the dashboard →](https://stratix.layerlens.ai)**
+
+### Next steps
+
+- **[Run a custom evaluation](./examples/)** ➡️ score your own model on any benchmark
+- **[Gate CI/CD on eval results](./examples/ci-gate)** ➡️ `layerlens ci run --threshold 0.8` in your pipeline
+- **[Upload and evaluate agent traces](./examples/agent-traces)** ➡️ multi-step trace analysis
 
 ## CLI
 
