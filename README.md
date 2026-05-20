@@ -161,18 +161,23 @@ layerlens/
     error_suggestions.py  # Context-aware error messages
 ```
 
-## Examples
+## Samples
 
-See the [`examples/`](./examples) directory for integration patterns:
+The [`samples/`](./samples) directory contains 70+ production-ready samples organized by use case. See [`samples/README.md`](./samples/README.md) for the full index.
 
-| Example                                                   | Description                            |
-| --------------------------------------------------------- | -------------------------------------- |
-| [LangGraph](./examples/integrations/langgraph_example.py) | Trace and evaluate a LangGraph agent   |
-| [CrewAI](./examples/integrations/crewai_example.py)       | Evaluate CrewAI multi-agent workflows  |
-| [AutoGen](./examples/integrations/autogen_example.py)     | Instrument AutoGen conversations       |
-| [CI/CD Gate](./examples/cookbook/ci_eval_gate.py)         | Block deploys on eval regression       |
-| [Custom Judge](./examples/cookbook/custom_judge.py)       | Build and optimize a domain judge      |
-| [Prompt Playground](./examples/playground/)               | Compare prompt variations side-by-side |
+| Category | Description |
+|---|---|
+| [Core samples](./samples) | Quickstart, traces, evaluations, judges, async workflows |
+| [Industry solutions](./samples/industry) | Healthcare, financial, legal, government, retail, insurance |
+| [CI/CD integration](./samples/cicd) | Quality gates, pre-commit hooks, GitHub Actions workflow |
+| [Multi-agent (Cowork)](./samples/cowork) | Generator-Evaluator, Code Review, RAG, Incident Response patterns |
+| [Content-type evaluations](./samples/modalities) | Text, brand, and document quality scoring |
+| [LLM provider integrations](./samples/integrations) | OpenAI, Anthropic, LangChain tracing and instrumentation |
+| [MCP server](./samples/mcp) | Expose LayerLens as tools for Claude, Cursor, and any MCP-compatible assistant |
+| [CopilotKit CoAgents](./samples/copilotkit) | Full-stack LangGraph + generative UI components |
+| [Claude Code skills](./samples/claude-code) | Slash commands for managing LayerLens from the Claude Code CLI |
+| [OpenClaw agent evaluation](./samples/openclaw) | Trace, evaluate, and monitor OpenClaw autonomous agents |
+| [Sample data](./samples/data) | Pre-built traces, test datasets, and industry evaluation data |
 
 ## Used By
 
