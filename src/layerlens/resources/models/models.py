@@ -220,6 +220,7 @@ class Models(SyncAPIResource):
         api_url: str,
         max_tokens: int,
         api_key: Optional[str] = None,
+        extra_payload: Optional[Dict[str, Any]] = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[CreateModelResponse]:
         """Create a custom model backed by an OpenAI-compatible API.
@@ -231,6 +232,11 @@ class Models(SyncAPIResource):
             api_url: Base URL of the OpenAI-compatible API endpoint.
             max_tokens: Maximum number of tokens the model supports.
             api_key: Optional API key for the model provider.
+            extra_payload: Optional JSON object merged into every outgoing
+                chat-completions request body. Customer values win on conflict
+                with our defaults (e.g. set ``{"temperature": 1}`` for
+                providers that reject ``temperature: 0``). Keys ``messages``,
+                ``model`` and ``stream`` are reserved.
             timeout: Request timeout override.
 
         Returns:
@@ -246,6 +252,8 @@ class Models(SyncAPIResource):
         }
         if api_key is not None:
             body["api_key"] = api_key
+        if extra_payload is not None:
+            body["extra_payload"] = extra_payload
 
         resp = self._post(
             f"{base}/custom-models",
@@ -266,12 +274,13 @@ class Models(SyncAPIResource):
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
         max_tokens: Optional[int] = None,
+        extra_payload: Optional[Dict[str, Any]] = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
         """Update a custom model's mutable fields.
 
-        At least one of ``api_url``, ``api_key``, or ``max_tokens`` must be
-        provided. Returns ``True`` on success.
+        At least one of ``api_url``, ``api_key``, ``max_tokens`` or
+        ``extra_payload`` must be provided. Returns ``True`` on success.
 
         Primary use case: repointing ``api_url`` for ephemeral vLLM endpoints
         behind cloudflared tunnels whose URL changes between sessions.
@@ -281,6 +290,9 @@ class Models(SyncAPIResource):
             api_url: New base URL for the OpenAI-compatible API endpoint.
             api_key: New API key for the model provider.
             max_tokens: New maximum tokens value.
+            extra_payload: New JSON object merged into every outgoing request
+                body. Pass ``{}`` to clear the existing payload. See
+                ``create_custom`` for semantics.
             timeout: Request timeout override.
         """
         url = (
@@ -293,6 +305,8 @@ class Models(SyncAPIResource):
             body["api_key"] = api_key
         if max_tokens is not None:
             body["max_tokens"] = max_tokens
+        if extra_payload is not None:
+            body["extra_payload"] = extra_payload
         resp = self._patch(url, body=body, timeout=timeout, cast_to=dict)
         return isinstance(resp, dict) and "data" in resp
 
@@ -477,6 +491,7 @@ class AsyncModels(AsyncAPIResource):
         api_url: str,
         max_tokens: int,
         api_key: Optional[str] = None,
+        extra_payload: Optional[Dict[str, Any]] = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[CreateModelResponse]:
         """Create a custom model backed by an OpenAI-compatible API.
@@ -488,6 +503,11 @@ class AsyncModels(AsyncAPIResource):
             api_url: Base URL of the OpenAI-compatible API endpoint.
             max_tokens: Maximum number of tokens the model supports.
             api_key: Optional API key for the model provider.
+            extra_payload: Optional JSON object merged into every outgoing
+                chat-completions request body. Customer values win on conflict
+                with our defaults (e.g. set ``{"temperature": 1}`` for
+                providers that reject ``temperature: 0``). Keys ``messages``,
+                ``model`` and ``stream`` are reserved.
             timeout: Request timeout override.
 
         Returns:
@@ -503,6 +523,8 @@ class AsyncModels(AsyncAPIResource):
         }
         if api_key is not None:
             body["api_key"] = api_key
+        if extra_payload is not None:
+            body["extra_payload"] = extra_payload
 
         resp = await self._post(
             f"{base}/custom-models",
@@ -523,12 +545,23 @@ class AsyncModels(AsyncAPIResource):
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
         max_tokens: Optional[int] = None,
+        extra_payload: Optional[Dict[str, Any]] = None,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> bool:
         """Update a custom model's mutable fields.
 
-        At least one of ``api_url``, ``api_key``, or ``max_tokens`` must be
-        provided. Returns ``True`` on success.
+        At least one of ``api_url``, ``api_key``, ``max_tokens`` or
+        ``extra_payload`` must be provided. Returns ``True`` on success.
+
+        Args:
+            model_id: ID of the custom model to update.
+            api_url: New base URL for the OpenAI-compatible API endpoint.
+            api_key: New API key for the model provider.
+            max_tokens: New maximum tokens value.
+            extra_payload: New JSON object merged into every outgoing request
+                body. Pass ``{}`` to clear the existing payload. See
+                ``create_custom`` for semantics.
+            timeout: Request timeout override.
         """
         url = (
             f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/custom-models/{model_id}"
@@ -540,6 +573,8 @@ class AsyncModels(AsyncAPIResource):
             body["api_key"] = api_key
         if max_tokens is not None:
             body["max_tokens"] = max_tokens
+        if extra_payload is not None:
+            body["extra_payload"] = extra_payload
         resp = await self._patch(url, body=body, timeout=timeout, cast_to=dict)
         return isinstance(resp, dict) and "data" in resp
 

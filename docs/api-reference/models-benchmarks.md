@@ -143,21 +143,28 @@ client = Stratix()
 success = client.models.remove("model-id-1", "model-id-2")
 ```
 
-### `create_custom(name, key, description, api_url, max_tokens, api_key=None, timeout=None)`
+### `create_custom(name, key, description, api_url, max_tokens, api_key=None, extra_payload=None, timeout=None)`
 
 Creates a custom model backed by an OpenAI-compatible API endpoint. This allows you to evaluate any model accessible via a chat completions endpoint.
 
 #### Parameters
 
-| Parameter     | Type                             | Required | Description                                                                       |
-| ------------- | -------------------------------- | -------- | --------------------------------------------------------------------------------- |
-| `name`        | `str`                            | Yes      | Model name (max 256 characters)                                                   |
-| `key`         | `str`                            | Yes      | Unique model key, lowercase alphanumeric with dots/hyphens/slashes (max 256 chars)|
-| `description` | `str`                            | Yes      | Model description (max 500 characters)                                            |
-| `api_url`     | `str`                            | Yes      | Base URL of the OpenAI-compatible API endpoint                                    |
-| `max_tokens`  | `int`                            | Yes      | Maximum number of tokens the model supports                                       |
-| `api_key`     | `str \| None`                    | No       | API key for the model provider                                                    |
-| `timeout`     | `float \| httpx.Timeout \| None` | No       | Override request timeout                                                          |
+| Parameter       | Type                              | Required | Description                                                                       |
+| --------------- | --------------------------------- | -------- | --------------------------------------------------------------------------------- |
+| `name`          | `str`                             | Yes      | Model name (max 256 characters)                                                   |
+| `key`           | `str`                             | Yes      | Unique model key, lowercase alphanumeric with dots/hyphens/slashes (max 256 chars)|
+| `description`   | `str`                             | Yes      | Model description (max 500 characters)                                            |
+| `api_url`       | `str`                             | Yes      | Full URL of the OpenAI-compatible chat completions endpoint                       |
+| `max_tokens`    | `int`                             | Yes      | Maximum number of tokens the model supports                                       |
+| `api_key`       | `str \| None`                     | No       | API key for the model provider                                                    |
+| `extra_payload` | `Dict[str, Any] \| None`          | No       | JSON object merged into every outgoing chat-completions request body (see below)  |
+| `timeout`       | `float \| httpx.Timeout \| None`  | No       | Override request timeout                                                          |
+
+#### `extra_payload` semantics
+
+When set, the keys/values in `extra_payload` are deep-merged into every outgoing request body. Customer values **win on conflict** with our hardcoded defaults — use it to override `temperature` (we send `0` for reproducible evaluations) or to add provider-specific fields like `top_p`, `presence_penalty`, or `max_completion_tokens` (required by some OpenAI reasoning models that reject `max_tokens`).
+
+The keys `messages`, `model`, and `stream` are reserved and will be rejected.
 
 #### Returns
 
@@ -178,28 +185,31 @@ result = client.models.create_custom(
     name="My Custom Model",
     key="my-org/custom-model-v1",
     description="Custom fine-tuned model served via vLLM",
-    api_url="https://my-model-endpoint.example.com/v1",
+    api_url="https://my-model-endpoint.example.com/v1/chat/completions",
     api_key="my-provider-api-key",
     max_tokens=4096,
+    # Optional — provider-specific overrides merged into every request body.
+    extra_payload={"top_p": 0.9},
 )
 
 if result:
     print(f"Created model: {result.model_id}")
 ```
 
-### `update_custom(model_id, *, api_url=None, api_key=None, max_tokens=None, timeout=None)`
+### `update_custom(model_id, *, api_url=None, api_key=None, max_tokens=None, extra_payload=None, timeout=None)`
 
-Updates a custom model's mutable fields. At least one of `api_url`, `api_key`, or `max_tokens` must be provided. Primary use case: repointing `api_url` for ephemeral vLLM endpoints behind cloudflared tunnels whose URL changes between sessions.
+Updates a custom model's mutable fields. At least one of `api_url`, `api_key`, `max_tokens`, or `extra_payload` must be provided. Primary use case: repointing `api_url` for ephemeral vLLM endpoints behind cloudflared tunnels whose URL changes between sessions.
 
 #### Parameters
 
-| Parameter    | Type                             | Required | Description                                              |
-| ------------ | -------------------------------- | -------- | -------------------------------------------------------- |
-| `model_id`   | `str`                            | Yes      | ID of the custom model to update                         |
-| `api_url`    | `str \| None`                    | No       | New base URL for the OpenAI-compatible API endpoint      |
-| `api_key`    | `str \| None`                    | No       | New API key for the model provider                       |
-| `max_tokens` | `int \| None`                    | No       | New maximum tokens value                                 |
-| `timeout`    | `float \| httpx.Timeout \| None` | No       | Override request timeout                                 |
+| Parameter       | Type                              | Required | Description                                                                      |
+| --------------- | --------------------------------- | -------- | -------------------------------------------------------------------------------- |
+| `model_id`      | `str`                             | Yes      | ID of the custom model to update                                                 |
+| `api_url`       | `str \| None`                     | No       | New full URL of the OpenAI-compatible chat completions endpoint                  |
+| `api_key`       | `str \| None`                     | No       | New API key for the model provider                                               |
+| `max_tokens`    | `int \| None`                     | No       | New maximum tokens value                                                         |
+| `extra_payload` | `Dict[str, Any] \| None`          | No       | New JSON object merged into every outgoing request. Pass `{}` to clear it.       |
+| `timeout`       | `float \| httpx.Timeout \| None`  | No       | Override request timeout                                                         |
 
 #### Returns
 
@@ -213,7 +223,13 @@ client = Stratix()
 # Repoint the api_url without re-creating the model
 client.models.update_custom(
     "model-id-from-create-custom",
-    api_url="https://my-new-endpoint.example.com/v1",
+    api_url="https://my-new-endpoint.example.com/v1/chat/completions",
+)
+
+# Override request parameters for a model that doesn't accept temperature=0
+client.models.update_custom(
+    "model-id-from-create-custom",
+    extra_payload={"temperature": 1},
 )
 ```
 

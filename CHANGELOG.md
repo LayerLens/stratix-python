@@ -5,7 +5,7 @@ All notable changes to the Stratix Python SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Latest version:** [1.6.1](https://github.com/LayerLens/stratix-python/releases/tag/v1.6.1) — 2026-05-15
+**Latest version:** [1.7.0](https://github.com/LayerLens/stratix-python/releases/tag/v1.7.0) — 2026-05-20
 
 ## [Unreleased]
 
@@ -20,6 +20,12 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 ### Deprecated
 
 ### Removed
+
+## [1.7.0] - 2026-05-20
+
+### Added
+
+- `extra_payload` parameter on `models.create_custom` and `models.update_custom` (sync + async). Optional JSON object merged into every outgoing chat-completions request body; customer values win on conflict with our hardcoded defaults. Lets customers add provider-specific fields (`top_p`, `max_completion_tokens`) or override values like `temperature` for providers that reject our defaults.
 
 ## [1.6.1] - 2026-05-15
 

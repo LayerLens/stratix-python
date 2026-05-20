@@ -798,6 +798,44 @@ class TestModelsCreateCustom:
         call_body = models_resource._post.call_args.kwargs["body"]
         assert "api_key" not in call_body
 
+    def test_create_custom_includes_extra_payload_when_provided(self, models_resource):
+        """create_custom() forwards extra_payload verbatim."""
+        models_resource._post.return_value = {
+            "status": "success",
+            "data": {"model_id": "x", "organization_id": "o", "project_id": "p"},
+        }
+
+        payload = {"top_p": 0.9, "provider": {"order": ["anthropic"]}}
+        models_resource.create_custom(
+            name="My Model",
+            key="my/model",
+            description="desc",
+            api_url="https://example.com/v1/chat/completions",
+            max_tokens=4096,
+            extra_payload=payload,
+        )
+
+        call_body = models_resource._post.call_args.kwargs["body"]
+        assert call_body["extra_payload"] == payload
+
+    def test_create_custom_omits_extra_payload_when_none(self, models_resource):
+        """create_custom() does not include extra_payload when not provided."""
+        models_resource._post.return_value = {
+            "status": "success",
+            "data": {"model_id": "x", "organization_id": "o", "project_id": "p"},
+        }
+
+        models_resource.create_custom(
+            name="My Model",
+            key="my/model",
+            description="desc",
+            api_url="https://example.com/v1/chat/completions",
+            max_tokens=4096,
+        )
+
+        call_body = models_resource._post.call_args.kwargs["body"]
+        assert "extra_payload" not in call_body
+
     def test_create_custom_correct_url(self, models_resource):
         """create_custom() posts to the correct endpoint."""
         models_resource._post.return_value = {
@@ -1207,6 +1245,36 @@ class TestModelsUpdateCustom:
         assert result is True
         body = models_resource._patch.call_args.kwargs["body"]
         assert body == {"max_tokens": 8192}
+
+    def test_update_custom_extra_payload_only(self, models_resource):
+        """update_custom() supports extra_payload-only updates."""
+        models_resource._patch.return_value = {"data": {"id": "model-1"}}
+
+        payload = {"temperature": 1, "top_p": 0.9}
+        result = models_resource.update_custom("model-1", extra_payload=payload)
+
+        assert result is True
+        body = models_resource._patch.call_args.kwargs["body"]
+        assert body == {"extra_payload": payload}
+
+    def test_update_custom_extra_payload_empty_dict_clears_payload(self, models_resource):
+        """update_custom(extra_payload={}) sends the empty dict so the backend clears the stored payload."""
+        models_resource._patch.return_value = {"data": {"id": "model-1"}}
+
+        result = models_resource.update_custom("model-1", extra_payload={})
+
+        assert result is True
+        body = models_resource._patch.call_args.kwargs["body"]
+        assert body == {"extra_payload": {}}
+
+    def test_update_custom_omits_extra_payload_when_none(self, models_resource):
+        """update_custom() does not include extra_payload when not provided."""
+        models_resource._patch.return_value = {"data": {"id": "model-1"}}
+
+        models_resource.update_custom("model-1", api_url="https://x.io")
+
+        body = models_resource._patch.call_args.kwargs["body"]
+        assert "extra_payload" not in body
 
     def test_update_custom_returns_false_on_error_envelope(self, models_resource):
         """update_custom() returns False when response has no data field."""
