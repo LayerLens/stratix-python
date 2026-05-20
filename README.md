@@ -50,8 +50,8 @@ Stratix is built differently. It gives you production-grade evaluation infrastru
 
 | Capability              | **Stratix**                                    | LangSmith                  | Langfuse                | DeepEval            | Phoenix (Arize)        |
 | ----------------------- | ---------------------------------------------- | -------------------------- | ----------------------- | ------------------- | ---------------------- |
-| Pre-built benchmarks    | 100+ benchmarks, 200+ models                   | No public benchmarks       | No public benchmarks    | ~14 metrics         | Bring your own         |
-| Prompt-level comparison | Native head-to-head with outcome filters       | Side-by-side runs (manual) | Not built-in            | Manual setup        | Not built-in           |
+| Pre-built benchmarks    | 100+ benchmarks, 200+ models                   | No public benchmarks       | No public benchmarks    | 30+ metrics         | Bring your own         |
+| Prompt-level comparison | Native head-to-head with outcome filters       | Side-by-side runs (manual) | Prompt experiments + side-by-side (UI)            | Manual setup        | Not built-in           |
 | Custom judge builder    | Auto-optimized GEPA judges with budget control | LLM-as-judge (manual)      | LLM-as-judge (manual)   | Basic LLM judges    | LLM-as-judge templates |
 | Agent trace evaluation  | Upload, replay, judge every step               | Trace logging + annotation | Trace logging + scoring | Trace logging only  | Trace visualization    |
 | Eval generation ladder  | Heuristic > model-graded > deliberation > GEPA | Single generation          | Single generation       | Single generation   | Single generation      |
