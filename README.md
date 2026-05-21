@@ -1,20 +1,21 @@
 <p align="center">
   <a href="https://layerlens.ai">
-    <img src="https://layerlens.ai/assets/logo-dark.svg" alt="LayerLens" width="280" />
+    <img src="https://layerlens-public-assets.s3.us-east-1.amazonaws.com/logo-full.png" alt="LayerLens" width="280" />
   </a>
 </p>
 
 <h1 align="center">Stratix Python SDK</h1>
 
 <p align="center">
-  <strong>Ship AI that actually works. Evaluate 200+ models across 100+ benchmarks, trace agent behavior, build custom judges, and gate CI/CD on eval results.</strong>
+  <strong>Ship AI that actually works. 
+    
+  Evaluate 200+ models across 100+ benchmarks, trace agent behavior, build custom judges, and gate CI/CD on eval results.</strong>
 </p>
 
 <p align="center">
   <a href="https://pypi.org/project/layerlens/"><img src="https://img.shields.io/pypi/v/layerlens?color=blue" alt="PyPI" /></a>
   <a href="https://pypi.org/project/layerlens/"><img src="https://img.shields.io/pypi/pyversions/layerlens" alt="Python" /></a>
   <a href="https://github.com/LayerLens/stratix-python/stargazers"><img src="https://img.shields.io/github/stars/LayerLens/stratix-python?style=social" alt="GitHub Stars" /></a>
-  <a href="https://github.com/LayerLens/stratix-python/actions"><img src="https://github.com/LayerLens/stratix-python/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://codecov.io/gh/LayerLens/stratix-python"><img src="https://codecov.io/gh/LayerLens/stratix-python/branch/main/graph/badge.svg" alt="Coverage" /></a>
   <a href="https://github.com/LayerLens/stratix-python/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License" /></a>
   <!-- Replace with actual Discord server ID once created -->
@@ -31,6 +32,9 @@
 </p>
 
 ---
+<p align="center">
+  <img src="./demo-stratix.gif" alt="Stratix Python SDK demo: list 217 frontier models in 5 lines of Python" width="720">
+</p>
 
 ## Why Stratix?
 
@@ -48,8 +52,8 @@ Stratix is built differently. It gives you production-grade evaluation infrastru
 
 | Capability              | **Stratix**                                    | LangSmith                  | Langfuse                | DeepEval            | Phoenix (Arize)        |
 | ----------------------- | ---------------------------------------------- | -------------------------- | ----------------------- | ------------------- | ---------------------- |
-| Pre-built benchmarks    | 100+ benchmarks, 200+ models                   | No public benchmarks       | No public benchmarks    | ~14 metrics         | Bring your own         |
-| Prompt-level comparison | Native head-to-head with outcome filters       | Side-by-side runs (manual) | Not built-in            | Manual setup        | Not built-in           |
+| Pre-built benchmarks    | 100+ benchmarks, 200+ models                   | No public benchmarks       | No public benchmarks    | 50+ metrics         | Bring your own         |
+| Prompt-level comparison | Native head-to-head with outcome filters       | Side-by-side runs (manual) | Side-by-side runs + Playground/Experiments (UI Supported)            | Manual setup        | Not built-in           |
 | Custom judge builder    | Auto-optimized GEPA judges with budget control | LLM-as-judge (manual)      | LLM-as-judge (manual)   | Basic LLM judges    | LLM-as-judge templates |
 | Agent trace evaluation  | Upload, replay, judge every step               | Trace logging + annotation | Trace logging + scoring | Trace logging only  | Trace visualization    |
 | Eval generation ladder  | Heuristic > model-graded > deliberation > GEPA | Single generation          | Single generation       | Single generation   | Single generation      |
@@ -59,58 +63,67 @@ Stratix is built differently. It gives you production-grade evaluation infrastru
 | OpenTelemetry export    | Native OTLP exporter                           | Not built-in               | Native OTLP             | Not built-in        | Native (OpenInference) |
 | Pricing model           | Free public data; premium for org features     | Per-trace pricing          | Per-event pricing       | Open source + cloud | Open source + cloud    |
 
+## Pricing
+
+**Free to start.** `PublicClient` is free with an API key–query 200+ models, 50+ benchmarks, and run head-to-head comparisons. Advanced features (traces, custom judges, scorers, CI gates) require **Stratix Premium**. Sign up and purchase credits at [app.layerlens.ai](https://app.layerlens.ai).
+
 ## Installation
 
-```bash
-# Recommended (includes CLI, rich output, and examples)
-pip install layerlens[cli]
-```
+> [!NOTE]
+> `layerlens` is hosted on a private index during early access. Use the command below — the plain `pip install layerlens[cli]` will not work yet.
 
-> **Note:** During early access the package is hosted on a private index. Use:
->
-> ```bash
-> pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
-> ```
+```bash
+pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
+```
 
 ## Quick Start
 
-**Easiest way** — use the one-command template:
+> [!NOTE]
+> **Two clients, one SDK.** Use `PublicClient` for models, benchmarks, and comparisons. Use `Stratix` for traces, custom judges, scorers, and CI gates. Both take the same API key.
+
+### 1. Install
 
 ```bash
-stratix init my-first-eval
-cd my-first-eval
-python main.py
+pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
 ```
 
-Or wire it up yourself in Python:
+### 2. Set your API key
+
+Get a key from [app.layerlens.ai](https://app.layerlens.ai) → Settings → API Keys.
+
+```bash
+export LAYERLENS_STRATIX_API_KEY="your-api-key"
+```
+
+### 3. Run your first comparison
 
 ```python
-from layerlens import PublicClient, Stratix
+from layerlens import PublicClient
 
-# Public data (models, benchmarks, evaluations)
-pc = PublicClient(api_key="your-api-key")
+pc = PublicClient()
 
-models = pc.models.get(page_size=200)
+# List available models
+models = pc.models.get(page_size=10)
 print(f"{models.total_count} models available")
 
-# Compare two models head-to-head at prompt level
+# Compare two models head-to-head on a benchmark
 comparison = pc.comparisons.compare_models(
-    benchmark_id="benchmark-id",
-    model_id_1="model-a",
-    model_id_2="model-b",
-    outcome_filter="comparison_fails",  # where model B fails
+    benchmark_id="aime2024",
+    model_id_1="openai/gpt-4o",
+    model_id_2="anthropic/claude-opus-4",
+    outcome_filter="comparison_fails",  # prompts where model 2 fails
 )
 
-# Premium features (traces, judges, scorers)
-client = Stratix(api_key="your-api-key")
-
-# Upload and evaluate an agent trace
-client.traces.upload("trace.json")
-eval_result = client.trace_evaluations.create(
-    trace_id="trace-id",
-    judge_id="judge-id",
-)
+print(comparison)
 ```
+
+That's it! You're comparing frontier models on real benchmark data. **[See full results in the dashboard →](https://stratix.layerlens.ai)**
+
+### Next steps
+
+- **[Run a custom evaluation](./examples/)** ➡️ score your own model on any benchmark
+- **[Gate CI/CD on eval results](./examples/ci-gate)** ➡️ `layerlens ci run --threshold 0.8` in your pipeline
+- **[Upload and evaluate agent traces](./examples/agent-traces)** ➡️ multi-step trace analysis
 
 ## CLI
 
@@ -148,18 +161,23 @@ layerlens/
     error_suggestions.py  # Context-aware error messages
 ```
 
-## Examples
+## Samples
 
-See the [`examples/`](./examples) directory for integration patterns:
+The [`samples/`](./samples) directory contains 70+ production-ready samples organized by use case. See [`samples/README.md`](./samples/README.md) for the full index.
 
-| Example                                                   | Description                            |
-| --------------------------------------------------------- | -------------------------------------- |
-| [LangGraph](./examples/integrations/langgraph_example.py) | Trace and evaluate a LangGraph agent   |
-| [CrewAI](./examples/integrations/crewai_example.py)       | Evaluate CrewAI multi-agent workflows  |
-| [AutoGen](./examples/integrations/autogen_example.py)     | Instrument AutoGen conversations       |
-| [CI/CD Gate](./examples/cookbook/ci_eval_gate.py)         | Block deploys on eval regression       |
-| [Custom Judge](./examples/cookbook/custom_judge.py)       | Build and optimize a domain judge      |
-| [Prompt Playground](./examples/playground/)               | Compare prompt variations side-by-side |
+| Category | Description |
+|---|---|
+| [Core samples](./samples) | Quickstart, traces, evaluations, judges, async workflows |
+| [Industry solutions](./samples/industry) | Healthcare, financial, legal, government, retail, insurance |
+| [CI/CD integration](./samples/cicd) | Quality gates, pre-commit hooks, GitHub Actions workflow |
+| [Multi-agent (Cowork)](./samples/cowork) | Generator-Evaluator, Code Review, RAG, Incident Response patterns |
+| [Content-type evaluations](./samples/modalities) | Text, brand, and document quality scoring |
+| [LLM provider integrations](./samples/integrations) | OpenAI, Anthropic, LangChain tracing and instrumentation |
+| [MCP server](./samples/mcp) | Expose LayerLens as tools for Claude, Cursor, and any MCP-compatible assistant |
+| [CopilotKit CoAgents](./samples/copilotkit) | Full-stack LangGraph + generative UI components |
+| [Claude Code skills](./samples/claude-code) | Slash commands for managing LayerLens from the Claude Code CLI |
+| [OpenClaw agent evaluation](./samples/openclaw) | Trace, evaluate, and monitor OpenClaw autonomous agents |
+| [Sample data](./samples/data) | Pre-built traces, test datasets, and industry evaluation data |
 
 ## Used By
 
@@ -208,12 +226,12 @@ Apache 2.0. See [LICENSE](./LICENSE).
 **Get started in under 2 minutes:**
 
 ```bash
-pip install --extra-index-url https://sdk.layerlens.ai/package layerlens[cli]
-stratix init my-first-eval
-cd my-first-eval && python main.py
+pip install --extra-index-url https://sdk.layerlens.ai/package "layerlens[cli]"
+export LAYERLENS_STRATIX_API_KEY="your-api-key"
+python3 -c "from layerlens import PublicClient; pc = PublicClient(); print(pc.models.get(page_size=5))"
 ```
 
-Then explore the [Quick Start guide](https://layerlens.gitbook.io/stratix-python-sdk), try a [cookbook recipe](./examples/cookbook/), or [join the Discord](https://discord.gg/layerlens) to ask questions and share what you're building.
+Then explore the [Quick Start guide](https://layerlens.gitbook.io/stratix-python-sdk), try a [cookbook recipe](https://github.com/LayerLens/stratix-python/tree/main/samples), or [join the Discord](https://discord.gg/layerlens) to ask questions and share what you're building.
 
 ---
 
