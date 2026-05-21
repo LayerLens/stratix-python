@@ -11,6 +11,8 @@ from typing import Any, Dict
 
 from ._base_provider import MonkeyPatchProvider
 
+_NS_PER_SECOND = 1_000_000_000
+
 _CAPTURE_PARAMS = frozenset(
     {
         "model",
@@ -91,6 +93,30 @@ class OllamaProvider(MonkeyPatchProvider):
                 self._originals[method] = orig
                 setattr(target, method, self._wrap_sync(f"ollama.{method}", orig))
         return target
+
+    def _extractors(self) -> "MonkeyPatchProvider._Extractors":  # type: ignore[override]
+        # Bind endpoint + (optional) infra-cost calc into meta. Ollama is
+        # local-only so API cost is always $0, but `cost_per_second` lets
+        # callers attribute compute time as an infra cost on each invoke.
+        endpoint = self._endpoint
+        cost_per_second = self._cost_per_second
+        base_meta = type(self).extract_meta
+
+        def meta_with_extras(response: Any) -> Dict[str, Any]:
+            meta = base_meta(response)
+            if endpoint:
+                meta["endpoint"] = endpoint
+            if cost_per_second is not None and isinstance(response, dict):
+                total_ns = int(response.get("eval_duration") or 0) + int(response.get("prompt_eval_duration") or 0)
+                if total_ns > 0:
+                    meta["infra_cost_usd"] = round((total_ns / _NS_PER_SECOND) * cost_per_second, 8)
+            return meta
+
+        return MonkeyPatchProvider._Extractors(
+            output=type(self).extract_output,
+            meta=meta_with_extras,
+            tool_calls=type(self).extract_tool_calls,
+        )
 
 
 def instrument_ollama(client: Any, *, cost_per_second: float | None = None) -> OllamaProvider:

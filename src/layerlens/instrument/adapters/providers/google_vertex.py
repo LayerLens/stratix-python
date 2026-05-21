@@ -20,11 +20,23 @@ _CAPTURE_PARAMS = frozenset(
 )
 
 
+def _strip_models_prefix(name: str | None) -> str | None:
+    """Vertex `GenerativeModel.model_name` is typically prefixed with `models/`;
+    pricing lookups want the bare model id (`gemini-2.5-pro`)."""
+    if name and name.startswith("models/"):
+        return name[len("models/") :]
+    return name
+
+
 class GoogleVertexProvider(MonkeyPatchProvider):
     """Adapter for google-generativeai / google-cloud-aiplatform GenerativeModel."""
 
     name = "google_vertex"
     capture_params = _CAPTURE_PARAMS
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._model_name: str | None = None
 
     @staticmethod
     def extract_output(response: Any) -> Any:
@@ -99,6 +111,12 @@ class GoogleVertexProvider(MonkeyPatchProvider):
 
     def connect(self, target: Any = None, **kwargs: Any) -> Any:  # noqa: ARG002
         self._client = target
+        # GenerativeModel stores the model id as `model_name` (public) or
+        # `_model_name` (older SDKs); capture it for pricing + the model field
+        # on emitted events, since the SDK call sites don't pass it as a kwarg.
+        self._model_name = _strip_models_prefix(
+            getattr(target, "model_name", None) or getattr(target, "_model_name", None)
+        )
         if hasattr(target, "generate_content"):
             orig = target.generate_content
             self._originals["generate_content"] = orig
@@ -108,6 +126,26 @@ class GoogleVertexProvider(MonkeyPatchProvider):
             self._originals["generate_content_async"] = async_orig
             target.generate_content_async = self._wrap_async("google_vertex.generate_content", async_orig)
         return target
+
+    def _extractors(self) -> "MonkeyPatchProvider._Extractors":  # type: ignore[override]
+        # Inject the model name into response meta so emit_llm_events
+        # resolves `model_name` for pricing + payload. GenerativeModel.* call
+        # sites don't pass model as a kwarg, so without this hook the field
+        # would be None.
+        model_name = self._model_name
+        base_meta = type(self).extract_meta
+
+        def meta_with_model(response: Any) -> Dict[str, Any]:
+            meta = base_meta(response)
+            if model_name and not meta.get("response_model"):
+                meta["response_model"] = model_name
+            return meta
+
+        return MonkeyPatchProvider._Extractors(
+            output=type(self).extract_output,
+            meta=meta_with_model,
+            tool_calls=type(self).extract_tool_calls,
+        )
 
 
 class _AggregatedVertexResponse:

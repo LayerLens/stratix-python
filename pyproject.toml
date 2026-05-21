@@ -37,8 +37,12 @@ openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
 azure = ["openai>=1.0.0"]
 google-vertex = ["google-cloud-aiplatform>=1.38"]
+# Canonical M3 name per LAY-3453 AC; `google-vertex` kept as alias for prior installs.
+providers-vertex = ["google-cloud-aiplatform>=1.38"]
 bedrock = ["boto3>=1.34"]
 ollama = ["ollama>=0.1"]
+# Canonical M3 name per LAY-3454 AC; `ollama` kept as alias for prior installs.
+providers-ollama = ["ollama>=0.1"]
 langchain = ["langchain-core>=0.1.0"]
 # LangGraph 0.2+ is Pydantic v2-only — see ``LangGraphCallbackHandler.requires_pydantic`` (LAY-3446).
 langgraph = ["langgraph>=0.2.0", "langchain-core>=0.1.0"]
