@@ -48,15 +48,29 @@ CONTRACTS: list[dict[str, Any]] = [
             "force_majeure",
         ],
         "risk_flags": [
-            {"clause": "liability_limitation", "risk": "high", "note": "Unlimited liability for data breaches"},
-            {"clause": "term_and_termination", "risk": "high", "note": "Auto-renewal with 180-day notice period"},
+            {
+                "clause": "liability_limitation",
+                "risk": "high",
+                "note": "Unlimited liability for data breaches",
+            },
+            {
+                "clause": "term_and_termination",
+                "risk": "high",
+                "note": "Auto-renewal with 180-day notice period",
+            },
         ],
         "analysis_output": "Contract review identifies 8 key clauses. Two high-risk items found. Recommend negotiating liability cap and reducing notice period.",
     },
     {
         "id": "contract-002",
         "title": "NDA (Bilateral)",
-        "clauses_identified": ["definition_of_confidential", "obligations", "exclusions", "term", "remedies"],
+        "clauses_identified": [
+            "definition_of_confidential",
+            "obligations",
+            "exclusions",
+            "term",
+            "remedies",
+        ],
         "clauses_expected": [
             "definition_of_confidential",
             "obligations",
@@ -65,7 +79,13 @@ CONTRACTS: list[dict[str, Any]] = [
             "remedies",
             "return_of_materials",
         ],
-        "risk_flags": [{"clause": "term", "risk": "medium", "note": "Perpetual NDA with no sunset clause"}],
+        "risk_flags": [
+            {
+                "clause": "term",
+                "risk": "medium",
+                "note": "Perpetual NDA with no sunset clause",
+            }
+        ],
         "analysis_output": "NDA review identifies 5 of 6 expected clauses. Missing return of materials clause. Term is perpetual.",
     },
 ]
@@ -123,12 +143,16 @@ def main() -> None:
                     "risk_flags": contract["risk_flags"],
                 },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else contract["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else contract["id"]
+            )
 
             print(f"Contract: {contract['title']}")
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -140,7 +164,9 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:20s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:20s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
     finally:

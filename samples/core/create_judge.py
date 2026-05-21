@@ -91,7 +91,11 @@ def main() -> None:
         logger.error("Failed to initialize client: %s", exc)
         sys.exit(1)
 
-    logger.info("Connected to LayerLens (org=%s, project=%s)", client.organization_id, client.project_id)
+    logger.info(
+        "Connected to LayerLens (org=%s, project=%s)",
+        client.organization_id,
+        client.project_id,
+    )
 
     # --- Step 1: Find a model for the judge ---
     logger.info("=" * 60)
@@ -100,11 +104,16 @@ def main() -> None:
 
     models = client.models.get(type="public", name=args.model_name)
     if not models:
-        logger.warning("No models found matching '%s', trying all public models...", args.model_name)
+        logger.warning(
+            "No models found matching '%s', trying all public models...",
+            args.model_name,
+        )
         models = client.models.get(type="public")
 
     if not models:
-        logger.error("No models available. Cannot create a judge without a backing model.")
+        logger.error(
+            "No models available. Cannot create a judge without a backing model."
+        )
         sys.exit(1)
 
     model = models[0]
@@ -139,7 +148,11 @@ def main() -> None:
 
     fetched = client.judges.get(judge.id)
     if fetched:
-        logger.info("Judge retrieved: %s (version=%s)", fetched.name, getattr(fetched, "version", "N/A"))
+        logger.info(
+            "Judge retrieved: %s (version=%s)",
+            fetched.name,
+            getattr(fetched, "version", "N/A"),
+        )
     else:
         logger.warning("Could not retrieve judge %s", judge.id)
 
@@ -150,9 +163,16 @@ def main() -> None:
 
     response = client.judges.get_many()
     if response:
-        logger.info("Found %d judge(s) (total=%d)", len(response.judges), response.total_count)
+        logger.info(
+            "Found %d judge(s) (total=%d)", len(response.judges), response.total_count
+        )
         for j in response.judges[:5]:
-            logger.info("  - %s (v%s, %d runs)", j.name, getattr(j, "version", "?"), getattr(j, "run_count", 0))
+            logger.info(
+                "  - %s (v%s, %d runs)",
+                j.name,
+                getattr(j, "version", "?"),
+                getattr(j, "run_count", 0),
+            )
     else:
         logger.warning("No judges found")
 

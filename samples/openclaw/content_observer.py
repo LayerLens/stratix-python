@@ -50,9 +50,23 @@ class ContentObserverRunner(DemoRunner):
 
     def build_parser(self) -> argparse.ArgumentParser:
         parser = super().build_parser()
-        parser.add_argument("--communities", default=DEFAULT_COMMUNITIES, help="Comma-separated community list.")
-        parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="Number of posts to sample.")
-        parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducible sampling.")
+        parser.add_argument(
+            "--communities",
+            default=DEFAULT_COMMUNITIES,
+            help="Comma-separated community list.",
+        )
+        parser.add_argument(
+            "--batch-size",
+            type=int,
+            default=DEFAULT_BATCH_SIZE,
+            help="Number of posts to sample.",
+        )
+        parser.add_argument(
+            "--seed",
+            type=int,
+            default=42,
+            help="Random seed for reproducible sampling.",
+        )
         return parser
 
     async def run(self) -> dict[str, Any]:
@@ -121,13 +135,21 @@ class ContentObserverRunner(DemoRunner):
                 logger.info("Trace uploaded for post %s: %s", post.post_id, trace_id)
                 sdk_result = self.evaluate_trace(trace_id, sdk_judge_id)
                 if sdk_result:
-                    sdk_results.append({"post_id": post.post_id, "community": post.community, **sdk_result})
+                    sdk_results.append(
+                        {
+                            "post_id": post.post_id,
+                            "community": post.community,
+                            **sdk_result,
+                        }
+                    )
 
         if sdk_results and not self.args.json:
             print(f"\n  --- SDK Evaluation (sampled {len(sdk_results)} posts) ---")
             for sr in sdk_results:
                 status = "PASS" if sr["passed"] else "FAIL"
-                print(f"    {sr['post_id']:<14} {sr['community']:<12} score={sr['score']:>5.2f}  [{status}]")
+                print(
+                    f"    {sr['post_id']:<14} {sr['community']:<12} score={sr['score']:>5.2f}  [{status}]"
+                )
 
         return {
             "run_id": run_id,
@@ -147,7 +169,9 @@ class ContentObserverRunner(DemoRunner):
         total = len(results)
         pass_count = sum(1 for r in results if r["verdict"] == "PASS")
         pass_rate = (pass_count / total * 100) if total else 0.0
-        mean_score = (sum(r["aggregate_score"] for r in results) / total) if total else 0.0
+        mean_score = (
+            (sum(r["aggregate_score"] for r in results) / total) if total else 0.0
+        )
 
         community_stats: dict[str, dict[str, Any]] = {}
         for post, result in zip(posts, results):
@@ -161,8 +185,12 @@ class ContentObserverRunner(DemoRunner):
         community_breakdown = {
             c: {
                 "count": s["count"],
-                "avg_score": round(s["total_score"] / s["count"], 2) if s["count"] else 0.0,
-                "pass_rate": round(s["pass_count"] / s["count"] * 100, 1) if s["count"] else 0.0,
+                "avg_score": (
+                    round(s["total_score"] / s["count"], 2) if s["count"] else 0.0
+                ),
+                "pass_rate": (
+                    round(s["pass_count"] / s["count"] * 100, 1) if s["count"] else 0.0
+                ),
             }
             for c, s in community_stats.items()
         }
@@ -179,8 +207,12 @@ class ContentObserverRunner(DemoRunner):
         tier_breakdown = {
             t: {
                 "count": s["count"],
-                "avg_score": round(s["total_score"] / s["count"], 2) if s["count"] else 0.0,
-                "pass_rate": round(s["pass_count"] / s["count"] * 100, 1) if s["count"] else 0.0,
+                "avg_score": (
+                    round(s["total_score"] / s["count"], 2) if s["count"] else 0.0
+                ),
+                "pass_rate": (
+                    round(s["pass_count"] / s["count"] * 100, 1) if s["count"] else 0.0
+                ),
             }
             for t, s in tier_stats.items()
         }
@@ -189,7 +221,11 @@ class ContentObserverRunner(DemoRunner):
         for r in results:
             for dim, score in r["scores"].items():
                 dim_totals[dim] = dim_totals.get(dim, 0.0) + score
-        dim_averages = {dim: round(ts / total, 2) for dim, ts in dim_totals.items()} if total else {}
+        dim_averages = (
+            {dim: round(ts / total, 2) for dim, ts in dim_totals.items()}
+            if total
+            else {}
+        )
 
         flagged = [
             {

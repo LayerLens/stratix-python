@@ -89,7 +89,9 @@ _FAIL_COLOR = "\033[91m"
 _RESET = "\033[0m"
 
 
-def display_result(judge_name: str, score: float | None, passed: bool | None, reasoning: str) -> None:
+def display_result(
+    judge_name: str, score: float | None, passed: bool | None, reasoning: str
+) -> None:
     """Pretty-print a single judge result."""
     if score is not None:
         score_str = f"{score:.2f}"
@@ -102,7 +104,9 @@ def display_result(judge_name: str, score: float | None, passed: bool | None, re
         color = ""
         status = "PEND"
     reasoning_preview = (reasoning[:60] + "...") if reasoning else ""
-    print(f"  {judge_name:25s} {color}{status:6s}{_RESET}  ({score_str})  {reasoning_preview}")
+    print(
+        f"  {judge_name:25s} {color}{status:6s}{_RESET}  ({score_str})  {reasoning_preview}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +159,9 @@ def main() -> None:
                 output_text=sample["output"],
                 metadata={"context": sample["context"], "sample_name": sample["name"]},
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else sample["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else sample["id"]
+            )
 
             # Run all judges
             all_passed = True

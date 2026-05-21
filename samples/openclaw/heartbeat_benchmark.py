@@ -60,8 +60,12 @@ def _simulate_model_output(model_id: str, prompt: str, golden_answer: str) -> st
         if rng.random() < quality:
             output_words.append(word)
         elif rng.random() < 0.3:
-            output_words.append(rng.choice(["approximately", "roughly", "about", "nearly", "around"]))
-    prefix = rng.choice(["Based on my analysis, ", "The answer is: ", "", "To answer your question: "])
+            output_words.append(
+                rng.choice(["approximately", "roughly", "about", "nearly", "around"])
+            )
+    prefix = rng.choice(
+        ["Based on my analysis, ", "The answer is: ", "", "To answer your question: "]
+    )
     result = prefix + " ".join(output_words)
     if rng.random() < 0.3:
         result += " This is a well-established result in the field."
@@ -81,14 +85,33 @@ class HeartbeatBenchmarkRunner(DemoRunner):
 
     def build_parser(self) -> argparse.ArgumentParser:
         parser = super().build_parser()
-        parser.add_argument("--models", default=DEFAULT_MODELS, help="Comma-separated model IDs.")
-        parser.add_argument("--task-battery", default="", help="Path to task battery JSON file.")
         parser.add_argument(
-            "--alert-threshold", type=float, default=DEFAULT_ALERT_THRESHOLD, help="Alert threshold (default: 7.0)."
+            "--models", default=DEFAULT_MODELS, help="Comma-separated model IDs."
         )
-        parser.add_argument("--drift-window", type=int, default=20, help="Rolling window size for drift detection.")
-        parser.add_argument("--drift-sigma", type=float, default=2.0, help="Sigma threshold for drift alerts.")
-        parser.add_argument("--notify", default="stdout://", help="Notification channel URI.")
+        parser.add_argument(
+            "--task-battery", default="", help="Path to task battery JSON file."
+        )
+        parser.add_argument(
+            "--alert-threshold",
+            type=float,
+            default=DEFAULT_ALERT_THRESHOLD,
+            help="Alert threshold (default: 7.0).",
+        )
+        parser.add_argument(
+            "--drift-window",
+            type=int,
+            default=20,
+            help="Rolling window size for drift detection.",
+        )
+        parser.add_argument(
+            "--drift-sigma",
+            type=float,
+            default=2.0,
+            help="Sigma threshold for drift alerts.",
+        )
+        parser.add_argument(
+            "--notify", default="stdout://", help="Notification channel URI."
+        )
         return parser
 
     async def run(self) -> dict[str, Any]:
@@ -102,7 +125,9 @@ class HeartbeatBenchmarkRunner(DemoRunner):
             battery = BenchmarkTaskBattery.load_default()
 
         judge = BenchmarkJudge()
-        detector = DriftDetector(window_size=self.args.drift_window, sigma_threshold=self.args.drift_sigma)
+        detector = DriftDetector(
+            window_size=self.args.drift_window, sigma_threshold=self.args.drift_sigma
+        )
         notifier = Notifier(channels=[self.args.notify])
         alert_threshold = self.args.alert_threshold
 
@@ -110,7 +135,9 @@ class HeartbeatBenchmarkRunner(DemoRunner):
             print(f"\n{'=' * 60}")
             print("  HEARTBEAT BENCHMARK REPORT")
             print(f"{'=' * 60}")
-            print(f"  Battery: {battery.battery_id} ({battery.task_count} tasks, {len(battery.categories)} categories)")
+            print(
+                f"  Battery: {battery.battery_id} ({battery.task_count} tasks, {len(battery.categories)} categories)"
+            )
             print(f"  Models: {', '.join(models)}")
             print(f"  Alert Threshold: {alert_threshold:.1f} / 10.0")
             print(f"{'-' * 60}")
@@ -119,7 +146,9 @@ class HeartbeatBenchmarkRunner(DemoRunner):
         all_drift_alerts: list[dict[str, Any]] = []
 
         for model_id in models:
-            scorecard, drift_alerts = self._benchmark_model(model_id, battery, judge, detector, alert_threshold)
+            scorecard, drift_alerts = self._benchmark_model(
+                model_id, battery, judge, detector, alert_threshold
+            )
             model_scorecards[model_id] = scorecard
             all_drift_alerts.extend(drift_alerts)
 
@@ -129,7 +158,11 @@ class HeartbeatBenchmarkRunner(DemoRunner):
                     "model_id": mid,
                     "aggregate_score": sc["weighted_aggregate"],
                     "pass_rate": sc["pass_rate"],
-                    "verdict": "PASS" if sc["weighted_aggregate"] >= alert_threshold else "FAIL",
+                    "verdict": (
+                        "PASS"
+                        if sc["weighted_aggregate"] >= alert_threshold
+                        else "FAIL"
+                    ),
                 }
                 for mid, sc in model_scorecards.items()
             ],
@@ -138,11 +171,17 @@ class HeartbeatBenchmarkRunner(DemoRunner):
         )
 
         if not self.args.json:
-            notifier.publish_leaderboard(title="Heartbeat Benchmark: Rankings", entries=leaderboard)
+            notifier.publish_leaderboard(
+                title="Heartbeat Benchmark: Rankings", entries=leaderboard
+            )
             if all_drift_alerts:
                 print(f"\n  --- Drift Alerts ({len(all_drift_alerts)}) ---")
                 for alert in all_drift_alerts:
-                    sev_icon = {"critical": "[XX]", "warning": "[!!]", "info": "[--]"}.get(alert["severity"], "[??]")
+                    sev_icon = {
+                        "critical": "[XX]",
+                        "warning": "[!!]",
+                        "info": "[--]",
+                    }.get(alert["severity"], "[??]")
                     print(
                         f"    {sev_icon} {alert['model_id']}/{alert['task_id']}: {alert['drift_type']} ({alert['message'][:60]})"
                     )
@@ -228,7 +267,9 @@ class HeartbeatBenchmarkRunner(DemoRunner):
 
             # If output is simulated (starts with [Simulated), use the deterministic generator
             if output.startswith("[Simulated"):
-                output = _simulate_model_output(model_id, task.prompt, task.golden_answer)
+                output = _simulate_model_output(
+                    model_id, task.prompt, task.golden_answer
+                )
 
             result = judge.evaluate(
                 trace_id=str(uuid.uuid4()),
@@ -243,7 +284,10 @@ class HeartbeatBenchmarkRunner(DemoRunner):
             )
 
             alerts = detector.record_and_check(
-                model_id=model_id, task_id=task.task_id, score=result["aggregate_score"], latency_ms=latency_ms
+                model_id=model_id,
+                task_id=task.task_id,
+                score=result["aggregate_score"],
+                latency_ms=latency_ms,
             )
             for alert in alerts:
                 drift_alerts.append(alert.model_dump())
@@ -271,7 +315,9 @@ class HeartbeatBenchmarkRunner(DemoRunner):
 
         total_weight = sum(r["weight"] for r in task_results)
         weighted_aggregate = (
-            sum(r["score"] * r["weight"] for r in task_results) / total_weight if total_weight > 0 else 0.0
+            sum(r["score"] * r["weight"] for r in task_results) / total_weight
+            if total_weight > 0
+            else 0.0
         )
         pass_count = sum(1 for r in task_results if r["verdict"] == "PASS")
         pass_rate = (pass_count / len(task_results) * 100) if task_results else 0.0
@@ -279,7 +325,9 @@ class HeartbeatBenchmarkRunner(DemoRunner):
         category_scores: dict[str, list[float]] = {}
         for r in task_results:
             category_scores.setdefault(r["category"], []).append(r["score"])
-        category_averages = {cat: round(sum(s) / len(s), 2) for cat, s in category_scores.items()}
+        category_averages = {
+            cat: round(sum(s) / len(s), 2) for cat, s in category_scores.items()
+        }
 
         if not self.args.json:
             print(f"    Weighted Aggregate: {weighted_aggregate:.2f} / 10.0")

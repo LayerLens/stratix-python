@@ -594,9 +594,7 @@ def _render_report(
             "gap_vs_human": round(HUMAN_BASELINE - overall_score, 4),
             "category_breakdown": {
                 cat: {
-                    "avg_score": round(
-                        sum(scores) / max(len(scores), 1), 4
-                    ),
+                    "avg_score": round(sum(scores) / max(len(scores), 1), 4),
                     "passed": category_pass_counts[cat][0],
                     "total": category_pass_counts[cat][1],
                 }
@@ -631,8 +629,14 @@ def _render_report(
     lines.append("")
 
     # Overall
-    color = _GREEN if overall_score >= 0.80 else (_YELLOW if overall_score >= 0.60 else _RED)
-    lines.append(f"  Overall Reliability:  {color}{_BOLD}{overall_score * 100:.1f}%{_RESET}")
+    color = (
+        _GREEN
+        if overall_score >= 0.80
+        else (_YELLOW if overall_score >= 0.60 else _RED)
+    )
+    lines.append(
+        f"  Overall Reliability:  {color}{_BOLD}{overall_score * 100:.1f}%{_RESET}"
+    )
     lines.append(f"  Tasks Passed:         {total_passed}/{total_tasks}")
     lines.append(f"  Human Baseline:       {HUMAN_BASELINE * 100:.0f}%")
     gap = HUMAN_BASELINE - overall_score
@@ -651,7 +655,9 @@ def _render_report(
         cat_color = _GREEN if avg >= 0.80 else (_YELLOW if avg >= 0.60 else _RED)
         label = cat.replace("_", " ").title()
         bar = _render_bar(avg)
-        lines.append(f"  {label:20s} {cat_color}{bar}{_RESET}  ({passed}/{total} passed)")
+        lines.append(
+            f"  {label:20s} {cat_color}{bar}{_RESET}  ({passed}/{total} passed)"
+        )
     lines.append("")
 
     # Compound failure analysis
@@ -675,7 +681,9 @@ def _render_report(
     lines.append(f"{_BOLD}  TASK DETAILS{_RESET}")
     lines.append(f"  {'-' * (w - 4)}")
     for detail in task_details:
-        status_icon = f"{_GREEN}PASS{_RESET}" if detail["all_passed"] else f"{_RED}FAIL{_RESET}"
+        status_icon = (
+            f"{_GREEN}PASS{_RESET}" if detail["all_passed"] else f"{_RED}FAIL{_RESET}"
+        )
         lines.append(
             f"  [{status_icon}] {detail['task_id']:12s} {detail['description'][:45]}"
         )
@@ -693,18 +701,26 @@ def _render_report(
         suitable = ", ".join(c.replace("_", " ") for c in strong_categories)
         lines.append(f"  {_GREEN}Suitable for:{_RESET} {suitable}")
     else:
-        lines.append(f"  {_YELLOW}Suitable for:{_RESET} No category exceeded the 85% threshold.")
+        lines.append(
+            f"  {_YELLOW}Suitable for:{_RESET} No category exceeded the 85% threshold."
+        )
 
     if weak_categories:
         not_rec = ", ".join(c.replace("_", " ") for c in weak_categories)
         lines.append(f"  {_RED}Not recommended for:{_RESET} {not_rec}")
     else:
-        lines.append(f"  {_GREEN}Not recommended for:{_RESET} All categories above 60%.")
+        lines.append(
+            f"  {_GREEN}Not recommended for:{_RESET} All categories above 60%."
+        )
 
     lines.append("")
-    lines.append(f"  {_DIM}Evaluated with {len(JUDGE_DEFINITIONS)} specialized judges across "
-                 f"{total_tasks} tasks.{_RESET}")
-    lines.append(f"  {_DIM}Compound analysis shows reliability decay in multi-step workflows.{_RESET}")
+    lines.append(
+        f"  {_DIM}Evaluated with {len(JUDGE_DEFINITIONS)} specialized judges across "
+        f"{total_tasks} tasks.{_RESET}"
+    )
+    lines.append(
+        f"  {_DIM}Compound analysis shows reliability decay in multi-step workflows.{_RESET}"
+    )
     lines.append(f"{_BOLD}{'=' * w}{_RESET}")
     lines.append("")
 
@@ -792,7 +808,9 @@ def main() -> None:
     if args.mode == "recorded":
         recorded_traces = _load_recorded_traces()
         if not recorded_traces:
-            print(f"\n{_YELLOW}WARNING: No recorded traces found in {TRACES_DIR}{_RESET}")
+            print(
+                f"\n{_YELLOW}WARNING: No recorded traces found in {TRACES_DIR}{_RESET}"
+            )
             print("Falling back to simulated mode for tasks without recordings.")
 
     # Check for Browser Use in live mode
@@ -861,9 +879,7 @@ def main() -> None:
                 all_results[category][task_id] = judge_results
 
                 # Print inline status
-                passed_count = sum(
-                    1 for r in judge_results.values() if r["passed"]
-                )
+                passed_count = sum(1 for r in judge_results.values() if r["passed"])
                 total_judges = len(judge_results)
                 if passed_count == total_judges:
                     print(f" {_GREEN}PASS{_RESET} ({passed_count}/{total_judges})")
@@ -881,7 +897,9 @@ def main() -> None:
     finally:
         # Clean up judges that were created during this run
         if created_judge_ids:
-            print(f"\n{_DIM}Cleaning up {len(created_judge_ids)} created judges...{_RESET}")
+            print(
+                f"\n{_DIM}Cleaning up {len(created_judge_ids)} created judges...{_RESET}"
+            )
             for jid in created_judge_ids:
                 try:
                     client.judges.delete(jid)

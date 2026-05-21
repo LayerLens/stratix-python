@@ -294,7 +294,12 @@ class Benchmarks(SyncAPIResource):
 
         raw_resp = self._post(
             f"{base}/upload",
-            body={"key": benchmark_name, "filename": filename, "type": content_type, "size": file_size},
+            body={
+                "key": benchmark_name,
+                "filename": filename,
+                "type": content_type,
+                "size": file_size,
+            },
             timeout=timeout,
             cast_to=dict,
         )
@@ -310,7 +315,7 @@ class Benchmarks(SyncAPIResource):
                 resp["url"],
                 content=f.read(),
                 headers={"Content-Type": content_type},
-                timeout=timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout),
+                timeout=(timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout)),
             )
             put_resp.raise_for_status()
 
@@ -344,7 +349,11 @@ class Benchmarks(SyncAPIResource):
         filename = self._upload_file(file_path, name, timeout)
 
         base = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}"
-        body: Dict[str, Any] = {"name": name, "description": description, "file": filename}
+        body: Dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "file": filename,
+        }
         if additional_metrics:
             body["additional_metrics"] = additional_metrics
         if custom_scorer_ids:
@@ -659,7 +668,12 @@ class AsyncBenchmarks(AsyncAPIResource):
 
         raw_resp = await self._post(
             f"{base}/upload",
-            body={"key": benchmark_name, "filename": filename, "type": content_type, "size": file_size},
+            body={
+                "key": benchmark_name,
+                "filename": filename,
+                "type": content_type,
+                "size": file_size,
+            },
             timeout=timeout,
             cast_to=dict,
         )
@@ -676,7 +690,7 @@ class AsyncBenchmarks(AsyncAPIResource):
                     resp["url"],
                     content=f.read(),
                     headers={"Content-Type": content_type},
-                    timeout=timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout),
+                    timeout=(timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout)),
                 )
                 put_resp.raise_for_status()
 
@@ -710,7 +724,11 @@ class AsyncBenchmarks(AsyncAPIResource):
         filename = await self._upload_file(file_path, name, timeout)
 
         base = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}"
-        body: Dict[str, Any] = {"name": name, "description": description, "file": filename}
+        body: Dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "file": filename,
+        }
         if additional_metrics:
             body["additional_metrics"] = additional_metrics
         if custom_scorer_ids:

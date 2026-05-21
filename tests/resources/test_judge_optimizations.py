@@ -10,7 +10,9 @@ from layerlens.models import (
     EstimateJudgeOptimizationCostResponse,
 )
 from layerlens._constants import DEFAULT_TIMEOUT
-from layerlens.resources.judge_optimizations.judge_optimizations import JudgeOptimizations
+from layerlens.resources.judge_optimizations.judge_optimizations import (
+    JudgeOptimizations,
+)
 
 
 class TestJudgeOptimizations:
@@ -100,7 +102,11 @@ class TestJudgeOptimizations:
 
     def test_estimate_success(self, resource):
         """estimate returns cost estimate on success."""
-        resource._post.return_value = {"estimated_cost": 7.5, "annotation_count": 50, "budget": "medium"}
+        resource._post.return_value = {
+            "estimated_cost": 7.5,
+            "annotation_count": 50,
+            "budget": "medium",
+        }
 
         result = resource.estimate(judge_id="judge-789", budget="medium")
 
@@ -111,7 +117,11 @@ class TestJudgeOptimizations:
 
     def test_estimate_request_parameters(self, resource):
         """estimate makes correct API request."""
-        resource._post.return_value = {"estimated_cost": 7.5, "annotation_count": 50, "budget": "medium"}
+        resource._post.return_value = {
+            "estimated_cost": 7.5,
+            "annotation_count": 50,
+            "budget": "medium",
+        }
 
         resource.estimate(judge_id="judge-789", budget="heavy")
 
@@ -124,7 +134,11 @@ class TestJudgeOptimizations:
 
     def test_estimate_default_budget(self, resource):
         """estimate uses medium budget by default."""
-        resource._post.return_value = {"estimated_cost": 7.5, "annotation_count": 50, "budget": "medium"}
+        resource._post.return_value = {
+            "estimated_cost": 7.5,
+            "annotation_count": 50,
+            "budget": "medium",
+        }
 
         resource.estimate(judge_id="judge-789")
 
@@ -159,7 +173,12 @@ class TestJudgeOptimizations:
 
     def test_create_request_parameters(self, resource):
         """create makes correct API request."""
-        resource._post.return_value = {"id": "run-123", "judge_id": "judge-789", "budget": "light", "status": "pending"}
+        resource._post.return_value = {
+            "id": "run-123",
+            "judge_id": "judge-789",
+            "budget": "light",
+            "status": "pending",
+        }
 
         resource.create(judge_id="judge-789", budget="light")
 

@@ -79,7 +79,12 @@ def _simulate_coder(task: str, iteration: int, feedback: str = "") -> StageResul
             ]
         )
     if iteration >= 3:
-        lines.extend(["    # Security check added based on judge feedback", "    data = _sanitize(data)"])
+        lines.extend(
+            [
+                "    # Security check added based on judge feedback",
+                "    data = _sanitize(data)",
+            ]
+        )
     lines.extend(["    result = _transform(data)", "    return result", ""])
     if iteration >= 2:
         lines.extend(
@@ -132,13 +137,19 @@ def _simulate_reviewer(code: str, task: str, iteration: int) -> StageResult:
             "Minor: could extract helper functions.",
         ]
     else:
-        comments = ["Code looks solid.", "Minor: consider adding a docstring to the test function."]
+        comments = [
+            "Code looks solid.",
+            "Minor: consider adding a docstring to the test function.",
+        ]
     review_text = "REVIEW COMMENTS:\n" + "\n".join(f"  - {c}" for c in comments)
     duration = int((time.monotonic() - start) * 1000) + 80
     return StageResult(
         stage="reviewer",
         output=review_text,
-        metadata={"comment_count": len(comments), "severity": "major" if iteration == 1 else "minor"},
+        metadata={
+            "comment_count": len(comments),
+            "severity": "major" if iteration == 1 else "minor",
+        },
         duration_ms=duration,
     )
 
@@ -179,7 +190,9 @@ def _simulate_tester(code: str, task: str, iteration: int) -> StageResult:
 class CodePipeline:
     """Multi-stage code generation pipeline with quality gate and retry loop."""
 
-    def __init__(self, judge: CodeQualityJudge | None = None, max_iterations: int = 3) -> None:
+    def __init__(
+        self, judge: CodeQualityJudge | None = None, max_iterations: int = 3
+    ) -> None:
         self.judge = judge or CodeQualityJudge()
         self.max_iterations = max_iterations
         self._iterations: list[PipelineIteration] = []

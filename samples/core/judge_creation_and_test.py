@@ -113,7 +113,10 @@ def step_verify_judge(client: Stratix, judge_id: str) -> None:
     if judge:
         logger.info("  ID         : %s", getattr(judge, "id", judge_id))
         logger.info("  Name       : %s", getattr(judge, "name", "-"))
-        logger.info("  Goal       : %s", (getattr(judge, "evaluation_goal", "") or "")[:60] + "...")
+        logger.info(
+            "  Goal       : %s",
+            (getattr(judge, "evaluation_goal", "") or "")[:60] + "...",
+        )
         logger.info("  Created at : %s", getattr(judge, "created_at", "-"))
     else:
         logger.warning("  Could not retrieve judge details")
@@ -125,7 +128,9 @@ def step_test_judge(client: Stratix, judge_id: str) -> None:
     logger.info("Step 4: Test judge on sample traces")
     logger.info("=" * 60)
 
-    response = client.traces.get_many(page_size=3, sort_by="created_at", sort_order="desc")
+    response = client.traces.get_many(
+        page_size=3, sort_by="created_at", sort_order="desc"
+    )
     if not response or not response.traces:
         logger.warning("  No traces available for testing.")
         logger.warning("  Ingest some traces first (run basic_trace.py).")

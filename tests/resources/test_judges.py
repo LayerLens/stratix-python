@@ -2,7 +2,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from layerlens.models import Judge, JudgesResponse, DeleteJudgeResponse, UpdateJudgeResponse
+from layerlens.models import (
+    Judge,
+    JudgesResponse,
+    DeleteJudgeResponse,
+    UpdateJudgeResponse,
+)
 from layerlens._constants import DEFAULT_TIMEOUT
 from layerlens.resources.judges.judges import Judges
 

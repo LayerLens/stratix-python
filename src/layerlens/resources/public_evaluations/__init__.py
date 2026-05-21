@@ -1,3 +1,6 @@
-from .public_evaluations import PublicEvaluationsResource, AsyncPublicEvaluationsResource
+from .public_evaluations import (
+    PublicEvaluationsResource,
+    AsyncPublicEvaluationsResource,
+)
 
 __all__ = ["PublicEvaluationsResource", "AsyncPublicEvaluationsResource"]

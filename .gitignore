@@ -20,4 +20,5 @@ Brewfile.lock.json
 
 .DS_Store
 .coverage
+.venv*
 docs/review/

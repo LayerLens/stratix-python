@@ -96,7 +96,9 @@ def get_default_model_id(client: Stratix) -> str:
     except Exception:
         pass
 
-    raise RuntimeError("No models available. Add a model to your project or check API connectivity.")
+    raise RuntimeError(
+        "No models available. Add a model to your project or check API connectivity."
+    )
 
 
 def create_judge(
@@ -120,7 +122,9 @@ def create_judge(
     if model_id is None:
         model_id = get_default_model_id(client)
     try:
-        return client.judges.create(name=name, evaluation_goal=evaluation_goal, model_id=model_id)
+        return client.judges.create(
+            name=name, evaluation_goal=evaluation_goal, model_id=model_id
+        )
     except Exception as exc:
         # Handle 409 Conflict (judge name already exists) by finding and returning the existing judge
         if "already exists" in str(exc) or "409" in str(exc):

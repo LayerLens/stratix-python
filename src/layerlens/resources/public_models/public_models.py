@@ -27,7 +27,15 @@ class PublicModelsResource(SyncPublicAPIResource):
         licenses: Optional[List[str]] = None,
         sizes: Optional[List[str]] = None,
         sort_by: Optional[
-            Literal["name", "created_at", "released_at", "architecture_type", "context_length", "license", "region"]
+            Literal[
+                "name",
+                "created_at",
+                "released_at",
+                "architecture_type",
+                "context_length",
+                "license",
+                "region",
+            ]
         ] = None,
         order: Optional[Literal["asc", "desc"]] = None,
         page: Optional[int] = None,
@@ -94,7 +102,15 @@ class AsyncPublicModelsResource(AsyncPublicAPIResource):
         licenses: Optional[List[str]] = None,
         sizes: Optional[List[str]] = None,
         sort_by: Optional[
-            Literal["name", "created_at", "released_at", "architecture_type", "context_length", "license", "region"]
+            Literal[
+                "name",
+                "created_at",
+                "released_at",
+                "architecture_type",
+                "context_length",
+                "license",
+                "region",
+            ]
         ] = None,
         order: Optional[Literal["asc", "desc"]] = None,
         page: Optional[int] = None,

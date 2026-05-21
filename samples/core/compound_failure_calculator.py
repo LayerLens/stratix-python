@@ -81,7 +81,7 @@ COMPOUND_SCENARIOS: Dict[str, Dict[int, float]] = {}
 
 for _acc in (0.99, 0.95, 0.90, 0.85, 0.80, 0.75):
     _key = f"{_acc:.2f}"
-    COMPOUND_SCENARIOS[_key] = {n: round(_acc ** n, 6) for n in range(1, 21)}
+    COMPOUND_SCENARIOS[_key] = {n: round(_acc**n, 6) for n in range(1, 21)}
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +247,7 @@ SAMPLE_AGENT_STEPS: List[Dict[str, str]] = [
 # Core computation
 # ---------------------------------------------------------------------------
 
+
 def compute_compound_reliability(
     per_step_accuracy: float,
     max_steps: int,
@@ -262,12 +263,14 @@ def compute_compound_reliability(
     """
     results = []
     for n in range(1, max_steps + 1):
-        compound = per_step_accuracy ** n
-        results.append({
-            "steps": n,
-            "compound_reliability": round(compound, 6),
-            "failure_probability": round(1 - compound, 6),
-        })
+        compound = per_step_accuracy**n
+        results.append(
+            {
+                "steps": n,
+                "compound_reliability": round(compound, 6),
+                "failure_probability": round(1 - compound, 6),
+            }
+        )
     return results
 
 
@@ -310,6 +313,7 @@ def expected_steps_before_failure(per_step_accuracy: float) -> float:
 # Trace parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_trace_steps(trace_path: str) -> List[Dict[str, str]]:
     """Extract evaluable steps from a multi-step agent trace JSON file.
 
@@ -340,17 +344,19 @@ def parse_trace_steps(trace_path: str) -> List[Dict[str, str]]:
             step_name = payload.get("step_name", f"step_{payload['step']}")
             output_text = payload.get("output", "")
 
-            steps.append({
-                "step_name": step_name,
-                "input": pending_input or f"Execute {step_name}",
-                "output": output_text,
-                "evaluation_goal": (
-                    f"Evaluate the quality, accuracy, and completeness "
-                    f"of the '{step_name}' step in a multi-step agent "
-                    f"workflow. Assess whether the output correctly "
-                    f"addresses the input requirements."
-                ),
-            })
+            steps.append(
+                {
+                    "step_name": step_name,
+                    "input": pending_input or f"Execute {step_name}",
+                    "output": output_text,
+                    "evaluation_goal": (
+                        f"Evaluate the quality, accuracy, and completeness "
+                        f"of the '{step_name}' step in a multi-step agent "
+                        f"workflow. Assess whether the output correctly "
+                        f"addresses the input requirements."
+                    ),
+                }
+            )
             pending_input = ""
 
     if not steps:
@@ -363,15 +369,17 @@ def parse_trace_steps(trace_path: str) -> List[Dict[str, str]]:
                 payload = event.get("payload", {})
                 agent = payload.get("agent_name", "unknown")
                 output_text = payload.get("output", "")
-                steps.append({
-                    "step_name": agent,
-                    "input": f"Agent '{agent}' task execution",
-                    "output": output_text,
-                    "evaluation_goal": (
-                        f"Evaluate the quality and accuracy of the "
-                        f"output produced by agent '{agent}'."
-                    ),
-                })
+                steps.append(
+                    {
+                        "step_name": agent,
+                        "input": f"Agent '{agent}' task execution",
+                        "output": output_text,
+                        "evaluation_goal": (
+                            f"Evaluate the quality and accuracy of the "
+                            f"output produced by agent '{agent}'."
+                        ),
+                    }
+                )
 
     return steps
 
@@ -379,6 +387,7 @@ def parse_trace_steps(trace_path: str) -> List[Dict[str, str]]:
 # ---------------------------------------------------------------------------
 # Stratix evaluation of individual steps
 # ---------------------------------------------------------------------------
+
 
 def evaluate_steps_with_stratix(
     client: Stratix,
@@ -411,7 +420,9 @@ def evaluate_steps_with_stratix(
             step_name = step["step_name"]
             logger.info(
                 "Step %d/%d: Evaluating '%s'",
-                i, len(steps), step_name,
+                i,
+                len(steps),
+                step_name,
             )
 
             # Upload the step as a trace
@@ -427,15 +438,17 @@ def evaluate_steps_with_stratix(
             )
             if not result or not result.trace_ids:
                 logger.error("  Failed to upload trace for step '%s'", step_name)
-                step_results.append({
-                    "step_name": step_name,
-                    "step_number": i,
-                    "score": None,
-                    "passed": None,
-                    "reasoning": "Trace upload failed",
-                    "trace_id": None,
-                    "judge_id": None,
-                })
+                step_results.append(
+                    {
+                        "step_name": step_name,
+                        "step_number": i,
+                        "score": None,
+                        "passed": None,
+                        "reasoning": "Trace upload failed",
+                        "trace_id": None,
+                        "judge_id": None,
+                    }
+                )
                 continue
 
             trace_id = result.trace_ids[0]
@@ -450,15 +463,17 @@ def evaluate_steps_with_stratix(
             )
             if not judge:
                 logger.error("  Failed to create judge for step '%s'", step_name)
-                step_results.append({
-                    "step_name": step_name,
-                    "step_number": i,
-                    "score": None,
-                    "passed": None,
-                    "reasoning": "Judge creation failed",
-                    "trace_id": trace_id,
-                    "judge_id": None,
-                })
+                step_results.append(
+                    {
+                        "step_name": step_name,
+                        "step_number": i,
+                        "score": None,
+                        "passed": None,
+                        "reasoning": "Judge creation failed",
+                        "trace_id": trace_id,
+                        "judge_id": None,
+                    }
+                )
                 continue
 
             created_judge_ids.append(judge.id)
@@ -470,15 +485,17 @@ def evaluate_steps_with_stratix(
             )
             if not trace_eval:
                 logger.error("  Failed to create evaluation for step '%s'", step_name)
-                step_results.append({
-                    "step_name": step_name,
-                    "step_number": i,
-                    "score": None,
-                    "passed": None,
-                    "reasoning": "Evaluation creation failed",
-                    "trace_id": trace_id,
-                    "judge_id": judge.id,
-                })
+                step_results.append(
+                    {
+                        "step_name": step_name,
+                        "step_number": i,
+                        "score": None,
+                        "passed": None,
+                        "reasoning": "Evaluation creation failed",
+                        "trace_id": trace_id,
+                        "judge_id": judge.id,
+                    }
+                )
                 continue
 
             # Poll for results
@@ -486,36 +503,45 @@ def evaluate_steps_with_stratix(
             if eval_results and len(eval_results) > 0:
                 r = eval_results[0]
                 reasoning_text = (r.reasoning or "")[:200]
-                step_results.append({
-                    "step_name": step_name,
-                    "step_number": i,
-                    "score": r.score,
-                    "passed": r.passed,
-                    "reasoning": reasoning_text,
-                    "trace_id": trace_id,
-                    "judge_id": judge.id,
-                })
+                step_results.append(
+                    {
+                        "step_name": step_name,
+                        "step_number": i,
+                        "score": r.score,
+                        "passed": r.passed,
+                        "reasoning": reasoning_text,
+                        "trace_id": trace_id,
+                        "judge_id": judge.id,
+                    }
+                )
                 status = "PASS" if r.passed else "FAIL"
                 logger.info(
                     "  Result: %s (score=%s) %s",
-                    status, r.score, reasoning_text[:80],
+                    status,
+                    r.score,
+                    reasoning_text[:80],
                 )
             else:
                 logger.warning("  No results returned for step '%s'", step_name)
-                step_results.append({
-                    "step_name": step_name,
-                    "step_number": i,
-                    "score": None,
-                    "passed": None,
-                    "reasoning": "Evaluation timed out",
-                    "trace_id": trace_id,
-                    "judge_id": judge.id,
-                })
+                step_results.append(
+                    {
+                        "step_name": step_name,
+                        "step_number": i,
+                        "score": None,
+                        "passed": None,
+                        "reasoning": "Evaluation timed out",
+                        "trace_id": trace_id,
+                        "judge_id": judge.id,
+                    }
+                )
 
     finally:
         if not skip_cleanup:
-            logger.info("Cleaning up %d traces and %d judges...",
-                        len(created_trace_ids), len(created_judge_ids))
+            logger.info(
+                "Cleaning up %d traces and %d judges...",
+                len(created_trace_ids),
+                len(created_judge_ids),
+            )
             for jid in created_judge_ids:
                 try:
                     client.judges.delete(jid)
@@ -533,6 +559,7 @@ def evaluate_steps_with_stratix(
 # ---------------------------------------------------------------------------
 # ASCII visualization
 # ---------------------------------------------------------------------------
+
 
 def render_ascii_chart(
     per_step_accuracy: float,
@@ -558,15 +585,14 @@ def render_ascii_chart(
     lines.append("")
     lines.append("  COMPOUND RELIABILITY DECAY")
     lines.append(
-        f"  Per-step accuracy: {per_step_accuracy:.1%}"
-        f"    Steps: {start} to {end}"
+        f"  Per-step accuracy: {per_step_accuracy:.1%}" f"    Steps: {start} to {end}"
     )
     lines.append("")
 
     # Compute values for each step count
     values = []
     for n in range(start, end + 1):
-        values.append((n, per_step_accuracy ** n))
+        values.append((n, per_step_accuracy**n))
 
     # Build actual results lookup
     actual_map: Dict[int, bool] = {}
@@ -631,15 +657,9 @@ def render_ascii_chart(
 
     lines.append("")
     lines.append("  Key thresholds:")
-    lines.append(
-        f"    Reliability drops below 50% at step {cliff_50}"
-    )
-    lines.append(
-        f"    Reliability drops below 20% at step {cliff_20}"
-    )
-    lines.append(
-        f"    Expected steps before first failure: {expected}"
-    )
+    lines.append(f"    Reliability drops below 50% at step {cliff_50}")
+    lines.append(f"    Reliability drops below 20% at step {cliff_20}")
+    lines.append(f"    Expected steps before first failure: {expected}")
 
     return "\n".join(lines)
 
@@ -682,6 +702,7 @@ def render_scenario_table() -> str:
 # Matplotlib visualization (optional)
 # ---------------------------------------------------------------------------
 
+
 def save_matplotlib_chart(
     per_step_accuracy: float,
     steps_range: Tuple[int, int],
@@ -708,36 +729,54 @@ def save_matplotlib_chart(
 
     start, end = steps_range
     steps = list(range(start, end + 1))
-    compound = [per_step_accuracy ** n for n in steps]
+    compound = [per_step_accuracy**n for n in steps]
 
     fig, ax = plt.subplots(figsize=(12, 7))
-    ax.plot(steps, compound, "b-o", linewidth=2, markersize=6,
-            label=f"Compound reliability (p={per_step_accuracy:.0%})")
+    ax.plot(
+        steps,
+        compound,
+        "b-o",
+        linewidth=2,
+        markersize=6,
+        label=f"Compound reliability (p={per_step_accuracy:.0%})",
+    )
 
     # Overlay actual results if available
     if actual_results:
         pass_steps = [
-            r["step_number"] for r in actual_results
-            if r.get("passed") is True
+            r["step_number"] for r in actual_results if r.get("passed") is True
         ]
         fail_steps = [
-            r["step_number"] for r in actual_results
-            if r.get("passed") is False
+            r["step_number"] for r in actual_results if r.get("passed") is False
         ]
         if pass_steps:
-            pass_y = [per_step_accuracy ** n for n in pass_steps]
-            ax.scatter(pass_steps, pass_y, c="green", s=120, zorder=5,
-                       label="Actual: PASS", marker="^")
+            pass_y = [per_step_accuracy**n for n in pass_steps]
+            ax.scatter(
+                pass_steps,
+                pass_y,
+                c="green",
+                s=120,
+                zorder=5,
+                label="Actual: PASS",
+                marker="^",
+            )
         if fail_steps:
-            fail_y = [per_step_accuracy ** n for n in fail_steps]
-            ax.scatter(fail_steps, fail_y, c="red", s=120, zorder=5,
-                       label="Actual: FAIL", marker="v")
+            fail_y = [per_step_accuracy**n for n in fail_steps]
+            ax.scatter(
+                fail_steps,
+                fail_y,
+                c="red",
+                s=120,
+                zorder=5,
+                label="Actual: FAIL",
+                marker="v",
+            )
 
     # Threshold lines
-    ax.axhline(y=0.50, color="orange", linestyle="--", alpha=0.7,
-               label="50% reliability")
-    ax.axhline(y=0.20, color="red", linestyle="--", alpha=0.7,
-               label="20% reliability")
+    ax.axhline(
+        y=0.50, color="orange", linestyle="--", alpha=0.7, label="50% reliability"
+    )
+    ax.axhline(y=0.20, color="red", linestyle="--", alpha=0.7, label="20% reliability")
 
     # Annotations
     cliff_50 = find_reliability_cliff(per_step_accuracy, 0.50)
@@ -745,16 +784,20 @@ def save_matplotlib_chart(
     if start <= cliff_50 <= end:
         ax.annotate(
             f"50% cliff at step {cliff_50}",
-            xy=(cliff_50, 0.50), xytext=(cliff_50 + 1, 0.60),
+            xy=(cliff_50, 0.50),
+            xytext=(cliff_50 + 1, 0.60),
             arrowprops=dict(arrowstyle="->", color="orange"),
-            fontsize=10, color="orange",
+            fontsize=10,
+            color="orange",
         )
     if start <= cliff_20 <= end:
         ax.annotate(
             f"20% cliff at step {cliff_20}",
-            xy=(cliff_20, 0.20), xytext=(cliff_20 + 1, 0.30),
+            xy=(cliff_20, 0.20),
+            xytext=(cliff_20 + 1, 0.30),
             arrowprops=dict(arrowstyle="->", color="red"),
-            fontsize=10, color="red",
+            fontsize=10,
+            color="red",
         )
 
     ax.set_xlabel("Number of Agent Steps", fontsize=12)
@@ -780,6 +823,7 @@ def save_matplotlib_chart(
 # Summary report
 # ---------------------------------------------------------------------------
 
+
 def build_summary(
     per_step_accuracy: float,
     num_steps: int,
@@ -795,7 +839,7 @@ def build_summary(
     Returns:
         Dict containing all summary statistics and per-step details.
     """
-    compound = per_step_accuracy ** num_steps
+    compound = per_step_accuracy**num_steps
     cliff_50 = find_reliability_cliff(per_step_accuracy, 0.50)
     cliff_20 = find_reliability_cliff(per_step_accuracy, 0.20)
     expected = expected_steps_before_failure(per_step_accuracy)
@@ -809,7 +853,8 @@ def build_summary(
         "reliability_cliff_20pct": cliff_20,
         "expected_steps_before_failure": expected,
         "reliability_curve": compute_compound_reliability(
-            per_step_accuracy, max(num_steps, 15),
+            per_step_accuracy,
+            max(num_steps, 15),
         ),
     }
 
@@ -819,7 +864,7 @@ def build_summary(
         failed = [r for r in step_results if r.get("passed") is False]
 
         actual_pass_rate = len(passed) / len(scored) if scored else 0.0
-        actual_compound = actual_pass_rate ** num_steps if scored else 0.0
+        actual_compound = actual_pass_rate**num_steps if scored else 0.0
 
         summary["actual_results"] = {
             "steps_evaluated": len(scored),
@@ -868,13 +913,9 @@ def print_summary(summary: Dict[str, Any]) -> None:
         print(f"    Steps evaluated:    {actual['steps_evaluated']}")
         print(f"    Steps passed:       {actual['steps_passed']}")
         print(f"    Steps failed:       {actual['steps_failed']}")
+        print(f"    Actual pass rate:   " f"{actual['actual_per_step_pass_rate']:.1%}")
         print(
-            f"    Actual pass rate:   "
-            f"{actual['actual_per_step_pass_rate']:.1%}"
-        )
-        print(
-            f"    Actual compound:    "
-            f"{actual['actual_compound_reliability']:.1%}"
+            f"    Actual compound:    " f"{actual['actual_compound_reliability']:.1%}"
         )
         print()
         print("  Per-step breakdown:")
@@ -895,6 +936,7 @@ def print_summary(summary: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -935,10 +977,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs=2,
         default=[1, 15],
         metavar=("START", "END"),
-        help=(
-            "Range of step counts for the visualization "
-            "(default: 1 15)."
-        ),
+        help=("Range of step counts for the visualization " "(default: 1 15)."),
     )
     parser.add_argument(
         "--output",
@@ -978,6 +1017,7 @@ def build_parser() -> argparse.ArgumentParser:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -1004,18 +1044,19 @@ def main() -> None:
                 sys.exit(1)
             logger.info(
                 "Connected to LayerLens (org=%s, project=%s)",
-                client.organization_id, client.project_id,
+                client.organization_id,
+                client.project_id,
             )
             step_results = evaluate_steps_with_stratix(
-                client, steps, skip_cleanup=args.skip_cleanup,
+                client,
+                steps,
+                skip_cleanup=args.skip_cleanup,
             )
 
             # Compute actual pass rate from results
             scored = [r for r in step_results if r.get("passed") is not None]
             if scored:
-                actual_rate = sum(
-                    1 for r in scored if r["passed"]
-                ) / len(scored)
+                actual_rate = sum(1 for r in scored if r["passed"]) / len(scored)
                 per_step_accuracy = actual_rate
                 logger.info(
                     "Actual per-step pass rate from evaluation: %.1f%%",
@@ -1029,7 +1070,8 @@ def main() -> None:
         num_steps = args.simulate
         logger.info(
             "Simulating %d-step agent at %.1f%% per-step accuracy.",
-            num_steps, per_step_accuracy * 100,
+            num_steps,
+            per_step_accuracy * 100,
         )
 
         # Use embedded sample steps (up to num_steps)
@@ -1038,7 +1080,8 @@ def main() -> None:
             logger.info(
                 "Sample data has %d steps; using those for evaluation, "
                 "computing compound curve up to step %d mathematically.",
-                len(steps), num_steps,
+                len(steps),
+                num_steps,
             )
 
         if not args.skip_evaluation:
@@ -1049,10 +1092,13 @@ def main() -> None:
                 sys.exit(1)
             logger.info(
                 "Connected to LayerLens (org=%s, project=%s)",
-                client.organization_id, client.project_id,
+                client.organization_id,
+                client.project_id,
             )
             step_results = evaluate_steps_with_stratix(
-                client, steps, skip_cleanup=args.skip_cleanup,
+                client,
+                steps,
+                skip_cleanup=args.skip_cleanup,
             )
         else:
             logger.info("Skipping Stratix evaluation (math-only mode).")
@@ -1069,15 +1115,22 @@ def main() -> None:
         print(json.dumps(summary, indent=2, default=str))
     else:
         print_summary(summary)
-        print(render_ascii_chart(
-            per_step_accuracy, steps_range, step_results,
-        ))
+        print(
+            render_ascii_chart(
+                per_step_accuracy,
+                steps_range,
+                step_results,
+            )
+        )
         print(render_scenario_table())
 
     # --- Save chart if requested ---
     if args.output:
         save_matplotlib_chart(
-            per_step_accuracy, steps_range, args.output, step_results,
+            per_step_accuracy,
+            steps_range,
+            args.output,
+            step_results,
         )
 
     logger.info("Compound failure analysis complete.")

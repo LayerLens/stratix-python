@@ -117,7 +117,9 @@ def main() -> None:
         sys.exit(1)
 
     traces = traces_resp.traces
-    logger.info("Found %d trace(s) (total in project: %d)", len(traces), traces_resp.total_count)
+    logger.info(
+        "Found %d trace(s) (total in project: %d)", len(traces), traces_resp.total_count
+    )
 
     # ------------------------------------------------------------------
     # Step 3: Fetch judges
@@ -142,7 +144,9 @@ def main() -> None:
     for trace in traces:
         for judge in judges:
             if len(eval_ids) >= MAX_EVALUATIONS:
-                logger.info("  Reached MAX_EVALUATIONS cap (%d). Stopping.", MAX_EVALUATIONS)
+                logger.info(
+                    "  Reached MAX_EVALUATIONS cap (%d). Stopping.", MAX_EVALUATIONS
+                )
                 break
             te = client.trace_evaluations.create(
                 trace_id=trace.id,
@@ -150,9 +154,18 @@ def main() -> None:
             )
             if te:
                 eval_ids.append(te.id)
-                logger.info("  Created evaluation %s (trace=%s, judge=%s)", te.id, trace.id, judge.id)
+                logger.info(
+                    "  Created evaluation %s (trace=%s, judge=%s)",
+                    te.id,
+                    trace.id,
+                    judge.id,
+                )
             else:
-                logger.warning("  Failed to create evaluation (trace=%s, judge=%s)", trace.id, judge.id)
+                logger.warning(
+                    "  Failed to create evaluation (trace=%s, judge=%s)",
+                    trace.id,
+                    judge.id,
+                )
         if len(eval_ids) >= MAX_EVALUATIONS:
             break
 
@@ -217,7 +230,9 @@ def main() -> None:
         print("  Detailed Results:")
         for rd in results_detail:
             status = "PASS" if rd["passed"] else "FAIL"
-            print(f"    [{status}] score={rd['score']:.2f}  eval={rd['eval_id'][:12]}...")
+            print(
+                f"    [{status}] score={rd['score']:.2f}  eval={rd['eval_id'][:12]}..."
+            )
         print("-" * 60)
 
     # ------------------------------------------------------------------
