@@ -6,8 +6,12 @@ from layerlens.models import (
     Evaluation,
     Pagination,
     EvaluationStatus,
+    PublicModelDetail,
     ComparisonResponse,
     EvaluationsResponse,
+    PublicBenchmarkDetail,
+    PublicModelsListResponse,
+    PublicBenchmarksListResponse,
 )
 from layerlens.resources.comparisons.comparisons import Comparisons
 
@@ -37,6 +41,22 @@ def _make_eval_response(evaluations: list[Evaluation]) -> EvaluationsResponse:
     )
 
 
+def _make_models_response(models: list[PublicModelDetail]) -> PublicModelsListResponse:
+    return PublicModelsListResponse(
+        models=models,
+        count=len(models),
+        total_count=len(models),
+    )
+
+
+def _make_benchmarks_response(benchmarks: list[PublicBenchmarkDetail]) -> PublicBenchmarksListResponse:
+    return PublicBenchmarksListResponse(
+        datasets=benchmarks,
+        count=len(benchmarks),
+        total_count=len(benchmarks),
+    )
+
+
 class TestCompareModels:
     """Test Comparisons.compare_models convenience method."""
 
@@ -45,6 +65,8 @@ class TestCompareModels:
         client = Mock()
         client.get_cast = Mock()
         client.evaluations = Mock()
+        client.models = Mock()
+        client.benchmarks = Mock()
         return client
 
     @pytest.fixture
@@ -201,3 +223,112 @@ class TestCompareModels:
             assert call.kwargs["page_size"] == 1
             assert call.kwargs["status"] == EvaluationStatus.SUCCESS
             assert call.kwargs["unique"] is True
+
+    def test_compare_models_resolves_keys(self, comparisons, mock_public_client):
+        """compare_models resolves benchmark_key/model_key_* into IDs before lookup."""
+        mock_public_client.benchmarks.get.return_value = _make_benchmarks_response(
+            [PublicBenchmarkDetail(id="bench-1", key="mmlu_pro", name="MMLU Pro")]
+        )
+        mock_public_client.models.get.side_effect = [
+            _make_models_response([PublicModelDetail(id="model-a", key="gpt-4", name="GPT-4")]),
+            _make_models_response([PublicModelDetail(id="model-b", key="claude-opus", name="Claude Opus")]),
+        ]
+
+        eval1 = _make_eval("eval-1", "model-a", "bench-1")
+        eval2 = _make_eval("eval-2", "model-b", "bench-1")
+        mock_public_client.evaluations.get_many.side_effect = [
+            _make_eval_response([eval1]),
+            _make_eval_response([eval2]),
+        ]
+        comparisons._get.return_value = {
+            "results": [],
+            "total_count": 0,
+            "correct_count_1": 0,
+            "total_results_1": 0,
+            "correct_count_2": 0,
+            "total_results_2": 0,
+        }
+
+        result = comparisons.compare_models(
+            benchmark_key="mmlu_pro",
+            model_key_1="gpt-4",
+            model_key_2="claude-opus",
+        )
+
+        assert isinstance(result, ComparisonResponse)
+
+        # Benchmark + model keys were each looked up
+        mock_public_client.benchmarks.get.assert_called_once()
+        assert mock_public_client.benchmarks.get.call_args.kwargs["key"] == "mmlu_pro"
+
+        model_get_keys = [c.kwargs["key"] for c in mock_public_client.models.get.call_args_list]
+        assert model_get_keys == ["gpt-4", "claude-opus"]
+
+        # Resolved IDs are forwarded to evaluations.get_many
+        eval_calls = mock_public_client.evaluations.get_many.call_args_list
+        assert eval_calls[0].kwargs["model_ids"] == ["model-a"]
+        assert eval_calls[0].kwargs["benchmark_ids"] == ["bench-1"]
+        assert eval_calls[1].kwargs["model_ids"] == ["model-b"]
+
+    def test_compare_models_mixed_id_and_key(self, comparisons, mock_public_client):
+        """compare_models accepts mixing IDs for some entities and keys for others."""
+        mock_public_client.models.get.return_value = _make_models_response(
+            [PublicModelDetail(id="model-b", key="claude-opus", name="Claude Opus")]
+        )
+
+        eval1 = _make_eval("eval-1", "model-a", "bench-1")
+        eval2 = _make_eval("eval-2", "model-b", "bench-1")
+        mock_public_client.evaluations.get_many.side_effect = [
+            _make_eval_response([eval1]),
+            _make_eval_response([eval2]),
+        ]
+        comparisons._get.return_value = {
+            "results": [],
+            "total_count": 0,
+            "correct_count_1": 0,
+            "total_results_1": 0,
+            "correct_count_2": 0,
+            "total_results_2": 0,
+        }
+
+        comparisons.compare_models(
+            benchmark_id="bench-1",
+            model_id_1="model-a",
+            model_key_2="claude-opus",
+        )
+
+        mock_public_client.benchmarks.get.assert_not_called()
+        mock_public_client.models.get.assert_called_once()
+        assert mock_public_client.models.get.call_args.kwargs["key"] == "claude-opus"
+
+        eval_calls = mock_public_client.evaluations.get_many.call_args_list
+        assert eval_calls[1].kwargs["model_ids"] == ["model-b"]
+
+    def test_compare_models_rejects_both_id_and_key(self, comparisons):
+        """Supplying both ID and key for the same entity is an error."""
+        with pytest.raises(ValueError, match="benchmark_id"):
+            comparisons.compare_models(
+                benchmark_id="bench-1",
+                benchmark_key="mmlu_pro",
+                model_id_1="model-a",
+                model_id_2="model-b",
+            )
+
+    def test_compare_models_rejects_neither_id_nor_key(self, comparisons):
+        """Supplying neither ID nor key for an entity is an error."""
+        with pytest.raises(ValueError, match="model_id_1"):
+            comparisons.compare_models(
+                benchmark_id="bench-1",
+                model_id_2="model-b",
+            )
+
+    def test_compare_models_unknown_key_raises(self, comparisons, mock_public_client):
+        """An unresolvable key raises ValueError with the key in the message."""
+        mock_public_client.benchmarks.get.return_value = _make_benchmarks_response([])
+
+        with pytest.raises(ValueError, match="missing-bench"):
+            comparisons.compare_models(
+                benchmark_key="missing-bench",
+                model_id_1="model-a",
+                model_id_2="model-b",
+            )

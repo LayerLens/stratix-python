@@ -18,6 +18,11 @@ def _find_evaluation_id(response: Optional[EvaluationsResponse], model_id: str, 
     return str(response.evaluations[0].id)
 
 
+def _require_one_of(id_value: Optional[str], key_value: Optional[str], id_name: str, key_name: str) -> None:
+    if (id_value is None) == (key_value is None):
+        raise ValueError(f"Exactly one of '{id_name}' or '{key_name}' must be provided.")
+
+
 class Comparisons(SyncPublicAPIResource):
     def compare(
         self,
@@ -58,9 +63,12 @@ class Comparisons(SyncPublicAPIResource):
     def compare_models(
         self,
         *,
-        benchmark_id: str,
-        model_id_1: str,
-        model_id_2: str,
+        benchmark_id: Optional[str] = None,
+        model_id_1: Optional[str] = None,
+        model_id_2: Optional[str] = None,
+        benchmark_key: Optional[str] = None,
+        model_key_1: Optional[str] = None,
+        model_key_2: Optional[str] = None,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         outcome_filter: Optional[_OUTCOME_FILTER] = None,
@@ -69,15 +77,29 @@ class Comparisons(SyncPublicAPIResource):
     ) -> Optional[ComparisonResponse]:
         """Compare two models on a benchmark by automatically finding their evaluations.
 
+        Each of the benchmark and the two models can be addressed by either its
+        ID or its unique key — provide one of ``benchmark_id``/``benchmark_key``,
+        one of ``model_id_1``/``model_key_1``, and one of ``model_id_2``/``model_key_2``.
+
         Finds the most recent successful evaluation for each model on the given
         benchmark, then compares the results side-by-side.
 
         Raises:
-            ValueError: If no successful evaluation is found for either model.
+            ValueError: If both ID and key are provided for the same entity,
+                neither is provided, a key cannot be resolved, or no successful
+                evaluation is found for either model.
         """
+        _require_one_of(benchmark_id, benchmark_key, "benchmark_id", "benchmark_key")
+        _require_one_of(model_id_1, model_key_1, "model_id_1", "model_key_1")
+        _require_one_of(model_id_2, model_key_2, "model_id_2", "model_key_2")
+
+        resolved_benchmark_id = benchmark_id or self._resolve_benchmark_key(benchmark_key, timeout=timeout)
+        resolved_model_id_1 = model_id_1 or self._resolve_model_key(model_key_1, timeout=timeout)
+        resolved_model_id_2 = model_id_2 or self._resolve_model_key(model_key_2, timeout=timeout)
+
         resp1 = self._client.evaluations.get_many(
-            model_ids=[model_id_1],
-            benchmark_ids=[benchmark_id],
+            model_ids=[resolved_model_id_1],
+            benchmark_ids=[resolved_benchmark_id],
             status=EvaluationStatus.SUCCESS,
             sort_by="submitted_at",
             order="desc",
@@ -85,11 +107,11 @@ class Comparisons(SyncPublicAPIResource):
             unique=True,
             timeout=timeout,
         )
-        eval_id_1 = _find_evaluation_id(resp1, model_id_1, benchmark_id)
+        eval_id_1 = _find_evaluation_id(resp1, resolved_model_id_1, resolved_benchmark_id)
 
         resp2 = self._client.evaluations.get_many(
-            model_ids=[model_id_2],
-            benchmark_ids=[benchmark_id],
+            model_ids=[resolved_model_id_2],
+            benchmark_ids=[resolved_benchmark_id],
             status=EvaluationStatus.SUCCESS,
             sort_by="submitted_at",
             order="desc",
@@ -97,7 +119,7 @@ class Comparisons(SyncPublicAPIResource):
             unique=True,
             timeout=timeout,
         )
-        eval_id_2 = _find_evaluation_id(resp2, model_id_2, benchmark_id)
+        eval_id_2 = _find_evaluation_id(resp2, resolved_model_id_2, resolved_benchmark_id)
 
         return self.compare(
             evaluation_id_1=eval_id_1,
@@ -108,6 +130,22 @@ class Comparisons(SyncPublicAPIResource):
             search=search,
             timeout=timeout,
         )
+
+    def _resolve_model_key(self, key: Optional[str], *, timeout: float | httpx.Timeout | None) -> str:
+        resp = self._client.models.get(key=key, timeout=timeout)
+        if resp is not None:
+            for model in resp.models:
+                if model.key == key:
+                    return str(model.id)
+        raise ValueError(f"No model found for key '{key}'")
+
+    def _resolve_benchmark_key(self, key: Optional[str], *, timeout: float | httpx.Timeout | None) -> str:
+        resp = self._client.benchmarks.get(key=key, timeout=timeout)
+        if resp is not None:
+            for benchmark in resp.datasets:
+                if benchmark.key == key:
+                    return str(benchmark.id)
+        raise ValueError(f"No benchmark found for key '{key}'")
 
 
 class AsyncComparisons(AsyncPublicAPIResource):
@@ -150,9 +188,12 @@ class AsyncComparisons(AsyncPublicAPIResource):
     async def compare_models(
         self,
         *,
-        benchmark_id: str,
-        model_id_1: str,
-        model_id_2: str,
+        benchmark_id: Optional[str] = None,
+        model_id_1: Optional[str] = None,
+        model_id_2: Optional[str] = None,
+        benchmark_key: Optional[str] = None,
+        model_key_1: Optional[str] = None,
+        model_key_2: Optional[str] = None,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         outcome_filter: Optional[_OUTCOME_FILTER] = None,
@@ -161,15 +202,29 @@ class AsyncComparisons(AsyncPublicAPIResource):
     ) -> Optional[ComparisonResponse]:
         """Compare two models on a benchmark by automatically finding their evaluations.
 
+        Each of the benchmark and the two models can be addressed by either its
+        ID or its unique key — provide one of ``benchmark_id``/``benchmark_key``,
+        one of ``model_id_1``/``model_key_1``, and one of ``model_id_2``/``model_key_2``.
+
         Finds the most recent successful evaluation for each model on the given
         benchmark, then compares the results side-by-side.
 
         Raises:
-            ValueError: If no successful evaluation is found for either model.
+            ValueError: If both ID and key are provided for the same entity,
+                neither is provided, a key cannot be resolved, or no successful
+                evaluation is found for either model.
         """
+        _require_one_of(benchmark_id, benchmark_key, "benchmark_id", "benchmark_key")
+        _require_one_of(model_id_1, model_key_1, "model_id_1", "model_key_1")
+        _require_one_of(model_id_2, model_key_2, "model_id_2", "model_key_2")
+
+        resolved_benchmark_id = benchmark_id or await self._resolve_benchmark_key(benchmark_key, timeout=timeout)
+        resolved_model_id_1 = model_id_1 or await self._resolve_model_key(model_key_1, timeout=timeout)
+        resolved_model_id_2 = model_id_2 or await self._resolve_model_key(model_key_2, timeout=timeout)
+
         resp1 = await self._client.evaluations.get_many(
-            model_ids=[model_id_1],
-            benchmark_ids=[benchmark_id],
+            model_ids=[resolved_model_id_1],
+            benchmark_ids=[resolved_benchmark_id],
             status=EvaluationStatus.SUCCESS,
             sort_by="submitted_at",
             order="desc",
@@ -177,11 +232,11 @@ class AsyncComparisons(AsyncPublicAPIResource):
             unique=True,
             timeout=timeout,
         )
-        eval_id_1 = _find_evaluation_id(resp1, model_id_1, benchmark_id)
+        eval_id_1 = _find_evaluation_id(resp1, resolved_model_id_1, resolved_benchmark_id)
 
         resp2 = await self._client.evaluations.get_many(
-            model_ids=[model_id_2],
-            benchmark_ids=[benchmark_id],
+            model_ids=[resolved_model_id_2],
+            benchmark_ids=[resolved_benchmark_id],
             status=EvaluationStatus.SUCCESS,
             sort_by="submitted_at",
             order="desc",
@@ -189,7 +244,7 @@ class AsyncComparisons(AsyncPublicAPIResource):
             unique=True,
             timeout=timeout,
         )
-        eval_id_2 = _find_evaluation_id(resp2, model_id_2, benchmark_id)
+        eval_id_2 = _find_evaluation_id(resp2, resolved_model_id_2, resolved_benchmark_id)
 
         return await self.compare(
             evaluation_id_1=eval_id_1,
@@ -200,3 +255,19 @@ class AsyncComparisons(AsyncPublicAPIResource):
             search=search,
             timeout=timeout,
         )
+
+    async def _resolve_model_key(self, key: Optional[str], *, timeout: float | httpx.Timeout | None) -> str:
+        resp = await self._client.models.get(key=key, timeout=timeout)
+        if resp is not None:
+            for model in resp.models:
+                if model.key == key:
+                    return str(model.id)
+        raise ValueError(f"No model found for key '{key}'")
+
+    async def _resolve_benchmark_key(self, key: Optional[str], *, timeout: float | httpx.Timeout | None) -> str:
+        resp = await self._client.benchmarks.get(key=key, timeout=timeout)
+        if resp is not None:
+            for benchmark in resp.datasets:
+                if benchmark.key == key:
+                    return str(benchmark.id)
+        raise ValueError(f"No benchmark found for key '{key}'")
