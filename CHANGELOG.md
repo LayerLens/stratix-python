@@ -21,6 +21,12 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 
 ### Removed
 
+## [1.8.0] - 2026-05-26
+
+### Added
+
+- `benchmark_key`, `model_key_1`, and `model_key_2` parameters on `comparisons.compare_models` (sync + async). Address the benchmark and the two models by their unique key (e.g., `aime2024`, `openai/gpt-4o`) instead of by UUID; the existing `*_id` parameters keep working. Exactly one of `*_id` or `*_key` must be provided per entity — passing both, or neither, raises `ValueError`. Unknown keys raise `ValueError` with the offending key in the message.
+
 ## [1.7.0] - 2026-05-20
 
 ### Added
@@ -169,7 +175,9 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 - `evaluations`, `results`, `models`, and `benchmarks` resources
 - Typed exception hierarchy for API errors
 
-[Unreleased]: https://github.com/LayerLens/stratix-python/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/LayerLens/stratix-python/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/LayerLens/stratix-python/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/LayerLens/stratix-python/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/LayerLens/stratix-python/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/LayerLens/stratix-python/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/LayerLens/stratix-python/compare/v1.4.0...v1.5.0
