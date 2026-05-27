@@ -22,3 +22,4 @@ Brewfile.lock.json
 .coverage
 .venv*
 docs/review/
+tests/e2e/live/.report/
