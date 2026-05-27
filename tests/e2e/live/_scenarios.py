@@ -70,12 +70,16 @@ def run_anthropic(flow: str) -> None:
             return
 
         if flow == "streaming":
+            # Iterate the wrapped stream so the adapter's proxy taps each event.
+            # Convenience consumers (until_done / get_final_message / text_stream)
+            # delegate to the inner stream via __getattr__ and are NOT captured.
             with client.messages.stream(
                 model=model,
                 max_tokens=64,
                 messages=[{"role": "user", "content": f"Name two oceans. {SENTINEL}"}],
             ) as stream:
-                stream.until_done()
+                for _ in stream:
+                    pass
             return
 
         tools = [

@@ -229,6 +229,9 @@ def _reassert_roundtrip(trace: Any, local_events: List[Dict[str, Any]], variant:
 
 
 def _teardown(client: Any, trace_id: str) -> None:
+    # Keep traces in the backend for the manual L3 UI pass when requested.
+    if os.environ.get("LAYERLENS_LIVE_KEEP_TRACES") == "1":
+        return
     try:
         client.traces.delete(trace_id)
     except Exception:
