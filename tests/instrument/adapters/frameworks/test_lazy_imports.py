@@ -9,11 +9,10 @@ routes to the right submodule when an extra IS installed.
 
 from __future__ import annotations
 
-import importlib
 import sys
+import importlib
 
 import pytest
-
 
 _FRAMEWORK_SDK_PREFIXES = (
     "langgraph",
@@ -43,9 +42,7 @@ def test_frameworks_package_import_does_not_pull_sdks() -> None:
     _purge_framework_sdks()
     importlib.import_module("layerlens.instrument.adapters.frameworks")
     for sdk in _FRAMEWORK_SDK_PREFIXES:
-        assert sdk not in sys.modules, (
-            f"framework package import eagerly loaded {sdk!r}; lazy export contract broken"
-        )
+        assert sdk not in sys.modules, f"framework package import eagerly loaded {sdk!r}; lazy export contract broken"
 
 
 def test_lazy_getattr_raises_attributeerror_for_unknown_names() -> None:
@@ -63,9 +60,7 @@ def test_lazy_getattr_resolves_agentforce_without_pulling_other_sdks() -> None:
     adapter_cls = pkg.AgentforceAdapter  # triggers __getattr__
     assert adapter_cls.__name__ == "AgentforceAdapter"
     for sdk in ("langgraph", "crewai", "autogen", "semantic_kernel"):
-        assert sdk not in sys.modules, (
-            f"resolving AgentforceAdapter pulled {sdk!r}; lazy exports leaked"
-        )
+        assert sdk not in sys.modules, f"resolving AgentforceAdapter pulled {sdk!r}; lazy exports leaked"
 
 
 def test_lazy_dir_advertises_all_public_adapters() -> None:

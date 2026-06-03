@@ -73,9 +73,7 @@ class TestEmitsEvents:
 
         @trace(mock_client)
         def my_agent() -> str:
-            r = ollama_client.chat(
-                model="llama3", messages=[{"role": "user", "content": "Hi"}]
-            )
+            r = ollama_client.chat(model="llama3", messages=[{"role": "user", "content": "Hi"}])
             return r["message"]["content"]
 
         my_agent()
@@ -178,9 +176,7 @@ class TestEndpointAndInfraCost:
         model_invoke = find_event(capture_trace["events"], "model.invoke")
         assert model_invoke["payload"]["endpoint"] == "http://my-ollama-box:11434"
 
-    def test_infra_cost_computed_when_cost_per_second_set(
-        self, mock_client, capture_trace
-    ):
+    def test_infra_cost_computed_when_cost_per_second_set(self, mock_client, capture_trace):
         ollama_client = Mock()
         ollama_client.chat = Mock(
             return_value=_chat_response(
@@ -201,13 +197,9 @@ class TestEndpointAndInfraCost:
         # 6 seconds total * $0.0001/sec = $0.0006
         assert model_invoke["payload"]["infra_cost_usd"] == 0.0006
 
-    def test_infra_cost_absent_when_cost_per_second_unset(
-        self, mock_client, capture_trace
-    ):
+    def test_infra_cost_absent_when_cost_per_second_unset(self, mock_client, capture_trace):
         ollama_client = Mock()
-        ollama_client.chat = Mock(
-            return_value=_chat_response(eval_duration_ns=5_000_000_000)
-        )
+        ollama_client.chat = Mock(return_value=_chat_response(eval_duration_ns=5_000_000_000))
 
         provider = OllamaProvider()  # no cost_per_second
         provider.connect(ollama_client)
@@ -220,9 +212,7 @@ class TestEndpointAndInfraCost:
         model_invoke = find_event(capture_trace["events"], "model.invoke")
         assert "infra_cost_usd" not in model_invoke["payload"]
 
-    def test_infra_cost_absent_when_duration_missing(
-        self, mock_client, capture_trace
-    ):
+    def test_infra_cost_absent_when_duration_missing(self, mock_client, capture_trace):
         ollama_client = Mock()
         ollama_client.chat = Mock(return_value=_chat_response())  # no durations
 

@@ -30,9 +30,7 @@ def _vertex_response(
     if text:
         parts.append(SimpleNamespace(text=text, function_call=None))
     for name, args in function_calls or []:
-        parts.append(
-            SimpleNamespace(text=None, function_call=SimpleNamespace(name=name, args=args))
-        )
+        parts.append(SimpleNamespace(text=None, function_call=SimpleNamespace(name=name, args=args)))
 
     candidate = SimpleNamespace(
         content=SimpleNamespace(parts=parts),
@@ -113,9 +111,7 @@ class TestEmitsEvents:
     def test_reasoning_tokens_captured(self, mock_client, capture_trace):
         vertex_model = Mock()
         vertex_model.model_name = "gemini-2.5-pro"
-        vertex_model.generate_content = Mock(
-            return_value=_vertex_response(reasoning_tokens=42)
-        )
+        vertex_model.generate_content = Mock(return_value=_vertex_response(reasoning_tokens=42))
 
         provider = GoogleVertexProvider()
         provider.connect(vertex_model)

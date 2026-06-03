@@ -47,9 +47,12 @@ langchain = ["langchain-core>=0.1.0"]
 # LangGraph 0.2+ is Pydantic v2-only — see ``LangGraphCallbackHandler.requires_pydantic`` (LAY-3446).
 langgraph = ["langgraph>=0.2.0", "langchain-core>=0.1.0"]
 # CrewAI 0.30+ is Pydantic v2-only — see ``CrewAIAdapter.requires_pydantic`` (LAY-3447).
-crewai = ["crewai>=0.30.0"]
+# Every crewai release requires Python 3.10+, so gate the extra on the interpreter
+# version (matching mcp/a2a/semantic-kernel) to keep the 3.9 lockfile resolvable.
+crewai = ["crewai>=0.30.0; python_version >= '3.10'"]
 # AutoGen split at 0.4: the new ``autogen-agentchat`` package is the runtime layer (LAY-3448).
-autogen = ["autogen-agentchat>=0.4.0"]
+# autogen-agentchat 0.4+ also requires Python 3.10+, so gate it the same way.
+autogen = ["autogen-agentchat>=0.4.0; python_version >= '3.10'"]
 # Agentforce adapter uses Salesforce REST + Data Cloud APIs via httpx (LAY-3449).
 agentforce = ["httpx>=0.27.0"]
 litellm = ["litellm>=1.0.0"]
@@ -76,8 +79,8 @@ all-protocols = [
 all-frameworks = [
   "langchain-core>=0.1.0",
   "langgraph>=0.2.0",
-  "crewai>=0.30.0",
-  "autogen-agentchat>=0.4.0",
+  "crewai>=0.30.0; python_version >= '3.10'",
+  "autogen-agentchat>=0.4.0; python_version >= '3.10'",
   "httpx>=0.27.0",
   "semantic-kernel>=1.0.0; python_version >= '3.10'",
   "pydantic-ai>=0.2.0",
@@ -229,3 +232,12 @@ executionEnvironments = [
   { root = "src/layerlens/cli", reportMissingImports = false, reportFunctionMemberAccess = false, reportCallIssue = false, reportArgumentType = false, reportAttributeAccessIssue = false },
   { root = "tests", reportGeneralTypeIssues = false, reportOptionalSubscript = false, reportOptionalMemberAccess = false, reportUntypedFunctionDecorator = false, reportUnknownArgumentType = false, reportUnknownMemberType = false, reportUnknownVariableType = false, reportUnnecessaryIsInstance = false, reportUnnecessaryComparison = false, reportArgumentType = false, reportCallIssue = false },
 ]
+
+[tool.pytest.ini_options]
+# Put the repo root on sys.path so `from tests.instrument.conftest import ...`
+# resolves regardless of how pytest is invoked. Whole-suite runs and
+# `python -m pytest` add the cwd implicitly, but `pytest <single-file>`
+# (as pre-commit runs it) does not — without this the streaming tests fail
+# to import `tests` at collection time.
+pythonpath = ["."]
+testpaths = ["tests"]

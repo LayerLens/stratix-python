@@ -655,8 +655,7 @@ class TestOpenAIAsyncStreamingTTFT:
     class drives the async wrapper (``_wrap_async_stream_iterator``) end-to-end.
     """
 
-    @pytest.mark.asyncio
-    async def test_async_stream_ttft_and_duration_captured(self, mock_client, capture_trace):
+    def test_async_stream_ttft_and_duration_captured(self, mock_client, capture_trace):
         import asyncio
 
         usage = SimpleNamespace(prompt_tokens=5, completion_tokens=3, total_tokens=8)
@@ -687,7 +686,9 @@ class TestOpenAIAsyncStreamingTTFT:
                 pass
             return "done"
 
-        await my_agent()
+        # No pytest-asyncio in the dev lock, so drive the coroutine directly
+        # rather than relying on an async test runner.
+        asyncio.run(my_agent())
         events = capture_trace["events"]
         model_invoke = _find_event(events, "model.invoke")
         payload = model_invoke["payload"]

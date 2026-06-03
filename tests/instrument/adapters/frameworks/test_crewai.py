@@ -241,9 +241,9 @@ class TestLLMEvents:
         # the adapter's in-flight model bookkeeping.
         adapter._on_llm_started(
             None,
-            LLMCallStartedEvent(model="gpt-4o", messages=[], call_type="llm_call"),
+            LLMCallStartedEvent(model="gpt-4o", messages=[], call_type="llm_call", call_id="call_fail"),
         )
-        adapter._on_llm_failed(None, LLMCallFailedEvent(error="rate limit exceeded"))
+        adapter._on_llm_failed(None, LLMCallFailedEvent(error="rate limit exceeded", call_id="call_fail"))
 
         adapter._on_crew_failed(None, CrewKickoffFailedEvent(crew_name="C", error="llm fail"))
 

@@ -235,6 +235,9 @@ class TestConnectClientTracesLLMCalls:
 
         # Vertex GenerativeModel client: needs generate_content method.
         vertex_client = Mock()
+        # Real GenerativeModel exposes `model_name` as a string; without this the
+        # auto-Mock attribute makes `_strip_models_prefix` subscript a Mock.
+        vertex_client.model_name = "gemini-2.5-pro"
 
         def fake_generate_content(**kwargs):
             return _SN(

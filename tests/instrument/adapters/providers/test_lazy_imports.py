@@ -40,9 +40,7 @@ def test_providers_package_import_does_not_pull_sdks() -> None:
     _purge_provider_sdks()
     importlib.import_module("layerlens.instrument.adapters.providers")
     for sdk in _PROVIDER_SDK_PREFIXES:
-        assert sdk not in sys.modules, (
-            f"providers package import eagerly loaded {sdk!r}; lazy export contract broken"
-        )
+        assert sdk not in sys.modules, f"providers package import eagerly loaded {sdk!r}; lazy export contract broken"
 
 
 def test_lazy_getattr_raises_attributeerror_for_unknown_names() -> None:
@@ -65,9 +63,7 @@ def test_lazy_dir_advertises_all_public_providers() -> None:
         "OllamaProvider",
         "LiteLLMProvider",
     ):
-        assert expected in advertised, (
-            f"{expected!r} missing from providers.__dir__()"
-        )
+        assert expected in advertised, f"{expected!r} missing from providers.__dir__()"
 
 
 def test_eager_constants_still_importable() -> None:
