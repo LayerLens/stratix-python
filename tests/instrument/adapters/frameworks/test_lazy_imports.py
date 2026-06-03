@@ -37,6 +37,26 @@ def _purge_framework_sdks() -> None:
             del sys.modules[name]
 
 
+@pytest.fixture(autouse=True)
+def _restore_purged_modules():
+    """Restore the original module objects after a test purges them.
+
+    Purging leaves later tests to *re-import* these modules as brand-new
+    objects. Anything that imported a class earlier (e.g. test_openai_agents's
+    ``OpenAIAgentsAdapter``) keeps the original module in its ``__globals__``,
+    so a fresh re-import diverges from it and ``monkeypatch`` on the new copy
+    silently misses — see ``test_connect_without_agents_raises``. Re-inserting
+    the originals keeps a single canonical module object per name.
+    """
+    saved = {
+        name: mod
+        for name, mod in sys.modules.items()
+        if name.startswith(_FRAMEWORK_SDK_PREFIXES) or name.startswith("layerlens.instrument.adapters.frameworks")
+    }
+    yield
+    sys.modules.update(saved)
+
+
 def test_frameworks_package_import_does_not_pull_sdks() -> None:
     """Bare `import layerlens.instrument.adapters.frameworks` must stay lean."""
     _purge_framework_sdks()

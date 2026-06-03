@@ -85,7 +85,6 @@ def _make_span(
         parent_id=parent_id,
         processor=_noop,
         span_data=span_data,
-        tracing_api_key=None,
     )
 
 

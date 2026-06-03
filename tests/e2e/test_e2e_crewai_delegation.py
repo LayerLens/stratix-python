@@ -81,8 +81,7 @@ def test_real_event_bus_emits_handoff_on_delegation_tool(adapter_in_real_bus):
     adapter, uploads = adapter_in_real_bus
     _start_crew_with_manager()
 
-    crewai_event_bus.emit(
-        None,
+    _emit(
         ToolUsageStartedEvent(
             tool_name="Delegate work to coworker",
             tool_args={
@@ -91,7 +90,7 @@ def test_real_event_bus_emits_handoff_on_delegation_tool(adapter_in_real_bus):
                 "context": "Focus on transformers and LLMs",
             },
             agent_key="manager_1",
-        ),
+        )
     )
 
     _finish_crew()
@@ -111,13 +110,15 @@ def test_chain_of_delegations_keeps_sequence(adapter_in_real_bus):
     _start_crew_with_manager()
 
     for to_agent in ["researcher", "writer", "reviewer"]:
-        crewai_event_bus.emit(
-            None,
+        # Use _emit (awaits the handler future) so the ThreadPoolExecutor-backed
+        # bus finishes each handler before the next is emitted; otherwise the
+        # three delegations race and delegation_seq is assigned out of order.
+        _emit(
             ToolUsageStartedEvent(
                 tool_name="Delegate work to coworker",
                 tool_args={"task": f"work for {to_agent}", "coworker": to_agent},
                 agent_key="manager_1",
-            ),
+            )
         )
 
     _finish_crew()
@@ -132,13 +133,12 @@ def test_ask_question_variant(adapter_in_real_bus):
     adapter, uploads = adapter_in_real_bus
     _start_crew_with_manager()
 
-    crewai_event_bus.emit(
-        None,
+    _emit(
         ToolUsageStartedEvent(
             tool_name="Ask question to coworker",
             tool_args={"question": "What is the deadline?", "coworker": "researcher"},
             agent_key="manager_1",
-        ),
+        )
     )
     _finish_crew()
 
@@ -151,13 +151,12 @@ def test_regular_tool_does_not_fire_handoff(adapter_in_real_bus):
     adapter, uploads = adapter_in_real_bus
     _start_crew_with_manager()
 
-    crewai_event_bus.emit(
-        None,
+    _emit(
         ToolUsageStartedEvent(
             tool_name="web_search",
             tool_args={"query": "AI safety"},
             agent_key="manager_1",
-        ),
+        )
     )
     _finish_crew()
 
