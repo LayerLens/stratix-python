@@ -315,7 +315,10 @@ class TestTracesUpload:
             tmp_path = f.name
 
         try:
-            with patch("layerlens.resources.traces.traces.os.path.getsize", return_value=51 * 1024 * 1024):
+            with patch(
+                "layerlens.resources.traces.traces.os.path.getsize",
+                return_value=51 * 1024 * 1024,
+            ):
                 with pytest.raises(ValueError, match="exceeds maximum"):
                     traces_resource.upload(tmp_path)
         finally:

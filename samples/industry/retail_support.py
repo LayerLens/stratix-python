@@ -29,7 +29,11 @@ SUPPORT_TICKETS: list[dict[str, Any]] = [
         "category": "return_request",
         "customer_message": "I received the wrong item. I ordered a blue jacket size M but got a red one in size L.",
         "agent_response": "I'm sorry about the mix-up. I've initiated a prepaid return label. Once we receive the incorrect item, we'll ship the correct blue jacket in size M with express shipping at no cost. You should have it within 2-3 business days.",
-        "policies_applied": ["30_day_return", "free_exchange_shipping", "wrong_item_priority"],
+        "policies_applied": [
+            "30_day_return",
+            "free_exchange_shipping",
+            "wrong_item_priority",
+        ],
     },
     {
         "id": "ticket-002",
@@ -72,7 +76,11 @@ def main() -> None:
             evaluation_goal="Evaluate whether the customer service response effectively resolves the customer's issue with a clear action plan.",
         ),
     }
-    judge_labels = {"accuracy": "Accuracy", "empathy": "Empathy", "resolution": "Resolution"}
+    judge_labels = {
+        "accuracy": "Accuracy",
+        "empathy": "Empathy",
+        "resolution": "Resolution",
+    }
     judge_ids = [j.id for j in judges.values()]
 
     try:
@@ -81,14 +89,23 @@ def main() -> None:
                 client,
                 input_text=ticket["customer_message"],
                 output_text=ticket["agent_response"],
-                metadata={"category": ticket["category"], "policies_applied": ticket["policies_applied"]},
+                metadata={
+                    "category": ticket["category"],
+                    "policies_applied": ticket["policies_applied"],
+                },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else ticket["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else ticket["id"]
+            )
 
-            print(f"Ticket: {ticket['category']} - {ticket['customer_message'][:50]}...")
+            print(
+                f"Ticket: {ticket['category']} - {ticket['customer_message'][:50]}..."
+            )
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -100,7 +117,9 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:12s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:12s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
     finally:

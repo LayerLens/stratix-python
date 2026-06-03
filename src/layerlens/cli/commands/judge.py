@@ -81,7 +81,12 @@ def get_judge(ctx: click.Context, id: str) -> None:
 @judge.command("create")
 @click.option("--name", required=True, help="Judge name.")
 @click.option("--goal", required=True, help="Evaluation goal description.")
-@click.option("--model-id", default=None, shell_complete=complete_model, help="Model ID for the judge.")
+@click.option(
+    "--model-id",
+    default=None,
+    shell_complete=complete_model,
+    help="Model ID for the judge.",
+)
 @click.pass_context
 @handle_errors
 def create_judge(ctx: click.Context, name: str, goal: str, model_id: str | None) -> None:
@@ -104,8 +109,18 @@ def create_judge(ctx: click.Context, name: str, goal: str, model_id: str | None)
 
 
 @judge.command("test")
-@click.option("--judge-id", required=True, shell_complete=complete_judge, help="Judge ID to test with.")
-@click.option("--trace-id", required=True, shell_complete=complete_trace, help="Trace ID to evaluate.")
+@click.option(
+    "--judge-id",
+    required=True,
+    shell_complete=complete_judge,
+    help="Judge ID to test with.",
+)
+@click.option(
+    "--trace-id",
+    required=True,
+    shell_complete=complete_trace,
+    help="Trace ID to evaluate.",
+)
 @click.pass_context
 @handle_errors
 def test_judge(ctx: click.Context, judge_id: str, trace_id: str) -> None:

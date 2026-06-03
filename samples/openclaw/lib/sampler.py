@@ -32,7 +32,9 @@ class ContentFeedPost(BaseModel):
     content: str = ""
     topic: str = ""
     word_count: int = 0
-    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -160,7 +162,11 @@ class StratifiedSampler:
 
     DEFAULT_COMMUNITIES: list[str] = ["general", "coding", "research"]
     DEFAULT_KARMA_TIERS: list[str] = ["low", "standard", "high"]
-    DEFAULT_KARMA_DISTRIBUTION: dict[str, float] = {"low": 0.20, "standard": 0.55, "high": 0.25}
+    DEFAULT_KARMA_DISTRIBUTION: dict[str, float] = {
+        "low": 0.20,
+        "standard": 0.55,
+        "high": 0.25,
+    }
 
     def __init__(
         self,
@@ -171,7 +177,9 @@ class StratifiedSampler:
     ) -> None:
         self.communities = communities or self.DEFAULT_COMMUNITIES
         self.karma_tiers = karma_tiers or self.DEFAULT_KARMA_TIERS
-        self._recency_weights = recency_weights or {k: v["weight"] for k, v in _RECENCY_BUCKETS.items()}
+        self._recency_weights = recency_weights or {
+            k: v["weight"] for k, v in _RECENCY_BUCKETS.items()
+        }
         self._rng = random.Random(seed)
         self._sample_count: int = 0
 
@@ -189,7 +197,11 @@ class StratifiedSampler:
         return posts
 
     def get_sample_stats(self) -> dict[str, Any]:
-        return {"total_sampled": self._sample_count, "communities": self.communities, "karma_tiers": self.karma_tiers}
+        return {
+            "total_sampled": self._sample_count,
+            "communities": self.communities,
+            "karma_tiers": self.karma_tiers,
+        }
 
     def _generate_post(self, community: str, index: int) -> ContentFeedPost:
         karma_tier = self._pick_karma_tier()
@@ -213,7 +225,9 @@ class StratifiedSampler:
 
     def _pick_karma_tier(self) -> str:
         tiers = list(self.DEFAULT_KARMA_DISTRIBUTION.keys())
-        weights = [self.DEFAULT_KARMA_DISTRIBUTION[t] for t in tiers if t in self.karma_tiers]
+        weights = [
+            self.DEFAULT_KARMA_DISTRIBUTION[t] for t in tiers if t in self.karma_tiers
+        ]
         available_tiers = [t for t in tiers if t in self.karma_tiers]
         if not available_tiers:
             return "standard"
@@ -228,8 +242,12 @@ class StratifiedSampler:
         topics = _COMMUNITY_TOPICS.get(community, _COMMUNITY_TOPICS["general"])
         return topics[index % len(topics)]
 
-    def _generate_content(self, topic: str, karma_tier: str, community: str, index: int) -> str:
-        quality = _KARMA_RESPONSE_QUALITY.get(karma_tier, _KARMA_RESPONSE_QUALITY["standard"])
+    def _generate_content(
+        self, topic: str, karma_tier: str, community: str, index: int
+    ) -> str:
+        quality = _KARMA_RESPONSE_QUALITY.get(
+            karma_tier, _KARMA_RESPONSE_QUALITY["standard"]
+        )
         patterns = quality["patterns"]
         pattern = patterns[index % len(patterns)]
         return pattern.format(topic=topic)

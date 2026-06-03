@@ -26,7 +26,12 @@ from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
 APPLICATIONS: list[dict[str, Any]] = [
     {
         "id": "uw-001",
-        "applicant": {"age": 35, "location": "suburban", "credit_score": 780, "claims_history": 0},
+        "applicant": {
+            "age": 35,
+            "location": "suburban",
+            "credit_score": 780,
+            "claims_history": 0,
+        },
         "coverage_type": "auto",
         "risk_assessment": {
             "risk_class": "preferred",
@@ -37,7 +42,12 @@ APPLICATIONS: list[dict[str, Any]] = [
     },
     {
         "id": "uw-002",
-        "applicant": {"age": 22, "location": "urban", "credit_score": 650, "claims_history": 2},
+        "applicant": {
+            "age": 22,
+            "location": "urban",
+            "credit_score": 650,
+            "claims_history": 2,
+        },
         "coverage_type": "auto",
         "risk_assessment": {
             "risk_class": "standard",
@@ -48,7 +58,12 @@ APPLICATIONS: list[dict[str, Any]] = [
     },
     {
         "id": "uw-003",
-        "applicant": {"age": 45, "location": "rural", "credit_score": 720, "claims_history": 1},
+        "applicant": {
+            "age": 45,
+            "location": "rural",
+            "credit_score": 720,
+            "claims_history": 1,
+        },
         "coverage_type": "homeowners",
         "risk_assessment": {
             "risk_class": "standard",
@@ -91,7 +106,11 @@ def main() -> None:
             evaluation_goal="Evaluate whether the premium pricing is consistent with the risk assessment and comparable to similar risk profiles.",
         ),
     }
-    judge_labels = {"risk_accuracy": "Risk Accuracy", "fair_lending": "Fair Lending", "pricing_consistency": "Pricing"}
+    judge_labels = {
+        "risk_accuracy": "Risk Accuracy",
+        "fair_lending": "Fair Lending",
+        "pricing_consistency": "Pricing",
+    }
     judge_ids = [j.id for j in judges.values()]
 
     try:
@@ -103,9 +122,15 @@ def main() -> None:
                 client,
                 input_text=str(applicant),
                 output_text=str(assessment),
-                metadata={"coverage_type": app["coverage_type"], "applicant": applicant, "risk_assessment": assessment},
+                metadata={
+                    "coverage_type": app["coverage_type"],
+                    "applicant": applicant,
+                    "risk_assessment": assessment,
+                },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else app["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else app["id"]
+            )
 
             print(
                 f"Application: {app['coverage_type']} - Age {applicant['age']}, Credit {applicant['credit_score']}, Claims {applicant['claims_history']}"
@@ -116,7 +141,9 @@ def main() -> None:
 
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -128,7 +155,9 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:18s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:18s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
     finally:

@@ -33,9 +33,16 @@ def evaluate() -> None:
 @evaluate.command("list")
 @click.option("--page", default=None, type=int, help="Page number.")
 @click.option("--page-size", default=None, type=int, help="Results per page.")
-@click.option("--status", default=None, help="Filter by status (pending, in-progress, success, failure).")
 @click.option(
-    "--sort-by", default=None, type=click.Choice(["submitted_at", "accuracy", "average_duration"]), help="Sort field."
+    "--status",
+    default=None,
+    help="Filter by status (pending, in-progress, success, failure).",
+)
+@click.option(
+    "--sort-by",
+    default=None,
+    type=click.Choice(["submitted_at", "accuracy", "average_duration"]),
+    help="Sort field.",
 )
 @click.option("--order", default=None, type=click.Choice(["asc", "desc"]), help="Sort order.")
 @click.pass_context
@@ -65,7 +72,10 @@ def list_evaluations(
         try:
             eval_status = EvaluationStatus(status)
         except ValueError:
-            click.echo(f"Invalid status: {status}. Valid: {', '.join(s.value for s in EvaluationStatus)}", err=True)
+            click.echo(
+                f"Invalid status: {status}. Valid: {', '.join(s.value for s in EvaluationStatus)}",
+                err=True,
+            )
             sys.exit(1)
 
     result = client.evaluations.get_many(
@@ -112,9 +122,19 @@ def get_evaluation(ctx: click.Context, id: str) -> None:
 
 
 @evaluate.command("run")
-@click.option("--model", "model_id", required=True, shell_complete=complete_model, help="Model ID, key, or name.")
 @click.option(
-    "--benchmark", "benchmark_id", required=True, shell_complete=complete_benchmark, help="Benchmark ID, key, or name."
+    "--model",
+    "model_id",
+    required=True,
+    shell_complete=complete_model,
+    help="Model ID, key, or name.",
+)
+@click.option(
+    "--benchmark",
+    "benchmark_id",
+    required=True,
+    shell_complete=complete_benchmark,
+    help="Benchmark ID, key, or name.",
 )
 @click.option("--wait", is_flag=True, default=False, help="Wait for evaluation to complete.")
 @click.pass_context

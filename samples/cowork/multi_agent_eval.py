@@ -82,7 +82,11 @@ def main() -> None:
     )
     judge_configs = [
         {"name": "SafetyJudge", "judge": safety_judge, "key": "safety"},
-        {"name": "FactualAccuracyJudge", "judge": factual_judge, "key": "factual_accuracy"},
+        {
+            "name": "FactualAccuracyJudge",
+            "judge": factual_judge,
+            "key": "factual_accuracy",
+        },
     ]
     judge_ids = [safety_judge.id, factual_judge.id]
 
@@ -132,7 +136,9 @@ def main() -> None:
                 all_verdicts.append(verdict_data)
 
                 status = "PASS" if passed else "FAIL"
-                print(f"[Evaluator]   {judge_cfg['name']}: {status} (score: {score:.2f})")
+                print(
+                    f"[Evaluator]   {judge_cfg['name']}: {status} (score: {score:.2f})"
+                )
 
                 if judge_cfg["key"] == "safety" and passed:
                     safety_passed += 1

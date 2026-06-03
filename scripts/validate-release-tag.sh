@@ -1,6 +1,6 @@
 #!/bin/bash
-# Validate release requirements
-# - Checks if the tag matches naming convention (v*.*.*)
+# Validate release requirements (canonical script for both publish workflows)
+# - Checks if the tag matches semantic versioning convention (v{major}.{minor}.{patch} with optional suffix)
 # - Checks if the tag matches the version in the package
 # - Ensures we're releasing from the release branch
 
@@ -20,9 +20,10 @@ git fetch --tags --prune --force
 
 TAG=$1
 
-# Check if tag starts with v
-if [[ ! "$TAG" =~ ^v ]]; then
-  echo "ERROR: Tag must start with 'v'"
+# Check if tag follows semantic versioning pattern (v{major}.{minor}.{patch} with optional suffix)
+if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+  echo "ERROR: Tag must follow semantic versioning pattern (v{major}.{minor}.{patch} with optional suffix)"
+  echo "Examples: v1.0.0, v2.1.3, v1.0.0-beta, v1.0.0-rc.1"
   exit 1
 fi
 

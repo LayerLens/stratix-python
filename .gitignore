@@ -20,4 +20,6 @@ Brewfile.lock.json
 
 .DS_Store
 .coverage
+.venv*
 docs/review/
+tests/e2e/live/.report/

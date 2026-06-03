@@ -1722,7 +1722,10 @@ class TestAllSamplesLiveAPI:
         if "pre_commit_hook" in sample_path:
             result = _run_live(full_path, args=args, timeout=30)
             # May fail (no staged files) but should not crash
-            assert result.returncode in (0, 1), f"pre_commit_hook crashed: stderr={result.stderr[:500]}"
+            assert result.returncode in (
+                0,
+                1,
+            ), f"pre_commit_hook crashed: stderr={result.stderr[:500]}"
             return
 
         # Evaluations are async: creation returns immediately but LLM judge
@@ -1950,7 +1953,10 @@ class TestWithoutAPIKey:
         # These just print usage at __main__ -- should succeed or fail gracefully
         # (may fail if langchain etc. not installed, which is fine)
         # We just verify no unhandled crash
-        assert result.returncode in (0, 1), f"CopilotKit {name} crashed without API key.\nstderr: {result.stderr[:500]}"
+        assert result.returncode in (
+            0,
+            1,
+        ), f"CopilotKit {name} crashed without API key.\nstderr: {result.stderr[:500]}"
 
 
 # ===========================================================================

@@ -76,7 +76,11 @@ def main() -> None:
             evaluation_goal="Evaluate whether the response provides equitable treatment and consistent information regardless of demographics.",
         ),
     }
-    judge_labels = {"regulatory_accuracy": "Accuracy", "accessibility": "Accessibility", "equity": "Equity"}
+    judge_labels = {
+        "regulatory_accuracy": "Accuracy",
+        "accessibility": "Accessibility",
+        "equity": "Equity",
+    }
     judge_ids = [j.id for j in judges.values()]
 
     try:
@@ -89,12 +93,16 @@ def main() -> None:
                 output_text=inquiry["response"],
                 metadata={"program": inquiry["program"]},
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else inquiry["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else inquiry["id"]
+            )
 
             print(f"Inquiry: {inquiry['program']} - {inquiry['inquiry'][:50]}...")
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -106,7 +114,9 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:16s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:16s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
     finally:

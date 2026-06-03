@@ -38,7 +38,9 @@ RESEARCH_QUERIES: list[dict[str, Any]] = [
         "id": "research-002",
         "query": "What is the standard for piercing the corporate veil in Delaware?",
         "response": "Delaware courts apply a two-prong test: (1) the corporate entity is merely an alter ego of its owner, and (2) the corporate form was used to perpetrate fraud or injustice.",
-        "citations": ["Mabon, Nugent & Co. v. Texas Am. Energy Corp., 1990 Del. LEXIS 312"],
+        "citations": [
+            "Mabon, Nugent & Co. v. Texas Am. Energy Corp., 1990 Del. LEXIS 312"
+        ],
     },
 ]
 
@@ -89,14 +91,18 @@ def main() -> None:
                 output_text=query["response"],
                 metadata={"citations": query["citations"]},
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else query["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else query["id"]
+            )
 
             print(f"Query: {query['query'][:60]}...")
             print(f"  Citations: {len(query['citations'])} referenced")
 
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -108,7 +114,9 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:14s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:14s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
     finally:

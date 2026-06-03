@@ -44,7 +44,9 @@ CODE_SAMPLES: list[dict[str, Any]] = [
     },
     {
         "description": "Password hashing utility",
-        "input": ("Write a function that hashes a password for storage using a secure algorithm."),
+        "input": (
+            "Write a function that hashes a password for storage using a secure algorithm."
+        ),
         "output": (
             "import hashlib\n"
             "import secrets\n\n"
@@ -59,7 +61,9 @@ CODE_SAMPLES: list[dict[str, Any]] = [
     },
     {
         "description": "REST API endpoint",
-        "input": ("Write a FastAPI endpoint that returns a user profile by ID, including proper error handling."),
+        "input": (
+            "Write a FastAPI endpoint that returns a user profile by ID, including proper error handling."
+        ),
         "output": (
             "from fastapi import FastAPI, HTTPException\n\n"
             "app = FastAPI()\n\n"
@@ -198,8 +202,14 @@ def main() -> None:
 
         total_avg = 0.0
         for result in review_results:
-            quality = "HIGH" if result["average"] >= 0.7 else "MEDIUM" if result["average"] >= 0.4 else "LOW"
-            print(f"  {result['description']:30s}  avg={result['average']:.2f}  quality={quality}")
+            quality = (
+                "HIGH"
+                if result["average"] >= 0.7
+                else "MEDIUM" if result["average"] >= 0.4 else "LOW"
+            )
+            print(
+                f"  {result['description']:30s}  avg={result['average']:.2f}  quality={quality}"
+            )
             total_avg += result["average"]
 
         overall = total_avg / len(review_results) if review_results else 0.0

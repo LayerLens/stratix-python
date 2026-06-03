@@ -53,19 +53,36 @@ class CageMatchRunner(DemoRunner):
 
     def build_parser(self) -> argparse.ArgumentParser:
         parser = super().build_parser()
-        parser.add_argument("--models", default=DEFAULT_MODELS, help="Comma-separated model IDs.")
-        parser.add_argument("--task", default=DEFAULT_TASK, help="Task prompt for all models.")
-        parser.add_argument("--threshold", type=float, default=7.0, help="Pass threshold (default: 7.0).")
-        parser.add_argument("--notify", default="stdout://", help="Notification channel URI.")
+        parser.add_argument(
+            "--models", default=DEFAULT_MODELS, help="Comma-separated model IDs."
+        )
+        parser.add_argument(
+            "--task", default=DEFAULT_TASK, help="Task prompt for all models."
+        )
+        parser.add_argument(
+            "--threshold",
+            type=float,
+            default=7.0,
+            help="Pass threshold (default: 7.0).",
+        )
+        parser.add_argument(
+            "--notify", default="stdout://", help="Notification channel URI."
+        )
         return parser
 
     async def run(self) -> dict[str, Any]:
         models = [m.strip() for m in self.args.models.split(",") if m.strip()]
         task = self.args.task
-        judge = ComparativeJudge(judge_id="judge_cage_match", pass_threshold=self.args.threshold)
+        judge = ComparativeJudge(
+            judge_id="judge_cage_match", pass_threshold=self.args.threshold
+        )
         notifier = Notifier(channels=[self.args.notify])
 
-        logger.info("Cage Match: %d OpenClaw agents competing -- %s", len(models), ", ".join(models))
+        logger.info(
+            "Cage Match: %d OpenClaw agents competing -- %s",
+            len(models),
+            ", ".join(models),
+        )
 
         run_id = str(uuid.uuid4())
         entries: list[dict[str, Any]] = []
@@ -93,7 +110,12 @@ class CageMatchRunner(DemoRunner):
                     "task": task,
                 }
             )
-            logger.info("  %s: %d tokens, %d ms", model_id, output.token_count, output.latency_ms)
+            logger.info(
+                "  %s: %d tokens, %d ms",
+                model_id,
+                output.token_count,
+                output.latency_ms,
+            )
 
         ranked_results = judge.evaluate_batch(entries)
 
@@ -106,7 +128,11 @@ class CageMatchRunner(DemoRunner):
                 medal = {1: "1st", 2: "2nd", 3: "3rd"}.get(rank, f"{rank}th")
                 print(f"{'=' * 60}")
                 print(f"  #{rank} ({medal}) -- {result['model_id']}")
-                _print_scores(result["scores"], result["aggregate_score"], verdict=result["verdict"])
+                _print_scores(
+                    result["scores"],
+                    result["aggregate_score"],
+                    verdict=result["verdict"],
+                )
 
         leaderboard = [
             {
@@ -117,7 +143,9 @@ class CageMatchRunner(DemoRunner):
             }
             for r in ranked_results
         ]
-        notifier.publish_leaderboard(title="Cage Match: Final Rankings", entries=leaderboard)
+        notifier.publish_leaderboard(
+            title="Cage Match: Final Rankings", entries=leaderboard
+        )
 
         # SDK trace upload and real evaluation
         winner = ranked_results[0] if ranked_results else None
@@ -131,13 +159,21 @@ class CageMatchRunner(DemoRunner):
                 trace_id = self.upload_trace(
                     input_text=task,
                     output_text=entry["output"],
-                    metadata={"demo": self.demo_id, "model_id": entry["model_id"], "source": "openclaw"},
+                    metadata={
+                        "demo": self.demo_id,
+                        "model_id": entry["model_id"],
+                        "source": "openclaw",
+                    },
                 )
                 if trace_id:
-                    logger.info("Trace uploaded for %s: %s", entry["model_id"], trace_id)
+                    logger.info(
+                        "Trace uploaded for %s: %s", entry["model_id"], trace_id
+                    )
                     sdk_result = self.evaluate_trace(trace_id, sdk_judge_id)
                     if sdk_result:
-                        sdk_results.append({"model_id": entry["model_id"], **sdk_result})
+                        sdk_results.append(
+                            {"model_id": entry["model_id"], **sdk_result}
+                        )
                         logger.info(
                             "SDK evaluation for %s: score=%.2f passed=%s",
                             entry["model_id"],
@@ -151,7 +187,9 @@ class CageMatchRunner(DemoRunner):
                 print(f"{'=' * 60}")
                 for sr in sdk_results:
                     status = "PASS" if sr["passed"] else "FAIL"
-                    print(f"  {sr['model_id']:<30} score={sr['score']:>5.2f}  [{status}]")
+                    print(
+                        f"  {sr['model_id']:<30} score={sr['score']:>5.2f}  [{status}]"
+                    )
                     if sr.get("reasoning"):
                         print(
                             f"    Reasoning: {sr['reasoning'][:100]}{'...' if len(str(sr.get('reasoning', ''))) > 100 else ''}"

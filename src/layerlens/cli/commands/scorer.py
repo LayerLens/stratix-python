@@ -85,7 +85,14 @@ def get_scorer(ctx: click.Context, id: str) -> None:
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without executing.")
 @click.pass_context
 @handle_errors
-def create_scorer(ctx: click.Context, name: str, description: str, model_id: str, prompt: str, dry_run: bool) -> None:
+def create_scorer(
+    ctx: click.Context,
+    name: str,
+    description: str,
+    model_id: str,
+    prompt: str,
+    dry_run: bool,
+) -> None:
     """Create a new scorer.
 
     \b

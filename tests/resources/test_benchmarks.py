@@ -939,7 +939,10 @@ class TestBenchmarksUploadFile:
 
     def test_upload_file_raises_on_missing_url(self, benchmarks_resource, tmp_jsonl):
         """_upload_file() raises ValueError when URL is missing."""
-        benchmarks_resource._post.return_value = {"status": "success", "data": {"no_url": True}}
+        benchmarks_resource._post.return_value = {
+            "status": "success",
+            "data": {"no_url": True},
+        }
 
         with pytest.raises(ValueError, match="Failed to get upload URL"):
             benchmarks_resource._upload_file(tmp_jsonl, "my-bench", DEFAULT_TIMEOUT)
@@ -1174,7 +1177,11 @@ class TestBenchmarksGetPrompts:
     def sample_prompts_response(self):
         return {
             "prompts": [
-                {"id": "p1", "input": [{"role": "user", "content": "What is 2+2?"}], "truth": "4"},
+                {
+                    "id": "p1",
+                    "input": [{"role": "user", "content": "What is 2+2?"}],
+                    "truth": "4",
+                },
                 {"id": "p2", "input": "Translate hello", "truth": "Bonjour"},
             ],
             "count": 2,

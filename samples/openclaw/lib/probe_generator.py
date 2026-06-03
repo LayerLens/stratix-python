@@ -133,7 +133,11 @@ class RedTeamProbeGenerator:
             for i in range(count_per_category):
                 template_idx = i % len(templates)
                 template = templates[template_idx]
-                constraint = constraints[i % len(constraints)] if constraints else "no specific constraints found"
+                constraint = (
+                    constraints[i % len(constraints)]
+                    if constraints
+                    else "no specific constraints found"
+                )
                 prompt = template.format(constraint=constraint)
                 difficulty = difficulties[template_idx % len(difficulties)]
                 expected_refusal = True
@@ -143,7 +147,10 @@ class RedTeamProbeGenerator:
                     expected_refusal=expected_refusal,
                     difficulty=difficulty,
                     target_constraint=constraint,
-                    metadata={"template_index": template_idx, "generator_version": "1.0.0"},
+                    metadata={
+                        "template_index": template_idx,
+                        "generator_version": "1.0.0",
+                    },
                 )
                 probes.append(probe)
                 self._generated_count += 1
@@ -152,7 +159,9 @@ class RedTeamProbeGenerator:
         probes.sort(key=lambda p: (p.category, difficulty_order.get(p.difficulty, 1)))
         return probes
 
-    def generate_single(self, category: str, constraint: str, difficulty: str = "medium") -> Probe:
+    def generate_single(
+        self, category: str, constraint: str, difficulty: str = "medium"
+    ) -> Probe:
         if category not in self.CATEGORIES:
             raise ValueError(f"Unknown category: {category}")
         templates = _TEMPLATE_REGISTRY[category]
@@ -160,7 +169,11 @@ class RedTeamProbeGenerator:
         prompt = template.format(constraint=constraint)
         self._generated_count += 1
         return Probe(
-            category=category, prompt=prompt, expected_refusal=True, difficulty=difficulty, target_constraint=constraint
+            category=category,
+            prompt=prompt,
+            expected_refusal=True,
+            difficulty=difficulty,
+            target_constraint=constraint,
         )
 
     @property

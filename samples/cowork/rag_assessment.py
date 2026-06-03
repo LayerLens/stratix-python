@@ -52,8 +52,18 @@ KNOWLEDGE_BASE: list[dict[str, Any]] = [
 ]
 
 QUERIES: list[dict[str, Any]] = [
-    {"id": "q_001", "text": "What is your refund policy?", "category": "billing", "expected_doc_ids": ["doc_001"]},
-    {"id": "q_002", "text": "How much does the Pro plan cost?", "category": "pricing", "expected_doc_ids": ["doc_002"]},
+    {
+        "id": "q_001",
+        "text": "What is your refund policy?",
+        "category": "billing",
+        "expected_doc_ids": ["doc_001"],
+    },
+    {
+        "id": "q_002",
+        "text": "How much does the Pro plan cost?",
+        "category": "pricing",
+        "expected_doc_ids": ["doc_002"],
+    },
     {
         "id": "q_003",
         "text": "What are the API rate limits for enterprise?",
@@ -101,7 +111,11 @@ def main() -> None:
             evaluation_goal="Evaluate whether the response fully and completely addresses the user's question.",
         ),
     }
-    judge_labels = {"groundedness": "Grounded", "retrieval_quality": "Retrieval", "completeness": "Complete"}
+    judge_labels = {
+        "groundedness": "Grounded",
+        "retrieval_quality": "Retrieval",
+        "completeness": "Complete",
+    }
     judge_ids = [j.id for j in judges.values()]
 
     try:
@@ -114,7 +128,9 @@ def main() -> None:
             print(f'[RAGRunner] Query: "{query["text"]}"')
 
             # Retrieval by ID (no similarity scoring -- scores come from judge evaluation below)
-            retrieved_docs = [d for d in KNOWLEDGE_BASE if d["id"] in query["expected_doc_ids"]]
+            retrieved_docs = [
+                d for d in KNOWLEDGE_BASE if d["id"] in query["expected_doc_ids"]
+            ]
             print(f"[RAGRunner] Retrieved {len(retrieved_docs)} document(s)")
 
             trace_result = upload_trace_dict(
@@ -128,7 +144,11 @@ def main() -> None:
                     "channel": "co-work-rag-quality",
                 },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else f"trc_rag_{query['id']}"
+            trace_id = (
+                trace_result.trace_ids[0]
+                if trace_result.trace_ids
+                else f"trc_rag_{query['id']}"
+            )
 
             rag_results.append(
                 {

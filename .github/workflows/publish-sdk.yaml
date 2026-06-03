@@ -7,7 +7,9 @@ name: Publish Python SDK
 on:
   push:
     tags:
-      - "v*.*.*" # Trigger on version tags like v0.1.0 etc.
+      # Final releases only — e.g. v1.2.0. Pre-release tags (v1.2.0-rc1) go to
+      # the private S3 index from the private repo and must never reach PyPI.
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -17,6 +19,9 @@ on:
 
 jobs:
   validate:
+    # PyPI publishes only from the public repo. The same workflow file exists in
+    # the private upstream, where this guard keeps it from ever reaching PyPI.
+    if: github.repository == 'LayerLens/stratix-python'
     runs-on: ubuntu-latest
     environment: production
     outputs:
@@ -41,6 +46,7 @@ jobs:
 
   build-and-publish:
     needs: validate
+    if: github.repository == 'LayerLens/stratix-python'
     runs-on: ubuntu-latest
     environment: production
 

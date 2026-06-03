@@ -17,8 +17,14 @@ from ._base_client import BaseClient, BaseAsyncClient
 if TYPE_CHECKING:
     from .resources.comparisons import Comparisons, AsyncComparisons
     from .resources.public_models import PublicModelsResource, AsyncPublicModelsResource
-    from .resources.public_benchmarks import PublicBenchmarksResource, AsyncPublicBenchmarksResource
-    from .resources.public_evaluations import PublicEvaluationsResource, AsyncPublicEvaluationsResource
+    from .resources.public_benchmarks import (
+        PublicBenchmarksResource,
+        AsyncPublicBenchmarksResource,
+    )
+    from .resources.public_evaluations import (
+        PublicEvaluationsResource,
+        AsyncPublicEvaluationsResource,
+    )
 
 
 __all__ = ["PublicClient", "AsyncPublicClient"]

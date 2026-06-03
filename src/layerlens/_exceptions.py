@@ -1,3 +1,9 @@
+# pyright: reportIncompatibleVariableOverride=false
+# The status subclasses below intentionally narrow ``status_code`` to a Literal.
+# Newer pyright flags that against the mutable ``int`` base (reportIncompatible-
+# VariableOverride), but the narrowing is deliberate and matches the SDK template;
+# mypy accepts it. Scoped here so `rye run lint` is green regardless of the local
+# pyright engine version (CI pins an older one that never reported it).
 from __future__ import annotations
 
 from http import HTTPStatus

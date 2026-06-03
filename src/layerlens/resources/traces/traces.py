@@ -73,7 +73,7 @@ class Traces(SyncAPIResource):
                 upload_url,
                 content=f.read(),
                 headers={"Content-Type": content_type},
-                timeout=timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout),
+                timeout=(timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout)),
             )
             put_resp.raise_for_status()
 
@@ -247,7 +247,7 @@ class AsyncTraces(AsyncAPIResource):
                     upload_url,
                     content=f.read(),
                     headers={"Content-Type": content_type},
-                    timeout=timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout),
+                    timeout=(timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout)),
                 )
                 put_resp.raise_for_status()
 

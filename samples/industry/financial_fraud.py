@@ -38,7 +38,11 @@ TRANSACTIONS: list[dict[str, Any]] = [
         "merchant": "Offshore Holdings Ltd",
         "category": "wire_transfer",
         "description": "Wire transfer to offshore account",
-        "risk_factors": ["large_amount", "offshore_destination", "first_time_recipient"],
+        "risk_factors": [
+            "large_amount",
+            "offshore_destination",
+            "first_time_recipient",
+        ],
     },
     {
         "id": "txn-003",
@@ -108,12 +112,16 @@ def main() -> None:
                     "risk_factors": txn["risk_factors"],
                 },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else txn["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else txn["id"]
+            )
 
             # Evaluate with all judges and collect results
             eval_results: dict[str, Any] = {}
             for judge_key, judge_obj in judges.items():
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -123,14 +131,22 @@ def main() -> None:
                     score = r.score
                     passed = r.passed
                     reasoning = r.reasoning
-                eval_results[judge_key] = {"score": score, "passed": passed, "reasoning": reasoning}
+                eval_results[judge_key] = {
+                    "score": score,
+                    "passed": passed,
+                    "reasoning": reasoning,
+                }
 
-            print(f"Transaction: ${txn['amount']:,.2f} at {txn['merchant']} ({txn['description'][:40]})")
+            print(
+                f"Transaction: ${txn['amount']:,.2f} at {txn['merchant']} ({txn['description'][:40]})"
+            )
 
             fraud = eval_results["fraud_risk"]
             score = fraud["score"]
             risk_level = "HIGH" if score > 0.7 else "MEDIUM" if score > 0.3 else "LOW"
-            print(f"  Fraud Score:  {score:.2f} ({_RISK_COLORS.get(risk_level.lower(), '')}{risk_level} RISK{_RESET})")
+            print(
+                f"  Fraud Score:  {score:.2f} ({_RISK_COLORS.get(risk_level.lower(), '')}{risk_level} RISK{_RESET})"
+            )
 
             guardrail = eval_results["financial_guardrail"]
             verdict = "pass" if guardrail["passed"] else "fail"

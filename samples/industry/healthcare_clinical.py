@@ -39,9 +39,17 @@ PATIENT_CASES: list[dict[str, Any]] = [
     {
         "id": "case-002",
         "presentation": "28-year-old female, severe headache, photophobia, neck stiffness, fever 102F",
-        "differential": ["Bacterial meningitis", "Viral meningitis", "Subarachnoid hemorrhage"],
+        "differential": [
+            "Bacterial meningitis",
+            "Viral meningitis",
+            "Subarachnoid hemorrhage",
+        ],
         "triage_level": "ESI-2",
-        "medications": ["Ceftriaxone 2g IV", "Vancomycin 1g IV", "Dexamethasone 0.15mg/kg"],
+        "medications": [
+            "Ceftriaxone 2g IV",
+            "Vancomycin 1g IV",
+            "Dexamethasone 0.15mg/kg",
+        ],
         "active_meds": [],
     },
 ]
@@ -106,10 +114,14 @@ def main() -> None:
                     "active_meds": case["active_meds"],
                 },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else case["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else case["id"]
+            )
 
             print(f"Case: {case['presentation'][:60]}...")
-            print(f"  Triage: {case['triage_level']} | Differential: {', '.join(case['differential'][:2])}")
+            print(
+                f"  Triage: {case['triage_level']} | Differential: {', '.join(case['differential'][:2])}"
+            )
 
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
@@ -128,7 +140,9 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:14s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:14s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
 
             print()
 

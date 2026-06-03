@@ -30,9 +30,24 @@ CUSTOMER_PROFILES: list[dict[str, Any]] = [
         "query": "running shoes for kids",
         "budget_range": [30, 80],
         "recommendations": [
-            {"name": "Nike Kids Runner", "price": 55.99, "rating": 4.5, "recalled": False},
-            {"name": "Adidas Junior Sport", "price": 49.99, "rating": 4.3, "recalled": False},
-            {"name": "New Balance Kids 880", "price": 64.99, "rating": 4.7, "recalled": False},
+            {
+                "name": "Nike Kids Runner",
+                "price": 55.99,
+                "rating": 4.5,
+                "recalled": False,
+            },
+            {
+                "name": "Adidas Junior Sport",
+                "price": 49.99,
+                "rating": 4.3,
+                "recalled": False,
+            },
+            {
+                "name": "New Balance Kids 880",
+                "price": 64.99,
+                "rating": 4.7,
+                "recalled": False,
+            },
         ],
     },
     {
@@ -41,9 +56,24 @@ CUSTOMER_PROFILES: list[dict[str, Any]] = [
         "query": "wireless earbuds",
         "budget_range": [50, 300],
         "recommendations": [
-            {"name": "AirPods Pro 3", "price": 249.99, "rating": 4.8, "recalled": False},
-            {"name": "Samsung Galaxy Buds 4", "price": 179.99, "rating": 4.6, "recalled": False},
-            {"name": "Recalled HeadPhones X", "price": 89.99, "rating": 4.2, "recalled": True},
+            {
+                "name": "AirPods Pro 3",
+                "price": 249.99,
+                "rating": 4.8,
+                "recalled": False,
+            },
+            {
+                "name": "Samsung Galaxy Buds 4",
+                "price": 179.99,
+                "rating": 4.6,
+                "recalled": False,
+            },
+            {
+                "name": "Recalled HeadPhones X",
+                "price": 89.99,
+                "rating": 4.2,
+                "recalled": True,
+            },
         ],
     },
 ]
@@ -94,7 +124,9 @@ def main() -> None:
     judge_ids = [j.id for j in judges.values()]
 
     try:
-        print(f"Evaluating recommendations for {len(CUSTOMER_PROFILES)} customer profiles...\n")
+        print(
+            f"Evaluating recommendations for {len(CUSTOMER_PROFILES)} customer profiles...\n"
+        )
 
         for profile in CUSTOMER_PROFILES:
             trace_result = upload_trace_dict(
@@ -107,12 +139,16 @@ def main() -> None:
                     "recommendations": profile["recommendations"],
                 },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else profile["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else profile["id"]
+            )
 
             print(f'Customer: {profile["description"]}, searching "{profile["query"]}"')
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -124,7 +160,9 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:12s}  {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:12s}  {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
     finally:

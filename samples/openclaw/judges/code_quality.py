@@ -21,7 +21,11 @@ CODE_DIMENSIONS: dict[str, dict[str, Any]] = {
         "weight": 0.30,
         "max_score": 10.0,
     },
-    "clarity": {"description": "Readable, well-structured, and maintainable code", "weight": 0.15, "max_score": 10.0},
+    "clarity": {
+        "description": "Readable, well-structured, and maintainable code",
+        "weight": 0.15,
+        "max_score": 10.0,
+    },
     "security": {
         "description": "Free of vulnerabilities, injections, and unsafe operations",
         "weight": 0.25,
@@ -119,12 +123,16 @@ class CodeQualityJudge:
                     self._weights[dim]["weight"] = w
         self.pass_threshold = self._gate_threshold
 
-    def evaluate(self, trace_id: str, output: str, context: dict[str, Any]) -> dict[str, Any]:
+    def evaluate(
+        self, trace_id: str, output: str, context: dict[str, Any]
+    ) -> dict[str, Any]:
         task = context.get("task", "")
         iteration = context.get("iteration", 1)
         scores = _deterministic_scores(task, iteration)
         aggregate = self._compute_aggregate(scores)
-        verdict, severity = _classify_verdict(aggregate, gate_threshold=self._gate_threshold)
+        verdict, severity = _classify_verdict(
+            aggregate, gate_threshold=self._gate_threshold
+        )
         suggestions = self.get_suggestions(scores)
         best_dim = max(scores, key=scores.get)  # type: ignore[arg-type]
         worst_dim = min(scores, key=scores.get)  # type: ignore[arg-type]
@@ -161,7 +169,9 @@ class CodeQualityJudge:
             },
         }
 
-    def get_suggestions(self, scores: dict[str, float], suggestion_threshold: float = 7.0) -> list[str]:
+    def get_suggestions(
+        self, scores: dict[str, float], suggestion_threshold: float = 7.0
+    ) -> list[str]:
         suggestions: list[str] = []
         for dim, score in scores.items():
             if score < suggestion_threshold and dim in SUGGESTION_TEMPLATES:
@@ -171,10 +181,14 @@ class CodeQualityJudge:
         return suggestions
 
     def _compute_aggregate(self, scores: dict[str, float]) -> float:
-        total_weight = sum(self._weights[d]["weight"] for d in scores if d in self._weights)
+        total_weight = sum(
+            self._weights[d]["weight"] for d in scores if d in self._weights
+        )
         if total_weight == 0:
             return round(sum(scores.values()) / max(len(scores), 1), 1)
-        weighted_sum = sum(scores[d] * self._weights[d]["weight"] for d in scores if d in self._weights)
+        weighted_sum = sum(
+            scores[d] * self._weights[d]["weight"] for d in scores if d in self._weights
+        )
         return round(weighted_sum / total_weight, 1)
 
     def get_dimensions(self) -> dict[str, dict[str, Any]]:

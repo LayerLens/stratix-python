@@ -41,7 +41,12 @@ CLAIMS: list[dict[str, Any]] = [
         "type": "Property damage",
         "description": "Water damage from burst pipe during winter freeze",
         "claimed_amount": 25000.00,
-        "policy": {"type": "homeowners", "deductible": 1000, "max_coverage": 300000, "exclusions": ["flood"]},
+        "policy": {
+            "type": "homeowners",
+            "deductible": 1000,
+            "max_coverage": 300000,
+            "exclusions": ["flood"],
+        },
         "decision": {
             "approved": True,
             "amount": 22000.00,
@@ -53,7 +58,12 @@ CLAIMS: list[dict[str, Any]] = [
         "type": "Health insurance",
         "description": "Emergency room visit for chest pain, CT scan, overnight observation",
         "claimed_amount": 15000.00,
-        "policy": {"type": "health_ppo", "deductible": 2000, "copay_percent": 20, "max_oop": 8000},
+        "policy": {
+            "type": "health_ppo",
+            "deductible": 2000,
+            "copay_percent": 20,
+            "max_oop": 8000,
+        },
         "decision": {
             "approved": True,
             "amount": 10400.00,
@@ -109,14 +119,23 @@ def main() -> None:
                 client,
                 input_text=f"{claim['type']}: {claim['description']}",
                 output_text=str(claim["decision"]),
-                metadata={"policy": claim["policy"], "claimed_amount": claim["claimed_amount"]},
+                metadata={
+                    "policy": claim["policy"],
+                    "claimed_amount": claim["claimed_amount"],
+                },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else claim["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else claim["id"]
+            )
 
-            print(f"Claim: {claim['type']} - {claim['description'][:40]}... (${claim['claimed_amount']:,.2f})")
+            print(
+                f"Claim: {claim['type']} - {claim['description'][:40]}... (${claim['claimed_amount']:,.2f})"
+            )
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -128,7 +147,9 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:12s}  {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:12s}  {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
     finally:

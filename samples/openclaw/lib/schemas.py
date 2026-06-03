@@ -43,8 +43,12 @@ class EvalSubject(BaseModel):
     """Identifies the entity being evaluated."""
 
     agent_id: Optional[str] = Field(default=None, description="Agent identifier")
-    model_id: Optional[str] = Field(default=None, description="LLM backend being evaluated")
-    skill_id: Optional[str] = Field(default=None, description="Skill registry identifier")
+    model_id: Optional[str] = Field(
+        default=None, description="LLM backend being evaluated"
+    )
+    skill_id: Optional[str] = Field(
+        default=None, description="Skill registry identifier"
+    )
     task_id: Optional[str] = Field(default=None, description="Task battery item ID")
 
 
@@ -92,7 +96,9 @@ class AgentEvalResponse(BaseModel):
     aggregate_score: float = 0.0
     verdict: Optional[str] = Field(
         default=None,
-        description=("Classification: PASS | FAIL | SAFE | SUSPICIOUS | DANGEROUS | ALIGNED | DRIFT | VIOLATION"),
+        description=(
+            "Classification: PASS | FAIL | SAFE | SUSPICIOUS | DANGEROUS | ALIGNED | DRIFT | VIOLATION"
+        ),
     )
     rationale: str = ""
     evidence: Optional[List[str]] = None

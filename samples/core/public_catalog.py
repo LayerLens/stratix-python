@@ -41,7 +41,9 @@ def main() -> None:
 
     # Browse first page
     response = client.models.get(page=1, page_size=10)
-    print(f"Total public models: {response.total_count} (showing first {len(response.models)})")
+    print(
+        f"Total public models: {response.total_count} (showing first {len(response.models)})"
+    )
     for model in response.models:
         print(f"  - {model.name} ({model.company})")
 
@@ -90,9 +92,13 @@ def main() -> None:
 
     # Browse first page
     response = client.benchmarks.get(page=1, page_size=10)
-    print(f"Total public benchmarks: {response.total_count} (showing first {len(response.datasets)})")
+    print(
+        f"Total public benchmarks: {response.total_count} (showing first {len(response.datasets)})"
+    )
     for benchmark in response.datasets:
-        print(f"  - {benchmark.name} (prompts={benchmark.prompt_count}, language={benchmark.language})")
+        print(
+            f"  - {benchmark.name} (prompts={benchmark.prompt_count}, language={benchmark.language})"
+        )
 
     # Filter by language
     response = client.benchmarks.get(languages=["English"])
@@ -170,7 +176,9 @@ def main() -> None:
     if response:
         print(f"Latest evaluations ({response.pagination.total_count} total):")
         for e in response.evaluations:
-            print(f"  - {e.id}: {e.model_name} on {e.benchmark_name} -> {e.accuracy:.2f}% ({e.status.value})")
+            print(
+                f"  - {e.id}: {e.model_name} on {e.benchmark_name} -> {e.accuracy:.2f}% ({e.status.value})"
+            )
 
     # Filter by status (only successful)
     response = client.evaluations.get_many(
@@ -180,7 +188,9 @@ def main() -> None:
         page_size=5,
     )
     if response:
-        print(f"\nTop successful evaluations ({response.pagination.total_count} total):")
+        print(
+            f"\nTop successful evaluations ({response.pagination.total_count} total):"
+        )
         for e in response.evaluations:
             print(f"  - {e.model_name}: {e.accuracy:.2f}%")
 
@@ -198,7 +208,9 @@ def main() -> None:
                 print(f"  Summary: {evaluation.summary.name}")
                 print(f"  Goal: {evaluation.summary.goal}")
                 if evaluation.summary.metrics:
-                    print(f"  Metrics: {', '.join(m.name for m in evaluation.summary.metrics)}")
+                    print(
+                        f"  Metrics: {', '.join(m.name for m in evaluation.summary.metrics)}"
+                    )
 
                 # --- Additional: performance_details.strengths ---
                 perf = getattr(evaluation.summary, "performance_details", None)
