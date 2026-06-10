@@ -6,6 +6,7 @@ import click
 
 from .._client import get_client, handle_errors, resolve_model, resolve_benchmark
 from .._formatter import format_output
+from ..._exceptions import APIStatusError
 from .._completions import complete_model, complete_benchmark, complete_evaluation
 
 EVALUATION_COLUMNS = [
@@ -112,7 +113,21 @@ def get_evaluation(ctx: click.Context, id: str) -> None:
       stratix evaluate get abc123 --format json
     """
     client = get_client(ctx)
-    evaluation = client.evaluations.get_by_id(id)
+    try:
+        evaluation = client.evaluations.get_by_id(id)
+    except APIStatusError as e:
+        # This endpoint is for benchmark evaluations. A common mistake is to
+        # pass an ID from `judge test` (a trace evaluation), which lives on a
+        # different resource and makes the backend error out. Surface a clean,
+        # actionable message instead of a raw 500/404.
+        click.echo(f"Error: could not fetch evaluation {id} (HTTP {e.status_code}).", err=True)
+        click.echo(
+            f"If this ID came from `layerlens judge test`, it is a trace evaluation — "
+            f"use `layerlens judge result {id}` instead.",
+            err=True,
+        )
+        sys.exit(1)
+
     if evaluation is None:
         click.echo(f"Evaluation {id} not found.", err=True)
         sys.exit(1)
