@@ -1,8 +1,9 @@
 # Live adapter verification (runbook)
 
-Automated **L1 + L2** verification for the provider adapters, plus the checklist for the
-manual **L3** pass. This suite makes **real provider SDK calls** and uploads to a **real
-(staging) LayerLens backend** — it is opt-in and never runs in CI.
+Automated **L1 + L2** verification for the provider, framework, and protocol adapters, plus the
+checklist for the manual **L3** pass. This suite makes **real SDK calls** and uploads to a **real
+(staging or local) LayerLens backend** — it is opt-in and never runs in CI. §1–§6 below cover the
+**provider** suite; **§7 covers the framework/protocol suites and platform-side inbound-linkage.**
 
 - **L1** — real SDK + real key + real LayerLens client run a canonical agentic workflow.
 - **L2** — read the trace back from the backend and confirm it landed.
@@ -179,3 +180,85 @@ bedrock       [ ] pass  [ ] fail   notes:
 ollama        [ ] pass  [ ] fail   notes:
 litellm       [ ] pass  [ ] fail   notes:
 ```
+
+## 7. Frameworks, protocols & platform-side inbound-linkage
+
+The same suite also covers **framework** and **protocol** adapters, and can assert the
+**platform-side inbound-linkage** chain (the uploaded trace is stamped with the `sdk_adapter`
+integration it matches). Same opt-in gating (`LAYERLENS_LIVE=1`), same `upload → read-back` core.
+
+- **Frameworks** — `test_frameworks_live.py` (`_framework_{scenarios,registry,harness}.py`):
+  langchain, langgraph, openai_agents, pydantic_ai, crewai, semantic_kernel, llamaindex, haystack,
+  embedding, vector_store.
+- **Protocols** — `test_protocols_live.py` (`_protocol_{scenarios,registry}.py`): agui, a2ui, ap2,
+  ucp, mcp, a2a (in-process fake clients, LLM-free).
+- **Linkage** — `_linkage.py` reads `trace.integration_id` back from the API.
+
+### Extra env (beyond §1)
+
+| Env var | Purpose |
+| --- | --- |
+| `LAYERLENS_STRATIX_BASE_URL` | Must include the API prefix, e.g. `http://localhost:8080/api/v1`. |
+| `LAYERLENS_LIVE_INTEGRATION_ID` | Optional. When set, every uploaded trace must link to this `sdk_adapter` integration id and (unless disabled) its status must reach `Healthy`. Unset ⇒ linkage is recorded, not asserted (keeps the suite green where no integration is registered). |
+| `LAYERLENS_LIVE_LINKAGE_POLL_STATUS` | Set `0` to assert only the `integration_id` match and skip the `Healthy` status poll. |
+| `LAYERLENS_LIVE_KEEP_TRACES` | Set `1` to skip teardown (keep uploaded traces). |
+
+### Register an `sdk_adapter` integration (for linkage assertions)
+
+Linkage assertions need a registered inbound `sdk_adapter` integration whose `api_key_id` matches
+the key the SDK uploads with. Via the product UI, or an org-admin (JWT) API call:
+`POST /api/v1/organizations/{org}/integrations/inbound` with
+`{name, source_type:"sdk_adapter", environment, project_ids:[<project>], api_key_id:<the key's id>, framework, capture_layers:[...]}`.
+Then set `LAYERLENS_LIVE_INTEGRATION_ID=<the returned id>`. Linkage is **first-match-wins by
+`api_key_id`** — keep exactly one *active* `sdk_adapter` integration on that key.
+
+### Install (per adapter — isolate; deps conflict)
+
+Use the documented extras where they exist; the rest install the upstream package directly.
+
+| Adapter(s) | Install | Python |
+| --- | --- | --- |
+| langchain, langgraph | `layerlens[langchain]` / `[langgraph]` + `langchain-openai` | 3.8+ |
+| openai_agents, pydantic_ai | `layerlens[openai-agents]` / `[pydantic-ai]` | 3.8+ |
+| embedding | `openai` (or `cohere` / `sentence-transformers`) | 3.8+ |
+| crewai, semantic_kernel | `layerlens[crewai]` / `[semantic-kernel]` | **3.10+** |
+| mcp, a2a | `layerlens[mcp]` / `[a2a]` | **3.10+** |
+| llamaindex, haystack, vector_store | `llama-index` / `haystack-ai` / `chromadb` | 3.8+ |
+
+Heavy adapters conflict — give each its own venv:
+
+```bash
+uv venv --python 3.11 .venv-crewai && uv pip install --python .venv-crewai/bin/python -e . 'crewai>=0.30'
+```
+
+### Run
+
+```bash
+set -a; source tests/e2e/live/.env; set +a   # LAYERLENS_LIVE=1, base .../api/v1, key, optional LAYERLENS_LIVE_INTEGRATION_ID, provider keys
+./scripts/test tests/e2e/live -k "langchain or agui or mcp"     # select by adapter id
+# adapters needing Python 3.10+ (crewai, semantic_kernel, mcp, a2a, …): run from that venv
+.venv-crewai/bin/python -m pytest tests/e2e/live -k crewai
+```
+
+### Notes for contributors
+
+- **Two adapter models.** Some adapters emit into the ambient `TraceCollector` (providers,
+  langchain, langgraph, semantic_kernel, embedding, vector_store, all protocols); others are
+  **self-flushing** — they build their own collector and upload it themselves (openai_agents,
+  crewai, llamaindex). Mark the latter `self_flushing=True` in `_framework_registry`; the harness
+  routes them to `run_self_flushing_case` (it drains the background upload queue). Framework
+  adapters gate content on their **own** `capture_config`, so the redaction variant constructs the
+  adapter with `capture_content=False`.
+- **Apple Silicon arch.** If your base interpreter is x86_64 (e.g. a Rosetta `rye` 3.9) but the
+  per-adapter venvs are arm64, launch them with `arch -arm64 <venv>/bin/python …` (or run from a
+  native-arm64 interpreter) — otherwise native extensions fail with `incompatible architecture`.
+- **`rye sync` toolchain floor.** Building the dev lock compiles `temporalio` from source (via
+  `pydantic-ai-slim`) → needs Rust ≥1.85 (`rustup update stable`) and `protoc`.
+
+### Troubleshooting (beyond §5)
+
+- **`N events < min` / `produced no uploaded trace`** — wrong adapter model: a self-flushing adapter
+  run through the ambient path (or vice-versa). Check `self_flushing` in `_framework_registry`.
+- **`linkage: integration_id … != expected`** — the active `sdk_adapter` integration on your key
+  isn't the one in `LAYERLENS_LIVE_INTEGRATION_ID` (first-match-wins), or the resolver's 60s cache
+  hasn't refreshed. Ensure exactly one active matching integration.
