@@ -169,6 +169,15 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         required_env=("OPENAI_API_KEY",),
         install_hint="layerlens[semantic-kernel] (py>=3.10); instruments SK AgentGroupChat",
     ),
+    FrameworkCase(
+        id="langfuse",
+        import_name="httpx",
+        runner=fs.run_langfuse,
+        required_env=("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"),
+        supports_redaction=False,  # content gating covered deterministically in unit tests
+        self_flushing=True,  # one collector per imported Langfuse trace, uploaded via client
+        install_hint="httpx (core dep); LANGFUSE_PUBLIC_KEY/SECRET_KEY + LANGFUSE_HOST",
+    ),
 )
 
 

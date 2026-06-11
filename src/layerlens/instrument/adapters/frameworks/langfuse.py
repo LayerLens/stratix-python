@@ -206,15 +206,16 @@ class LangfuseAdapter(FrameworkAdapter):
         # Emit agent.input from trace input
         trace_input = trace.get("input")
         if trace_input is not None:
+            in_payload: Dict[str, Any] = {
+                "framework": "langfuse",
+                "langfuse_trace_id": trace_id,
+                "name": trace.get("name", ""),
+                "metadata": _safe_dict(trace.get("metadata")),
+            }
+            self._set_if_capturing(in_payload, "content", truncate(str(trace_input), max_len=4000))
             collector.emit(
                 "agent.input",
-                {
-                    "framework": "langfuse",
-                    "langfuse_trace_id": trace_id,
-                    "content": truncate(str(trace_input), max_len=4000),
-                    "name": trace.get("name", ""),
-                    "metadata": _safe_dict(trace.get("metadata")),
-                },
+                in_payload,
                 span_id=root_span_id,
                 span_name=trace.get("name"),
             )
@@ -247,7 +248,7 @@ class LangfuseAdapter(FrameworkAdapter):
                 }
                 comment = score.get("comment")
                 if comment:
-                    score_payload["comment"] = truncate(str(comment), max_len=2000)
+                    self._set_if_capturing(score_payload, "comment", truncate(str(comment), max_len=2000))
                 # Session clustering: Langfuse groups related traces via sessionId.
                 # Carry it through so downstream session-level analytics work.
                 session_id = score.get("sessionId") or trace.get("sessionId")
@@ -268,8 +269,8 @@ class LangfuseAdapter(FrameworkAdapter):
             out_payload: Dict[str, Any] = {
                 "framework": "langfuse",
                 "langfuse_trace_id": trace_id,
-                "content": truncate(str(trace_output), max_len=4000),
             }
+            self._set_if_capturing(out_payload, "content", truncate(str(trace_output), max_len=4000))
             session_id = trace.get("sessionId")
             if session_id:
                 out_payload["session_id"] = session_id
@@ -313,7 +314,7 @@ class LangfuseAdapter(FrameworkAdapter):
                 payload["status_message"] = truncate(str(status_msg), max_len=4000)
             obs_input = obs.get("input")
             if obs_input is not None:
-                payload["input"] = truncate(str(obs_input), max_len=4000)
+                self._set_if_capturing(payload, "input", truncate(str(obs_input), max_len=4000))
             collector.emit(
                 "agent.state.change",
                 payload,
@@ -347,10 +348,10 @@ class LangfuseAdapter(FrameworkAdapter):
 
         obs_input = obs.get("input")
         if obs_input is not None:
-            payload["messages"] = truncate(str(obs_input), max_len=4000)
+            self._set_if_capturing(payload, "messages", truncate(str(obs_input), max_len=4000))
         obs_output = obs.get("output")
         if obs_output is not None:
-            payload["output_message"] = truncate(str(obs_output), max_len=4000)
+            self._set_if_capturing(payload, "output_message", truncate(str(obs_output), max_len=4000))
 
         collector.emit(
             "model.invoke",
@@ -426,9 +427,9 @@ class LangfuseAdapter(FrameworkAdapter):
         obs_output = obs.get("output")
 
         if obs_input is not None:
-            payload["input"] = truncate(str(obs_input), max_len=4000)
+            self._set_if_capturing(payload, "input", truncate(str(obs_input), max_len=4000))
         if obs_output is not None:
-            payload["output"] = truncate(str(obs_output), max_len=4000)
+            self._set_if_capturing(payload, "output", truncate(str(obs_output), max_len=4000))
 
         # Heuristic: spans whose name contains code-related keywords
         # map to agent.code, others to tool.call
@@ -584,6 +585,9 @@ class LangfuseAdapter(FrameworkAdapter):
         payload: Dict[str, Any],
     ) -> Dict[str, Any]:
         body: Dict[str, Any] = {
+            # The ingestion API requires an observation id on the body itself
+            # (items without it are rejected per-item with a 400).
+            "id": uuid.uuid4().hex,
             "traceId": trace_id,
             "name": span_name or payload.get("name", "generation"),
             "model": payload.get("model", ""),
@@ -625,6 +629,7 @@ class LangfuseAdapter(FrameworkAdapter):
         payload: Dict[str, Any],
     ) -> Dict[str, Any]:
         body: Dict[str, Any] = {
+            "id": uuid.uuid4().hex,
             "traceId": trace_id,
             "name": span_name or payload.get("tool_name", "span"),
             "metadata": {"layerlens_span_id": span_id},
@@ -652,6 +657,7 @@ class LangfuseAdapter(FrameworkAdapter):
         payload: Dict[str, Any],
     ) -> Dict[str, Any]:
         body: Dict[str, Any] = {
+            "id": uuid.uuid4().hex,
             "traceId": trace_id,
             "name": span_name or event_type,
             "metadata": {"layerlens_span_id": span_id, "event_type": event_type},
@@ -665,12 +671,24 @@ class LangfuseAdapter(FrameworkAdapter):
         }
 
     def _post_ingestion(self, batch: List[Dict[str, Any]]) -> None:
-        """POST a batch to the Langfuse ingestion endpoint."""
+        """POST a batch to the Langfuse ingestion endpoint.
+
+        The endpoint replies 207 with per-item results — item failures pass
+        ``raise_for_status`` and must be surfaced explicitly, otherwise a
+        rejected batch silently counts as exported.
+        """
         resp = self._http.post(  # type: ignore[union-attr]
             "/api/public/ingestion",
             json={"batch": batch},
         )
         resp.raise_for_status()
+        try:
+            body = resp.json()
+        except Exception:
+            return
+        errors = body.get("errors") or []
+        if errors:
+            raise RuntimeError(f"Langfuse ingestion rejected {len(errors)}/{len(batch)} items: {str(errors)[:500]}")
 
     # ------------------------------------------------------------------
     # Helpers

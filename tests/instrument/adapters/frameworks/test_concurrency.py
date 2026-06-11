@@ -1,20 +1,23 @@
 """Concurrency test: prove that RunState gives per-task isolation.
 
-Two asyncio.gather runs on the same PydanticAI adapter must produce
-two separate traces with independent events and distinct trace_ids.
+Concurrent ``asyncio.gather`` runs on the same PydanticAI adapter must
+produce one trace per run — distinct trace_ids, each carrying exactly its
+own run's events, with no cross-run content contamination.
+
+(This module was dead from creation until LAY-3567: it importorskip'd on the
+fictional ``pydantic_ai.capabilities.hooks`` — see tests/test_skip_hygiene.py.)
 """
 
 from __future__ import annotations
 
 import json
+import time
 import asyncio
 from typing import Any, Dict, List
 
 import pytest
 
 pydantic_ai = pytest.importorskip("pydantic_ai")
-# Adapter depends on the (unreleased) Hooks capability API; skip until it lands.
-pytest.importorskip("pydantic_ai.capabilities.hooks")
 
 from pydantic_ai import Agent  # noqa: E402
 from pydantic_ai.models.test import TestModel  # noqa: E402
@@ -48,9 +51,16 @@ def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
     return traces
 
 
+def _wait_for_uploads(traces: List[Dict[str, Any]], expected: int, timeout: float = 5.0) -> None:
+    """Uploads flush through a background channel — wait briefly for them."""
+    deadline = time.time() + timeout
+    while len(traces) < expected and time.time() < deadline:
+        time.sleep(0.05)
+
+
 class TestConcurrentRunIsolation:
     def test_concurrent_runs_produce_separate_traces(self, mock_client: Any) -> None:
-        """Two asyncio.gather runs on the same adapter → two distinct traces."""
+        """Six gather'd runs on one adapter → six isolated traces."""
         traces = _collect_traces(mock_client)
 
         def get_weather(city: str) -> str:
@@ -61,36 +71,76 @@ class TestConcurrentRunIsolation:
         adapter = PydanticAIAdapter(mock_client)
         adapter.connect(target=agent)
 
-        async def run_both() -> None:
-            await asyncio.gather(
-                agent.run("question A"),
-                agent.run("question B"),
-            )
+        prompts = [f"question {i}" for i in range(6)]
 
-        asyncio.run(run_both())
+        async def run_all() -> None:
+            await asyncio.gather(*(agent.run(p) for p in prompts))
 
+        asyncio.run(run_all())
         adapter.disconnect()
+        _wait_for_uploads(traces, expected=len(prompts))
 
-        # Two runs → two traces
-        assert len(traces) == 2, f"Expected 2 traces, got {len(traces)}"
+        # One trace per run
+        assert len(traces) == len(prompts), f"Expected {len(prompts)} traces, got {len(traces)}"
 
         # Distinct trace_ids
         trace_ids = {t["trace_id"] for t in traces}
-        assert len(trace_ids) == 2, f"Traces must have different trace_ids, got {trace_ids}"
+        assert len(trace_ids) == len(prompts), f"Traces must have distinct trace_ids, got {trace_ids}"
 
+        seen_inputs = []
         for trace in traces:
             events = trace["events"]
             event_types = [e["event_type"] for e in events]
 
-            # Each trace has the core lifecycle events
-            assert "agent.input" in event_types, f"Missing agent.input in {event_types}"
-            assert "agent.output" in event_types, f"Missing agent.output in {event_types}"
+            # Each trace has the core lifecycle events — exactly one run's worth
+            assert event_types.count("agent.input") == 1, f"{event_types}"
+            assert event_types.count("agent.output") == 1, f"{event_types}"
             assert "model.invoke" in event_types, f"Missing model.invoke in {event_types}"
 
             # All events in a single trace share the same trace_id
             assert all(e["trace_id"] == trace["trace_id"] for e in events), "Events within a trace must share trace_id"
 
-            # agent.output has status ok
-            output_events = [e for e in events if e["event_type"] == "agent.output"]
-            assert len(output_events) == 1
-            assert output_events[0]["payload"]["status"] == "ok"
+            # agent.output completed ok
+            output = next(e for e in events if e["event_type"] == "agent.output")
+            assert output["payload"]["status"] == "ok"
+
+            seen_inputs.append(next(e for e in events if e["event_type"] == "agent.input")["payload"]["input"])
+
+        # No cross-run content contamination: each submitted prompt appears in
+        # exactly one trace's agent.input
+        assert sorted(seen_inputs) == sorted(prompts)
+
+    def test_threaded_run_sync_isolated(self, mock_client: Any) -> None:
+        """run_sync from worker threads also gets per-thread isolation."""
+        import threading
+
+        traces = _collect_traces(mock_client)
+
+        agent = _make_agent(output_text="ok")
+        adapter = PydanticAIAdapter(mock_client)
+        adapter.connect(target=agent)
+
+        prompts = [f"thread question {i}" for i in range(4)]
+        errors: List[BaseException] = []
+
+        def _run(prompt: str) -> None:
+            try:
+                agent.run_sync(prompt)
+            except BaseException as exc:  # surfaced below — threads swallow otherwise
+                errors.append(exc)
+
+        threads = [threading.Thread(target=_run, args=(p,)) for p in prompts]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        adapter.disconnect()
+        _wait_for_uploads(traces, expected=len(prompts))
+
+        assert not errors, f"run_sync raised in worker threads: {errors!r}"
+        assert len(traces) == len(prompts)
+        assert len({t["trace_id"] for t in traces}) == len(prompts)
+        inputs = sorted(
+            next(e for e in t["events"] if e["event_type"] == "agent.input")["payload"]["input"] for t in traces
+        )
+        assert inputs == sorted(prompts)

@@ -189,7 +189,8 @@ integration it matches). Same opt-in gating (`LAYERLENS_LIVE=1`), same `upload �
 
 - **Frameworks** — `test_frameworks_live.py` (`_framework_{scenarios,registry,harness}.py`):
   langchain, langgraph, openai_agents, pydantic_ai, crewai, semantic_kernel, ms_agent_framework,
-  llamaindex, haystack, embedding, vector_store, smolagents, agno, strands, google_adk, autogen.
+  llamaindex, haystack, embedding, vector_store, smolagents, agno, strands, google_adk, autogen,
+  langfuse (batch-sync round-trip against a real Langfuse instance).
 - **Protocols** — `test_protocols_live.py` (`_protocol_{scenarios,registry}.py`): agui, a2ui, ap2,
   ucp, mcp, a2a (in-process fake clients, LLM-free).
 - **Linkage** — `_linkage.py` reads `trace.integration_id` back from the API.
@@ -250,6 +251,7 @@ Use the documented extras where they exist; the rest install the upstream packag
 | smolagents, agno | `smolagents openai` / `agno openai` (no extra) | 3.10+ |
 | strands | `'strands-agents[openai]'` (no extra) | 3.10+ |
 | google_adk | `google-adk` (no extra; Gemini API key — `GEMINI_API_KEY` is mapped to `GOOGLE_API_KEY`) | 3.10+ |
+| langfuse | `httpx` (core dep); `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` + `LANGFUSE_HOST` for a **dedicated test project** (the scenario exports a synthetic trace, then imports it back) | 3.8+ |
 
 Heavy adapters conflict — give each its own venv:
 

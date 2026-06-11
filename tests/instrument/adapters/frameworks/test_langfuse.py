@@ -9,6 +9,7 @@ httpx is NOT imported; we set _HAS_HTTPX = True and mock all HTTP interactions.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import Mock, patch
 
 import pytest
@@ -743,3 +744,156 @@ class TestHelpers:
 
     def test_safe_dict_with_list(self):
         assert _safe_dict([1, 2, 3]) == {}
+
+
+# ===================================================================
+# Content redaction (capture_content=False) — LAY-3567 follow-up B7
+# ===================================================================
+
+
+class TestContentRedaction:
+    """``capture_content=False`` must keep imported Langfuse content out of
+    the emitted events: trace input/output, generation messages, span/event
+    IO, and score comments are content. Tokens, cost, models, names, and ids
+    must survive."""
+
+    _SENTINEL = "SENTINEL-lf-b7-secret-content"
+
+    def _connected_no_content_adapter(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = LangfuseAdapter(mock_client, capture_config=CaptureConfig(capture_content=False))
+        mock_http = _make_mock_http()
+        adapter._http = mock_http
+        adapter._connected = True
+        adapter._host = "https://test.langfuse.com"
+        adapter._public_key = "pk-test"
+        adapter._secret_key = "sk-test"
+        return adapter, uploaded, mock_http
+
+    def test_import_with_capture_content_false_emits_no_content(self, mock_client):
+        adapter, uploaded, mock_http = self._connected_no_content_adapter(mock_client)
+        s = self._SENTINEL
+        trace = {
+            "id": "lf-trace-b7",
+            "name": "redaction-trace",
+            "input": f"user question {s}",
+            "output": f"assistant answer {s}",
+            "metadata": {"key": "value"},
+            "scores": [
+                {"name": "quality", "value": 0.9, "source": "ANNOTATION", "comment": f"note {s}"},
+            ],
+            "observations": [
+                {**_make_generation(), "input": f"prompt {s}", "output": f"completion {s}"},
+                {**_make_span(), "input": f"tool args {s}", "output": f"tool result {s}"},
+                {**_make_event(), "input": f"event data {s}"},
+            ],
+        }
+        mock_http.get.side_effect = [
+            _make_response({"data": [{"id": "lf-trace-b7", "updatedAt": "2026-06-10T00:00:00Z"}]}),
+            _make_response(trace),
+        ]
+
+        assert adapter.import_traces(limit=1) == 1
+
+        events = uploaded["events"]
+        blob = json.dumps(events, default=str)
+        assert s not in blob, "imported Langfuse content leaked despite capture_content=False"
+
+        # non-content signal survives redaction
+        model_invoke = find_event(events, "model.invoke")
+        assert model_invoke["payload"]["model"] == "gpt-4"
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["tokens_total"] == 150
+        assert cost["payload"]["cost_usd"] == 0.005
+        score = find_event(events, "evaluation.result")
+        assert score["payload"]["value"] == 0.9
+
+    def test_import_default_config_still_carries_content(self, connected_adapter):
+        """Regression guard: the gating fix must not drop content when
+        capture_content is on (the default)."""
+        adapter, uploaded, mock_http = connected_adapter
+        mock_http.get.side_effect = [
+            _make_response({"data": [{"id": "t1", "updatedAt": "2026-01-01T00:00:00Z"}]}),
+            _make_response(_make_langfuse_trace("t1", observations=[_make_generation(), _make_span()])),
+        ]
+
+        assert adapter.import_traces() == 1
+
+        events = uploaded["events"]
+        assert find_event(events, "agent.input")["payload"]["content"] == "Hello, world!"
+        assert find_event(events, "agent.output")["payload"]["content"] == "Hi there!"
+        assert find_event(events, "model.invoke")["payload"]["messages"] == "What is AI?"
+        assert find_event(events, "tool.call")["payload"]["input"] == "search query"
+
+
+# ===================================================================
+# Ingestion wire contract — LAY-3567 follow-up B8 (found live)
+# ===================================================================
+
+
+class TestIngestionWireContract:
+    """Bugs found against a real Langfuse instance: observation bodies must
+    carry the required ``body.id`` (the API 400s each item without it), and
+    ``_post_ingestion`` must surface the 207 per-item ``errors`` instead of
+    treating the batch as delivered."""
+
+    def test_observation_bodies_carry_required_id(self, connected_adapter):
+        adapter, _, _ = connected_adapter
+        events = [
+            {"event_type": "agent.input", "span_id": "s1", "payload": {"name": "t", "content": "in"}},
+            {"event_type": "model.invoke", "span_id": "s2", "payload": {"model": "gpt-4", "messages": "q"}},
+            {"event_type": "tool.call", "span_id": "s3", "payload": {"tool_name": "lookup", "input": "x"}},
+            {"event_type": "agent.handoff", "span_id": "s4", "payload": {"from": "a", "to": "b"}},
+        ]
+
+        batch = adapter._build_ingestion_batch("ll-trace", events)
+
+        assert [item["type"] for item in batch] == [
+            "trace-create",
+            "generation-create",
+            "span-create",
+            "event-create",
+        ]
+        for item in batch:
+            body_id = item["body"].get("id")
+            assert isinstance(body_id, str) and body_id, (
+                f"{item['type']} body is missing the required id: {item['body']}"
+            )
+
+    def test_post_ingestion_raises_on_item_errors(self, connected_adapter):
+        adapter, _, mock_http = connected_adapter
+        mock_http.post.return_value = _make_response(
+            {
+                "successes": [{"id": "ok-1", "status": 201}],
+                "errors": [{"id": "bad-1", "status": 400, "message": "Invalid request data"}],
+            },
+            status_code=207,
+        )
+
+        with pytest.raises(Exception, match="ingestion rejected"):
+            adapter._post_ingestion([{"id": "x", "type": "trace-create", "body": {"id": "t"}}])
+
+    def test_export_counts_partially_rejected_trace_as_failed(self, connected_adapter):
+        adapter, _, mock_http = connected_adapter
+        mock_http.post.return_value = _make_response(
+            {
+                "successes": [{"id": "ok-1", "status": 201}],
+                "errors": [{"id": "bad-1", "status": 400, "message": "Invalid request data"}],
+            },
+            status_code=207,
+        )
+
+        exported = adapter.export_traces(
+            events_by_trace={"t1": [{"event_type": "agent.input", "payload": {"content": "x"}}]}
+        )
+
+        assert exported == 0
+
+    def test_post_ingestion_accepts_clean_batch(self, connected_adapter):
+        adapter, _, mock_http = connected_adapter
+        mock_http.post.return_value = _make_response(
+            {"successes": [{"id": "ok-1", "status": 201}], "errors": []},
+            status_code=207,
+        )
+
+        adapter._post_ingestion([{"id": "x", "type": "trace-create", "body": {"id": "t"}}])  # no raise

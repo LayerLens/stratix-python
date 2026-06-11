@@ -422,3 +422,83 @@ def run_ms_agent_framework(flow: str) -> None:
         asyncio.run(_run())
     finally:
         adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# Langfuse — bidirectional batch sync, exercised as an export -> import
+# round-trip against a real Langfuse instance (LLM-free). The adapter is
+# self-flushing on import: each imported Langfuse trace gets its own collector,
+# uploaded via ``client``. Deep mapping assertions live in the unit suite;
+# this verifies the real REST API contract end-to-end.
+# --------------------------------------------------------------------------- #
+def run_langfuse(flow: str, client: object) -> None:
+    import time
+    from datetime import datetime, timezone
+
+    from layerlens.instrument.adapters.frameworks.langfuse import LangfuseAdapter
+
+    adapter = LangfuseAdapter(client, capture_config=_cfg(flow))
+    adapter.connect(
+        public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
+        secret_key=os.environ["LANGFUSE_SECRET_KEY"],
+        host=os.environ.get("LANGFUSE_HOST") or os.environ.get("LANGFUSE_BASE_URL"),
+    )
+    try:
+        since = datetime.now(timezone.utc).isoformat()
+
+        # Export a small synthetic LayerLens trace into Langfuse
+        events = [
+            {
+                "event_type": "agent.input",
+                "span_id": "span-root",
+                "span_name": "sdk-audit-langfuse",
+                "payload": {"name": "sdk-audit-langfuse", "content": _PROMPT},
+            },
+            {
+                "event_type": "model.invoke",
+                "span_id": "span-llm",
+                "span_name": "llm",
+                "payload": {
+                    "model": "gpt-4o-mini",
+                    "messages": _PROMPT,
+                    "output_message": "Pacific and Atlantic.",
+                    "tokens_prompt": 12,
+                    "tokens_completion": 6,
+                    "tokens_total": 18,
+                },
+            },
+            {
+                "event_type": "tool.call",
+                "span_id": "span-tool",
+                "span_name": "lookup",
+                "payload": {"tool_name": "lookup", "input": "oceans", "output": "5 oceans"},
+            },
+            {
+                "event_type": "agent.output",
+                "span_id": "span-root",
+                "payload": {"content": "Pacific and Atlantic."},
+            },
+        ]
+        exported = adapter.export_traces(events_by_trace={"ll-audit-roundtrip": events})
+        assert exported == 1, f"langfuse export failed (exported={exported})"
+
+        # Langfuse ingestion is async and item-by-item — poll until the
+        # exported trace AND its observations (generation + span) are visible,
+        # so the import below round-trips the full batch.
+        deadline = time.time() + 60
+        ready = False
+        while time.time() < deadline:
+            resp = adapter._http.get("/api/public/traces", params={"fromTimestamp": since, "limit": 10})
+            data = resp.json().get("data", []) if resp.status_code == 200 else []
+            if data:
+                detail = adapter._http.get(f"/api/public/traces/{data[0]['id']}").json()
+                if len(detail.get("observations", [])) >= 2:
+                    ready = True
+                    break
+            time.sleep(2)
+        assert ready, "exported trace (with observations) never became visible in Langfuse"
+
+        imported = adapter.import_traces(since=since, limit=10)
+        assert imported >= 1, f"langfuse import returned {imported}"
+    finally:
+        adapter.disconnect()
