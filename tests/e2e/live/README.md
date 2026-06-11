@@ -188,8 +188,8 @@ The same suite also covers **framework** and **protocol** adapters, and can asse
 integration it matches). Same opt-in gating (`LAYERLENS_LIVE=1`), same `upload → read-back` core.
 
 - **Frameworks** — `test_frameworks_live.py` (`_framework_{scenarios,registry,harness}.py`):
-  langchain, langgraph, openai_agents, pydantic_ai, crewai, semantic_kernel, llamaindex, haystack,
-  embedding, vector_store.
+  langchain, langgraph, openai_agents, pydantic_ai, crewai, semantic_kernel, ms_agent_framework,
+  llamaindex, haystack, embedding, vector_store, smolagents, agno, strands, google_adk, autogen.
 - **Protocols** — `test_protocols_live.py` (`_protocol_{scenarios,registry}.py`): agui, a2ui, ap2,
   ucp, mcp, a2a (in-process fake clients, LLM-free).
 - **Linkage** — `_linkage.py` reads `trace.integration_id` back from the API.
@@ -212,6 +212,27 @@ the key the SDK uploads with. Via the product UI, or an org-admin (JWT) API call
 Then set `LAYERLENS_LIVE_INTEGRATION_ID=<the returned id>`. Linkage is **first-match-wins by
 `api_key_id`** — keep exactly one *active* `sdk_adapter` integration on that key.
 
+### Per-adapter connector orchestration (one connector per adapter, single key)
+
+To give every adapter its own inbound connector on a single app key, exploit the fact that
+**PATCH-toggling a connector's `active` flag invalidates the platform's linkage-resolver cache
+immediately** (no need to wait out its 60s TTL):
+
+1. Deactivate every active `sdk_adapter` integration on the key (`PATCH …/integrations/{id}`
+   `{"active": false}`).
+2. Register one integration per adapter, named `sdk-audit-<adapter>` (same `api_key_id`), and
+   deactivate each right after registering.
+3. Per adapter, strictly one at a time: activate its connector → run that adapter's case from
+   its venv with `LAYERLENS_LIVE_INTEGRATION_ID=<connector id>`,
+   `LAYERLENS_LIVE_LINKAGE_POLL_STATUS=0`, `LAYERLENS_LIVE_KEEP_TRACES=1` (dispatch through
+   `_registry.PROVIDERS` / `_framework_registry.FRAMEWORKS` / `_protocol_registry.PROTOCOLS`
+   with `run_case` / `run_framework_case` / `run_self_flushing_case`) → the harness asserts the
+   uploaded trace's `integration_id` equals that connector → deactivate it.
+
+Each connector ends up holding exactly its adapter's traces. Leave the connectors disabled when
+done; traces are retained. On macOS, when the driver runs under a Rosetta (x86_64) interpreter,
+launch arm64 venv subprocesses with `arch -arm64 <venv>/bin/python …`.
+
 ### Install (per adapter — isolate; deps conflict)
 
 Use the documented extras where they exist; the rest install the upstream package directly.
@@ -222,8 +243,13 @@ Use the documented extras where they exist; the rest install the upstream packag
 | openai_agents, pydantic_ai | `layerlens[openai-agents]` / `[pydantic-ai]` | 3.8+ |
 | embedding | `openai` (or `cohere` / `sentence-transformers`) | 3.8+ |
 | crewai, semantic_kernel | `layerlens[crewai]` / `[semantic-kernel]` | **3.10+** |
+| ms_agent_framework | `layerlens[semantic-kernel]` (instruments SK `AgentGroupChat`) | **3.10+** |
+| autogen | `layerlens[autogen]` + `'autogen-ext[openai]'` | **3.10+** |
 | mcp, a2a | `layerlens[mcp]` / `[a2a]` | **3.10+** |
 | llamaindex, haystack, vector_store | `llama-index` / `haystack-ai` / `chromadb` | 3.8+ |
+| smolagents, agno | `smolagents openai` / `agno openai` (no extra) | 3.10+ |
+| strands | `'strands-agents[openai]'` (no extra) | 3.10+ |
+| google_adk | `google-adk` (no extra; Gemini API key — `GEMINI_API_KEY` is mapped to `GOOGLE_API_KEY`) | 3.10+ |
 
 Heavy adapters conflict — give each its own venv:
 

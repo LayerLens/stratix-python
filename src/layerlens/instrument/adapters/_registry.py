@@ -29,7 +29,10 @@ _FRAMEWORK_PACKAGES: Dict[str, str] = {
     "smolagents": "smolagents",
     "llamaindex": "llama_index",
     "haystack": "haystack",
-    "autogen": "autogen",
+    # The ``autogen`` extra installs autogen-agentchat (AutoGen 0.4+), whose
+    # modules are ``autogen_core``/``autogen_agentchat`` — there is no
+    # top-level ``autogen`` module. Probe what the adapter imports.
+    "autogen": "autogen_core",
     "agno": "agno",
     "bedrock_agents": "boto3",
     # MS Agent Framework ships as part of semantic-kernel; we share the

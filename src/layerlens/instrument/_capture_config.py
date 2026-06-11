@@ -55,6 +55,20 @@ _ALWAYS_ENABLED = frozenset(
     }
 )
 
+# Request-parameter keys that can carry prompt/response content. Adapters must
+# keep content out of ``capture_params`` (see providers/anthropic.py), but
+# redaction has to hold even if one does not (LAY-3567 B1).
+_CONTENT_PARAM_KEYS = frozenset(
+    {
+        "messages",
+        "prompt",
+        "contents",
+        "input",
+        "system",
+        "output_message",
+    }
+)
+
 
 @dataclass(frozen=True)
 class CaptureConfig:
@@ -93,6 +107,9 @@ class CaptureConfig:
         """Return a copy of payload with fields removed per config."""
         if not self.capture_content and event_type == "model.invoke":
             payload = {k: v for k, v in payload.items() if k not in ("messages", "output_message")}
+            parameters = payload.get("parameters")
+            if isinstance(parameters, dict):
+                payload["parameters"] = {k: v for k, v in parameters.items() if k not in _CONTENT_PARAM_KEYS}
         return payload
 
     def is_layer_enabled(self, event_type: str) -> bool:

@@ -76,11 +76,14 @@ def write_markdown_report(rows: List[Dict[str, Any]]) -> str:
 def terminal_summary_lines(rows: List[Dict[str, Any]], path: str) -> List[str]:
     out: List[str] = []
     for r in rows:
+        n_events = r.get("n_events")
+        if n_events is None:
+            n_events = r.get("event_count")  # self-flushing rows
         out.append(
-            "  {provider}/{variant}: {n} events, {tools} tool.call, ${cost:.6f}  ->  {link}".format(
-                provider=r.get("provider", ""),
+            "  {name}/{variant}: {n} events, {tools} tool.call, ${cost:.6f}  ->  {link}".format(
+                name=r.get("provider") or r.get("framework", ""),
                 variant=r.get("variant", ""),
-                n=r.get("n_events", 0),
+                n=n_events if n_events is not None else "?",
                 tools=r.get("tool_calls", 0),
                 cost=r.get("total_cost_usd", 0),
                 link=ui_link(r),

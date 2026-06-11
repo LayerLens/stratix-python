@@ -50,7 +50,11 @@ class BaseProtocolAdapter(BaseAdapter, abc.ABC):
         self._retry_max_attempts = retry_max_attempts
         self._retry_backoff_base = retry_backoff_base
         self._negotiated_version: Optional[str] = None
-        self._connection_semaphore = asyncio.Semaphore(max_connections)
+        # Created lazily on first acquire: on Python <3.10 asyncio.Semaphore()
+        # binds get_event_loop() at construction, which crashes when no current
+        # loop exists (e.g. after asyncio.run(), or in a worker thread) and
+        # binds the wrong loop otherwise (LAY-3567 B4).
+        self._connection_semaphore: Optional[asyncio.Semaphore] = None
 
     # --- BaseAdapter contract ---
 
@@ -159,7 +163,11 @@ class BaseProtocolAdapter(BaseAdapter, abc.ABC):
     # --- Connection pool ---
 
     async def acquire_connection(self) -> None:
+        if self._connection_semaphore is None:
+            self._connection_semaphore = asyncio.Semaphore(self._max_connections)
         await self._connection_semaphore.acquire()
 
     def release_connection(self) -> None:
+        if self._connection_semaphore is None:
+            return  # nothing acquired yet
         self._connection_semaphore.release()

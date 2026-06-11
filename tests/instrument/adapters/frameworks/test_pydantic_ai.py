@@ -1,8 +1,7 @@
-"""Tests for the PydanticAI adapter using the native Hooks capability API.
+"""Tests for the PydanticAI adapter.
 
-Tests use PydanticAI's TestModel to exercise the real agent loop with
-hooks firing at each lifecycle point — no monkey-patching or mocking of
-PydanticAI internals.
+Tests use PydanticAI's TestModel to exercise the real agent loop —
+no monkey-patching or mocking of PydanticAI internals (LAY-3567 B2).
 """
 
 from __future__ import annotations
@@ -13,13 +12,10 @@ from typing import Optional
 import pytest
 
 pydantic_ai = pytest.importorskip("pydantic_ai")
-# The adapter targets the ``Hooks`` capability API, which is not yet released
-# in the public ``pydantic-ai`` package. Skip the entire module until the API
-# lands — otherwise every test errors on ``_root_capability`` access.
-pytest.importorskip("pydantic_ai.capabilities.hooks")
 
 from pydantic_ai import Agent  # noqa: E402
 from pydantic_ai.models.test import TestModel  # noqa: E402
+from pydantic_ai.models.wrapper import WrapperModel  # noqa: E402
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.pydantic_ai import (
@@ -61,15 +57,18 @@ def get_weather(city: str) -> str:
 
 
 class TestPydanticAIAdapterLifecycle:
-    def test_connect_injects_hooks(self, mock_client):
+    def test_connect_wraps_model_and_run_methods(self, mock_client):
         adapter = PydanticAIAdapter(mock_client)
         agent = _make_agent()
+        original_model = agent.model
 
-        caps_before = len(agent._root_capability.capabilities)
         adapter.connect(target=agent)
 
         assert adapter.is_connected
-        assert len(agent._root_capability.capabilities) == caps_before + 1
+        assert isinstance(agent.model, WrapperModel)
+        assert agent.model.wrapped is original_model
+        # run methods are shadowed on the instance
+        assert "run_sync" in vars(agent)
         info = adapter.adapter_info()
         assert info.name == "pydantic-ai"
         assert info.adapter_type == "framework"
@@ -77,16 +76,18 @@ class TestPydanticAIAdapterLifecycle:
 
         adapter.disconnect()
 
-    def test_disconnect_removes_hooks(self, mock_client):
+    def test_disconnect_restores_agent(self, mock_client):
         adapter = PydanticAIAdapter(mock_client)
         agent = _make_agent()
-        caps_before = len(agent._root_capability.capabilities)
+        original_model = agent.model
 
         adapter.connect(target=agent)
         adapter.disconnect()
 
         assert not adapter.is_connected
-        assert len(agent._root_capability.capabilities) == caps_before
+        assert agent.model is original_model
+        for method in ("run", "run_sync", "run_stream"):
+            assert method not in vars(agent), f"{method} still shadowed after disconnect"
 
     def test_connect_without_target_raises(self, mock_client):
         adapter = PydanticAIAdapter(mock_client)
@@ -478,3 +479,40 @@ class TestEdgeCases:
         adapter.connect(target=agent)
         adapter.disconnect()
         adapter.disconnect()  # should not raise
+
+    def test_string_model_agent(self, mock_client):
+        """Agents built with a model *string* (the documented usage, e.g.
+        ``Agent("openai:gpt-4o-mini")``) must connect and instrument too."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client)
+        agent = Agent("test")
+        original_model = agent.model
+
+        adapter.connect(target=agent)
+        agent.run_sync("hello")
+        adapter.disconnect()
+
+        assert agent.model is original_model
+        events = uploaded["events"]
+        assert find_event(events, "agent.input")["payload"]["framework"] == "pydantic-ai"
+        model_invokes = find_events(events, "model.invoke")
+        assert len(model_invokes) >= 1
+        assert model_invokes[0]["payload"]["model"]
+
+    def test_tool_error_emits_agent_error(self, mock_client):
+        def explode(text: str) -> str:
+            """Always fails."""
+            raise ValueError("boom from tool")
+
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client)
+        agent = _make_agent(output_text="never", tools=[explode])
+
+        adapter.connect(target=agent)
+        with pytest.raises(Exception, match="boom from tool"):
+            agent.run_sync("trigger the tool")
+        adapter.disconnect()
+
+        errors = find_events(uploaded["events"], "agent.error")
+        assert len(errors) >= 1
+        assert "boom from tool" in errors[0]["payload"]["error"]

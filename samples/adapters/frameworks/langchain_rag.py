@@ -22,7 +22,7 @@ def main() -> None:
         print("Install: pip install 'layerlens[langchain]' langchain-openai")
         return
 
-    handler = LangChainCallbackHandler()
+    handler = LangChainCallbackHandler(None)
     llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
     with capture_events("langchain_rag"):
         resp = llm.invoke([HumanMessage(content="Summarize: grass is green.")])

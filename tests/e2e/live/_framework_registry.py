@@ -116,6 +116,59 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         supports_redaction=False,
         install_hint="chromadb (in-proc); Pinecone/Weaviate need a remote service",
     ),
+    FrameworkCase(
+        id="smolagents",
+        import_name="smolagents",
+        runner=fs.run_smolagents,
+        required_env=("OPENAI_API_KEY",),
+        expected_types=("model.invoke",),
+        supports_redaction=False,
+        self_flushing=True,  # per-run collector created by the adapter, uploaded via client
+        install_hint="smolagents openai (no extra)",
+    ),
+    FrameworkCase(
+        id="agno",
+        import_name="agno",
+        runner=fs.run_agno,
+        required_env=("OPENAI_API_KEY",),
+        expected_types=("agent.input", "agent.output"),
+        install_hint="agno openai (no extra)",
+    ),
+    FrameworkCase(
+        id="strands",
+        import_name="strands",
+        runner=fs.run_strands,
+        required_env=("OPENAI_API_KEY",),
+        supports_redaction=False,
+        self_flushing=True,  # per-run collector created by the adapter, uploaded via client
+        install_hint="strands-agents[openai] (no extra)",
+    ),
+    FrameworkCase(
+        id="google_adk",
+        import_name="google.adk",
+        runner=fs.run_google_adk,
+        any_of_env=("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        supports_redaction=False,
+        self_flushing=True,  # per-run collector created by the adapter, uploaded via client
+        install_hint="google-adk (no extra; Gemini API key)",
+    ),
+    FrameworkCase(
+        id="autogen",
+        import_name="autogen_agentchat",
+        runner=fs.run_autogen,
+        required_env=("OPENAI_API_KEY",),
+        supports_redaction=False,
+        self_flushing=True,  # adapter-managed collector, flushed on disconnect
+        extra_imports=("autogen_ext",),
+        install_hint="layerlens[autogen] 'autogen-ext[openai]' (py>=3.10)",
+    ),
+    FrameworkCase(
+        id="ms_agent_framework",
+        import_name="semantic_kernel.agents",
+        runner=fs.run_ms_agent_framework,
+        required_env=("OPENAI_API_KEY",),
+        install_hint="layerlens[semantic-kernel] (py>=3.10); instruments SK AgentGroupChat",
+    ),
 )
 
 

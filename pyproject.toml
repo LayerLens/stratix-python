@@ -56,7 +56,7 @@ autogen = ["autogen-agentchat>=0.4.0; python_version >= '3.10'"]
 # Agentforce adapter uses Salesforce REST + Data Cloud APIs via httpx (LAY-3449).
 agentforce = ["httpx>=0.27.0"]
 litellm = ["litellm>=1.0.0"]
-pydantic-ai = ["pydantic-ai>=0.2.0"]
+pydantic-ai = ["pydantic-ai>=0.8.1,<2"]
 openai-agents = ["openai-agents>=0.1.0"]
 semantic-kernel = ["semantic-kernel>=1.0.0; python_version >= '3.10'"]
 # mcp SDK requires Python 3.10+, so we gate the optional-dep on the interpreter
@@ -83,7 +83,7 @@ all-frameworks = [
   "autogen-agentchat>=0.4.0; python_version >= '3.10'",
   "httpx>=0.27.0",
   "semantic-kernel>=1.0.0; python_version >= '3.10'",
-  "pydantic-ai>=0.2.0",
+  "pydantic-ai>=0.8.1,<2",
   "openai-agents>=0.1.0",
 ]
 

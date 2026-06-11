@@ -61,6 +61,20 @@ class TestDiscoverInstalled:
         assert result["frameworks"] == sorted(result["frameworks"])
         assert result["providers"] == sorted(result["providers"])
 
+    def test_detects_autogen_agentchat_package_layout(self):
+        """The ``autogen`` extra installs autogen-agentchat, which ships the
+        ``autogen_core``/``autogen_agentchat`` modules and NO top-level
+        ``autogen`` module — detection must still find it (LAY-3567 B5)."""
+        installed = {"autogen_core", "autogen_agentchat"}
+
+        with patch(
+            "layerlens.instrument.adapters._registry._is_installed",
+            side_effect=lambda pkg: pkg in installed,
+        ):
+            result = discover_installed()
+
+        assert "autogen" in result["frameworks"]
+
 
 class TestAuto:
     def test_skips_when_nothing_installed(self):

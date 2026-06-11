@@ -253,3 +253,172 @@ def run_haystack(flow: str) -> None:
         pipeline.run({"retriever": {"query": "name an ocean", "top_k": 1}})
     finally:
         adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# SmolAgents (no extra: `pip install smolagents openai`) — tool-calling agent.
+# Self-flushing: the adapter creates its own collector per run and uploads via
+# the client it was constructed with.
+# --------------------------------------------------------------------------- #
+def run_smolagents(flow: str, client: object) -> None:
+    from smolagents import ToolCallingAgent, OpenAIServerModel, tool
+
+    from layerlens.instrument.adapters.frameworks.smolagents import SmolAgentsAdapter
+
+    @tool
+    def ocean_count() -> int:
+        """Return the number of oceans on Earth."""
+        return 5
+
+    model = OpenAIServerModel(model_id=_OPENAI_MODEL)
+    agent = ToolCallingAgent(tools=[ocean_count], model=model, max_steps=3)
+    adapter = SmolAgentsAdapter(client, capture_config=_cfg(flow))
+    adapter.connect(target=agent)
+    try:
+        agent.run(f"Use the ocean_count tool, then answer in one short sentence. {SENTINEL}")
+    finally:
+        adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# Agno (no extra: `pip install agno openai`) — wrapped agent.run()
+# --------------------------------------------------------------------------- #
+def run_agno(flow: str) -> None:
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+
+    from layerlens.instrument.adapters.frameworks.agno import AgnoAdapter
+
+    agent = Agent(model=OpenAIChat(id=_OPENAI_MODEL), markdown=False)
+    adapter = AgnoAdapter(None, capture_config=_cfg(flow))
+    adapter.connect(target=agent)
+    try:
+        agent.run(_PROMPT)
+    finally:
+        adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# AWS Strands Agents (no extra: `pip install 'strands-agents[openai]'`) —
+# adapter is a native HookProvider. Self-flushing (own collector per run).
+# --------------------------------------------------------------------------- #
+def run_strands(flow: str, client: object) -> None:
+    from strands import Agent
+    from strands.models.openai import OpenAIModel
+
+    from layerlens.instrument.adapters.frameworks.strands import StrandsAdapter
+
+    adapter = StrandsAdapter(client, capture_config=_cfg(flow))
+    adapter.connect()
+    model = OpenAIModel(model_id=_OPENAI_MODEL, params={"max_tokens": 64})
+    agent = Agent(model=model, hooks=[adapter], callback_handler=None)
+    try:
+        agent(_PROMPT)
+    finally:
+        adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# Google ADK (no extra: `pip install google-adk`) — plugin on the Runner,
+# Gemini via API key (maps GEMINI_API_KEY -> GOOGLE_API_KEY if needed).
+# Self-flushing (own collector per run).
+# --------------------------------------------------------------------------- #
+def run_google_adk(flow: str, client: object) -> None:
+    import asyncio
+
+    if not os.environ.get("GOOGLE_API_KEY") and os.environ.get("GEMINI_API_KEY"):
+        os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
+
+    from google.genai import types
+    from google.adk.agents import Agent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+
+    from layerlens.instrument.adapters.frameworks.google_adk import GoogleADKAdapter
+
+    agent = Agent(
+        name="live_audit",
+        model=os.environ.get("LL_GEMINI_MODEL", "gemini-2.5-flash"),
+        instruction="Answer in one short sentence.",
+    )
+    adapter = GoogleADKAdapter(client, capture_config=_cfg(flow))
+    adapter.connect()
+    session_service = InMemorySessionService()
+    runner = Runner(
+        app_name="layerlens-live",
+        agent=agent,
+        session_service=session_service,
+        plugins=[adapter.plugin],
+    )
+
+    async def _run() -> None:
+        session = await session_service.create_session(app_name="layerlens-live", user_id="auditor")
+        message = types.Content(role="user", parts=[types.Part(text=_PROMPT)])
+        async for _event in runner.run_async(user_id="auditor", session_id=session.id, new_message=message):
+            pass
+
+    try:
+        asyncio.run(_run())
+    finally:
+        adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# AutoGen (autogen-agentchat >= 0.4, the package the `autogen` extra installs).
+# The adapter taps autogen_core's event logger and manages its own collector;
+# it flushes on disconnect — self-flushing.
+# --------------------------------------------------------------------------- #
+def run_autogen(flow: str, client: object) -> None:
+    import asyncio
+
+    from autogen_agentchat.agents import AssistantAgent
+    from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+    from layerlens.instrument.adapters.frameworks.autogen import AutoGenAdapter
+
+    adapter = AutoGenAdapter(client, capture_config=_cfg(flow))
+    adapter.connect()
+    try:
+        model_client = OpenAIChatCompletionClient(model=_OPENAI_MODEL)
+        assistant = AssistantAgent("assistant", model_client=model_client)
+        asyncio.run(assistant.run(task=_PROMPT))
+    finally:
+        adapter.disconnect()  # flushes the adapter-managed collector
+
+
+# --------------------------------------------------------------------------- #
+# MS Agent Framework (semantic-kernel agents surface — AgentGroupChat).
+# NOTE: the adapter instruments semantic_kernel.agents chats, NOT Microsoft's
+# separate `agent-framework` package (registry shares the SK detection key).
+# --------------------------------------------------------------------------- #
+def run_ms_agent_framework(flow: str) -> None:
+    import asyncio
+
+    from semantic_kernel import Kernel
+    from semantic_kernel.agents import AgentGroupChat, ChatCompletionAgent
+    from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
+
+    from layerlens.instrument.adapters.frameworks.ms_agent_framework import MSAgentFrameworkAdapter
+
+    kernel = Kernel()
+    kernel.add_service(OpenAIChatCompletion(ai_model_id=_OPENAI_MODEL, service_id="chat"))
+    agent = ChatCompletionAgent(
+        kernel=kernel,
+        name="auditor",
+        instructions="Answer in one short sentence.",
+    )
+    chat = AgentGroupChat(agents=[agent])
+
+    adapter = MSAgentFrameworkAdapter(None, capture_config=_cfg(flow))
+    adapter.connect()
+    adapter.instrument_chat(chat)
+
+    async def _run() -> None:
+        await chat.add_chat_message(message=_PROMPT)
+        async for _message in chat.invoke():
+            pass
+
+    try:
+        asyncio.run(_run())
+    finally:
+        adapter.disconnect()

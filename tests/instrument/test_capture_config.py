@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import dataclasses
 from unittest.mock import Mock
 
@@ -368,3 +369,140 @@ class TestCaptureConfigWithProviders:
         # cost.record is always enabled
         cost_records = find_events(events, "cost.record")
         assert len(cost_records) == 1
+
+
+# ---------------------------------------------------------------------------
+# Redaction of content nested in `parameters` (LAY-3567 B1)
+# ---------------------------------------------------------------------------
+
+_SENTINEL = "SENTINEL-9f3a-the-secret-launch-codes"
+
+
+def _ollama_chat_response():
+    return {
+        "model": "llama3:8b",
+        "message": {"role": "assistant", "content": "hi there"},
+        "done_reason": "stop",
+        "prompt_eval_count": 7,
+        "eval_count": 3,
+    }
+
+
+def _ollama_generate_response():
+    return {
+        "model": "llama3:8b",
+        "response": "ok",
+        "done_reason": "stop",
+        "prompt_eval_count": 7,
+        "eval_count": 3,
+    }
+
+
+class TestRedactionNestedParameters:
+    """capture_content=False must also scrub content carried inside the nested
+    ``parameters`` dict (built from adapter ``capture_params``), not only the
+    top-level ``messages``/``output_message`` keys (LAY-3567 B1)."""
+
+    def test_redact_payload_scrubs_parameters_content_keys(self):
+        config = CaptureConfig(capture_content=False)
+        payload = {
+            "name": "ollama.chat",
+            "model": "llama3:8b",
+            "messages": [{"role": "user", "content": _SENTINEL}],
+            "output_message": {"role": "assistant", "content": _SENTINEL},
+            "parameters": {
+                "model": "llama3:8b",
+                "messages": [{"role": "user", "content": _SENTINEL}],
+                "prompt": _SENTINEL,
+                "options": {"temperature": 0.1},
+            },
+        }
+
+        redacted = config.redact_payload("model.invoke", payload)
+
+        assert _SENTINEL not in json.dumps(redacted)
+        # non-content parameters survive
+        assert redacted["parameters"]["model"] == "llama3:8b"
+        assert redacted["parameters"]["options"] == {"temperature": 0.1}
+
+    def test_redact_payload_does_not_mutate_input(self):
+        config = CaptureConfig(capture_content=False)
+        parameters = {"model": "llama3:8b", "prompt": _SENTINEL}
+        payload = {"messages": [{"role": "user", "content": _SENTINEL}], "parameters": parameters}
+
+        config.redact_payload("model.invoke", payload)
+
+        assert payload["parameters"] is parameters
+        assert parameters["prompt"] == _SENTINEL
+        assert payload["messages"] == [{"role": "user", "content": _SENTINEL}]
+
+    def test_ollama_chat_capture_content_off_no_leak(self, mock_client, capture_trace):
+        from layerlens.instrument.adapters.providers.ollama import OllamaProvider
+
+        ollama_client = Mock()
+        ollama_client.chat = Mock(return_value=_ollama_chat_response())
+
+        provider = OllamaProvider()
+        provider.connect(ollama_client)
+
+        @trace(mock_client, capture_config=CaptureConfig(capture_content=False))
+        def my_agent():
+            return ollama_client.chat(
+                model="llama3:8b",
+                messages=[{"role": "user", "content": _SENTINEL}],
+            )
+
+        my_agent()
+        events = capture_trace["events"]
+        model_invoke = find_event(events, "model.invoke")
+
+        # the sentinel must not appear anywhere in the uploaded events
+        assert _SENTINEL not in json.dumps(events)
+        # non-content metadata is still captured
+        assert model_invoke["payload"]["parameters"]["model"] == "llama3:8b"
+        assert model_invoke["payload"]["usage"]["total_tokens"] == 10
+
+    def test_ollama_generate_capture_content_off_no_leak(self, mock_client, capture_trace):
+        from layerlens.instrument.adapters.providers.ollama import OllamaProvider
+
+        ollama_client = Mock()
+        ollama_client.generate = Mock(return_value=_ollama_generate_response())
+
+        provider = OllamaProvider()
+        provider.connect(ollama_client)
+
+        @trace(mock_client, capture_config=CaptureConfig(capture_content=False))
+        def my_agent():
+            return ollama_client.generate(model="llama3:8b", prompt=_SENTINEL)
+
+        my_agent()
+        events = capture_trace["events"]
+
+        assert _SENTINEL not in json.dumps(events)
+
+    def test_ollama_capture_content_on_keeps_content(self, mock_client, capture_trace):
+        """Regression guard: the B1 fix must not lose content capture when
+        capture_content=True — prompts/outputs live at the payload top level."""
+        from layerlens.instrument.adapters.providers.ollama import OllamaProvider
+
+        ollama_client = Mock()
+        ollama_client.chat = Mock(return_value=_ollama_chat_response())
+        ollama_client.generate = Mock(return_value=_ollama_generate_response())
+
+        provider = OllamaProvider()
+        provider.connect(ollama_client)
+
+        @trace(mock_client, capture_config=CaptureConfig(capture_content=True))
+        def my_agent():
+            ollama_client.chat(model="llama3:8b", messages=[{"role": "user", "content": "hello"}])
+            return ollama_client.generate(model="llama3:8b", prompt="write a haiku")
+
+        my_agent()
+        events = capture_trace["events"]
+        chat_invoke, generate_invoke = find_events(events, "model.invoke")
+
+        assert chat_invoke["payload"]["messages"] == [{"role": "user", "content": "hello"}]
+        assert chat_invoke["payload"]["output_message"]["content"] == "hi there"
+        # generate() has no messages kwarg; the prompt is captured as messages
+        assert generate_invoke["payload"]["messages"] == "write a haiku"
+        assert generate_invoke["payload"]["output_message"]["content"] == "ok"

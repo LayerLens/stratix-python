@@ -37,6 +37,19 @@ except (ImportError, TypeError):
     _HAS_SK_AGENTS = False
 
 
+def _force_setattr(obj: Any, name: str, value: Any) -> None:
+    """setattr that also works on pydantic ``validate_assignment`` models.
+
+    semantic-kernel's ``AgentChat``/``AgentGroupChat`` are pydantic models
+    that validate assignments, so plain ``chat.invoke = wrapper`` raises
+    ``ValidationError`` — fall back to writing the instance ``__dict__``.
+    """
+    try:
+        setattr(obj, name, value)
+    except Exception:
+        object.__setattr__(obj, name, value)
+
+
 class MSAgentFrameworkAdapter(FrameworkAdapter):
     """Layerlens adapter for Microsoft Agent Framework (semantic-kernel agents).
 
@@ -82,7 +95,7 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
         originals = self._originals.get(chat_id, {})
         for method_name, original in originals.items():
             try:
-                setattr(chat, method_name, original)
+                _force_setattr(chat, method_name, original)
             except Exception:
                 log.debug(
                     "layerlens.ms_agent_framework: could not unwrap %s",
@@ -108,10 +121,10 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
         originals: Dict[str, Any] = {}
         if hasattr(chat, "invoke"):
             originals["invoke"] = chat.invoke
-            chat.invoke = self._traced_invoke(chat, chat.invoke)
+            _force_setattr(chat, "invoke", self._traced_invoke(chat, chat.invoke))
         if hasattr(chat, "invoke_stream"):
             originals["invoke_stream"] = chat.invoke_stream
-            chat.invoke_stream = self._traced_invoke(chat, chat.invoke_stream)
+            _force_setattr(chat, "invoke_stream", self._traced_invoke(chat, chat.invoke_stream))
 
         self._originals[chat_id] = originals
         self._wrapped_chats.append(chat)

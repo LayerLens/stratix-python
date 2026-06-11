@@ -42,7 +42,7 @@ def main() -> None:
     )
     crew = Crew(agents=[researcher, writer], tasks=[task])
 
-    CrewAIAdapter().connect(crew)
+    CrewAIAdapter(None).connect(crew)
     with capture_events("crewai"):
         print(crew.kickoff())
 

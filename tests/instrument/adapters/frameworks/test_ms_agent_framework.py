@@ -273,3 +273,65 @@ class TestMessageProcessing:
 
         assert find_events(uploaded["events"], "tool.call") == []
         assert find_events(uploaded["events"], "tool.result") == []
+
+
+# ---------------------------------------------------------------------------
+# Pydantic chats — semantic-kernel's AgentChat/AgentGroupChat are pydantic
+# models with validate_assignment, which reject plain method assignment
+# ---------------------------------------------------------------------------
+
+
+class TestPydanticChatWrapping:
+    """``instrument_chat`` must work on pydantic ``validate_assignment``
+    models — assigning the invoke wrapper used to raise ValidationError
+    (found wiring the live SK AgentGroupChat scenario; LAY-3567 follow-up)."""
+
+    def _make_pydantic_chat(self):
+        pydantic = pytest.importorskip("pydantic", minversion="2")
+
+        class _PydanticChat(pydantic.BaseModel):
+            model_config = pydantic.ConfigDict(validate_assignment=True)
+            name: str = "group"
+
+            async def invoke(self, *args, **kwargs):
+                yield _msg(
+                    agent_name="primary",
+                    metadata={
+                        "model": "gpt-4o",
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+                    },
+                )
+
+        return _PydanticChat()
+
+    def test_instrument_chat_wraps_pydantic_chat(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        chat = self._make_pydantic_chat()
+
+        adapter.instrument_chat(chat)  # must not raise pydantic ValidationError
+
+        async def consume():
+            return [m async for m in chat.invoke()]
+
+        messages = asyncio.run(consume())
+        assert len(messages) == 1  # wrapper is transparent
+
+        model_invoke = find_event(uploaded["events"], "model.invoke")
+        assert model_invoke["payload"]["model"] == "gpt-4o"
+
+        adapter.disconnect()
+
+    def test_disconnect_restores_pydantic_chat(self, mock_client):
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        chat = self._make_pydantic_chat()
+
+        adapter.instrument_chat(chat)
+        adapter.disconnect()
+
+        async def consume():
+            return [m async for m in chat.invoke()]
+
+        # restored invoke still yields; no adapter state left behind
+        assert len(asyncio.run(consume())) == 1
+        assert not adapter._originals

@@ -16,8 +16,6 @@ _NS_PER_SECOND = 1_000_000_000
 _CAPTURE_PARAMS = frozenset(
     {
         "model",
-        "messages",
-        "prompt",
         "stream",
         "options",
         "format",
@@ -25,6 +23,11 @@ _CAPTURE_PARAMS = frozenset(
         "keep_alive",
     }
 )
+# ``messages`` and ``prompt`` are intentionally NOT in _CAPTURE_PARAMS: their
+# raw values are prompt content, which must stay out of ``parameters`` so the
+# ``capture_content=False`` redaction holds (LAY-3567 B1). Content is captured
+# at the payload top level (``messages``/``output_message``), where
+# CaptureConfig.redact_payload manages it.
 
 
 class OllamaProvider(MonkeyPatchProvider):

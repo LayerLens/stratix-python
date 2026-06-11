@@ -96,8 +96,15 @@ def run_self_flushing_case(client: Any, case: FrameworkCase, variant: str = "def
     try:
         traces_res.upload = _wrapped_upload  # type: ignore[method-assign]
         case.runner(variant, client)  # self-flushing runners take (flow, client)
-        _time.sleep(1.0)  # let deferred/event-bus flushes enqueue
-        _upload.shutdown_uploads(timeout=20)  # drain background uploads through the wrap
+        # Deferred/event-bus flushes (e.g. crewai) can enqueue several seconds
+        # after the runner returns, and the upload itself is an HTTP call —
+        # poll-drain until the wrapped upload has captured a trace id (or the
+        # deadline passes). shutdown_uploads is safe to call repeatedly:
+        # channels re-create on demand for anything enqueued later.
+        deadline = _time.time() + 30.0
+        while not captured and _time.time() < deadline:
+            _time.sleep(0.5)
+            _upload.shutdown_uploads(timeout=20)
     finally:
         traces_res.upload = orig_upload  # type: ignore[method-assign]
 

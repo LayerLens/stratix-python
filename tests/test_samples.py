@@ -136,6 +136,64 @@ class TestSampleStructure:
         assert docstring, f"{sample_path} should have a module docstring"
 
 
+class TestFrameworkSampleConventions:
+    """Runtime-correctness conventions for the adapter samples (LAY-3567 C2)."""
+
+    @pytest.mark.parametrize("sample_path", STANDALONE_SAMPLES)
+    def test_framework_adapter_constructors_pass_client(self, sample_path):
+        """Framework adapters/handlers require a positional ``client``; a bare
+        ``FooAdapter()`` in a sample is a guaranteed TypeError at runtime."""
+        full_path = os.path.join(SAMPLES_DIR, sample_path)
+        with open(full_path) as f:
+            source = f.read()
+        tree = ast.parse(source)
+
+        adapter_names = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith("layerlens.instrument.adapters.frameworks")
+            ):
+                adapter_names.update(alias.asname or alias.name for alias in node.names)
+
+        violations = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in adapter_names
+                and not node.args
+                and not node.keywords
+            ):
+                violations.append(f"{node.func.id}() at line {node.lineno}")
+
+        assert not violations, f"{sample_path} constructs a framework adapter without a client: {violations}"
+
+    @pytest.mark.parametrize("sample_path", [s for s in SAMPLE_FILES if "autogen" in os.path.basename(s)])
+    def test_autogen_samples_use_agentchat_api(self, sample_path):
+        """The ``autogen`` extra installs autogen-agentchat (modules
+        ``autogen_agentchat``/``autogen_core``/``autogen_ext``); there is no
+        top-level ``autogen`` module, so the old pyautogen API cannot work."""
+        full_path = os.path.join(SAMPLES_DIR, sample_path)
+        with open(full_path) as f:
+            source = f.read()
+        tree = ast.parse(source)
+
+        old_api_imports = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (
+                node.module == "autogen" or (node.module or "").startswith("autogen.")
+            ):
+                old_api_imports.append(f"from {node.module} import ... at line {node.lineno}")
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "autogen" or alias.name.startswith("autogen."):
+                        old_api_imports.append(f"import {alias.name} at line {node.lineno}")
+
+        assert not old_api_imports, f"{sample_path} imports the old pyautogen API: {old_api_imports}"
+
+
 class TestHelpers:
     """Tests for the shared _helpers module."""
 
