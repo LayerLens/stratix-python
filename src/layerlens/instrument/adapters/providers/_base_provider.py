@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import time
+import inspect
 import logging
 from typing import Any, Dict, Callable, Iterator, Optional, AsyncIterator
 
@@ -11,6 +12,21 @@ from ._streaming import stream_chunks_sync, stream_chunks_async
 from ._emit_helpers import emit_llm_error, emit_llm_events
 
 log: logging.Logger = logging.getLogger(__name__)
+
+
+def _is_coroutine_callable(fn: Any) -> bool:
+    """True when calling *fn* yields a coroutine.
+
+    The real openai/anthropic SDKs wrap their async methods in plain-function
+    decorators (e.g. openai's ``required_args``), so the outermost callable is
+    not itself a coroutine function — follow ``__wrapped__`` chains too.
+    """
+    if inspect.iscoroutinefunction(fn):
+        return True
+    try:
+        return inspect.iscoroutinefunction(inspect.unwrap(fn))
+    except Exception:
+        return False
 
 
 class MonkeyPatchProvider(BaseAdapter):
@@ -50,6 +66,19 @@ class MonkeyPatchProvider(BaseAdapter):
     @staticmethod
     def derive_params(kwargs: Dict[str, Any]) -> Dict[str, Any]:  # noqa: ARG004
         return {}
+
+    def _wrap_auto(self, event_name: str, original: Any) -> Any:
+        """Route to the matching wrapper for *original*.
+
+        Modern async clients (AsyncOpenAI/AsyncAnthropic >= 1.x, ollama
+        AsyncClient) expose a coroutine method on the SAME attribute as the
+        sync clients — wrapping those with the sync wrapper would measure
+        coroutine construction (~0 ms), run extractors on the un-awaited
+        coroutine, and hand async streams to the sync iterator (N5).
+        """
+        if _is_coroutine_callable(original):
+            return self._wrap_async(event_name, original)
+        return self._wrap_sync(event_name, original)
 
     def _wrap_sync(self, event_name: str, original: Any) -> Any:
         extractors = self._extractors()

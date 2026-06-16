@@ -235,7 +235,7 @@ class AnthropicProvider(MonkeyPatchProvider):
             messages = target.messages
             orig = messages.create
             self._originals["messages.create"] = orig
-            messages.create = self._wrap_sync("anthropic.messages.create", orig)
+            messages.create = self._wrap_auto("anthropic.messages.create", orig)
             if hasattr(messages, "acreate"):
                 async_orig = messages.acreate
                 self._originals["messages.acreate"] = async_orig

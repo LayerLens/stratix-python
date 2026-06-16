@@ -94,7 +94,7 @@ class OllamaProvider(MonkeyPatchProvider):
             if hasattr(target, method):
                 orig = getattr(target, method)
                 self._originals[method] = orig
-                setattr(target, method, self._wrap_sync(f"ollama.{method}", orig))
+                setattr(target, method, self._wrap_auto(f"ollama.{method}", orig))
         return target
 
     def _extractors(self) -> "MonkeyPatchProvider._Extractors":  # type: ignore[override]

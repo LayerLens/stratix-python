@@ -118,7 +118,7 @@ class OpenAIProvider(MonkeyPatchProvider):
         completions = target.chat.completions
         orig = completions.create
         self._originals["chat.completions.create"] = orig
-        completions.create = self._wrap_sync("openai.chat.completions.create", orig)
+        completions.create = self._wrap_auto("openai.chat.completions.create", orig)
         if hasattr(completions, "acreate"):
             async_orig = completions.acreate
             self._originals["chat.completions.acreate"] = async_orig
@@ -131,7 +131,7 @@ class OpenAIProvider(MonkeyPatchProvider):
         if hasattr(responses, "create"):
             orig = responses.create
             self._originals["responses.create"] = orig
-            responses.create = self._wrap_sync("openai.responses.create", orig)
+            responses.create = self._wrap_auto("openai.responses.create", orig)
 
     def _patch_embeddings(self, target: Any) -> None:
         if not hasattr(target, "embeddings"):
@@ -140,7 +140,7 @@ class OpenAIProvider(MonkeyPatchProvider):
         if hasattr(embeddings, "create"):
             orig = embeddings.create
             self._originals["embeddings.create"] = orig
-            embeddings.create = self._wrap_sync("openai.embeddings.create", orig)
+            embeddings.create = self._wrap_auto("openai.embeddings.create", orig)
 
 
 def _opt_int(val: Any) -> Any:
