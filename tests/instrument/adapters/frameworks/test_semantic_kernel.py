@@ -775,3 +775,121 @@ class TestHelpers:
 
         ctx = MockContext(arguments=FakeArgs())
         assert _extract_arguments(ctx) == {"a": 1}
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    def test_pre_existing_user_filter_survives_disconnect(self, mock_client):
+        """A filter the user registered BEFORE connect must survive disconnect —
+        only the adapter's own filters may be removed."""
+        from semantic_kernel.filters.filter_types import FilterTypes
+
+        kernel = Kernel()
+
+        async def user_filter(context, next):
+            await next(context)
+
+        kernel.add_filter(FilterTypes.FUNCTION_INVOCATION, user_filter)
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        assert len(kernel.function_invocation_filters) == 2
+        adapter.disconnect()
+
+        remaining = [f for _, f in kernel.function_invocation_filters]
+        assert remaining == [user_filter], "disconnect must remove only the adapter's filter, leaving the user's"
+        assert remaining[0] is user_filter
+        assert len(kernel.prompt_rendering_filters) == 0
+        assert len(kernel.auto_function_invocation_filters) == 0
+
+    def test_user_filter_added_after_connect_survives_disconnect(self, mock_client):
+        from semantic_kernel.filters.filter_types import FilterTypes
+
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        async def user_filter(context, next):
+            await next(context)
+
+        kernel.add_filter(FilterTypes.FUNCTION_INVOCATION, user_filter)
+        adapter.disconnect()
+
+        remaining = [f for _, f in kernel.function_invocation_filters]
+        assert remaining == [user_filter]
+        assert remaining[0] is user_filter
+
+    def test_wrapped_chat_service_restored_to_class_method(self, mock_client):
+        kernel = Kernel()
+        service = MockChatService()
+        kernel.services["mock"] = service
+        class_func = MockChatService._inner_get_chat_message_contents
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        assert "_traced_inner" in service._inner_get_chat_message_contents.__name__
+        adapter.disconnect()
+
+        # The restored method must be the exact original class function
+        assert service._inner_get_chat_message_contents.__func__ is class_func
+        result = _run(service._inner_get_chat_message_contents(None, None))
+        assert result == [service._response]
+
+    def test_user_patched_service_method_restored_identically(self, mock_client):
+        """A user's own instance-level patch of the chat service must come back
+        as the exact same object after disconnect."""
+        kernel = Kernel()
+        service = MockChatService()
+        kernel.services["mock"] = service
+
+        async def user_inner(chat_history, settings):
+            return [service._response]
+
+        service._inner_get_chat_message_contents = user_inner
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        assert service._inner_get_chat_message_contents is not user_inner  # wrapped
+        adapter.disconnect()
+
+        assert service._inner_get_chat_message_contents is user_inner
+
+    def test_double_disconnect_does_not_raise(self, mock_client):
+        kernel = Kernel()
+        service = MockChatService()
+        kernel.services["mock"] = service
+        class_func = MockChatService._inner_get_chat_message_contents
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        adapter.disconnect()
+        adapter.disconnect()
+
+        assert not adapter.is_connected
+        assert len(kernel.function_invocation_filters) == 0
+        assert service._inner_get_chat_message_contents.__func__ is class_func
+
+    def test_connect_disconnect_cycle(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+        adapter = SemanticKernelAdapter(mock_client)
+
+        adapter.connect(target=kernel)
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=1, b=2))
+        adapter.disconnect()
+        assert len(kernel.function_invocation_filters) == 0
+
+        adapter.connect(target=kernel)
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=3, b=4))
+        adapter.disconnect()
+
+        assert len(kernel.function_invocation_filters) == 0
+        assert len(kernel.prompt_rendering_filters) == 0
+        assert len(kernel.auto_function_invocation_filters) == 0
+        # Both connected periods produced tool events
+        assert len(find_events(uploaded["events"], "tool.call")) == 2

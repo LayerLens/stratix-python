@@ -194,6 +194,94 @@ class TestFrameworkSampleConventions:
         assert not old_api_imports, f"{sample_path} imports the old pyautogen API: {old_api_imports}"
 
 
+_ADAPTER_IMPORT_PREFIX = "layerlens.instrument.adapters"
+
+
+def _adapter_api_violations(source: str) -> list:
+    """Return ``var.attr`` references in *source* that don't exist on the
+    adapter class the variable was constructed from (LAY-3584 / T10).
+
+    Resolves adapter types from ``from layerlens.instrument.adapters... import
+    X`` + ``var = X(...)`` assignments, then checks every attribute access on
+    those variables against the real class surface.
+    """
+    import importlib
+
+    tree = ast.parse(source)
+
+    imported = {}  # local name -> (module path, class name)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(_ADAPTER_IMPORT_PREFIX):
+            for alias in node.names:
+                imported[alias.asname or alias.name] = (node.module, alias.name)
+    if not imported:
+        return []
+
+    var_types = {}  # variable name -> (module path, class name)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            fn = node.value.func
+            if isinstance(fn, ast.Name) and fn.id in imported:
+                for tgt in node.targets:
+                    if isinstance(tgt, ast.Name):
+                        var_types[tgt.id] = imported[fn.id]
+    if not var_types:
+        return []
+
+    cls_cache = {}
+    violations = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in var_types:
+            key = var_types[node.value.id]
+            if key not in cls_cache:
+                try:
+                    cls_cache[key] = getattr(importlib.import_module(key[0]), key[1], None)
+                except Exception:
+                    # Adapter module not importable in this env — cannot check.
+                    cls_cache[key] = None
+            cls = cls_cache[key]
+            if cls is not None and not hasattr(cls, node.attr):
+                violations.append(
+                    f"{node.value.id}.{node.attr} at line {node.lineno} — {key[1]} has no attribute {node.attr!r}"
+                )
+    return violations
+
+
+class TestSampleAdapterAPIs:
+    """Samples must only call APIs that exist on the adapter (LAY-3584 / T10).
+
+    The N8 bug shipped two agentforce samples calling MVP-only methods that
+    never existed in this SDK; conventions checks alone could not see that.
+    """
+
+    @pytest.mark.parametrize("sample_path", SAMPLE_FILES)
+    def test_samples_reference_only_existing_adapter_apis(self, sample_path):
+        full_path = os.path.join(SAMPLES_DIR, sample_path)
+        with open(full_path) as f:
+            source = f.read()
+        violations = _adapter_api_violations(source)
+        assert not violations, f"{sample_path} references nonexistent adapter APIs: {violations}"
+
+    def test_guard_catches_synthetic_violation(self):
+        source = (
+            "from layerlens.instrument.adapters.frameworks.agentforce import AgentforceAdapter\n"
+            "adapter = AgentforceAdapter(None)\n"
+            "adapter.definitely_not_a_real_method()\n"
+        )
+        violations = _adapter_api_violations(source)
+        assert violations and "definitely_not_a_real_method" in violations[0]
+
+    def test_guard_accepts_real_apis(self):
+        source = (
+            "from layerlens.instrument.adapters.frameworks.agentforce import AgentforceAdapter\n"
+            "adapter = AgentforceAdapter(None)\n"
+            "adapter.connect({})\n"
+            "sessions = adapter.import_sessions(start_date='2026-01-01')\n"
+            "adapter.disconnect()\n"
+        )
+        assert _adapter_api_violations(source) == []
+
+
 class TestHelpers:
     """Tests for the shared _helpers module."""
 

@@ -1,3 +1,15 @@
+"""Background trace upload: per-client channels, queue, circuit breaker.
+
+Delivery is best-effort by design — instrumentation must never crash or block
+the host app. The loss modes are deliberate and bounded:
+
+* queue overflow (64/client): new traces dropped with a WARNING;
+* circuit breaker (10 consecutive failures → open 60 s): traces discarded,
+  including items already dequeued by the worker, until the half-open retry;
+* process exit: ``atexit`` drains via :func:`shutdown_uploads`; abrupt kills
+  can lose queued traces (no public flush API yet — D1 decision).
+"""
+
 from __future__ import annotations
 
 import os
@@ -6,6 +18,7 @@ import time
 import queue
 import atexit
 import logging
+import weakref
 import tempfile
 import threading
 from typing import Any, Dict, Tuple, Optional
@@ -157,6 +170,25 @@ class UploadChannel:
 _ATTR = "_layerlens_upload_channel"
 _channels: list[UploadChannel] = []  # keeps refs for shutdown_uploads
 _registry_lock = threading.Lock()
+# Fallback for clients that reject attribute injection (slotted/frozen):
+# weakly keyed so a dropped client doesn't pin its channel forever.
+_side_channels: "weakref.WeakKeyDictionary[Any, UploadChannel]" = weakref.WeakKeyDictionary()
+# Last resort for clients that are not weak-referenceable either; deliberately
+# pins the client (bounded by the number of distinct clients in a process).
+_pinned_side_channels: Dict[int, Tuple[Any, UploadChannel]] = {}
+
+
+def _lookup_side_channel(client: Any) -> Optional[UploadChannel]:
+    try:
+        ch = _side_channels.get(client)
+    except TypeError:
+        ch = None
+    if ch is not None:
+        return ch
+    pinned = _pinned_side_channels.get(id(client))
+    if pinned is not None and pinned[0] is client:
+        return pinned[1]
+    return None
 
 
 def _get_channel(client: Any) -> UploadChannel:
@@ -164,7 +196,8 @@ def _get_channel(client: Any) -> UploadChannel:
 
     The channel is stored directly on the client object so that identity
     is tied to the object's lifetime, not its ``id()`` (which can be
-    reused after garbage collection).
+    reused after garbage collection). Slotted/frozen clients that reject
+    attribute injection fall back to a weak side dict instead.
     """
     ch = getattr(client, _ATTR, None)
     if isinstance(ch, UploadChannel):
@@ -174,12 +207,17 @@ def _get_channel(client: Any) -> UploadChannel:
         ch = getattr(client, _ATTR, None)
         if isinstance(ch, UploadChannel):
             return ch
+        ch = _lookup_side_channel(client)
+        if ch is not None:
+            return ch
         ch = UploadChannel()
         try:
             object.__setattr__(client, _ATTR, ch)
         except (AttributeError, TypeError):
-            # Frozen / slotted objects — fall back to a side dict
-            pass
+            try:
+                _side_channels[client] = ch
+            except TypeError:
+                _pinned_side_channels[id(client)] = (client, ch)
         _channels.append(ch)
         return ch
 

@@ -177,13 +177,36 @@ class CrewAIAdapter(FrameworkAdapter):
             return
         for event_cls, handler in self._registered_handlers:
             try:
-                crewai_event_bus.off(event_cls, handler)
+                off = getattr(crewai_event_bus, "off", None)
+                if off is not None:
+                    off(event_cls, handler)
+                else:
+                    # crewai < 1.14 has no off() API — remove our handler from
+                    # the bus's internal registries directly so disconnect
+                    # leaves no trace on every supported crewai version.
+                    self._remove_handler_directly(crewai_event_bus, event_cls, handler)
             except Exception:
                 log.debug(
                     "layerlens: could not unregister %s handler",
                     event_cls.__name__,
                     exc_info=True,
                 )
+
+    @staticmethod
+    def _remove_handler_directly(bus: Any, event_cls: Any, handler: Any) -> None:
+        for attr in ("_sync_handlers", "_async_handlers", "_handlers"):
+            registry = getattr(bus, attr, None)
+            if not isinstance(registry, dict) or event_cls not in registry:
+                continue
+            handlers = registry[event_cls]
+            if handler not in handlers:
+                continue
+            if isinstance(handlers, frozenset):
+                registry[event_cls] = handlers - {handler}
+            elif isinstance(handlers, set):
+                handlers.discard(handler)
+            elif isinstance(handlers, list):
+                registry[event_cls] = [h for h in handlers if h is not handler]
 
     # ------------------------------------------------------------------
     # Collector + state management

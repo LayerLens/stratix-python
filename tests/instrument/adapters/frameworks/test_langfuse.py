@@ -897,3 +897,67 @@ class TestIngestionWireContract:
         )
 
         adapter._post_ingestion([{"id": "x", "type": "trace-create", "body": {"id": "t"}}])  # no raise
+
+
+# ===================================================================
+# Disconnect leave-no-trace (LAY-3577 / T3)
+# ===================================================================
+
+
+class TestDisconnectLeaveNoTrace:
+    def test_disconnect_closes_and_clears_connection_state(self, connected_adapter):
+        adapter, _, mock_http = connected_adapter
+        adapter._last_cursor = "2026-06-01T00:00:00Z"
+        adapter.disconnect()
+
+        mock_http.close.assert_called_once()
+        assert adapter._http is None
+        assert adapter._public_key is None
+        assert adapter._secret_key is None
+        assert adapter._host is None
+        assert adapter._last_cursor is None
+        assert adapter._connected is False
+        assert adapter.adapter_info().metadata == {}
+
+    def test_disconnected_adapter_rejects_sync_calls(self, connected_adapter):
+        adapter, _, _ = connected_adapter
+        adapter.disconnect()
+        with pytest.raises(RuntimeError, match="not connected"):
+            adapter.import_traces()
+        with pytest.raises(RuntimeError, match="not connected"):
+            adapter.export_traces(events_by_trace={"t": []})
+
+    def test_double_disconnect_is_safe(self, connected_adapter):
+        adapter, _, mock_http = connected_adapter
+        adapter.disconnect()
+        adapter.disconnect()
+
+        mock_http.close.assert_called_once()
+        assert adapter._connected is False
+        assert adapter._http is None
+
+    @patch("layerlens.instrument.adapters.frameworks.langfuse.httpx")
+    def test_reconnect_after_disconnect_works(self, mock_httpx, connected_adapter):
+        adapter, uploaded, _ = connected_adapter
+        adapter.disconnect()
+
+        new_http = _make_mock_http()
+        mock_httpx.Client.return_value = new_http
+        new_http.get.return_value = _make_response({"data": []})
+
+        adapter.connect(public_key="pk-2", secret_key="sk-2", host="https://re.langfuse.com")
+        assert adapter._connected is True
+        assert adapter._host == "https://re.langfuse.com"
+        assert adapter.adapter_info().metadata == {"host": "https://re.langfuse.com"}
+
+        # The reconnected adapter imports through the new HTTP client
+        new_http.get.side_effect = [
+            _make_response({"data": [{"id": "t1", "updatedAt": "2026-01-01T00:00:00Z"}]}),
+            _make_response(_make_langfuse_trace("t1", observations=[_make_generation()])),
+        ]
+        assert adapter.import_traces() == 1
+        assert find_event(uploaded["events"], "model.invoke")["payload"]["model"] == "gpt-4"
+
+        adapter.disconnect()
+        new_http.close.assert_called_once()
+        assert adapter._http is None

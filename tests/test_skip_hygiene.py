@@ -29,6 +29,7 @@ KNOWN_SKIP_TARGETS = {
     "pydantic",
     "boto3",
     "fastapi",
+    "litellm",
     # framework adapters (installed per-venv; absent on the base env by design)
     "pydantic_ai",
     "langchain",

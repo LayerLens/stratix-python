@@ -578,3 +578,91 @@ class TestInputConfig:
         assert agent_in["payload"]["model"] == "openai/gpt-4o-mini"
 
         adapter.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace invariants (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    """disconnect() must remove only the adapter's own step callbacks and
+    run wrapper, leaving user callbacks registered and functional, and must
+    be safe to call repeatedly."""
+
+    def test_user_callback_survives_disconnect(self, mock_client):
+        adapter = SmolAgentsAdapter(mock_client)
+        agent = _make_mock_agent()
+        calls = []
+
+        def sentinel(step, agent=None):
+            calls.append(step)
+
+        agent.step_callbacks.register(ActionStep, sentinel)
+        adapter.connect(target=agent)
+        adapter.disconnect()
+
+        # Still registered in the agent's callback registry...
+        assert sentinel in agent.step_callbacks._callbacks.get(ActionStep, [])
+        # ...and still functional.
+        step = _make_action_step()
+        agent.step_callbacks.callback(step, agent=agent)
+        assert calls == [step]
+
+    def test_adapter_callbacks_and_run_restored(self, mock_client):
+        adapter = SmolAgentsAdapter(mock_client)
+        agent = _make_mock_agent()
+        original_run = agent.run
+
+        def sentinel(step, agent=None):
+            pass
+
+        agent.step_callbacks.register(ActionStep, sentinel)
+        adapter.connect(target=agent)
+        adapter.disconnect()
+
+        assert agent.run is original_run
+        assert adapter._callbacks == []
+        # Only the user callback remains; none of the adapter's bound methods.
+        assert agent.step_callbacks._callbacks.get(ActionStep, []) == [sentinel]
+        for cbs in agent.step_callbacks._callbacks.values():
+            for cb in cbs:
+                assert getattr(cb, "__self__", None) is not adapter
+
+    def test_double_disconnect_is_safe(self, mock_client):
+        adapter = SmolAgentsAdapter(mock_client)
+        agent = _make_mock_agent()
+        original_run = agent.run
+        adapter.connect(target=agent)
+        adapter.disconnect()
+        adapter.disconnect()  # must not raise
+
+        assert agent.run is original_run
+        assert adapter._collector is None
+        assert adapter._target_agent is None
+
+    def test_reconnect_cycle(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = SmolAgentsAdapter(mock_client)
+        agent = _make_mock_agent()
+        original_run = agent.run
+
+        adapter.connect(target=agent)
+        adapter.disconnect()
+        adapter.connect(target=agent)
+
+        # Re-registered: run is wrapped and step callbacks present again.
+        assert agent.run is not original_run
+        assert hasattr(agent.run, "_layerlens_original")
+        assert len(agent.step_callbacks._callbacks.get(ActionStep, [])) == 1
+
+        # Events flow again after reconnect.
+        _simulate_run(adapter, agent, task="cycle task")
+        agent_in = find_event(uploaded["events"], "agent.input")
+        assert agent_in["payload"]["input"] == "cycle task"
+
+        # Second disconnect cleans up again.
+        adapter.disconnect()
+        assert agent.run is original_run
+        for cbs in agent.step_callbacks._callbacks.values():
+            assert len(cbs) == 0

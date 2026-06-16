@@ -541,3 +541,67 @@ class TestHelpers:
         ns.set_content_tag("k", "v")
         assert ns.raw_span() is None
         assert ns.get_correlation_data_for_logs() == {}
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    def test_user_tracer_restored_identically(self, mock_client, mock_haystack_tracing):
+        """The tracer installed before connect() must come back as the exact object."""
+        user_tracer = Mock(spec=[])
+        mock_haystack_tracing.tracer.actual_tracer = user_tracer
+
+        adapter = HaystackAdapter(mock_client)
+        adapter.connect()
+        assert isinstance(mock_haystack_tracing.tracer.actual_tracer, _LayerLensTracer)
+
+        adapter.disconnect()
+        assert mock_haystack_tracing.tracer.actual_tracer is user_tracer
+
+    def test_disconnect_clears_adapter_hooks(self, mock_client, mock_haystack_tracing):
+        original = Mock(spec=[])
+        mock_haystack_tracing.tracer.actual_tracer = original
+
+        adapter = HaystackAdapter(mock_client)
+        adapter.connect()
+        adapter.disconnect()
+
+        assert adapter._tracer is None
+        assert adapter._original_tracer is None
+        assert not isinstance(mock_haystack_tracing.tracer.actual_tracer, _LayerLensTracer)
+
+    def test_double_disconnect_does_not_raise(self, mock_client, mock_haystack_tracing):
+        user_tracer = Mock(spec=[])
+        mock_haystack_tracing.tracer.actual_tracer = user_tracer
+
+        adapter = HaystackAdapter(mock_client)
+        adapter.connect()
+        adapter.disconnect()
+        adapter.disconnect()
+
+        assert not adapter.is_connected
+        # Second disconnect must not clobber the restored tracer
+        assert mock_haystack_tracing.tracer.actual_tracer is user_tracer
+
+    def test_connect_disconnect_cycle(self, mock_client, mock_haystack_tracing):
+        user_tracer = Mock(spec=[])
+        mock_haystack_tracing.tracer.actual_tracer = user_tracer
+        uploaded = capture_framework_trace(mock_client)
+
+        adapter = HaystackAdapter(mock_client)
+
+        adapter.connect()
+        _simulate_pipeline(adapter._tracer, input_data={"q": "one"})
+        adapter.disconnect()
+        assert mock_haystack_tracing.tracer.actual_tracer is user_tracer
+
+        adapter.connect()
+        _simulate_pipeline(adapter._tracer, input_data={"q": "two"})
+        adapter.disconnect()
+        assert mock_haystack_tracing.tracer.actual_tracer is user_tracer
+
+        # Both connected periods produced full traces
+        assert len(find_events(uploaded["events"], "agent.input")) == 2

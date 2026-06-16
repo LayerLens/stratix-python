@@ -335,3 +335,102 @@ class TestPydanticChatWrapping:
         # restored invoke still yields; no adapter state left behind
         assert len(asyncio.run(consume())) == 1
         assert not adapter._originals
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    def test_user_invoke_surfaces_restored_identically(self, mock_client):
+        """Both wrapped chat surfaces must come back as the exact originals."""
+        invoke = _make_invoke([])
+        invoke_stream = _make_invoke([])
+        chat = SimpleNamespace(name="c", invoke=invoke, invoke_stream=invoke_stream)
+
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        adapter.instrument_chat(chat)
+        assert chat.invoke is not invoke  # wrapped while connected
+        assert chat.invoke_stream is not invoke_stream
+        assert chat.invoke._layerlens_original is invoke
+
+        adapter.disconnect()
+        assert chat.invoke is invoke
+        assert chat.invoke_stream is invoke_stream
+        assert not hasattr(chat.invoke, "_layerlens_original")
+
+    def test_pydantic_chat_restored_to_exact_original(self, mock_client):
+        pydantic = pytest.importorskip("pydantic", minversion="2")
+
+        class _PydanticChat(pydantic.BaseModel):
+            model_config = pydantic.ConfigDict(validate_assignment=True)
+            name: str = "group"
+
+            async def invoke(self, *args, **kwargs):
+                yield _msg(agent_name="primary")
+
+        chat = _PydanticChat()
+        class_func = _PydanticChat.invoke
+
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        adapter.instrument_chat(chat)
+        adapter.disconnect()
+
+        # The restored bound method must wrap the exact class function
+        assert chat.invoke.__func__ is class_func
+
+    def test_disconnect_clears_internal_state(self, mock_client):
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(adapter, chat, [_msg(agent_name="primary"), _msg(agent_name="other")])
+
+        # the run populated per-chat bookkeeping
+        assert adapter._originals
+        assert adapter._wrapped_chats
+        assert adapter._seen_chats
+
+        adapter.disconnect()
+        assert adapter._originals == {}
+        assert adapter._wrapped_chats == []
+        assert adapter._seen_chats == set()
+        assert adapter._handoff_detector.current_agent is None
+
+    def test_double_disconnect_does_not_raise(self, mock_client):
+        invoke = _make_invoke([])
+        chat = SimpleNamespace(name="c", invoke=invoke)
+
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        adapter.instrument_chat(chat)
+        adapter.disconnect()
+        adapter.disconnect()
+
+        assert chat.invoke is invoke
+
+    def test_connect_disconnect_cycle(self, mock_client, monkeypatch):
+        import layerlens.instrument.adapters.frameworks.ms_agent_framework as _mod
+
+        # connect() checks the optional semantic-kernel dependency; force it on
+        # so the cycle is deterministic in every venv.
+        monkeypatch.setattr(_mod, "_HAS_SK_AGENTS", True)
+        uploaded = capture_framework_trace(mock_client)
+
+        invoke = _make_invoke([_msg(agent_name="primary")])
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"), invoke=invoke)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        async def consume():
+            return [m async for m in chat.invoke()]
+
+        adapter.connect(target=chat)
+        assert len(asyncio.run(consume())) == 1
+        adapter.disconnect()
+        assert chat.invoke is invoke
+
+        adapter.connect(target=chat)
+        assert len(asyncio.run(consume())) == 1
+        adapter.disconnect()
+        assert chat.invoke is invoke
+
+        # Both connected periods produced full traces
+        assert len(find_events(uploaded["events"], "agent.input")) == 2

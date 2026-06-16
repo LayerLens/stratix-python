@@ -8,12 +8,16 @@ emission without needing a real ADK Runner.
 from __future__ import annotations
 
 import time
+import asyncio
 from typing import Any, Optional
 from unittest.mock import Mock
 
 import pytest
 
 pytest.importorskip("google.adk")
+
+from google.adk.plugins import BasePlugin  # noqa: E402
+from google.adk.plugins.plugin_manager import PluginManager  # noqa: E402
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.google_adk import (
@@ -36,6 +40,9 @@ def _make_invocation_context(
     ctx = Mock()
     agent = Mock()
     agent.name = agent_name
+    # Real ADK agents carry a list here; a bare Mock attr is truthy but
+    # unsliceable and crashes _agent_tree's `sub_agents[:20]`.
+    agent.sub_agents = []
     ctx.agent = agent
     ctx.invocation_id = invocation_id
     ctx.user_content = user_content
@@ -760,3 +767,89 @@ class TestFullLifecycle:
         assert uploaded["attestation"].get("root_hash") is not None
 
         adapter.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace invariants (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    """disconnect() must leave third-party plugins untouched, render the
+    adapter's plugin inert, and be safe to call repeatedly.
+
+    ADK registration is user-mediated: the adapter exposes ``adapter.plugin``
+    which the user passes to ``Runner(plugins=[...])`` (or registers via
+    ``runner._plugin_manager.register_plugin``). The adapter cannot remove
+    the plugin from the Runner, so the leave-no-trace contract is that a
+    stale plugin must not emit anything after disconnect.
+    """
+
+    def test_third_party_plugin_survives_disconnect(self, mock_client):
+        sentinel = BasePlugin(name="sentinel")
+        manager = PluginManager(plugins=[sentinel])
+
+        adapter = GoogleADKAdapter(mock_client)
+        adapter.connect()
+        manager.register_plugin(adapter.plugin)
+        adapter.disconnect()
+
+        # The user's plugin is still registered in the plugin manager.
+        assert sentinel in manager.plugins
+        assert manager.get_plugin("sentinel") is sentinel
+
+    def test_stale_plugin_inert_after_disconnect(self, mock_client):
+        """A Runner that still holds the plugin must not emit after disconnect."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = GoogleADKAdapter(mock_client)
+        adapter.connect()
+        plugin = adapter.plugin
+        adapter.disconnect()
+        assert adapter.plugin is None
+
+        inv_ctx = _make_invocation_context()
+        # Pin sub_agents so the probe exercises the disconnect invariant and
+        # not the unrelated pre-existing _agent_tree crash on bare Mocks.
+        inv_ctx.agent.sub_agents = []
+        asyncio.run(plugin.before_run_callback(invocation_context=inv_ctx))
+        asyncio.run(plugin.after_run_callback(invocation_context=inv_ctx))
+
+        assert adapter._collector is None
+        assert uploaded["events"] == []
+
+    def test_double_disconnect_is_safe(self, mock_client):
+        adapter = GoogleADKAdapter(mock_client)
+        adapter.connect()
+        adapter.disconnect()
+        adapter.disconnect()  # must not raise
+
+        assert adapter.plugin is None
+        assert adapter._collector is None
+
+    def test_reconnect_cycle(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = GoogleADKAdapter(mock_client)
+
+        adapter.connect()
+        first_plugin = adapter.plugin
+        adapter.disconnect()
+        adapter.connect()
+
+        # A fresh plugin is created on reconnect.
+        assert adapter.plugin is not None
+        assert adapter.plugin is not first_plugin
+
+        # Events flow again after reconnect.
+        inv_ctx = _make_invocation_context(agent_name="cycle_agent")
+        # Pin sub_agents so this exercises the reconnect invariant and not
+        # the unrelated pre-existing _agent_tree crash on bare Mocks.
+        inv_ctx.agent.sub_agents = []
+        adapter._on_before_run(inv_ctx)
+        adapter._on_after_run(inv_ctx)
+        agent_in = find_event(uploaded["events"], "agent.input")
+        assert agent_in["payload"]["agent_name"] == "cycle_agent"
+
+        # Second disconnect cleans up again.
+        adapter.disconnect()
+        assert adapter.plugin is None
+        assert adapter._collector is None

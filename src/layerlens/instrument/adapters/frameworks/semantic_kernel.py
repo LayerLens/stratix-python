@@ -72,9 +72,15 @@ class SemanticKernelAdapter(FrameworkAdapter):
         ]
         for filter_type, handler in filters:
             target.add_filter(filter_type, handler)
-            filter_list = _get_filter_list(target, filter_type)
-            if filter_list:
-                self._filter_ids.append((filter_type, filter_list[-1][0]))
+            # SK inserts new filters at index 0, so positional lookups
+            # (e.g. filter_list[-1]) would record a pre-existing USER filter
+            # id — and disconnect would then remove the user's filter while
+            # leaving ours installed. Find our own entry by identity.
+            filter_list = _get_filter_list(target, filter_type) or []
+            for f_id, f in filter_list:
+                if f is handler:
+                    self._filter_ids.append((filter_type, f_id))
+                    break
 
         # Wrap LLM calls on registered chat services
         self._patch_chat_services(target)

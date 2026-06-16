@@ -884,3 +884,146 @@ class TestEdgeCases:
         events = uploaded["events"]
         out = find_event(events, "agent.output")
         assert out["payload"]["duration_ms"] >= 15  # allow tolerance
+
+
+# -- Disconnect leave-no-trace + shutdown flush (LAY-3577 / N6, N2) --
+
+
+class _RecordingProcessor(TracingProcessor):
+    """Third-party processor that counts lifecycle calls (stands in for a
+    user's own processor or OA's default exporter)."""
+
+    def __init__(self) -> None:
+        self.trace_starts = 0
+        self.trace_ends = 0
+
+    def on_trace_start(self, trace):
+        self.trace_starts += 1
+
+    def on_trace_end(self, trace):
+        self.trace_ends += 1
+
+    def on_span_start(self, span):
+        pass
+
+    def on_span_end(self, span):
+        pass
+
+    def shutdown(self):
+        pass
+
+    def force_flush(self):
+        pass
+
+
+class TestDisconnectLeaveNoTrace:
+    """N6: disconnect must remove ONLY our processor, never third-party ones."""
+
+    def test_disconnect_preserves_third_party_processors(self, mock_client):
+        from agents import trace as oa_trace
+
+        sentinel = _RecordingProcessor()
+        set_trace_processors([sentinel])
+
+        adapter = OpenAIAgentsAdapter(mock_client)
+        adapter.connect()
+        adapter.disconnect()
+
+        # The user's processor must still receive lifecycle events.
+        t = oa_trace("post-disconnect")
+        t.start()
+        t.finish()
+        assert sentinel.trace_starts == 1
+        assert sentinel.trace_ends == 1
+
+    def test_disconnect_removes_only_self(self, mock_client):
+        from agents.tracing import get_trace_provider
+
+        sentinel = _RecordingProcessor()
+        set_trace_processors([sentinel])
+
+        adapter = OpenAIAgentsAdapter(mock_client)
+        adapter.connect()
+        adapter.disconnect()
+
+        processors = list(get_trace_provider()._multi_processor._processors)
+        assert adapter not in processors
+        assert sentinel in processors
+
+    def test_double_disconnect_is_safe(self, mock_client):
+        sentinel = _RecordingProcessor()
+        set_trace_processors([sentinel])
+
+        adapter = OpenAIAgentsAdapter(mock_client)
+        adapter.connect()
+        adapter.disconnect()
+        adapter.disconnect()
+
+        from agents.tracing import get_trace_provider
+
+        assert sentinel in list(get_trace_provider()._multi_processor._processors)
+
+    def test_disconnected_adapter_collects_nothing(self, mock_client):
+        """After disconnect the adapter must not start new runs even if it
+        somehow still receives processor callbacks."""
+        adapter = OpenAIAgentsAdapter(mock_client)
+        adapter.connect()
+        adapter.disconnect()
+
+        adapter.on_trace_start(_make_trace(trace_id="t_after"))
+        assert adapter._trace_runs == {}
+
+
+class TestShutdownFlush:
+    """N2: shutdown()/force_flush() must flush pending runs, not drop them."""
+
+    def _start_run_with_event(self, adapter):
+        tr = _make_trace(trace_id="t_pending")
+        adapter.on_trace_start(tr)
+        span = _make_span(
+            adapter,
+            "t_pending",
+            "s_gen",
+            GenerationSpanData(
+                input=[{"role": "user", "content": "hi"}],
+                output=[{"role": "assistant", "content": "hello"}],
+                model="gpt-4o-mini",
+                model_config={},
+                usage={"input_tokens": 5, "output_tokens": 2},
+            ),
+        )
+        span.start()
+        span.finish()
+        adapter.on_span_end(span)
+        return tr
+
+    def test_shutdown_flushes_pending_runs(self, adapter_and_trace):
+        adapter, uploaded = adapter_and_trace
+        self._start_run_with_event(adapter)
+
+        adapter.shutdown()
+
+        events = uploaded["events"]
+        assert events, "shutdown() dropped a pending run instead of flushing it"
+        assert find_event(events, "model.invoke") is not None
+        assert adapter._trace_runs == {}
+
+    def test_force_flush_flushes_pending_runs(self, adapter_and_trace):
+        adapter, uploaded = adapter_and_trace
+        self._start_run_with_event(adapter)
+
+        adapter.force_flush()
+
+        events = uploaded["events"]
+        assert events, "force_flush() dropped a pending run instead of flushing it"
+        assert find_event(events, "model.invoke") is not None
+
+    def test_trace_end_after_force_flush_does_not_duplicate(self, adapter_and_trace):
+        adapter, uploaded = adapter_and_trace
+        tr = self._start_run_with_event(adapter)
+
+        adapter.force_flush()
+        n_after_flush = len(uploaded["events"])
+        adapter.on_trace_end(tr)
+
+        assert len(uploaded["events"]) == n_after_flush

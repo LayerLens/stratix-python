@@ -41,6 +41,10 @@ def _make_cycle(input_tokens: int = 0, output_tokens: int = 0) -> Mock:
         "inputTokens": input_tokens,
         "outputTokens": output_tokens,
     }
+    # Real cycles carry a string stop reason; a Mock here leaks into the
+    # cost.record payload and breaks attestation hashing (unserializable),
+    # which the adapter's broad exception handler then swallows silently.
+    cycle.stop_reason = "end_turn"
     return cycle
 
 
@@ -638,3 +642,92 @@ class TestErrorIsolation:
         after_model = AfterModelCallEvent(agent=agent, invocation_state={})
         adapter._on_after_model(after_model)
         adapter.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace invariants (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    """disconnect() must remove only the adapter's own hook callbacks from
+    the agent's hook registry, leaving user hooks registered and functional,
+    and must be safe to call repeatedly."""
+
+    def test_user_hook_survives_disconnect(self, mock_client):
+        adapter = StrandsAdapter(mock_client)
+        agent = _make_agent()
+        calls = []
+
+        def sentinel(event):
+            calls.append(event)
+
+        agent.hooks.add_callback(BeforeInvocationEvent, sentinel)
+        adapter.connect(target=agent)
+        adapter.disconnect()
+
+        # Still registered in the agent's hook registry...
+        assert sentinel in agent.hooks._registered_callbacks.get(BeforeInvocationEvent, [])
+        # ...and still functional.
+        evt = BeforeInvocationEvent(agent=agent, invocation_state={})
+        agent.hooks.invoke_callbacks(evt)
+        assert calls == [evt]
+
+    def test_adapter_hooks_removed_after_disconnect(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = StrandsAdapter(mock_client)
+        agent = _make_agent()
+        adapter.connect(target=agent)
+        assert len(adapter._registered_callbacks) == 7
+
+        adapter.disconnect()
+
+        assert adapter._registered_callbacks == []
+        for cbs in agent.hooks._registered_callbacks.values():
+            for cb in cbs:
+                assert getattr(cb, "__self__", None) is not adapter
+
+        # Hooks fired after disconnect must not reach the adapter.
+        agent.hooks.invoke_callbacks(BeforeInvocationEvent(agent=agent, invocation_state={}))
+        assert adapter._collector is None
+        assert uploaded["events"] == []
+
+    def test_double_disconnect_is_safe(self, mock_client):
+        adapter = StrandsAdapter(mock_client)
+        agent = _make_agent()
+        calls = []
+
+        def sentinel(event):
+            calls.append(event)
+
+        agent.hooks.add_callback(BeforeInvocationEvent, sentinel)
+        adapter.connect(target=agent)
+        adapter.disconnect()
+        adapter.disconnect()  # must not raise
+
+        assert adapter._registered_callbacks == []
+        assert sentinel in agent.hooks._registered_callbacks.get(BeforeInvocationEvent, [])
+
+    def test_reconnect_cycle(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = StrandsAdapter(mock_client)
+        agent = _make_agent(name="CycleAgent")
+
+        adapter.connect(target=agent)
+        adapter.disconnect()
+        adapter.connect(target=agent)
+
+        # Re-registered after reconnect.
+        assert len(adapter._registered_callbacks) == 7
+
+        # Events flow again after reconnect.
+        _simulate_invocation(adapter, agent, messages="cycle input")
+        agent_in = find_event(uploaded["events"], "agent.input")
+        assert agent_in["payload"]["agent_name"] == "CycleAgent"
+
+        # Second disconnect cleans up again.
+        adapter.disconnect()
+        assert adapter._registered_callbacks == []
+        for cbs in agent.hooks._registered_callbacks.values():
+            for cb in cbs:
+                assert getattr(cb, "__self__", None) is not adapter

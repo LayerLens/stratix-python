@@ -137,6 +137,11 @@ class GoogleADKAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     def _on_before_run(self, invocation_context: Any) -> None:
+        if not self._connected:
+            # ADK has no plugin-removal API, so a Runner constructed with our
+            # plugin keeps calling it after disconnect() — never start a new
+            # collector then (all other handlers no-op once _collector is None).
+            return
         span_id = self._new_span_id()
         with self._lock:
             self._collector = TraceCollector(self._client, self._config)

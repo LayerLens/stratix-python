@@ -61,6 +61,8 @@ class OpenAIAgentsAdapter(*_Bases):
         FrameworkAdapter.__init__(self, client, capture_config)
         # trace_id -> RunState for concurrent trace isolation
         self._trace_runs: Dict[str, Any] = {}
+        # Snapshot of the processor set at connect time (disconnect fallback).
+        self._pre_connect_processors: Optional[list] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -70,20 +72,48 @@ class OpenAIAgentsAdapter(*_Bases):
         self._check_dependency(_HAS_OPENAI_AGENTS)
         from agents import add_trace_processor  # pyright: ignore[reportMissingImports]
 
+        self._pre_connect_processors = self._current_processors()
         add_trace_processor(self)  # type: ignore[arg-type]
 
     def _on_disconnect(self) -> None:
+        # The OA SDK has no remove-one API, so rebuild the processor set
+        # without us — third-party processors (including OA's default
+        # exporter) must survive our disconnect.
         from agents import set_trace_processors  # pyright: ignore[reportMissingImports]
 
-        set_trace_processors([])
+        current = self._current_processors()
+        if current is None:
+            current = self._pre_connect_processors
+        if current is not None:
+            set_trace_processors([p for p in current if p is not self])
+        else:
+            log.warning(
+                "layerlens: could not enumerate OpenAI Agents trace processors; "
+                "leaving the processor set untouched on disconnect"
+            )
+        self._pre_connect_processors = None
         with self._lock:
             self._trace_runs.clear()
+
+    @staticmethod
+    def _current_processors() -> Optional[list]:
+        """Best-effort read of the globally registered processors (private API)."""
+        try:
+            from agents.tracing import get_trace_provider  # pyright: ignore[reportMissingImports]
+
+            return list(get_trace_provider()._multi_processor._processors)
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # TracingProcessor interface
     # ------------------------------------------------------------------
 
     def on_trace_start(self, trace: Any) -> None:
+        if not self._connected:
+            # Belt-and-braces: if processor removal failed at disconnect we
+            # may still receive callbacks — never start new runs then.
+            return
         try:
             # OA manages multiple concurrent traces from one processor,
             # so we create RunState directly instead of using _begin_run
@@ -131,10 +161,26 @@ class OpenAIAgentsAdapter(*_Bases):
             log.warning("layerlens: error handling OpenAI Agents span", exc_info=True)
 
     def shutdown(self) -> None:
-        pass
+        """Flush pending (in-flight) runs so traces aren't dropped at exit.
+
+        Traces normally upload when OA ends them (``on_trace_end``); anything
+        still pending here is uploaded partially rather than lost.
+        """
+        self._flush_pending_runs()
 
     def force_flush(self) -> None:
-        pass
+        """Flush pending runs now (partial traces upload; see ``shutdown``)."""
+        self._flush_pending_runs()
+
+    def _flush_pending_runs(self) -> None:
+        with self._lock:
+            runs = list(self._trace_runs.values())
+            self._trace_runs.clear()
+        for run in runs:
+            try:
+                run.collector.flush()
+            except Exception:
+                log.warning("layerlens: error flushing pending OpenAI Agents run", exc_info=True)
 
     # ------------------------------------------------------------------
     # Span handlers

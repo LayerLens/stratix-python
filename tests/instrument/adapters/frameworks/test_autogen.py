@@ -658,3 +658,93 @@ class TestHelpers:
 
     def test_enum_name_plain(self):
         assert _enum_name("PUBLISH") == "PUBLISH"
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace invariants (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class _SentinelLogHandler(logging.Handler):
+    """Third-party logging handler attached to the same autogen event logger."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.events: list = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.events.append(record.msg)
+
+
+class TestDisconnectLeaveNoTrace:
+    """disconnect() must remove only the adapter's own handler from the
+    autogen event logger, leaving third-party handlers registered and
+    functional, and must be safe to call repeatedly."""
+
+    def test_third_party_handler_survives_disconnect(self, mock_client):
+        logger = logging.getLogger(EVENT_LOGGER_NAME)
+        sentinel = _SentinelLogHandler()
+        logger.addHandler(sentinel)
+        try:
+            adapter = AutoGenAdapter(mock_client)
+            adapter.connect()
+            adapter.disconnect()
+
+            # Still attached to the logger...
+            assert sentinel in logger.handlers
+            # ...and still functional.
+            event = LLMCallEvent(messages=[], response={}, prompt_tokens=1, completion_tokens=1)
+            logger.info(event)
+            assert event in sentinel.events
+        finally:
+            logger.removeHandler(sentinel)
+
+    def test_adapter_handler_removed_after_disconnect(self, mock_client):
+        logger = logging.getLogger(EVENT_LOGGER_NAME)
+        adapter, uploaded = _setup(mock_client)
+        handler = adapter._handler
+        assert handler in logger.handlers
+
+        adapter.disconnect()
+
+        assert handler not in logger.handlers
+        assert adapter._handler is None
+
+        # Events logged after disconnect must not reach the adapter.
+        logger.info(LLMCallEvent(messages=[], response={}, prompt_tokens=5, completion_tokens=5))
+        assert adapter._collector is None
+        assert uploaded["events"] == []
+
+    def test_double_disconnect_is_safe(self, mock_client):
+        logger = logging.getLogger(EVENT_LOGGER_NAME)
+        sentinel = _SentinelLogHandler()
+        logger.addHandler(sentinel)
+        try:
+            adapter = AutoGenAdapter(mock_client)
+            adapter.connect()
+            adapter.disconnect()
+            adapter.disconnect()  # must not raise
+
+            assert adapter._handler is None
+            assert sentinel in logger.handlers
+        finally:
+            logger.removeHandler(sentinel)
+
+    def test_reconnect_cycle(self, mock_client):
+        logger = logging.getLogger(EVENT_LOGGER_NAME)
+        adapter, uploaded = _setup(mock_client)
+        adapter.disconnect()
+        adapter.connect()
+
+        # Re-attached after reconnect.
+        assert "_LayerLensHandler" in [type(h).__name__ for h in logger.handlers]
+
+        # Events flow again after reconnect (_log_and_flush disconnects).
+        _log_and_flush(
+            adapter,
+            LLMCallEvent(messages=[], response={"model": "gpt-4o"}, prompt_tokens=10, completion_tokens=5),
+        )
+        assert uploaded.get("trace_id") is not None
+
+        # Second disconnect cleaned up again.
+        assert "_LayerLensHandler" not in [type(h).__name__ for h in logger.handlers]

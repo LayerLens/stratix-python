@@ -547,3 +547,61 @@ class TestHelpers:
         result = _truncate(long_str, 4000)
         assert len(result) <= 4010
         assert _truncate(42) == "42"
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    def test_disconnect_closes_and_clears_connection_state(self, mock_client):
+        adapter, _, mock_conn = _setup(mock_client)
+        adapter.disconnect()
+
+        mock_conn.close.assert_called_once()
+        assert adapter._connection is None
+        assert adapter._credentials is None
+        assert not adapter.is_connected
+        assert adapter.adapter_info().metadata == {}
+
+    def test_disconnected_adapter_rejects_imports(self, mock_client):
+        adapter, _, _ = _setup(mock_client, sessions=[_make_session()])
+        adapter.disconnect()
+        with pytest.raises(RuntimeError, match="not connected"):
+            adapter.import_sessions()
+
+    def test_double_disconnect_is_safe(self, mock_client):
+        adapter, _, mock_conn = _setup(mock_client)
+        adapter.disconnect()
+        adapter.disconnect()
+
+        mock_conn.close.assert_called_once()
+        assert not adapter.is_connected
+        assert adapter._connection is None
+
+    def test_reconnect_after_disconnect_works(self, mock_client):
+        adapter, uploaded, _ = _setup(mock_client, sessions=[_make_session("sess-001")])
+        assert adapter.import_sessions()["sessions_imported"] == 1
+        adapter.disconnect()
+
+        # Re-prime connection state the same way the mock-connection fixture does
+        new_conn = _make_mock_conn(sessions=[_make_session("sess-002")])
+        adapter._connection = new_conn
+        adapter._connected = True
+        adapter._credentials = _SalesforceCredentials(
+            client_id="test",
+            client_secret="test",
+            instance_url="https://test.salesforce.com",
+            access_token="fake-token",
+        )
+
+        summary = adapter.import_sessions()
+        assert summary["sessions_imported"] == 1
+        # One agent.input per session, across both connected periods
+        inputs = find_events(uploaded["events"], "agent.input")
+        assert {e["payload"]["session_id"] for e in inputs} == {"sess-001", "sess-002"}
+
+        adapter.disconnect()
+        new_conn.close.assert_called_once()
+        assert adapter._connection is None

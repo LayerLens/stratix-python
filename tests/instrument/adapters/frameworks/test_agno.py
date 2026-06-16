@@ -634,3 +634,88 @@ class TestHelpers:
         assert len(tools) == 1
         assert tools[0]["tool_name"] == "calc"
         assert tools[0]["latency_ms"] == pytest.approx(100.0)
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    def test_user_wrapped_run_survives_disconnect(self, mock_client):
+        """A user's own pre-existing run wrapper must come back as the exact object."""
+        agent = _make_agent()
+        original_run = agent.run
+        calls = []
+
+        def user_run(*args: Any, **kwargs: Any) -> Any:
+            calls.append(args)
+            return original_run(*args, **kwargs)
+
+        agent.run = user_run
+
+        adapter = AgnoAdapter(mock_client)
+        adapter.connect(target=agent)
+        assert agent.run is not user_run  # wrapped while connected
+        adapter.disconnect()
+
+        assert agent.run is user_run
+        agent.run("still works")
+        assert len(calls) == 1
+
+    def test_disconnect_restores_class_methods_exactly(self, mock_client):
+        agent = _make_agent()
+        run_func = type(agent).run
+        arun_func = type(agent).arun
+
+        adapter = AgnoAdapter(mock_client)
+        adapter.connect(target=agent)
+        adapter.disconnect()
+
+        # The restored bound methods must wrap the exact class functions
+        assert agent.run.__func__ is run_func
+        assert agent.arun.__func__ is arun_func
+        assert agent.run.__self__ is agent
+        assert not hasattr(agent.run, "_layerlens_original")
+        assert not hasattr(agent.arun, "_layerlens_original")
+
+    def test_disconnect_clears_internal_state(self, mock_client):
+        agent = _make_agent()
+        adapter = AgnoAdapter(mock_client)
+        adapter.connect(target=agent)
+        agent.run("hello")
+        adapter.disconnect()
+
+        assert adapter._originals == {}
+        assert adapter._wrapped_agents == []
+
+    def test_double_disconnect_does_not_raise(self, mock_client):
+        agent = _make_agent()
+        run_func = type(agent).run
+
+        adapter = AgnoAdapter(mock_client)
+        adapter.connect(target=agent)
+        adapter.disconnect()
+        adapter.disconnect()
+
+        assert not adapter.is_connected
+        assert agent.run.__func__ is run_func
+
+    def test_connect_disconnect_cycle(self, mock_client):
+        agent = _make_agent()
+        run_func = type(agent).run
+        uploaded = capture_framework_trace(mock_client)
+        adapter = AgnoAdapter(mock_client)
+
+        adapter.connect(target=agent)
+        agent.run("one")
+        adapter.disconnect()
+        assert agent.run.__func__ is run_func
+
+        adapter.connect(target=agent)
+        agent.run("two")
+        adapter.disconnect()
+        assert agent.run.__func__ is run_func
+
+        # Both connected periods produced full traces
+        assert len(find_events(uploaded["events"], "agent.input")) == 2

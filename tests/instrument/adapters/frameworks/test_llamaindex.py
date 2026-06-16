@@ -873,3 +873,104 @@ class TestEdgeCases:
 
         # Should have flushed
         assert mock_client.traces.upload.called
+
+
+# -- Disconnect leave-no-trace invariants (LAY-3577 / T3) --
+
+
+def _make_sentinel_event_handler():
+    """Create a third-party event handler registered via the same dispatcher API."""
+    from llama_index.core.instrumentation.event_handlers import BaseEventHandler
+
+    hits: List[Any] = []
+
+    class _SentinelEventHandler(BaseEventHandler):
+        @classmethod
+        def class_name(cls) -> str:
+            return "SentinelEventHandler"
+
+        def handle(self, event: Any, **kwargs: Any) -> None:
+            hits.append(event)
+
+    return _SentinelEventHandler(), hits
+
+
+class TestDisconnectLeaveNoTrace:
+    """disconnect() must remove only the adapter's own handlers from the
+    global dispatcher, leaving user handlers registered and functional,
+    and must be safe to call repeatedly."""
+
+    def test_user_handler_survives_disconnect(self, adapter):
+        dispatcher = get_dispatcher()
+        sentinel, hits = _make_sentinel_event_handler()
+        dispatcher.add_event_handler(sentinel)
+        try:
+            adapter.connect()
+            adapter.disconnect()
+
+            # Still registered on the dispatcher...
+            assert sentinel in dispatcher.event_handlers
+            # ...and still functional.
+            _emit_event_via_dispatcher(QueryStartEvent(query="probe"))
+            assert any(isinstance(e, QueryStartEvent) for e in hits)
+        finally:
+            if sentinel in dispatcher.event_handlers:
+                dispatcher.event_handlers.remove(sentinel)
+
+    def test_adapter_handlers_removed_after_disconnect(self, adapter):
+        dispatcher = get_dispatcher()
+        adapter.connect()
+        event_handler = adapter._event_handler
+        span_handler = adapter._span_handler
+        assert event_handler in dispatcher.event_handlers
+        assert span_handler in dispatcher.span_handlers
+
+        adapter.disconnect()
+
+        assert event_handler not in dispatcher.event_handlers
+        assert span_handler not in dispatcher.span_handlers
+        assert adapter._event_handler is None
+        assert adapter._span_handler is None
+
+        # Events dispatched after disconnect must not reach the adapter.
+        _emit_event_via_dispatcher(QueryStartEvent(query="ghost"))
+        assert adapter._collectors == {}
+
+    def test_double_disconnect_is_safe(self, adapter):
+        dispatcher = get_dispatcher()
+        sentinel, _ = _make_sentinel_event_handler()
+        dispatcher.add_event_handler(sentinel)
+        try:
+            adapter.connect()
+            adapter.disconnect()
+            adapter.disconnect()  # must not raise
+
+            assert adapter._event_handler is None
+            assert adapter._span_handler is None
+            assert sentinel in dispatcher.event_handlers
+        finally:
+            if sentinel in dispatcher.event_handlers:
+                dispatcher.event_handlers.remove(sentinel)
+
+    def test_reconnect_cycle(self, adapter):
+        dispatcher = get_dispatcher()
+        baseline_events = len(dispatcher.event_handlers)
+        baseline_spans = len(dispatcher.span_handlers)
+
+        adapter.connect()
+        adapter.disconnect()
+        adapter.connect()
+
+        # Re-registered after reconnect.
+        assert len(dispatcher.event_handlers) == baseline_events + 1
+        assert len(dispatcher.span_handlers) == baseline_spans + 1
+
+        # Events flow again after reconnect.
+        root = _create_span(adapter)
+        _emit_event_via_dispatcher(QueryStartEvent(query="cycle"), span_id=root)
+        assert len(_find_events(adapter, "agent.input")) >= 1
+
+        # Second disconnect cleans up again.
+        adapter.disconnect()
+        assert len(dispatcher.event_handlers) == baseline_events
+        assert len(dispatcher.span_handlers) == baseline_spans

@@ -1039,3 +1039,92 @@ class TestDelegation:
         # Inspect post-end state directly
         assert adapter._delegation_seq == 0
         assert adapter._delegation_chain == []
+
+
+class TestDisconnectLeaveNoTrace:
+    """Disconnect leave-no-trace invariants (LAY-3577 / T3).
+
+    disconnect() must remove only the adapter's own handlers from the
+    CrewAI event bus, leaving third-party handlers registered and
+    functional, and must be safe to call repeatedly.
+    """
+
+    @staticmethod
+    def _emit_and_wait(event):
+        fut = crewai_event_bus.emit(None, event=event)
+        if fut is not None:
+            fut.result(timeout=5.0)
+
+    def test_third_party_handler_survives_disconnect(self, mock_client):
+        adapter = CrewAIAdapter(mock_client)
+        calls = []
+
+        def sentinel(source, event):
+            calls.append(event)
+
+        with crewai_event_bus.scoped_handlers():
+            crewai_event_bus.on(CrewKickoffStartedEvent)(sentinel)
+            adapter.connect()
+            adapter.disconnect()
+
+            # Still registered on the bus...
+            assert sentinel in crewai_event_bus._sync_handlers.get(CrewKickoffStartedEvent, frozenset())
+            # ...and still functional.
+            self._emit_and_wait(CrewKickoffStartedEvent(crew_name="SentinelCrew", inputs={}))
+            assert len(calls) == 1
+
+    def test_adapter_handlers_removed_after_disconnect(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = CrewAIAdapter(mock_client)
+        with crewai_event_bus.scoped_handlers():
+            adapter.connect()
+            registered = list(adapter._registered_handlers)
+            assert registered
+            adapter.disconnect()
+
+            assert adapter._registered_handlers == []
+            for event_cls, handler in registered:
+                assert handler not in crewai_event_bus._sync_handlers.get(event_cls, frozenset())
+
+            # Events emitted after disconnect must not reach the adapter.
+            self._emit_and_wait(CrewKickoffStartedEvent(crew_name="Ghost", inputs={}))
+            assert adapter._collector is None
+            assert uploaded["events"] == []
+
+    def test_double_disconnect_is_safe(self, mock_client):
+        adapter = CrewAIAdapter(mock_client)
+        calls = []
+
+        def sentinel(source, event):
+            calls.append(event)
+
+        with crewai_event_bus.scoped_handlers():
+            crewai_event_bus.on(CrewKickoffStartedEvent)(sentinel)
+            adapter.connect()
+            adapter.disconnect()
+            adapter.disconnect()  # must not raise
+
+            assert adapter._registered_handlers == []
+            assert sentinel in crewai_event_bus._sync_handlers.get(CrewKickoffStartedEvent, frozenset())
+
+    def test_reconnect_cycle(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = CrewAIAdapter(mock_client)
+        with crewai_event_bus.scoped_handlers():
+            adapter.connect()
+            adapter.disconnect()
+            adapter.connect()
+
+            # Events flow again after reconnect.
+            self._emit_and_wait(CrewKickoffStartedEvent(crew_name="CycleCrew", inputs={}))
+            to = TaskOutput(description="t", raw="ok", agent="R")
+            self._emit_and_wait(CrewKickoffCompletedEvent(crew_name="CycleCrew", output=to))
+            agent_in = find_event(uploaded["events"], "agent.input")
+            assert agent_in["payload"]["crew_name"] == "CycleCrew"
+
+            # Second disconnect cleans up again.
+            adapter.disconnect()
+            assert adapter._registered_handlers == []
+            n_events = len(uploaded["events"])
+            self._emit_and_wait(CrewKickoffStartedEvent(crew_name="Ghost", inputs={}))
+            assert len(uploaded["events"]) == n_events
