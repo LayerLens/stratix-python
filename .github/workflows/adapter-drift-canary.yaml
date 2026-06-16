@@ -1,0 +1,49 @@
+# Upstream-drift canary (LAY-3581 / T7) — weekly, ADVISORY ONLY.
+#
+# Reruns the adapter matrix with framework pins removed (latest releases) to
+# discover B2/B5/B6-class upstream breaks before customers do. Failures never
+# block PRs or redden main: every row is continue-on-error and this workflow
+# has no PR trigger. Read the per-row verdicts in the run's step summary.
+
+name: Adapter Drift Canary
+
+on:
+  schedule:
+    - cron: "41 5 * * 1" # weekly, Monday 05:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      frameworks: ${{ steps.list.outputs.frameworks }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: List rows
+        id: list
+        run: |
+          ROWS=$(python3 tests/matrix/run_matrix.py --list)
+          echo "frameworks=${ROWS}" >> "$GITHUB_OUTPUT"
+
+  canary:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: ${{ fromJSON(needs.plan.outputs.frameworks) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "tests/matrix/frameworks.toml"
+
+      - name: Run row against latest upstream
+        continue-on-error: true # advisory: a red canary never blocks anything
+        run: python3 tests/matrix/run_matrix.py --framework "${{ matrix.framework }}" --latest

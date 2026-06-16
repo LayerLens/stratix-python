@@ -1,0 +1,90 @@
+# Real-framework + fake-model CI matrix spec (LAY-3580 / T6).
+#
+# One entry per framework row. `install` pins the latest VERIFIED versions
+# (extracted from the phase-1/2 audit venvs, all suites green on these pins —
+# this doubles as the tested-version table consumed by the drift canary,
+# LAY-3581). The canary reruns the same rows with `--latest` (unpinned).
+#
+# Zero LLM spend by design: the suites drive real framework objects with fake
+# models (pydantic-ai TestModel, autogen ReplayChatCompletionClient, langchain
+# fake chat models, llamaindex MockLLM, mocks elsewhere). No API keys exist in
+# these jobs.
+
+[frameworks.langchain]
+python = "3.11"
+install = ["langchain-core==0.3.84", "langchain==0.3.28", "langchain-openai==0.3.35"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_langchain.py",
+    "tests/instrument/adapters/frameworks/test_langchain_memory.py",
+]
+
+[frameworks.langgraph]
+python = "3.11"
+install = ["langchain-core==0.3.84", "langgraph==1.0.1"]
+tests = ["tests/instrument/adapters/frameworks/test_langgraph.py"]
+
+[frameworks.crewai]
+python = "3.11"
+install = ["crewai==1.14.6"]
+tests = ["tests/instrument/adapters/frameworks/test_crewai.py"]
+
+[frameworks.openai_agents]
+python = "3.11"
+install = ["openai-agents==0.4.2"]
+tests = ["tests/instrument/adapters/frameworks/test_openai_agents.py"]
+
+[frameworks.semantic_kernel]
+python = "3.11"
+install = ["semantic-kernel==1.36.0"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_semantic_kernel.py",
+    "tests/instrument/adapters/frameworks/test_ms_agent_framework.py",
+]
+
+[frameworks.pydantic_ai]
+python = "3.11"
+install = ["pydantic-ai==0.8.1"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_pydantic_ai.py",
+    "tests/instrument/adapters/frameworks/test_concurrency.py",
+]
+
+[frameworks.google_adk]
+python = "3.11"
+install = ["google-adk==2.2.0"]
+tests = ["tests/instrument/adapters/frameworks/test_google_adk.py"]
+
+[frameworks.strands]
+python = "3.11"
+install = ["strands-agents==1.42.0"]
+tests = ["tests/instrument/adapters/frameworks/test_strands.py"]
+
+[frameworks.smolagents]
+python = "3.11"
+install = ["smolagents==1.26.0"]
+tests = ["tests/instrument/adapters/frameworks/test_smolagents.py"]
+
+[frameworks.llamaindex]
+python = "3.11"
+install = ["llama-index-core==0.14.22"]
+tests = ["tests/instrument/adapters/frameworks/test_llamaindex.py"]
+
+[frameworks.haystack]
+python = "3.11"
+install = ["haystack-ai==2.30.1"]
+tests = ["tests/instrument/adapters/frameworks/test_haystack.py"]
+
+[frameworks.autogen]
+python = "3.11"
+install = ["autogen-core==0.7.5", "autogen-agentchat==0.7.5", "autogen-ext==0.7.5"]
+tests = ["tests/instrument/adapters/frameworks/test_autogen.py"]
+
+[frameworks.agno]
+python = "3.11"
+install = ["agno==2.6.12"]
+tests = ["tests/instrument/adapters/frameworks/test_agno.py"]
+
+[frameworks.vector_store]
+python = "3.11"
+install = ["chromadb==1.5.9"]
+tests = ["tests/instrument/adapters/frameworks/test_vector_store.py"]
