@@ -1,5 +1,9 @@
-"""Per-protocol registry. Reuses ``FrameworkCase``; protocols are LLM-free and
-run the ``default`` variant only (no LLM message content to redact)."""
+"""Per-protocol registry. Reuses ``FrameworkCase``. Protocols are LLM-free,
+but they DO carry content (message text, tool args, payment details), so each
+content-emitting protocol also runs the ``redaction`` variant — the scenarios
+embed ``SENTINEL`` in their content fields and the harness asserts it never
+reaches the trace payload under ``capture_content=False`` (LAY-3578 / N7).
+"""
 
 from __future__ import annotations
 
@@ -13,29 +17,34 @@ from ._framework_registry import FrameworkCase
 # test importorskips it (and they are exercised in a Python 3.10+ venv).
 PROTOCOLS: Tuple[FrameworkCase, ...] = (
     FrameworkCase(
-        id="agui", import_name="layerlens", runner=ps.run_agui, supports_redaction=False, install_hint="built-in"
+        id="agui", import_name="layerlens", runner=ps.run_agui, supports_redaction=True, install_hint="built-in"
     ),
     FrameworkCase(
-        id="a2ui", import_name="layerlens", runner=ps.run_a2ui, supports_redaction=False, install_hint="built-in"
+        # a2ui only ever emits ids/counts/hashes — nothing to redact.
+        id="a2ui",
+        import_name="layerlens",
+        runner=ps.run_a2ui,
+        supports_redaction=False,
+        install_hint="built-in",
     ),
     FrameworkCase(
-        id="ap2", import_name="layerlens", runner=ps.run_ap2, supports_redaction=False, install_hint="built-in"
+        id="ap2", import_name="layerlens", runner=ps.run_ap2, supports_redaction=True, install_hint="built-in"
     ),
     FrameworkCase(
-        id="ucp", import_name="layerlens", runner=ps.run_ucp, supports_redaction=False, install_hint="built-in"
+        id="ucp", import_name="layerlens", runner=ps.run_ucp, supports_redaction=True, install_hint="built-in"
     ),
     FrameworkCase(
         id="mcp",
         import_name="mcp",
         runner=ps.run_mcp,
-        supports_redaction=False,
+        supports_redaction=True,
         install_hint="layerlens[mcp] (py>=3.10)",
     ),
     FrameworkCase(
         id="a2a",
         import_name="a2a",
         runner=ps.run_a2a,
-        supports_redaction=False,
+        supports_redaction=True,
         install_hint="layerlens[a2a] (py>=3.10)",
     ),
 )

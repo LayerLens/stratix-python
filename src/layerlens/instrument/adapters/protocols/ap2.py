@@ -40,8 +40,8 @@ class AP2ProtocolAdapter(BaseProtocolAdapter):
     PROTOCOL = "ap2"
     PROTOCOL_VERSION = "0.1.0"
 
-    def __init__(self, guardrails: AP2Guardrails | None = None) -> None:
-        super().__init__()
+    def __init__(self, guardrails: AP2Guardrails | None = None, *, capture_config: Any = None) -> None:
+        super().__init__(capture_config=capture_config)
         self._guardrails = guardrails or AP2Guardrails()
         self._cumulative_spend: float = 0.0
         self._intent_mandates: Dict[str, Dict[str, Any]] = {}

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from .._base import AdapterInfo, BaseAdapter
 from ..._context import _current_span_id, _current_collector
+from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
 
@@ -40,11 +41,13 @@ class BaseProtocolAdapter(BaseAdapter, abc.ABC):
     def __init__(
         self,
         *,
+        capture_config: Optional[CaptureConfig] = None,
         max_connections: int = 10,
         retry_max_attempts: int = 3,
         retry_backoff_base: float = 1.0,
     ) -> None:
         self._client: Any = None
+        self._config: CaptureConfig = capture_config or CaptureConfig()
         self._originals: Dict[str, Any] = {}
         self._max_connections = max_connections
         self._retry_max_attempts = retry_max_attempts
@@ -120,6 +123,10 @@ class BaseProtocolAdapter(BaseAdapter, abc.ABC):
         collector = _current_collector.get()
         if collector is None:
             return
+        # Adapter-side content gating (LAY-3578 / N7). The collector applies
+        # the same redaction with ITS config — defense in depth, so the
+        # privacy promise holds whichever side was configured.
+        payload = self._config.redact_payload(event_name, payload)
         collector.emit(
             event_name,
             {"protocol": self.PROTOCOL, **payload},

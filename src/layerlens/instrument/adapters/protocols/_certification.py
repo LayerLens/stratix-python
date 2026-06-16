@@ -107,6 +107,7 @@ class ProtocolCertificationSuite:
         checks.append(self._check_adapter_info_shape(adapter_class))
         checks.append(self._check_probe_health_shape(adapter_class))
         checks.append(self._check_negotiate_version_logic(adapter_class))
+        checks.append(self._check_capture_config_support(adapter_class))
 
         passed = all(c.passed for c in checks if c.severity == "error")
         protocol = getattr(adapter_class, "PROTOCOL", "") or ""
@@ -183,6 +184,27 @@ class ProtocolCertificationSuite:
                 )
             )
         return results
+
+    def _check_capture_config_support(self, cls: type) -> CheckResult:
+        """Adapters must accept ``capture_config`` and honor content gating
+        (LAY-3578 / N7): a no-content config must reach ``self._config``."""
+        from ..._capture_config import CaptureConfig
+
+        try:
+            adapter = cls(capture_config=CaptureConfig(capture_content=False))
+            ok = getattr(adapter, "_config", None) is not None and adapter._config.capture_content is False
+            message = "capture_config accepted and threaded" if ok else "capture_config not threaded to _config"
+        except TypeError as exc:
+            ok = False
+            message = f"constructor rejects capture_config: {exc}"
+        except Exception as exc:  # constructor needs args we can't supply
+            return CheckResult(
+                name="capture_config_support",
+                passed=True,
+                severity="warning",
+                message=f"could not instantiate for capture_config check: {exc}",
+            )
+        return CheckResult(name="capture_config_support", passed=ok, message=message)
 
     def _check_adapter_info_shape(self, cls: type) -> CheckResult:
         """``adapter_info()`` should return an :class:`AdapterInfo` with

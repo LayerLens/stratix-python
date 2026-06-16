@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, FrozenSet
 from dataclasses import dataclass
 
 # Maps event type strings to CaptureConfig field names
@@ -69,6 +69,30 @@ _CONTENT_PARAM_KEYS = frozenset(
     }
 )
 
+# Per-event-type CONTENT keys for protocol events (LAY-3578 / N7). Shared by
+# the protocol adapters' emit-time gating and the collector-side backstop so
+# the policy lives in exactly one place. Policy (team-reviewed): message text,
+# tool arguments/results, raw stream payloads, state snapshots, catalog
+# queries, elicitation titles, request summaries, and financial details
+# (amount/merchant/cumulative spend, supplier names) are content; ids, counts,
+# statuses, hashes, latencies stay metadata.
+PROTOCOL_CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
+    "agui.message": frozenset({"text"}),
+    "agui.tool_call": frozenset({"arguments", "result"}),
+    "agui.state": frozenset({"state", "operations"}),
+    "protocol.stream.event": frozenset({"payload"}),
+    "mcp.tool.call": frozenset({"arguments", "result"}),
+    "mcp.elicitation": frozenset({"title"}),
+    "a2a.task.created": frozenset({"request"}),
+    "payment.intent_mandate": frozenset({"amount", "merchant"}),
+    "payment.mandate_signed": frozenset({"amount", "cumulative_spend"}),
+    "payment.receipt_issued": frozenset({"amount", "merchant"}),
+    "commerce.supplier_discovered": frozenset({"name"}),
+    "commerce.catalog.browsed": frozenset({"query"}),
+    "commerce.checkout_completed": frozenset({"amount"}),
+    "commerce.refund_issued": frozenset({"amount", "reason"}),
+}
+
 
 @dataclass(frozen=True)
 class CaptureConfig:
@@ -105,11 +129,15 @@ class CaptureConfig:
 
     def redact_payload(self, event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Return a copy of payload with fields removed per config."""
-        if not self.capture_content and event_type == "model.invoke":
-            payload = {k: v for k, v in payload.items() if k not in ("messages", "output_message")}
-            parameters = payload.get("parameters")
-            if isinstance(parameters, dict):
-                payload["parameters"] = {k: v for k, v in parameters.items() if k not in _CONTENT_PARAM_KEYS}
+        if not self.capture_content:
+            if event_type == "model.invoke":
+                payload = {k: v for k, v in payload.items() if k not in ("messages", "output_message")}
+                parameters = payload.get("parameters")
+                if isinstance(parameters, dict):
+                    payload["parameters"] = {k: v for k, v in parameters.items() if k not in _CONTENT_PARAM_KEYS}
+            protocol_keys = PROTOCOL_CONTENT_KEYS.get(event_type)
+            if protocol_keys:
+                payload = {k: v for k, v in payload.items() if k not in protocol_keys}
         return payload
 
     def is_layer_enabled(self, event_type: str) -> bool:

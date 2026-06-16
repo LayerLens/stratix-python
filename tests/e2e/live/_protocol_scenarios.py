@@ -11,16 +11,18 @@ from __future__ import annotations
 
 import asyncio
 
+from ._scenarios import SENTINEL
+
 
 def run_agui(flow: str) -> None:  # noqa: ARG001
     from layerlens.instrument.adapters.protocols.agui import AGUIProtocolAdapter
 
     stream = [
         {"type": "TEXT_MESSAGE_CONTENT", "delta": "Hello "},
-        {"type": "TEXT_MESSAGE_CONTENT", "delta": "world"},
+        {"type": "TEXT_MESSAGE_CONTENT", "delta": f"world {SENTINEL}"},
         {"type": "TEXT_MESSAGE_END"},
         {"type": "TOOL_CALL_START", "toolCallId": "tc1", "toolCallName": "lookup"},
-        {"type": "TOOL_CALL_ARGS", "toolCallId": "tc1", "delta": '{"q": "x"}'},
+        {"type": "TOOL_CALL_ARGS", "toolCallId": "tc1", "delta": '{"q": "x ' + SENTINEL + '"}'},
         {"type": "TOOL_CALL_END", "toolCallId": "tc1"},
         {"type": "STATE_SNAPSHOT", "state": {"turn": 1}},
     ]
@@ -54,12 +56,13 @@ def run_ap2(flow: str) -> None:  # noqa: ARG001
         def issue_receipt(self, *, receipt_id, mandate_id, amount, merchant):
             return {"receipt_id": receipt_id}
 
+    merchant = f"Bookstore {SENTINEL}"
     client = _FakeAP2Client()
-    instrument_ap2(client, guardrails=AP2Guardrails(max_transaction=100.0, merchant_whitelist=["Bookstore"]))
+    instrument_ap2(client, guardrails=AP2Guardrails(max_transaction=100.0, merchant_whitelist=[merchant]))
     try:
-        client.create_intent_mandate(mandate_id="m-1", amount=50, merchant="Bookstore")
-        client.sign_payment_mandate(mandate_id="m-1", amount=50, merchant="Bookstore")
-        client.issue_receipt(receipt_id="r-1", mandate_id="m-1", amount=50, merchant="Bookstore")
+        client.create_intent_mandate(mandate_id="m-1", amount=50, merchant=merchant)
+        client.sign_payment_mandate(mandate_id="m-1", amount=50, merchant=merchant)
+        client.issue_receipt(receipt_id="r-1", mandate_id="m-1", amount=50, merchant=merchant)
     finally:
         uninstrument_ap2()
 
@@ -84,7 +87,7 @@ def run_ucp(flow: str) -> None:  # noqa: ARG001
     instrument_ucp(client)
     try:
         client.discover_suppliers(query="books")
-        client.browse_catalog(supplier_id="acme", query="novel")
+        client.browse_catalog(supplier_id="acme", query=f"novel {SENTINEL}")
         client.start_checkout(supplier_id="acme", session_id="s-1")
         client.complete_checkout("s-1", supplier_id="acme", amount=29.99)
     finally:
@@ -107,7 +110,7 @@ def run_mcp(flow: str) -> None:  # noqa: ARG001
 
         async def _go() -> None:
             await client.list_tools()
-            await client.call_tool("echo", {"msg": "hello"})
+            await client.call_tool("echo", {"msg": f"hello {SENTINEL}"})
 
         asyncio.run(_go())
     finally:
@@ -138,6 +141,6 @@ def run_a2a(flow: str) -> None:  # noqa: ARG001
     instrument_a2a(client)
     try:
         client.get_agent_card("agent-1")
-        client.send_task(agent_id="agent-1", skill="summarize", payload={"text": "hi"})
+        client.send_task(agent_id="agent-1", skill="summarize", payload={"text": f"hi {SENTINEL}"})
     finally:
         uninstrument_a2a()

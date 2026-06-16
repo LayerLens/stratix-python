@@ -26,8 +26,8 @@ class UCPProtocolAdapter(BaseProtocolAdapter):
     PROTOCOL = "ucp"
     PROTOCOL_VERSION = "0.1.0"
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *, capture_config: Any = None) -> None:
+        super().__init__(capture_config=capture_config)
         self._sessions: Dict[str, float] = {}
         self._known_suppliers: Dict[str, Dict[str, Any]] = {}
 

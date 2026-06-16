@@ -26,8 +26,8 @@ class AGUIProtocolAdapter(BaseProtocolAdapter):
     PROTOCOL = "agui"
     PROTOCOL_VERSION = "0.1.0"
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *, capture_config: Any = None) -> None:
+        super().__init__(capture_config=capture_config)
         self._state_handler = StateDeltaHandler()
 
     def connect(self, target: Any = None, **kwargs: Any) -> Any:  # noqa: ARG002

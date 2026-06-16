@@ -42,8 +42,8 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
     PROTOCOL = "mcp"
     PROTOCOL_VERSION = "1.0.0"
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *, capture_config: Any = None) -> None:
+        super().__init__(capture_config=capture_config)
         self._async_tasks = AsyncTaskTracker()
         self._elicitations = ElicitationTracker()
 

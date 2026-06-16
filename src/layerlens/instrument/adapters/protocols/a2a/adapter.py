@@ -37,8 +37,8 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
     PROTOCOL = "a2a"
     PROTOCOL_VERSION = "0.3.0"
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *, capture_config: Any = None) -> None:
+        super().__init__(capture_config=capture_config)
         self._tasks: Dict[str, float] = {}
         self._agent_cards: Dict[str, Any] = {}
         self._task_fsms: Dict[str, TaskStateMachine] = {}
