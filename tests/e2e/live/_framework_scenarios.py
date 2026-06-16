@@ -11,6 +11,11 @@ Redaction note: framework adapters gate message/IO content on **their own**
 So the redaction flow must construct the adapter with ``capture_content=False``
 too — exactly as ``layerlens.instrument.auto(client, capture_config=...)`` does.
 ``_cfg(flow)`` does this; every prompt embeds ``SENTINEL`` for the redaction check.
+
+Error note: frameworks whose registry entry sets ``supports_error=True`` also
+take ``flow == "error"``: the runner swaps in an invalid model id (the same
+``_BAD_MODEL`` the provider suite uses), swallows the expected provider
+exception, and the harness asserts an ``agent.error`` event landed in the trace.
 """
 
 from __future__ import annotations
@@ -19,10 +24,15 @@ import os
 
 from layerlens.instrument._capture_config import CaptureConfig
 
-from ._scenarios import SENTINEL
+from ._scenarios import SENTINEL, _BAD_MODEL
 
 _OPENAI_MODEL = os.environ.get("LL_OPENAI_MODEL", "gpt-4o-mini")
 _PROMPT = f"Name two oceans in a few words. {SENTINEL}"
+
+
+def _model_for(flow: str) -> str:
+    """The OpenAI model for the flow — the error flow injects an invalid id."""
+    return _BAD_MODEL if flow == "error" else _OPENAI_MODEL
 
 
 def _cfg(flow: str) -> CaptureConfig:
@@ -42,8 +52,14 @@ def run_langchain(flow: str) -> None:
     # client=None -> emit to the harness's ambient collector. The sample's no-arg
     # call is a bug — __init__ requires the positional client (see report C2).
     handler = LangChainCallbackHandler(None, capture_config=_cfg(flow))
-    llm = ChatOpenAI(model=_OPENAI_MODEL, max_tokens=32, callbacks=[handler])
-    llm.invoke([HumanMessage(content=_PROMPT)])
+    llm = ChatOpenAI(model=_model_for(flow), max_tokens=32, callbacks=[handler])
+    try:
+        llm.invoke([HumanMessage(content=_PROMPT)])
+    except Exception:
+        # error flow: the provider rejects _BAD_MODEL inside the LLM callback
+        # path -> on_llm_error emits agent.error; the exception is expected.
+        if flow != "error":
+            raise
 
 
 # --------------------------------------------------------------------------- #
@@ -57,7 +73,7 @@ def run_langgraph(flow: str) -> None:
     from layerlens.instrument.adapters.frameworks.langgraph import LangGraphCallbackHandler
 
     handler = LangGraphCallbackHandler(None, capture_config=_cfg(flow))
-    llm = ChatOpenAI(model=_OPENAI_MODEL, max_tokens=32)
+    llm = ChatOpenAI(model=_model_for(flow), max_tokens=32)
 
     def respond(state: dict) -> dict:
         state["reply"] = llm.invoke([HumanMessage(content=state["text"])], config={"callbacks": [handler]}).content
@@ -69,7 +85,13 @@ def run_langgraph(flow: str) -> None:
     builder.add_edge("respond", END)
     graph = builder.compile()
 
-    graph.invoke({"text": _PROMPT}, config={"callbacks": [handler]})
+    try:
+        graph.invoke({"text": _PROMPT}, config={"callbacks": [handler]})
+    except Exception:
+        # error flow: the node's LLM call fails on _BAD_MODEL -> on_llm_error
+        # (and the graph's on_chain_error) emit agent.error; expected.
+        if flow != "error":
+            raise
 
 
 # --------------------------------------------------------------------------- #
@@ -80,7 +102,7 @@ def run_pydantic_ai(flow: str) -> None:
 
     from layerlens.instrument.adapters.frameworks.pydantic_ai import PydanticAIAdapter
 
-    agent = Agent(f"openai:{_OPENAI_MODEL}", system_prompt="Reply in one short sentence.")
+    agent = Agent(f"openai:{_model_for(flow)}", system_prompt="Reply in one short sentence.")
 
     @agent.tool_plain
     def text_length(text: str) -> int:
@@ -90,6 +112,11 @@ def run_pydantic_ai(flow: str) -> None:
     adapter.connect(agent)
     try:
         agent.run_sync(_PROMPT)
+    except Exception:
+        # error flow: the instrumented model raises on _BAD_MODEL ->
+        # _emit_model_error / _finish_run_error emit agent.error; expected.
+        if flow != "error":
+            raise
     finally:
         adapter.disconnect()
 
@@ -201,7 +228,7 @@ def run_semantic_kernel(flow: str) -> None:
     from layerlens.instrument.adapters.frameworks.semantic_kernel import SemanticKernelAdapter
 
     kernel = Kernel()
-    kernel.add_service(OpenAIChatCompletion(service_id="chat", ai_model_id=_OPENAI_MODEL))
+    kernel.add_service(OpenAIChatCompletion(service_id="chat", ai_model_id=_model_for(flow)))
     fn = kernel.add_function(
         plugin_name="demo", function_name="greet", prompt=f"Name two oceans in a few words. {SENTINEL}"
     )
@@ -209,6 +236,11 @@ def run_semantic_kernel(flow: str) -> None:
     adapter.connect(kernel)
     try:
         asyncio.run(kernel.invoke(fn))
+    except Exception:
+        # error flow: the chat service fails on _BAD_MODEL inside the adapter's
+        # invocation filter, which emits agent.error and re-raises; expected.
+        if flow != "error":
+            raise
     finally:
         adapter.disconnect()
 

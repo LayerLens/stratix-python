@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 # Re-export from root conftest so framework tests can do `from .conftest import ...`
 from ...conftest import find_event, find_events  # noqa: F401
+from ..._event_schema import validate_events
 
 
 def capture_framework_trace(mock_client: Mock) -> Dict[str, Any]:
@@ -24,6 +25,9 @@ def capture_framework_trace(mock_client: Mock) -> Dict[str, Any]:
         uploaded["events"].extend(payload.get("events", []))
         uploaded["capture_config"] = payload.get("capture_config", {})
         uploaded["attestation"] = payload.get("attestation", {})
+        # Schema lock (LAY-3583): every uploaded event must match the
+        # canonical payload vocabulary.
+        validate_events(payload.get("events", []))
 
     mock_client.traces.upload.side_effect = _capture
     return uploaded

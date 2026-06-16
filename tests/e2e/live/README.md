@@ -22,7 +22,7 @@ flowchart TD
         TP["test_providers_live.py<br/>parametrized per provider x variant"]
         REG["_registry.py<br/>key env · runner · contract"]
         HAR["_harness.py<br/>collect → assert → upload → poll → teardown"]
-        SCN["_scenarios.py<br/>default / streaming / error / redaction"]
+        SCN["_scenarios.py<br/>default / streaming / error / redaction<br/>(+ async / async-streaming: openai, anthropic)"]
         REP["_report.py<br/>markdown + terminal report"]
     end
 
@@ -290,3 +290,64 @@ set -a; source tests/e2e/live/.env; set +a   # LAYERLENS_LIVE=1, base .../api/v1
 - **`linkage: integration_id … != expected`** — the active `sdk_adapter` integration on your key
   isn't the one in `LAYERLENS_LIVE_INTEGRATION_ID` (first-match-wins), or the resolver's 60s cache
   hasn't refreshed. Ensure exactly one active matching integration.
+
+## Nightly live run (recipe)
+
+The manual recipe for a periodic (nightly-cadence) full pass over the live suite. **Runner/CI
+wiring is deliberately not part of this section** — automation is G-work, parked in the CI /
+release-gates backlog (`docs/sdk-ci-release-gates-backlog.md`); until that lands, a human runs
+this sequence and reads the report.
+
+### Prerequisites
+
+- **Local dockerized platform** up and healthy, with the API at
+  `http://localhost:8080/api/v1` (that full prefix goes in `LAYERLENS_STRATIX_BASE_URL` — §7).
+- **Gitignored env file** `tests/e2e/live/.env` holding `LAYERLENS_LIVE=1`, the base URL, the
+  app API key, optional `LAYERLENS_LIVE_INTEGRATION_ID`, and the provider/framework keys
+  (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, Langfuse keys, `OLLAMA_HOST`, …).
+  Never commit it and never paste its contents into reports or tickets.
+- **Per-framework venvs** for the adapters whose deps conflict or need Python ≥3.10
+  (crewai, semantic_kernel, mcp/a2a, autogen, …) — see the §7 install table. On Apple Silicon
+  launch them with `arch -arm64 <venv>/bin/python` when the base interpreter is x86_64.
+- A running `ollama serve` if ollama is in the pass (free local tokens — keep it in).
+
+### Command sequence
+
+```bash
+set -a; source tests/e2e/live/.env; set +a
+
+# 1. Base venv: providers (incl. async variants) + protocols + py3.9 frameworks
+./scripts/test tests/e2e/live
+
+# 2. Each isolated framework venv, one at a time (3.10+ / conflicting deps)
+arch -arm64 .venv-<framework>/bin/python -m pytest tests/e2e/live -k <framework>
+
+# 3. Read the report: tests/e2e/live/.report/live-run-<UTC>.md (+ terminal summary)
+```
+
+For per-adapter linkage attribution (one connector per adapter), follow the §7
+connector-orchestration steps instead of step 1/2 verbatim.
+
+### Spend cap
+
+A full pass is budgeted at **≈ $2 total**. Keep it there by sticking to the default cheap
+models (`gpt-4o-mini`, `claude-haiku-*`, `gemini-*-flash`) and the free local ollama models;
+the per-test ceiling `LAYERLENS_LIVE_COST_CAP_USD` (default `0.25`) fails any scenario that
+overspends, so a runaway prompt is caught at the test level, not on the invoice.
+
+### Timing contract
+
+All wait/poll budgets (trace read-back, self-flush drain, linkage-status sweep) live in
+**`_timing.py`** with the rationale for each value. The platform is eventually consistent —
+sweeper ~30s, deferred flushes, persistence lag — so harnesses poll with those bounded
+budgets. Never add ad-hoc `sleep`s or inline timeouts to a test; tune the constant in
+`_timing.py` instead so every harness moves together.
+
+### Flake quarantine
+
+A red row is **assumed real until proven flaky** (this suite exists to catch real platform +
+adapter breakage). For a transient platform-side wobble (ingestion lag, missed sweeper cycle),
+re-run just that case with `-k <adapter>`. A case that flakes repeatedly gets quarantined —
+deselect it (`-k "not <adapter>"`) and record it in the run report — per the parked **G4
+flake-quarantine policy** in `docs/sdk-ci-release-gates-backlog.md`; do not let a known flake
+mask new failures, and do not silently drop it from the pass either.

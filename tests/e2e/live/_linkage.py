@@ -29,8 +29,10 @@ from typing import Any, Dict, Optional
 
 import httpx
 
+from ._timing import LINKAGE_STATUS_POLL_INTERVAL_S, LINKAGE_STATUS_TIMEOUT_DEFAULT_S
+
 INTEGRATION_ID_ENV = "LAYERLENS_LIVE_INTEGRATION_ID"
-_TIMEOUT = float(os.environ.get("LAYERLENS_LIVE_LINKAGE_TIMEOUT", "90"))
+_TIMEOUT = float(os.environ.get("LAYERLENS_LIVE_LINKAGE_TIMEOUT", str(LINKAGE_STATUS_TIMEOUT_DEFAULT_S)))
 
 
 def expected_integration_id() -> Optional[str]:
@@ -63,9 +65,12 @@ def poll_status_healthy(
     integration_id: str,
     *,
     timeout: float = _TIMEOUT,
-    interval: float = 5.0,
+    interval: float = LINKAGE_STATUS_POLL_INTERVAL_S,
 ) -> Optional[str]:
-    """Poll the integration until ``status == 'Healthy'`` or timeout; return last status seen."""
+    """Poll the integration until ``status == 'Healthy'`` or timeout; return last status seen.
+
+    The transition is driven by the platform's ~30s sweeper — budgets in ``_timing``.
+    """
     deadline = time.time() + timeout
     last: Optional[str] = None
     while time.time() < deadline:

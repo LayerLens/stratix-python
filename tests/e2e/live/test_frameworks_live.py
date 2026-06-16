@@ -19,10 +19,20 @@ import pytest
 from ._framework_harness import run_framework_case, run_self_flushing_case
 from ._framework_registry import FRAMEWORKS, missing_credentials
 
-_VARIANTS = ("default", "redaction")
 _AMBIENT = [c for c in FRAMEWORKS if not c.self_flushing]
 _SELF_FLUSH = [c for c in FRAMEWORKS if c.self_flushing]
-_CASES = [(c, v) for c in _AMBIENT for v in (_VARIANTS if c.supports_redaction else ("default",))]
+
+
+def _variants(case) -> tuple:
+    out = ["default"]
+    if case.supports_redaction:
+        out.append("redaction")
+    if case.supports_error:
+        out.append("error")
+    return tuple(out)
+
+
+_CASES = [(c, v) for c in _AMBIENT for v in _variants(c)]
 _IDS = [f"{c.id}-{v}" for c, v in _CASES]
 
 

@@ -12,6 +12,7 @@ from typing import Any, Dict
 
 from layerlens.instrument._capture_config import CaptureConfig
 
+from ._timing import SELF_FLUSH_DEADLINE_S, SELF_FLUSH_DRAIN_TIMEOUT_S, SELF_FLUSH_POLL_INTERVAL_S
 from ._harness import (
     _collect,
     _poll_get,
@@ -35,11 +36,18 @@ def run_framework_case(client: Any, case: FrameworkCase, variant: str) -> Dict[s
     tag = f"[{case.id}/{variant}]"
 
     _assert_attestation(payload, events)
-    assert len(events) >= case.min_events, (
-        f"{tag} {len(events)} events < min {case.min_events}; types={sorted(by_type)}"
-    )
-    for t in case.expected_types:
-        assert t in by_type, f"{tag} missing expected event type {t!r}; got {sorted(by_type)}"
+    if variant == "error":
+        # The scenario provoked a model/tool failure (and swallowed the expected
+        # exception); the adapter's whole contract here is that the failure
+        # surfaces as agent.error. The default-flow contract (min_events /
+        # expected_types) does not apply to the short error path.
+        assert by_type.get("agent.error"), f"{tag} expected an agent.error event, got types {sorted(by_type)}"
+    else:
+        assert len(events) >= case.min_events, (
+            f"{tag} {len(events)} events < min {case.min_events}; types={sorted(by_type)}"
+        )
+        for t in case.expected_types:
+            assert t in by_type, f"{tag} missing expected event type {t!r}; got {sorted(by_type)}"
     if variant == "redaction":
         blob = json.dumps(events, default=str)
         assert SENTINEL not in blob, f"{tag} redaction failed: sentinel leaked into trace payload"
@@ -101,10 +109,11 @@ def run_self_flushing_case(client: Any, case: FrameworkCase, variant: str = "def
         # poll-drain until the wrapped upload has captured a trace id (or the
         # deadline passes). shutdown_uploads is safe to call repeatedly:
         # channels re-create on demand for anything enqueued later.
-        deadline = _time.time() + 30.0
+        # Budgets: see _timing (the live suite's timing contract).
+        deadline = _time.time() + SELF_FLUSH_DEADLINE_S
         while not captured and _time.time() < deadline:
-            _time.sleep(0.5)
-            _upload.shutdown_uploads(timeout=20)
+            _time.sleep(SELF_FLUSH_POLL_INTERVAL_S)
+            _upload.shutdown_uploads(timeout=SELF_FLUSH_DRAIN_TIMEOUT_S)
     finally:
         traces_res.upload = orig_upload  # type: ignore[method-assign]
 

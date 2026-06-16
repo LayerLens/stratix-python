@@ -11,6 +11,14 @@ Flows:
   ``_streaming`` path runs and ``ttft_ms`` is emitted.
 - ``"error"``    — a call against an invalid model id so the adapter emits
   ``agent.error``. The provider exception is swallowed (it is expected).
+- ``"async"`` / ``"async-streaming"`` — openai + anthropic only: the canonical
+  tool loop / streamed call driven through the **async** client
+  (``AsyncOpenAI`` / ``AsyncAnthropic``) via ``asyncio.run``. The harness sets
+  the collector ContextVar before calling the runner and ``asyncio.run``
+  copies the current context, so events emitted inside the coroutine land in
+  the same collector. These flows verify the adapters' async-client routing
+  (T1 / finding N5: ``create`` is a coroutine method on async clients — the
+  sync wrapper must not swallow it).
 
 Every prompt embeds ``SENTINEL`` so the redaction check (run under
 ``capture_content=False``) can assert it never reaches the stored trace.
@@ -23,6 +31,7 @@ from __future__ import annotations
 
 import os
 import json
+import asyncio
 from typing import Any
 
 from layerlens.instrument.adapters.providers.ollama import instrument_ollama, uninstrument_ollama
@@ -47,6 +56,32 @@ _BAD_MODEL = "layerlens-live-nonexistent-model-xyz"
 
 _WEATHER_PROMPT = f"What is the weather in Paris? Use the get_weather tool. {SENTINEL}"
 
+#: Flows driven through the async client (AsyncOpenAI / AsyncAnthropic).
+_ASYNC_FLOWS = ("async", "async-streaming")
+
+# Shared get_weather tool schemas (sync + async flows drive the same loop).
+_WEATHER_TOOL_ANTHROPIC = {
+    "name": "get_weather",
+    "description": "Get the current weather for a city.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"],
+    },
+}
+_WEATHER_TOOL_OPENAI = {
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a city.",
+        "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    },
+}
+
 
 # --------------------------------------------------------------------------- #
 # Anthropic
@@ -55,6 +90,16 @@ def run_anthropic(flow: str) -> None:
     import anthropic
 
     model = os.environ.get("LL_ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+
+    if flow in _ASYNC_FLOWS:
+        client = anthropic.AsyncAnthropic()
+        instrument_anthropic(client)
+        try:
+            asyncio.run(_run_anthropic_async(flow, client, model))
+        finally:
+            uninstrument_anthropic()
+        return
+
     client = anthropic.Anthropic()
     instrument_anthropic(client)
     try:
@@ -82,33 +127,52 @@ def run_anthropic(flow: str) -> None:
                     pass
             return
 
-        tools = [
-            {
-                "name": "get_weather",
-                "description": "Get the current weather for a city.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"city": {"type": "string"}},
-                    "required": ["city"],
-                },
-            }
-        ]
         messages: list[dict[str, Any]] = [{"role": "user", "content": _WEATHER_PROMPT}]
-        first = client.messages.create(model=model, max_tokens=256, messages=messages, tools=tools)
+        first = client.messages.create(model=model, max_tokens=256, messages=messages, tools=[_WEATHER_TOOL_ANTHROPIC])
         messages.append({"role": "assistant", "content": first.content})
-        tool_use = next((b for b in first.content if getattr(b, "type", None) == "tool_use"), None)
-        if tool_use is not None:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": tool_use.id, "content": "Sunny, 21C."}],
-                }
-            )
-        else:
-            messages.append({"role": "user", "content": "Thanks — summarize in one sentence."})
+        messages.append(_anthropic_tool_followup(first))
         client.messages.create(model=model, max_tokens=128, messages=messages)
     finally:
         uninstrument_anthropic()
+
+
+async def _run_anthropic_async(flow: str, client: Any, model: str) -> None:
+    """Async twin of the anthropic flows, against an instrumented ``AsyncAnthropic``."""
+    try:
+        if flow == "async-streaming":
+            # AsyncAnthropic's messages.stream is an async context manager; the
+            # adapter's _TracedMessageStream proxy supports __aenter__/__aiter__,
+            # and iterating it taps each event (ttft_ms lands on model.invoke).
+            async with client.messages.stream(
+                model=model,
+                max_tokens=64,
+                messages=[{"role": "user", "content": f"Name two oceans. {SENTINEL}"}],
+            ) as stream:
+                async for _ in stream:
+                    pass
+            return
+
+        # flow == "async": the canonical tool-use loop, awaited end to end.
+        messages: list[dict[str, Any]] = [{"role": "user", "content": _WEATHER_PROMPT}]
+        first = await client.messages.create(
+            model=model, max_tokens=256, messages=messages, tools=[_WEATHER_TOOL_ANTHROPIC]
+        )
+        messages.append({"role": "assistant", "content": first.content})
+        messages.append(_anthropic_tool_followup(first))
+        await client.messages.create(model=model, max_tokens=128, messages=messages)
+    finally:
+        await client.close()
+
+
+def _anthropic_tool_followup(first: Any) -> dict[str, Any]:
+    """The user turn answering ``first``'s tool_use (or a plain follow-up)."""
+    tool_use = next((b for b in first.content if getattr(b, "type", None) == "tool_use"), None)
+    if tool_use is not None:
+        return {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": tool_use.id, "content": "Sunny, 21C."}],
+        }
+    return {"role": "user", "content": "Thanks — summarize in one sentence."}
 
 
 # --------------------------------------------------------------------------- #
@@ -137,39 +201,69 @@ def _run_openai_like(flow: str, client: Any, model: str) -> None:
             pass
         return
 
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "get_weather",
-                "description": "Get the current weather for a city.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"city": {"type": "string"}},
-                    "required": ["city"],
-                },
-            },
-        }
-    ]
     messages: list[dict[str, Any]] = [{"role": "user", "content": _WEATHER_PROMPT}]
-    first = client.chat.completions.create(model=model, messages=messages, max_tokens=256, tools=tools)
+    first = client.chat.completions.create(model=model, messages=messages, max_tokens=256, tools=[_WEATHER_TOOL_OPENAI])
+    messages.extend(_openai_tool_followup(first))
+    client.chat.completions.create(model=model, messages=messages, max_tokens=128)
+
+
+async def _run_openai_like_async(flow: str, client: Any, model: str) -> None:
+    """Async twin of ``_run_openai_like``, against an instrumented ``AsyncOpenAI``."""
+    try:
+        if flow == "async-streaming":
+            # The wrapped async create returns the adapter's async stream
+            # iterator; consuming it emits model.invoke with ttft_ms.
+            stream = await client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": f"Name two oceans. {SENTINEL}"}],
+                max_tokens=32,
+                stream=True,
+            )
+            async for _ in stream:
+                pass
+            return
+
+        # flow == "async": the canonical tool-use loop, awaited end to end.
+        messages: list[dict[str, Any]] = [{"role": "user", "content": _WEATHER_PROMPT}]
+        first = await client.chat.completions.create(
+            model=model, messages=messages, max_tokens=256, tools=[_WEATHER_TOOL_OPENAI]
+        )
+        messages.extend(_openai_tool_followup(first))
+        await client.chat.completions.create(model=model, messages=messages, max_tokens=128)
+    finally:
+        await client.close()
+
+
+def _openai_tool_followup(first: Any) -> list[dict[str, Any]]:
+    """The assistant turn from ``first`` plus the tool results (or a plain follow-up)."""
     choice = first.choices[0].message
-    messages.append(choice.model_dump(exclude_none=True))
+    out: list[dict[str, Any]] = [choice.model_dump(exclude_none=True)]
     if choice.tool_calls:
         for tc in choice.tool_calls:
-            messages.append({"role": "tool", "tool_call_id": tc.id, "content": "Sunny, 21C."})
+            out.append({"role": "tool", "tool_call_id": tc.id, "content": "Sunny, 21C."})
     else:
-        messages.append({"role": "user", "content": "Thanks — summarize in one sentence."})
-    client.chat.completions.create(model=model, messages=messages, max_tokens=128)
+        out.append({"role": "user", "content": "Thanks — summarize in one sentence."})
+    return out
 
 
 def run_openai(flow: str) -> None:
     import openai
 
+    model = os.environ.get("LL_OPENAI_MODEL", "gpt-4o-mini")
+
+    if flow in _ASYNC_FLOWS:
+        client = openai.AsyncOpenAI()
+        instrument_openai(client)
+        try:
+            asyncio.run(_run_openai_like_async(flow, client, model))
+        finally:
+            uninstrument_openai()
+        return
+
     client = openai.OpenAI()
     instrument_openai(client)
     try:
-        _run_openai_like(flow, client, os.environ.get("LL_OPENAI_MODEL", "gpt-4o-mini"))
+        _run_openai_like(flow, client, model)
     finally:
         uninstrument_openai()
 

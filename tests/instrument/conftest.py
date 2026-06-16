@@ -6,6 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from ._event_schema import validate_events
+
 
 @pytest.fixture
 def mock_client():
@@ -36,6 +38,9 @@ def capture_trace(mock_client):
         uploaded["events"] = payload.get("events", [])
         uploaded["capture_config"] = payload.get("capture_config", {})
         uploaded["attestation"] = payload.get("attestation", {})
+        # Schema lock (LAY-3583): every event a unit suite uploads must match
+        # the canonical payload vocabulary.
+        validate_events(uploaded["events"])
 
     mock_client.traces.upload.side_effect = _capture
     return uploaded

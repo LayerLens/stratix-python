@@ -24,6 +24,11 @@ class FrameworkCase:
     min_events: int = 1
     expected_types: Tuple[str, ...] = ()  # every type here must appear in the trace
     supports_redaction: bool = True  # also run a capture_content=False variant
+    # Also run an "error" variant: the scenario injects a failing model id, swallows
+    # the expected exception, and the harness asserts an agent.error event landed.
+    # Only set where the adapter emits agent.error AND the scenario helper can
+    # inject the bad model in one line (langchain-family + pydantic_ai + SK filter).
+    supports_error: bool = False
     extra_imports: Tuple[str, ...] = ()  # additional packages the workload needs
     self_flushing: bool = False  # adapter manages+uploads its own trace (e.g. openai_agents)
     install_hint: str = ""
@@ -38,6 +43,7 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         runner=fs.run_langchain,
         required_env=("OPENAI_API_KEY",),
         expected_types=("model.invoke",),
+        supports_error=True,  # on_llm_error -> agent.error
         extra_imports=("langchain_core",),
         install_hint="layerlens[langchain] langchain-openai",
     ),
@@ -47,6 +53,7 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         runner=fs.run_langgraph,
         required_env=("OPENAI_API_KEY",),
         expected_types=("model.invoke",),
+        supports_error=True,  # inherits the langchain handler's error callbacks
         extra_imports=("langchain_openai", "langchain_core"),
         install_hint="layerlens[langgraph] langchain-openai",
     ),
@@ -56,6 +63,7 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         runner=fs.run_pydantic_ai,
         required_env=("OPENAI_API_KEY",),
         expected_types=("model.invoke",),
+        supports_error=True,  # _emit_model_error + _finish_run_error -> agent.error
         install_hint="layerlens[pydantic-ai]",
     ),
     FrameworkCase(
@@ -82,6 +90,7 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         import_name="semantic_kernel",
         runner=fs.run_semantic_kernel,
         required_env=("OPENAI_API_KEY",),
+        supports_error=True,  # invocation-filter except path -> agent.error
         install_hint="layerlens[semantic-kernel] (py>=3.10)",
     ),
     FrameworkCase(

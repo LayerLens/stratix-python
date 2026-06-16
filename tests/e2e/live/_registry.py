@@ -49,6 +49,10 @@ class ProviderCase:
 
 _TOOL_VARIANTS = ("default", "streaming", "error", "redaction")
 _CHAT_VARIANTS = ("default", "error", "redaction")
+# openai + anthropic additionally drive the canonical tool loop / streamed call
+# through their async clients (AsyncOpenAI / AsyncAnthropic) — T1 follow-through
+# for the async-routing fix (N5). Same contracts as default / streaming.
+_ASYNC_TOOL_VARIANTS = _TOOL_VARIANTS + ("async", "async-streaming")
 
 
 PROVIDERS: Tuple[ProviderCase, ...] = (
@@ -57,7 +61,7 @@ PROVIDERS: Tuple[ProviderCase, ...] = (
         import_name="anthropic",
         runner=_scenarios.run_anthropic,
         required_env=("ANTHROPIC_API_KEY",),
-        variants=_TOOL_VARIANTS,
+        variants=_ASYNC_TOOL_VARIANTS,
         contract=Contract(
             requires_tool_call=True,
             requires_cost_record=True,
@@ -72,7 +76,7 @@ PROVIDERS: Tuple[ProviderCase, ...] = (
         import_name="openai",
         runner=_scenarios.run_openai,
         required_env=("OPENAI_API_KEY",),
-        variants=_TOOL_VARIANTS,
+        variants=_ASYNC_TOOL_VARIANTS,
         contract=Contract(
             requires_tool_call=True,
             requires_cost_record=True,

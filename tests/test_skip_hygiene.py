@@ -30,6 +30,7 @@ KNOWN_SKIP_TARGETS = {
     "boto3",
     "fastapi",
     "litellm",
+    "vertexai.generative_models",
     # framework adapters (installed per-venv; absent on the base env by design)
     "pydantic_ai",
     "langchain",

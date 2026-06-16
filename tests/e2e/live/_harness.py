@@ -26,6 +26,7 @@ from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.pricing import calculate_cost
 from layerlens.instrument.adapters.providers.token_usage import NormalizedTokenUsage
 
+from ._timing import TRACE_READBACK_DELAY_S, TRACE_READBACK_ATTEMPTS
 from ._registry import ProviderCase, resolve_pricing_table
 from ._scenarios import SENTINEL
 
@@ -105,14 +106,15 @@ def _assert_contract(
         assert by_type.get("agent.error"), f"{tag} expected an agent.error event, got types {sorted(by_type)}"
         return _sum_cost(cost_records)
 
-    if variant == "streaming":
+    if variant in ("streaming", "async-streaming"):
         assert model_invokes, f"{tag} streaming produced no model.invoke event"
         assert any(_payload(e).get("ttft_ms") is not None for e in model_invokes), (
             f"{tag} no model.invoke carried ttft_ms (streaming path did not run)"
         )
         return _sum_cost(cost_records)
 
-    # default / redaction: the full canonical contract
+    # default / redaction / async: the full canonical contract
+    # (async runs the same tool loop as default, through the async client)
     c = case.contract
     n = len(events)
     assert c.min_events <= n <= c.max_events, f"{tag} event count {n} outside [{c.min_events}, {c.max_events}]"
@@ -208,7 +210,12 @@ def _upload_capture(client: Any, payload: Dict[str, Any]) -> str:
     return result.trace_ids[0]
 
 
-def _poll_get(client: Any, trace_id: str, attempts: int = 12, delay: float = 1.0) -> Any:
+def _poll_get(
+    client: Any,
+    trace_id: str,
+    attempts: int = TRACE_READBACK_ATTEMPTS,
+    delay: float = TRACE_READBACK_DELAY_S,
+) -> Any:
     for _ in range(attempts):
         trace = client.traces.get(trace_id)
         if trace is not None:
@@ -223,7 +230,7 @@ def _reassert_roundtrip(trace: Any, local_events: List[Dict[str, Any]], variant:
     echoed = data.get("events") if isinstance(data, dict) else None
     if not isinstance(echoed, list) or not echoed:
         return False
-    if variant in ("default", "redaction"):
+    if variant in ("default", "redaction", "async"):
         assert len(echoed) == len(local_events), f"round-trip event count {len(echoed)} != local {len(local_events)}"
     return True
 
