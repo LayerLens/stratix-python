@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 from ._langchain_memory import TracedMemory, MemoryMutationTracker, wrap_memory
+from ....attestation._hash import canonical_json
 
 __all__ = [
     "LangChainCallbackHandler",
@@ -32,9 +33,11 @@ def _auto_flush(fn):  # type: ignore[type-arg]
 
 try:
     # fmt: off
+    from langchain_core.messages import BaseMessage
     from langchain_core.callbacks import BaseCallbackHandler  # pyright: ignore[reportAssignmentType]
     # fmt: on
 except ImportError:
+    BaseMessage = ()  # type: ignore[assignment] # isinstance(x, ()) is always False
 
     class BaseCallbackHandler:  # type: ignore[no-redef]
         def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -42,6 +45,51 @@ except ImportError:
                 "The 'langchain-core' package is required for LangChain instrumentation. "
                 "Install it with: pip install layerlens[langchain]"
             )
+
+
+# Recursion guard for pathological/cyclic state. Graph state is shallow in
+# practice; this only bounds adversarial inputs.
+_MAX_JSONABLE_DEPTH = 25
+
+
+def _to_jsonable(obj: Any, _depth: int = 0) -> Any:
+    """Convert framework state into a JSON-safe structure for trace payloads.
+
+    LangGraph threads the graph state — typically full of LangChain message
+    objects — through the chain callbacks. Those objects are not JSON
+    serializable, so embedding them raw would make the attestation hash chain
+    raise and silently drop the event (``agent.input`` / ``agent.node.enter`` /
+    ``agent.handoff``). We serialize messages the same way the ``model.invoke``
+    path does (:func:`_serialize_lc_message`) and recurse through dicts/lists.
+
+    Values that already serialize are returned **unchanged**, so attestation
+    hashes are identical for the common, already-clean case.
+    """
+    if _depth > _MAX_JSONABLE_DEPTH:
+        return repr(obj)
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, BaseMessage):
+        data: Dict[str, Any] = {
+            "type": getattr(obj, "type", None),
+            "content": _to_jsonable(getattr(obj, "content", None), _depth + 1),
+        }
+        tool_calls = getattr(obj, "tool_calls", None)
+        if tool_calls:
+            data["tool_calls"] = _to_jsonable(tool_calls, _depth + 1)
+        return data
+    if isinstance(obj, dict):
+        return {str(k): _to_jsonable(v, _depth + 1) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_jsonable(v, _depth + 1) for v in obj]
+    # Leaf object: keep it if the attestation serializer already handles it
+    # (datetime / Enum / dataclass / to_dict), otherwise fall back to a string
+    # so we never drop the event.
+    try:
+        canonical_json(obj)
+        return obj
+    except TypeError:
+        return str(obj)
 
 
 class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
@@ -72,7 +120,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         serialized = serialized or {}
         name = serialized.get("name") or serialized.get("id", ["unknown"])[-1]
         payload = self._payload(name=name)
-        self._set_if_capturing(payload, "input", inputs)
+        self._set_if_capturing(payload, "input", _to_jsonable(inputs))
         self._emit("agent.input", payload, run_id=run_id, parent_run_id=parent_run_id)
 
     @_auto_flush
@@ -85,7 +133,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         **kwargs: Any,
     ) -> None:
         payload = self._payload(status="ok")
-        self._set_if_capturing(payload, "output", outputs)
+        self._set_if_capturing(payload, "output", _to_jsonable(outputs))
         self._emit("agent.output", payload, run_id=run_id, parent_run_id=parent_run_id)
 
     @_auto_flush
@@ -332,7 +380,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     ) -> None:
         name = (serialized or {}).get("name", "tool")
         payload = self._payload(name=name)
-        self._set_if_capturing(payload, "input", input_str)
+        self._set_if_capturing(payload, "input", _to_jsonable(input_str))
         self._emit("tool.call", payload, run_id=run_id, parent_run_id=parent_run_id)
 
     @_auto_flush
@@ -428,7 +476,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         **kwargs: Any,
     ) -> None:
         payload = self._payload(tool=getattr(action, "tool", "unknown"))
-        self._set_if_capturing(payload, "tool_input", getattr(action, "tool_input", None))
+        self._set_if_capturing(payload, "tool_input", _to_jsonable(getattr(action, "tool_input", None)))
         self._set_if_capturing(payload, "log", getattr(action, "log", None) or None)
         self._emit("agent.input", payload, run_id=run_id, parent_run_id=parent_run_id)
 
@@ -442,7 +490,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         **kwargs: Any,
     ) -> None:
         payload = self._payload(status="ok")
-        self._set_if_capturing(payload, "output", getattr(finish, "return_values", None))
+        self._set_if_capturing(payload, "output", _to_jsonable(getattr(finish, "return_values", None)))
         self._set_if_capturing(payload, "log", getattr(finish, "log", None) or None)
         self._emit("agent.output", payload, run_id=run_id, parent_run_id=parent_run_id)
 

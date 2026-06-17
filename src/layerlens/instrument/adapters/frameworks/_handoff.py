@@ -147,9 +147,13 @@ def _emit_handoff(
         if scrubbed:
             try:
                 payload["handoff_context_hash"] = compute_hash(scrubbed)
+                # Only embed the raw context when it actually serializes —
+                # otherwise the whole-payload hash in collector.emit would raise
+                # and drop the handoff event. Callers that pass framework objects
+                # (e.g. LangChain messages) still get the repr-based hash below.
+                payload["context"] = scrubbed
             except TypeError:
                 payload["handoff_context_hash"] = compute_hash({"_repr": repr(scrubbed)})
-            payload["context"] = scrubbed
 
     collector.emit(
         "agent.handoff",

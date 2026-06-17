@@ -32,7 +32,7 @@ from uuid import UUID
 from typing import Any, Dict, List, Optional
 
 from ._handoff import HandoffDetector
-from .langchain import LangChainCallbackHandler
+from .langchain import LangChainCallbackHandler, _to_jsonable
 from ....attestation._hash import compute_hash
 
 log = logging.getLogger(__name__)
@@ -84,6 +84,10 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
         node_name = _extract_node_name(serialized, tags, metadata)
         step = _extract_step(tags, metadata)
 
+        # The graph state often holds LangChain message objects. Serialize once
+        # so node I/O, agent.input, and the handoff context are all JSON-safe.
+        safe_inputs = _to_jsonable(inputs)
+
         if node_name is not None:
             self._pending_nodes[str(run_id)] = {
                 "node": node_name,
@@ -91,7 +95,7 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
                 "entered_at_ns": time.time_ns(),
             }
             enter_payload = self._payload(node=node_name, step=step)
-            self._set_if_capturing(enter_payload, "input", inputs)
+            self._set_if_capturing(enter_payload, "input", safe_inputs)
             self._emit(
                 "agent.node.enter",
                 enter_payload,
@@ -99,7 +103,7 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
                 parent_run_id=parent_run_id,
             )
             if self._handoff_detector is not None:
-                self._handoff_detector.detect(node_name, context=inputs)
+                self._handoff_detector.detect(node_name, context=safe_inputs)
 
         name = node_name or serialized.get("name") or serialized.get("id", ["unknown"])[-1]
         payload = self._payload(name=name)
@@ -107,7 +111,7 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
             payload["node"] = node_name
         if step is not None:
             payload["step"] = step
-        self._set_if_capturing(payload, "input", inputs)
+        self._set_if_capturing(payload, "input", safe_inputs)
         self._emit("agent.input", payload, run_id=run_id, parent_run_id=parent_run_id)
 
     def on_chain_end(
@@ -118,6 +122,9 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
+        # Serialize once so node output, the state hash, and the inherited
+        # LangChain agent.output are all JSON-safe (graph state holds messages).
+        safe_outputs = _to_jsonable(outputs)
         node = self._pending_nodes.pop(str(run_id), None)
         if node is not None:
             exit_payload = self._payload(
@@ -125,7 +132,7 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
                 step=node.get("step"),
                 latency_ms=(time.time_ns() - node["entered_at_ns"]) / 1_000_000,
             )
-            self._set_if_capturing(exit_payload, "output", outputs)
+            self._set_if_capturing(exit_payload, "output", safe_outputs)
             self._emit(
                 "agent.node.exit",
                 exit_payload,
@@ -136,11 +143,11 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
                 self._emit_node_state_change(
                     node_name=node["node"],
                     step=node.get("step"),
-                    outputs=outputs,
+                    outputs=safe_outputs,
                     run_id=run_id,
                     parent_run_id=parent_run_id,
                 )
-        super().on_chain_end(outputs, run_id=run_id, parent_run_id=parent_run_id, **kwargs)
+        super().on_chain_end(safe_outputs, run_id=run_id, parent_run_id=parent_run_id, **kwargs)
 
     def on_chain_error(
         self,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 from unittest.mock import Mock
 
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.callbacks import BaseCallbackHandler
 
 from layerlens.instrument import CaptureConfig
@@ -402,4 +403,80 @@ class TestHandoffDetection:
         assert handoff["payload"]["context"]["task"] == "summarize"
         # Long list collapsed to summary placeholder
         assert handoff["payload"]["context"]["messages"] == "[50 items]"
+        assert handoff["payload"]["handoff_context_hash"].startswith("sha256:")
+
+
+# ---------------------------------------------------------------------------
+# LangGraph-specific: message-object state serialization
+# ---------------------------------------------------------------------------
+
+
+class TestMessageStateSerialization:
+    """Regression for the idiomatic ``add_messages`` graph state.
+
+    The state carries LangChain message objects. Before the chain callbacks
+    serialized them, those objects reached the attestation hash chain, raised
+    ``TypeError``, and the event was silently dropped — losing the root
+    ``agent.input``, every ``agent.node.enter``, and the ``agent.handoff``
+    context. These tests assert the state is serialized so the events survive
+    with their content intact.
+    """
+
+    def test_chain_io_with_message_objects_is_captured(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangGraphCallbackHandler(mock_client)
+
+        chain_id = uuid4()
+        # Pre-fix this raised TypeError (no langchain callback-manager to swallow it).
+        handler.on_chain_start(
+            {"name": "Graph"},
+            {"messages": [HumanMessage(content="weather in Tokyo?")]},
+            run_id=chain_id,
+        )
+        handler.on_chain_end(
+            {"messages": [AIMessage(content="It is rainy.")]},
+            run_id=chain_id,
+        )
+
+        agent_input = find_event(uploaded["events"], "agent.input")
+        assert agent_input["payload"]["input"]["messages"][0] == {
+            "type": "human",
+            "content": "weather in Tokyo?",
+        }
+        agent_output = find_event(uploaded["events"], "agent.output")
+        assert agent_output["payload"]["output"]["messages"][0]["content"] == "It is rainy."
+
+    def test_tool_calls_in_message_are_serialized(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangGraphCallbackHandler(mock_client)
+
+        ai = AIMessage(
+            content="",
+            tool_calls=[{"name": "get_weather_info", "args": {"city": "Tokyo"}, "id": "c1", "type": "tool_call"}],
+        )
+        chain_id = uuid4()
+        handler.on_chain_start({"name": "Graph"}, {"messages": []}, run_id=chain_id)
+        handler.on_chain_end({"messages": [ai]}, run_id=chain_id)
+
+        out_msg = find_event(uploaded["events"], "agent.output")["payload"]["output"]["messages"][0]
+        assert out_msg["tool_calls"][0]["name"] == "get_weather_info"
+
+    def test_handoff_context_with_message_objects_is_captured(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangGraphCallbackHandler(mock_client)
+
+        state = {"messages": [HumanMessage(content="hi")]}
+        root = uuid4()
+        handler.on_chain_start({"name": "Seq"}, state, run_id=root, metadata={"langgraph_node": "agent"})
+        handler.on_chain_start(
+            {"name": "Seq"},
+            state,
+            run_id=uuid4(),
+            parent_run_id=root,
+            metadata={"langgraph_node": "tools"},
+        )
+        handler.on_chain_end({}, run_id=root)
+
+        handoff = find_event(uploaded["events"], "agent.handoff")
+        assert handoff["payload"]["context"]["messages"][0] == {"type": "human", "content": "hi"}
         assert handoff["payload"]["handoff_context_hash"].startswith("sha256:")
