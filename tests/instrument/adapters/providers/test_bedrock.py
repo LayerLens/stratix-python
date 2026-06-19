@@ -110,6 +110,38 @@ def _anthropic_request_body() -> str:
     )
 
 
+def _nova_body_bytes(
+    text: str = "4",
+    input_tokens: int = 10,
+    output_tokens: int = 5,
+    stop_reason: str = "end_turn",
+) -> bytes:
+    """Amazon Nova invoke_model response body (Converse-shaped, NOT Titan)."""
+    return json.dumps(
+        {
+            "output": {"message": {"role": "assistant", "content": [{"text": text}]}},
+            "usage": {
+                "inputTokens": input_tokens,
+                "outputTokens": output_tokens,
+                "totalTokens": input_tokens + output_tokens,
+            },
+            "stopReason": stop_reason,
+        }
+    ).encode("utf-8")
+
+
+def _nova_request_body() -> str:
+    """Amazon Nova invoke_model request body (schemaVersion messages-v1)."""
+    return json.dumps(
+        {
+            "schemaVersion": "messages-v1",
+            "system": [{"text": "You are terse."}],
+            "messages": [{"role": "user", "content": [{"text": "Say hello"}]}],
+            "inferenceConfig": {"maxTokens": 256},
+        }
+    )
+
+
 def _connect(client: Any) -> tuple:
     provider = BedrockProvider()
     provider.connect(client)
@@ -227,6 +259,88 @@ class TestInvokeModel:
 # ---------------------------------------------------------------------------
 # converse
 # ---------------------------------------------------------------------------
+
+
+class TestInvokeModelNova:
+    """LAY-3605: Amazon Nova via invoke_model is Converse-shaped (messages-v1 /
+    output.message / usage.inputTokens), NOT Titan — the adapter must parse it."""
+
+    def test_nova_invoke_model_parsed(self, mock_client, capture_trace):
+        client = _make_client()
+        provider, stubber = _connect(client)
+        model_id = "amazon.nova-micro-v1:0"
+        stubber.add_response(
+            "invoke_model",
+            _invoke_model_stub_response(_nova_body_bytes(text="4", input_tokens=10, output_tokens=5)),
+            {"modelId": model_id, "body": ANY, "accept": "application/json", "contentType": "application/json"},
+        )
+
+        @trace(mock_client)
+        def run():
+            r = client.invoke_model(
+                modelId=model_id,
+                body=_nova_request_body(),
+                accept="application/json",
+                contentType="application/json",
+            )
+            return json.loads(r["body"].read())
+
+        body = run()
+        stubber.assert_no_pending_responses()
+        # Passthrough: caller still reads the original Nova body.
+        assert body["output"]["message"]["content"][0]["text"] == "4"
+
+        events = capture_trace["events"]
+        mi = find_event(events, "model.invoke")
+        assert mi["payload"]["family"] == "amazon"
+        assert mi["payload"]["model"] == model_id
+        assert mi["payload"]["messages"] == [
+            {"role": "system", "content": "You are terse."},
+            {"role": "user", "content": "Say hello"},
+        ]
+        assert mi["payload"]["output_message"] == {"role": "assistant", "content": "4"}
+        assert mi["payload"]["usage"]["prompt_tokens"] == 10
+        assert mi["payload"]["usage"]["completion_tokens"] == 5
+        assert mi["payload"]["usage"]["total_tokens"] == 15
+        assert mi["payload"]["stop_reason"] == "end_turn"
+
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["model"] == model_id
+        assert cost["payload"]["cost_usd"] is not None and cost["payload"]["cost_usd"] > 0
+        assert cost["span_id"] == mi["span_id"]
+        provider.disconnect()
+
+    def test_region_prefixed_nova_classified_and_priced(self, mock_client, capture_trace):
+        # Inference-profile id (us.amazon.nova-...) must classify as the amazon
+        # family AND price (the bug also mis-classified it as 'unknown').
+        client = _make_client()
+        provider, stubber = _connect(client)
+        model_id = "us.amazon.nova-lite-v1:0"
+        stubber.add_response(
+            "invoke_model",
+            _invoke_model_stub_response(_nova_body_bytes(input_tokens=8, output_tokens=4)),
+            {"modelId": model_id, "body": ANY, "accept": "application/json", "contentType": "application/json"},
+        )
+
+        @trace(mock_client)
+        def run():
+            r = client.invoke_model(
+                modelId=model_id,
+                body=_nova_request_body(),
+                accept="application/json",
+                contentType="application/json",
+            )
+            return json.loads(r["body"].read())
+
+        run()
+        stubber.assert_no_pending_responses()
+        events = capture_trace["events"]
+        mi = find_event(events, "model.invoke")
+        assert mi["payload"]["family"] == "amazon"
+        assert mi["payload"]["usage"]["prompt_tokens"] == 8
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["cost_usd"] is not None and cost["payload"]["cost_usd"] > 0
+        provider.disconnect()
 
 
 class TestConverse:

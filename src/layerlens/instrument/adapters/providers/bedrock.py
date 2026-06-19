@@ -33,6 +33,14 @@ _CAPTURE_PARAMS = frozenset({"modelId", "accept", "contentType", "inferenceConfi
 
 def _family(model_id: str) -> str:
     lower = (model_id or "").lower()
+    # Unwrap a Bedrock inference-profile ARN / cross-region prefix so e.g.
+    # "us.amazon.nova-lite-v1:0" classifies as the amazon family (LAY-3605).
+    if lower.startswith("arn:"):
+        lower = lower.rsplit("/", 1)[-1]
+    for region in ("us-gov.", "us.", "eu.", "apac."):
+        if lower.startswith(region):
+            lower = lower[len(region) :]
+            break
     for prefix in ("anthropic", "meta", "cohere", "amazon", "ai21", "mistral"):
         if lower.startswith(prefix + "."):
             return prefix
@@ -243,6 +251,16 @@ def _extract_invoke_messages(kwargs: Dict[str, Any], family: str) -> list[dict[s
             if isinstance(content, list):
                 content = "\n".join(str(p.get("text", "")) for p in content if isinstance(p, dict) and "text" in p)
             out.append({"role": str(msg.get("role", "user")), "content": str(content)})
+    elif family == "amazon" and isinstance(data.get("messages"), list):
+        # Nova (schemaVersion messages-v1) — Converse-shaped body.
+        system = data.get("system")
+        if isinstance(system, list):
+            sys_text = "\n".join(str(s.get("text", "")) for s in system if isinstance(s, dict) and "text" in s)
+            if sys_text:
+                out.append({"role": "system", "content": sys_text})
+        elif system:
+            out.append({"role": "system", "content": str(system)})
+        out.extend(_normalize_converse_messages(data.get("messages")) or [])
     else:
         prompt = data.get("prompt") or data.get("inputText") or ""
         if prompt:
@@ -268,9 +286,16 @@ def _extract_invoke_output(data: Dict[str, Any], family: str) -> dict[str, str] 
         if generations:
             content = str(generations[0].get("text", ""))
     elif family == "amazon":
-        results = data.get("results") or []
-        if results:
-            content = str(results[0].get("outputText", ""))
+        output = data.get("output")
+        message = output.get("message") if isinstance(output, dict) else None
+        if isinstance(message, dict):  # Nova (Converse-shaped)
+            content = "\n".join(
+                str(b.get("text", "")) for b in message.get("content", []) or [] if isinstance(b, dict) and "text" in b
+            )
+        else:  # Titan
+            results = data.get("results") or []
+            if results:
+                content = str(results[0].get("outputText", ""))
     else:
         content = str(data.get("generation") or data.get("completion") or data.get("outputText") or "")
     return {"role": "assistant", "content": content} if content else None
@@ -292,6 +317,9 @@ def _extract_invoke_stop_reason(data: Dict[str, Any], family: str) -> str | None
             val = gens[0].get("finish_reason")
             return val if isinstance(val, str) else None
     if family == "amazon":
+        stop = data.get("stopReason")  # Nova (Converse-shaped)
+        if isinstance(stop, str):
+            return stop
         results = data.get("results") or []
         if results and isinstance(results[0], dict):
             val = results[0].get("completionReason")
@@ -325,7 +353,15 @@ def _extract_invoke_usage(data: Dict[str, Any], family: str) -> NormalizedTokenU
             prompt_tokens=int(usage.get("input_tokens") or 0),
             completion_tokens=int(usage.get("output_tokens") or 0),
         )
-    # Meta/Mistral/Amazon inline fields
+    # Converse-shaped usage block (Amazon Nova invoke_model).
+    usage = data.get("usage")
+    if isinstance(usage, dict) and ("inputTokens" in usage or "outputTokens" in usage):
+        return NormalizedTokenUsage(
+            prompt_tokens=int(usage.get("inputTokens") or 0),
+            completion_tokens=int(usage.get("outputTokens") or 0),
+            total_tokens=int(usage.get("totalTokens") or 0),
+        )
+    # Meta/Mistral/Amazon-Titan inline fields
     prompt = int(data.get("prompt_token_count") or data.get("inputTextTokenCount") or 0)
     completion = int(data.get("generation_token_count") or data.get("tokenCount") or 0)
     if prompt or completion:

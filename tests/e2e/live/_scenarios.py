@@ -360,19 +360,30 @@ def run_bedrock(flow: str) -> None:
 
     client = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
     instrument_bedrock(client)
-    model_id = os.environ.get("LL_BEDROCK_MODEL", "anthropic.claude-3-haiku-20240307-v1:0")
+    # Default to an ACTIVE model that also exercises the Amazon Nova invoke_model
+    # parser (LAY-3605). The old default (anthropic.claude-3-haiku) is now a LEGACY
+    # model — on-demand DENIED — so it failed the provider live case by default.
+    model_id = os.environ.get("LL_BEDROCK_MODEL", "amazon.nova-micro-v1:0")
+
+    def _body(model: str, text: str) -> str:
+        # Strip an inference-profile region prefix (us./eu./apac./us-gov.) to get the family.
+        parts = model.split(".")
+        family = parts[1] if parts[0] in ("us", "eu", "apac", "us-gov") and len(parts) > 1 else parts[0]
+        if family == "amazon":  # Amazon Nova: Converse-shaped invoke_model body
+            return json.dumps(
+                {"messages": [{"role": "user", "content": [{"text": text}]}], "inferenceConfig": {"maxTokens": 32}}
+            )
+        # Anthropic Claude messages body
+        return json.dumps(
+            {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 32,
+                "messages": [{"role": "user", "content": text}],
+            }
+        )
 
     def _invoke(text: str, model: str) -> None:
-        client.invoke_model(
-            modelId=model,
-            body=json.dumps(
-                {
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 32,
-                    "messages": [{"role": "user", "content": text}],
-                }
-            ),
-        )
+        client.invoke_model(modelId=model, body=_body(model, text))
 
     try:
         if flow == "error":
