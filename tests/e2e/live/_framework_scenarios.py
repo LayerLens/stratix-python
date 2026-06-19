@@ -534,3 +534,30 @@ def run_langfuse(flow: str, client: object) -> None:
         assert imported >= 1, f"langfuse import returned {imported}"
     finally:
         adapter.disconnect()
+
+
+def run_agentforce(flow: str, client: object) -> None:
+    import pytest
+
+    from layerlens.instrument.adapters.frameworks.agentforce import AgentforceAdapter
+
+    adapter = AgentforceAdapter(client, capture_config=_cfg(flow))
+    adapter.connect(
+        credentials={
+            "client_id": os.environ["SF_CLIENT_ID"],
+            "client_secret": os.environ["SF_CLIENT_SECRET"],
+            "instance_url": os.environ["SF_INSTANCE_URL"],
+        }
+    )
+    try:
+        # Agentforce is a read-only importer of the Salesforce Session Tracing
+        # Data Model — it cannot create sessions, so this check depends on the
+        # org having ingested conversation data. The STDM DMOs also ingest on
+        # staggered streams, so skip cleanly when nothing is present yet.
+        summary = adapter.import_sessions(limit=10)
+        if summary["sessions_imported"] == 0:
+            pytest.skip("no Agentforce sessions ingested in the org to import")
+        assert summary["errors"] == 0, f"agentforce import reported errors: {summary}"
+        assert summary["events_emitted"] > 0, f"agentforce produced no events: {summary}"
+    finally:
+        adapter.disconnect()

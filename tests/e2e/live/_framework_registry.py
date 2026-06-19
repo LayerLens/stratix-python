@@ -187,6 +187,18 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         self_flushing=True,  # one collector per imported Langfuse trace, uploaded via client
         install_hint="httpx (core dep); LANGFUSE_PUBLIC_KEY/SECRET_KEY + LANGFUSE_HOST",
     ),
+    FrameworkCase(
+        id="agentforce",
+        import_name="httpx",
+        runner=fs.run_agentforce,
+        required_env=("SF_CLIENT_ID", "SF_CLIENT_SECRET", "SF_INSTANCE_URL"),
+        supports_redaction=False,  # content gating covered deterministically in unit tests
+        self_flushing=True,  # one collector per imported session, uploaded via client
+        install_hint=(
+            "httpx (core dep); SF_CLIENT_ID/SF_CLIENT_SECRET/SF_INSTANCE_URL "
+            "for a provisioned Agentforce + Data Cloud org with Session Tracing"
+        ),
+    ),
 )
 
 

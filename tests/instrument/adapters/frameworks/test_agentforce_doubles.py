@@ -1,12 +1,15 @@
 """End-to-end doubles for the Agentforce adapter against a fake Salesforce REST API
-(LAY-3582 / T8).
+(LAY-3582 / T8; rebuilt for the real STDM in LAY-3599).
 
-Agentforce is credential-gated (no Salesforce org), so these tests stand in
-for live verification. Unlike ``test_agentforce.py`` (which mocks the
+Agentforce is credential-gated in CI (no Salesforce org), so these tests stand
+in for live verification. Unlike ``test_agentforce.py`` (which mocks the
 ``_SalesforceConnection`` object), this module exercises the REAL connection
 class — OAuth client-credentials token exchange, SOQL query URL construction,
 Bearer auth headers, and ``nextRecordsUrl`` pagination — over an
-``httpx.MockTransport`` serving realistic Salesforce Data Cloud payloads.
+``httpx.MockTransport`` serving realistic Session Tracing Data Model payloads
+(``ssot__AiAgent*__dlm``). The records are shaped exactly like the rows a live
+``describe`` returned (UUID business ids in ``ssot__Id__c``, the ``NOT_SET``
+sentinel, no token fields).
 
 Injection seam: ``_SalesforceConnection.authenticate`` constructs
 ``httpx.Client(timeout=30.0)`` directly with no transport parameter, so the
@@ -33,128 +36,207 @@ _INSTANCE = "https://unit-test.my.salesforce.com"
 _ACCESS_TOKEN = "00D8b000001JZg2!AQEAQFakeSessionTokenValue1234"
 
 # ---------------------------------------------------------------------------
-# Realistic Data Cloud records
+# Realistic Session Tracing Data Model records (real ssot__ shapes)
 # ---------------------------------------------------------------------------
 
+_SESSION_A_ID = "019ed365-eb7b-73f6-bb95-15e93f8ed2f0"
+_SESSION_B_ID = "019ed359-610e-7e45-8b84-27b6e7012d85"
+_INT_A_ID = "4c47dd00-390a-4173-9b22-bc476d894bff"
+_INT_B_ID = "ff10205d-fd63-454a-ae2d-1f0b72883f1c"
+
 _SESSION_A: Dict[str, Any] = {
-    "attributes": {"type": "AIAgentSession__dlm"},
-    "Id": "a5W8b000000TkQvEAK",
-    "Name": "Session 2026-06-01 09:15",
-    "StartTime": "2026-06-01T09:15:23Z",
-    "EndTime": "2026-06-01T09:21:47Z",
-    "Status": "Completed",
-    "AgentId": "0XxK0000000NfXuKAK",
-    "AgentName": "Resort Concierge",
-    "ParticipantId": "005K0000008aBcDEFG",
-    "ParticipantName": "Dana Okafor",
-    "Channel": "Messaging",
-    "Outcome": "Resolved",
+    "attributes": {"type": "ssot__AiAgentSession__dlm"},
+    "Id": "a5W8b000000TkQvEAK",  # SF surrogate (not the join key)
+    "ssot__Id__c": _SESSION_A_ID,
+    "ssot__AiAgentChannelType__c": "Messaging",
+    "ssot__AiAgentSessionEndType__c": "Completed",
+    "ssot__StartTimestamp__c": "2026-06-01T09:15:23.000+0000",
+    "ssot__EndTimestamp__c": "2026-06-01T09:21:47.000+0000",
 }
 
 _SESSION_B: Dict[str, Any] = {
-    "attributes": {"type": "AIAgentSession__dlm"},
+    "attributes": {"type": "ssot__AiAgentSession__dlm"},
     "Id": "a5W8b000000TkRwEAK",
-    "Name": "Session 2026-06-02 14:02",
-    "StartTime": "2026-06-02T14:02:11Z",
-    "EndTime": "2026-06-02T14:09:55Z",
-    "Status": "Escalated",
-    "AgentId": "0XxK0000000NfXuKAK",
-    "AgentName": "Resort Concierge",
-    "ParticipantId": "005K0000008aXyZHIJ",
-    "ParticipantName": "Luis Romero",
-    "Channel": "Voice",
-    "Outcome": "Transferred",
+    "ssot__Id__c": _SESSION_B_ID,
+    "ssot__AiAgentChannelType__c": "Voice",
+    "ssot__AiAgentSessionEndType__c": "Escalated",
+    "ssot__StartTimestamp__c": "2026-06-02T14:02:11.000+0000",
+    "ssot__EndTimestamp__c": "2026-06-02T14:09:55.000+0000",
 }
 
+# Participants — agent identity lives here (live-populated). One USER row per
+# session, carrying the agent it spoke to.
+_PARTICIPANTS: Dict[str, List[Dict[str, Any]]] = {
+    _SESSION_A_ID: [
+        {
+            "attributes": {"type": "ssot__AiAgentSessionParticipant__dlm"},
+            "ssot__Id__c": "e986e990-a5e2-44fb-b327-33562c4a0161",
+            "ssot__AiAgentSessionId__c": _SESSION_A_ID,
+            "ssot__AiAgentApiName__c": "Resort_Concierge",
+            "ssot__AiAgentVersionApiName__c": "v3",
+            "ssot__AiAgentType__c": "AgentforceServiceAgent",
+            "ssot__AiAgentSessionParticipantRole__c": "USER",
+            "ssot__ParticipantId__c": "005K0000008aBcDEFG",
+        }
+    ],
+    _SESSION_B_ID: [
+        {
+            "attributes": {"type": "ssot__AiAgentSessionParticipant__dlm"},
+            "ssot__Id__c": "f0c0ddd9-b30a-46b3-b998-b3aba6bdbf42",
+            "ssot__AiAgentSessionId__c": _SESSION_B_ID,
+            "ssot__AiAgentApiName__c": "Resort_Concierge",
+            "ssot__AiAgentVersionApiName__c": "v3",
+            "ssot__AiAgentType__c": "AgentforceServiceAgent",
+            "ssot__AiAgentSessionParticipantRole__c": "USER",
+            "ssot__ParticipantId__c": "005K0000008aXyZHIJ",
+        }
+    ],
+}
+
+# Interactions (TURNs) keyed by session UUID.
 _INTERACTIONS: Dict[str, List[Dict[str, Any]]] = {
-    _SESSION_A["Id"]: [
+    _SESSION_A_ID: [
         {
-            "attributes": {"type": "AIAgentInteraction__dlm"},
-            "Id": "a5X8b000000Gh1aEAC",
-            "SessionId": _SESSION_A["Id"],
-            "StepType": "Generative",
-            "StepName": "Draft reservation answer",
-            "Sequence": 1,
-            "Input": "Guest asks: can I get a late checkout on June 3rd?",
-            "Output": "Late checkout until 2pm is available for your room type.",
-            "ModelName": "sfdc_ai__DefaultOpenAIGPT4Omni",
-            "PromptTokens": 412,
-            "CompletionTokens": 38,
-            "ToolName": None,
-            "ToolInput": None,
-            "ToolOutput": None,
-            "EscalationTarget": None,
-            "ErrorMessage": None,
+            "attributes": {"type": "ssot__AiAgentInteraction__dlm"},
+            "ssot__Id__c": _INT_A_ID,
+            "ssot__AiAgentSessionId__c": _SESSION_A_ID,
+            "ssot__AiAgentInteractionType__c": "TURN",
+            "ssot__TopicApiName__c": "Reservations_FAQ",
+            "ssot__TelemetryTraceId__c": "ad91cc668ac1db7b",
+            "ssot__PrevInteractionId__c": "NOT_SET",
+            "ssot__StartTimestamp__c": "2026-06-01T09:15:24.000+0000",
+            "ssot__EndTimestamp__c": "2026-06-01T09:15:27.000+0000",
+        }
+    ],
+    _SESSION_B_ID: [
+        {
+            "attributes": {"type": "ssot__AiAgentInteraction__dlm"},
+            "ssot__Id__c": _INT_B_ID,
+            "ssot__AiAgentSessionId__c": _SESSION_B_ID,
+            "ssot__AiAgentInteractionType__c": "TURN",
+            "ssot__TopicApiName__c": "Billing_Disputes",
+            "ssot__TelemetryTraceId__c": "8992026495fe7676",
+            "ssot__PrevInteractionId__c": "NOT_SET",
+            "ssot__StartTimestamp__c": "2026-06-02T14:02:12.000+0000",
+            "ssot__EndTimestamp__c": "2026-06-02T14:02:18.000+0000",
+        }
+    ],
+}
+
+# Steps keyed by interaction UUID. Note: NO token fields exist; an LLM step
+# carries generation / gateway ids and the input/output value text.
+_STEPS: Dict[str, List[Dict[str, Any]]] = {
+    _INT_A_ID: [
+        {
+            "attributes": {"type": "ssot__AiAgentInteractionStep__dlm"},
+            "ssot__Id__c": "stepA1-uuid",
+            "ssot__AiAgentInteractionId__c": _INT_A_ID,
+            "ssot__AiAgentInteractionStepType__c": "LLM_STEP",
+            "SubType__c": None,
+            "ssot__Name__c": "Draft reservation answer",
+            "ssot__InputValueText__c": "Guest asks: can I get a late checkout on June 3rd?",
+            "ssot__OutputValueText__c": "Late checkout until 2pm is available for your room type.",
+            "ssot__GenerationId__c": "gen-A1-7c2",
+            "ssot__GenAiGatewayRequestId__c": "req-A1-7c2",
+            "ssot__GenAiGatewayResponseId__c": "resp-A1-7c2",
+            "ssot__ErrorMessageText__c": None,
+            "ssot__StartTimestamp__c": "2026-06-01T09:15:24.100+0000",
+            "ssot__EndTimestamp__c": "2026-06-01T09:15:25.900+0000",
         },
         {
-            "attributes": {"type": "AIAgentInteraction__dlm"},
-            "Id": "a5X8b000000Gh1bEAC",
-            "SessionId": _SESSION_A["Id"],
-            "StepType": "Flow",
-            "StepName": "Check reservation",
-            "Sequence": 2,
-            "Input": None,
-            "Output": None,
-            "ModelName": None,
-            "PromptTokens": None,
-            "CompletionTokens": None,
-            "ToolName": "Get_Reservation_Status",
-            "ToolInput": '{"reservationId": "RES-48213"}',
-            "ToolOutput": '{"roomType": "Suite", "lateCheckoutEligible": true}',
-            "EscalationTarget": None,
-            "ErrorMessage": None,
+            "attributes": {"type": "ssot__AiAgentInteractionStep__dlm"},
+            "ssot__Id__c": "stepA2-uuid",
+            "ssot__AiAgentInteractionId__c": _INT_A_ID,
+            "ssot__AiAgentInteractionStepType__c": "ACTION_STEP",
+            "SubType__c": "Flow",
+            "ssot__Name__c": "Get_Reservation_Status",
+            "ssot__InputValueText__c": '{"reservationId": "RES-48213"}',
+            "ssot__OutputValueText__c": '{"roomType": "Suite", "lateCheckoutEligible": true}',
+            "ssot__GenerationId__c": "NOT_SET",
+            "ssot__GenAiGatewayRequestId__c": "NOT_SET",
+            "ssot__GenAiGatewayResponseId__c": "NOT_SET",
+            "ssot__ErrorMessageText__c": None,
+            "ssot__StartTimestamp__c": "2026-06-01T09:15:26.000+0000",
+            "ssot__EndTimestamp__c": "2026-06-01T09:15:26.400+0000",
         },
     ],
-    _SESSION_B["Id"]: [
+    _INT_B_ID: [
         {
-            "attributes": {"type": "AIAgentInteraction__dlm"},
-            "Id": "a5X8b000000Gh2aEAC",
-            "SessionId": _SESSION_B["Id"],
-            "StepType": "Generative",
-            "StepName": "Detect billing dispute",
-            "Sequence": 1,
-            "Input": "Caller disputes a $250 minibar charge.",
-            "Output": "This requires a human billing specialist.",
-            "ModelName": "sfdc_ai__DefaultOpenAIGPT4Omni",
-            "PromptTokens": 287,
-            "CompletionTokens": 22,
-            "ToolName": None,
-            "ToolInput": None,
-            "ToolOutput": None,
-            "EscalationTarget": None,
-            "ErrorMessage": None,
+            "attributes": {"type": "ssot__AiAgentInteractionStep__dlm"},
+            "ssot__Id__c": "stepB1-uuid",
+            "ssot__AiAgentInteractionId__c": _INT_B_ID,
+            "ssot__AiAgentInteractionStepType__c": "LLM_STEP",
+            "SubType__c": None,
+            "ssot__Name__c": "Detect billing dispute",
+            "ssot__InputValueText__c": "Caller disputes a $250 minibar charge.",
+            "ssot__OutputValueText__c": "This requires a human billing specialist.",
+            "ssot__GenerationId__c": "gen-B1-9f4",
+            "ssot__GenAiGatewayRequestId__c": "req-B1-9f4",
+            "ssot__GenAiGatewayResponseId__c": "resp-B1-9f4",
+            "ssot__ErrorMessageText__c": None,
+            "ssot__StartTimestamp__c": "2026-06-02T14:02:12.100+0000",
+            "ssot__EndTimestamp__c": "2026-06-02T14:02:14.000+0000",
         },
         {
-            "attributes": {"type": "AIAgentInteraction__dlm"},
-            "Id": "a5X8b000000Gh2bEAC",
-            "SessionId": _SESSION_B["Id"],
-            "StepType": "Escalation",
-            "StepName": "Escalate to billing",
-            "Sequence": 2,
-            "Input": "Disputed minibar charge above auto-refund threshold",
-            "Output": None,
-            "ModelName": None,
-            "PromptTokens": None,
-            "CompletionTokens": None,
-            "ToolName": None,
-            "ToolInput": None,
-            "ToolOutput": None,
-            "EscalationTarget": "Billing_Disputes_Queue",
-            "ErrorMessage": None,
+            "attributes": {"type": "ssot__AiAgentInteractionStep__dlm"},
+            # Escalation/handoff step type — not observed in the probe org
+            # (which emitted LLM_STEP / ACTION_STEP / TOPIC_STEP only), but a
+            # real Agentforce capability the classifier supports defensively.
+            "ssot__Id__c": "stepB2-uuid",
+            "ssot__AiAgentInteractionId__c": _INT_B_ID,
+            "ssot__AiAgentInteractionStepType__c": "Escalation",
+            "SubType__c": None,
+            "ssot__Name__c": "Escalate to billing",
+            "ssot__InputValueText__c": "Disputed minibar charge above auto-refund threshold",
+            "ssot__OutputValueText__c": "NOT_SET",
+            "ssot__GenerationId__c": "NOT_SET",
+            "ssot__GenAiGatewayRequestId__c": "NOT_SET",
+            "ssot__GenAiGatewayResponseId__c": "NOT_SET",
+            "ssot__ErrorMessageText__c": None,
+            "ssot__StartTimestamp__c": "2026-06-02T14:02:15.000+0000",
+            "ssot__EndTimestamp__c": "2026-06-02T14:02:15.200+0000",
         },
     ],
 }
 
-_AGENT_CONFIG: Dict[str, Any] = {
-    "attributes": {"type": "AIAgentConfiguration__dlm"},
-    "Id": "a5Y8b000000CfG1EAK",
-    "AgentId": "0XxK0000000NfXuKAK",
-    "AgentName": "Resort Concierge",
-    "Description": "Guest services agent for the resort messaging channel",
-    "ModelName": "sfdc_ai__DefaultOpenAIGPT4Omni",
-    "Instructions": "Help guests with reservations, amenities, and billing questions.",
-    "TopicCount": 4,
-    "ActionCount": 12,
+# Messages keyed by interaction UUID — the human-readable turn.
+_MESSAGES: Dict[str, List[Dict[str, Any]]] = {
+    _INT_A_ID: [
+        {
+            "attributes": {"type": "ssot__AiAgentInteractionMessage__dlm"},
+            "ssot__Id__c": "msgA-in",
+            "ssot__AiAgentInteractionId__c": _INT_A_ID,
+            "ssot__AiAgentInteractionMessageType__c": "Input",
+            "ssot__ContentText__c": "Can I get a late checkout on June 3rd?",
+            "ssot__MessageSentTimestamp__c": "2026-06-01T09:15:24.000+0000",
+        },
+        {
+            "attributes": {"type": "ssot__AiAgentInteractionMessage__dlm"},
+            "ssot__Id__c": "msgA-out",
+            "ssot__AiAgentInteractionId__c": _INT_A_ID,
+            "ssot__AiAgentInteractionMessageType__c": "Output",
+            "ssot__ContentText__c": "Yes — late checkout until 2pm is available for your suite.",
+            "ssot__MessageSentTimestamp__c": "2026-06-01T09:15:27.000+0000",
+        },
+    ],
+    _INT_B_ID: [
+        {
+            "attributes": {"type": "ssot__AiAgentInteractionMessage__dlm"},
+            "ssot__Id__c": "msgB-in",
+            "ssot__AiAgentInteractionId__c": _INT_B_ID,
+            "ssot__AiAgentInteractionMessageType__c": "Input",
+            "ssot__ContentText__c": "I'm disputing a $250 minibar charge.",
+            "ssot__MessageSentTimestamp__c": "2026-06-02T14:02:11.500+0000",
+        },
+        {
+            "attributes": {"type": "ssot__AiAgentInteractionMessage__dlm"},
+            "ssot__Id__c": "msgB-out",
+            "ssot__AiAgentInteractionId__c": _INT_B_ID,
+            "ssot__AiAgentInteractionMessageType__c": "Output",
+            "ssot__ContentText__c": "I'm transferring you to a billing specialist.",
+            "ssot__MessageSentTimestamp__c": "2026-06-02T14:02:18.000+0000",
+        },
+    ],
 }
 
 
@@ -211,20 +293,30 @@ class FakeSalesforceAPI:
             },
         )
 
+    @staticmethod
+    def _where_id(soql: str) -> Optional[str]:
+        m = re.search(r"=\s*'([^']+)'", soql)
+        return m.group(1) if m else None
+
     def _query(self, request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == f"Bearer {_ACCESS_TOKEN}"
         soql = request.url.params["q"]
-        if "FROM AIAgentSession__dlm" in soql:
+        # Children first — their object names contain the parent base string.
+        if "FROM ssot__AiAgentSessionParticipant__dlm" in soql:
+            return self._records(_PARTICIPANTS.get(self._where_id(soql) or "", []))
+        if "FROM ssot__AiAgentInteractionStep__dlm" in soql:
+            return self._records(_STEPS.get(self._where_id(soql) or "", []))
+        if "FROM ssot__AiAgentInteractionMessage__dlm" in soql:
+            return self._records(_MESSAGES.get(self._where_id(soql) or "", []))
+        if "FROM ssot__AiAgentInteraction__dlm" in soql:
+            return self._records(_INTERACTIONS.get(self._where_id(soql) or "", []))
+        if "FROM ssot__AiAgentSession__dlm" in soql:
             return self._sessions_page(request, offset=0, soql=soql)
-        if "FROM AIAgentInteraction__dlm" in soql:
-            session_id = re.search(r"SessionId = '([^']+)'", soql).group(1)
-            records = _INTERACTIONS.get(session_id, [])
-            return httpx.Response(200, json={"totalSize": len(records), "done": True, "records": records})
-        if "FROM AIAgentConfiguration__dlm" in soql:
-            agent_id = re.search(r"AgentId = '([^']+)'", soql).group(1)
-            records = [_AGENT_CONFIG] if agent_id == _AGENT_CONFIG["AgentId"] else []
-            return httpx.Response(200, json={"totalSize": len(records), "done": True, "records": records})
         return httpx.Response(400, json=[{"errorCode": "MALFORMED_QUERY", "message": soql}])
+
+    @staticmethod
+    def _records(records: List[Dict[str, Any]]) -> httpx.Response:
+        return httpx.Response(200, json={"totalSize": len(records), "done": True, "records": records})
 
     def _sessions_page(self, request: httpx.Request, offset: int, soql: str = "") -> httpx.Response:
         matching = self._filtered_sessions(soql) if soql else self._last_filtered
@@ -241,10 +333,10 @@ class FakeSalesforceAPI:
 
     def _filtered_sessions(self, soql: str) -> List[Dict[str, Any]]:
         sessions = list(self.sessions)
-        cursor = re.search(r"StartTime > (\S+)", soql)
+        cursor = re.search(r"ssot__StartTimestamp__c > (\S+)", soql)
         if cursor:
             # ISO-8601 strings compare lexicographically.
-            sessions = [s for s in sessions if s["StartTime"] > cursor.group(1)]
+            sessions = [s for s in sessions if s["ssot__StartTimestamp__c"] > cursor.group(1)]
         limit = re.search(r"LIMIT (\d+)", soql)
         if limit:
             sessions = sessions[: int(limit.group(1))]
@@ -325,7 +417,7 @@ class TestConnect:
 
 
 # ---------------------------------------------------------------------------
-# import_sessions end-to-end
+# import_sessions end-to-end (real ssot__ STDM)
 # ---------------------------------------------------------------------------
 
 
@@ -337,7 +429,7 @@ class TestImportSessions:
 
         assert summary["sessions_imported"] == 2
         assert summary["errors"] == 0
-        assert summary["next_cursor"] == _SESSION_B["StartTime"]
+        assert summary["next_cursor"] == _SESSION_B["ssot__StartTimestamp__c"]
 
         events = uploaded["events"]
         assert summary["events_emitted"] == len(events)
@@ -345,40 +437,40 @@ class TestImportSessions:
         # Each session is a separate trace.
         assert len({e["trace_id"] for e in events}) == 2
 
-        # environment.config from AIAgentConfiguration__dlm, once per session.
-        configs = find_events(events, "environment.config")
-        assert len(configs) == 2
-        assert configs[0]["payload"]["agent_name"] == "Resort Concierge"
-        assert configs[0]["payload"]["model"] == "sfdc_ai__DefaultOpenAIGPT4Omni"
-        assert configs[0]["payload"]["topic_count"] == 4
-        assert configs[0]["payload"]["action_count"] == 12
+        # No AgentConfiguration DMO exists and the STDM has no tokens, so the
+        # rewrite must emit neither environment.config nor cost.record.
+        assert len(find_events(events, "environment.config")) == 0
+        assert len(find_events(events, "cost.record")) == 0
 
-        # agent.input carries the session envelope.
+        # agent.lifecycle start event per session (the ateam import_service hook).
+        lifecycles = find_events(events, "agent.lifecycle")
+        assert len(lifecycles) == 2
+        assert all(e["payload"]["lifecycle_action"] == "start" for e in lifecycles)
+        assert {e["payload"]["session_id"] for e in lifecycles} == {_SESSION_A_ID, _SESSION_B_ID}
+
+        # agent.input carries the session envelope + agent identity (participant).
         inputs = find_events(events, "agent.input")
         assert len(inputs) == 2
         first = inputs[0]["payload"]
-        assert first["session_id"] == _SESSION_A["Id"]
-        assert first["agent_name"] == "Resort Concierge"
-        assert first["participant_name"] == "Dana Okafor"
+        assert first["session_id"] == _SESSION_A_ID
+        assert first["agent_name"] == "Resort_Concierge"
+        assert first["agent_version"] == "v3"
         assert first["channel"] == "Messaging"
-        assert first["start_time"] == _SESSION_A["StartTime"]
+        assert first["start_time"] == _SESSION_A["ssot__StartTimestamp__c"]
+        assert first["content"] == "Can I get a late checkout on June 3rd?"
 
-        # Generative steps -> model.invoke (+ cost.record with token rollups).
+        # Reasoning steps -> model.invoke carrying gen-id metadata, NO tokens.
         invokes = find_events(events, "model.invoke")
         assert len(invokes) == 2
         mi = invokes[0]["payload"]
-        assert mi["model"] == "sfdc_ai__DefaultOpenAIGPT4Omni"
-        assert mi["tokens_prompt"] == 412
-        assert mi["tokens_completion"] == 38
-        assert mi["tokens_total"] == 450
+        assert mi["generation_id"] == "gen-A1-7c2"
+        assert mi["gateway_request_id"] == "req-A1-7c2"
+        assert mi["gateway_response_id"] == "resp-A1-7c2"
         assert mi["messages"].startswith("Guest asks:")
         assert mi["output_message"].startswith("Late checkout")
-        costs = find_events(events, "cost.record")
-        assert len(costs) == 2
-        assert costs[0]["payload"]["tokens_total"] == 450
-        assert costs[0]["span_id"] == invokes[0]["span_id"]
+        assert "tokens_prompt" not in mi and "tokens_total" not in mi
 
-        # Flow step -> tool.call.
+        # InvokeAction/Flow step -> tool.call.
         tool = find_event(events, "tool.call")
         assert tool["payload"]["tool_name"] == "Get_Reservation_Status"
         assert json.loads(tool["payload"]["input"]) == {"reservationId": "RES-48213"}
@@ -386,16 +478,27 @@ class TestImportSessions:
 
         # Escalation step -> agent.handoff.
         handoff = find_event(events, "agent.handoff")
-        assert handoff["payload"]["escalation_target"] == "Billing_Disputes_Queue"
+        assert handoff["payload"]["step_name"] == "Escalate to billing"
         assert handoff["payload"]["reason"].startswith("Disputed minibar charge")
 
-        # agent.output closes each session with status/outcome.
+        # Messages -> agent.interaction turns (user + agent).
+        interactions = find_events(events, "agent.interaction")
+        roles = {e["payload"].get("role") for e in interactions}
+        assert {"user", "agent"} <= roles
+
+        # agent.output closes each session with the end type.
         outputs = find_events(events, "agent.output")
         assert len(outputs) == 2
-        assert outputs[0]["payload"]["status"] == "Completed"
-        assert outputs[0]["payload"]["outcome"] == "Resolved"
-        assert outputs[1]["payload"]["status"] == "Escalated"
-        assert outputs[1]["payload"]["outcome"] == "Transferred"
+        assert outputs[0]["payload"]["outcome"] == "Completed"
+        assert outputs[1]["payload"]["outcome"] == "Escalated"
+
+        # Migration contract: session id recoverable from every event.
+        assert all(e["payload"].get("session_id") in {_SESSION_A_ID, _SESSION_B_ID} for e in events)
+
+        # The fictional schema must be entirely gone from the wire.
+        all_soql = " ".join(r.url.params.get("q", "") for r in api.requests if "/query" in r.url.path)
+        assert "AIAgentSession__dlm" not in all_soql
+        assert "AIAgentConfiguration__dlm" not in all_soql
 
         # Every Data Cloud query carried the OAuth Bearer token.
         query_requests = [r for r in api.requests if "/query" in r.url.path]
@@ -418,15 +521,15 @@ class TestImportSessions:
         summary = adapter.import_sessions(since_cursor="2026-06-02T00:00:00Z")
         adapter.disconnect()
 
-        # SOQL carried the cursor predicate.
+        # SOQL carried the cursor predicate on the real timestamp field.
         sessions_query = next(
-            r.url.params["q"] for r in api.requests if "FROM AIAgentSession__dlm" in r.url.params.get("q", "")
+            r.url.params["q"] for r in api.requests if "FROM ssot__AiAgentSession__dlm" in r.url.params.get("q", "")
         )
-        assert "StartTime > 2026-06-02T00:00:00Z" in sessions_query
+        assert "ssot__StartTimestamp__c > 2026-06-02T00:00:00Z" in sessions_query
 
-        # Only session B (StartTime past the cursor) was imported.
+        # Only session B (start past the cursor) was imported.
         assert summary["sessions_imported"] == 1
-        assert summary["next_cursor"] == _SESSION_B["StartTime"]
+        assert summary["next_cursor"] == _SESSION_B["ssot__StartTimestamp__c"]
         inputs = find_events(uploaded["events"], "agent.input")
         assert len(inputs) == 1
-        assert inputs[0]["payload"]["session_id"] == _SESSION_B["Id"]
+        assert inputs[0]["payload"]["session_id"] == _SESSION_B_ID

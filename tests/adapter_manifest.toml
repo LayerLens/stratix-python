@@ -199,7 +199,8 @@ doubles = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents_dou
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_agentforce.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_agentforce.py", pattern = "TestDisconnectLeaveNoTrace" }
-doubles = { path = "tests/instrument/adapters/frameworks/test_agentforce.py" }
+doubles = { path = "tests/instrument/adapters/frameworks/test_agentforce_doubles.py" }
+live_id = "agentforce"
 
 [adapters.langfuse]
 family = "framework"
