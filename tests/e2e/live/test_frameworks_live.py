@@ -14,8 +14,11 @@ green on a machine without a registered audit integration.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
+from . import _framework_scenarios as fs
 from ._framework_harness import run_framework_case, run_self_flushing_case
 from ._framework_registry import FRAMEWORKS, missing_credentials
 
@@ -60,3 +63,37 @@ def test_framework_live_self_flushing(case, stratix_live_client, record_result) 
     _skip_unless_ready(case)
     row = run_self_flushing_case(stratix_live_client, case)
     record_result(row)
+
+
+@pytest.mark.live
+def test_bedrock_agents_trace_completeness_live(stratix_live_client, record_result) -> None:
+    """LAY-3606: the five trace-completeness members on the REAL wire.
+
+    Triple-gated and opt-in: needs the live suite enabled, ``LAYERLENS_LIVE_BEDROCK_FEATURES=1``,
+    and a Bedrock agent CONFIGURED with a guardrail + RETURN_CONTROL action group + code
+    interpreter + user input (point ``BEDROCK_FEATURES_ALIAS_ID`` at that version/DRAFT and grant
+    the agent role ``bedrock:ApplyGuardrail``). Skipped by default so standard live runs — which
+    use a vanilla agent alias — are unaffected. ``reprompt`` is intentionally excluded (forcing it
+    needs a custom parser Lambda; it stays doubles-covered).
+    """
+    if os.environ.get("LAYERLENS_LIVE_BEDROCK_FEATURES") != "1":
+        pytest.skip("set LAYERLENS_LIVE_BEDROCK_FEATURES=1 with a feature-configured Bedrock agent")
+    pytest.importorskip("boto3", reason="boto3 not installed")
+    for env in ("BEDROCK_AGENT_ID", "BEDROCK_AGENT_ALIAS_ID"):
+        if not os.environ.get(env):
+            pytest.skip(f"bedrock_agents features: {env} not set")
+
+    result = fs.run_bedrock_agents_features(stratix_live_client)
+    seen = set(result["seen_types"])
+    expected = {"policy.violation", "tool.call", "agent.code", "agent.step"}
+    missing = expected - seen
+    assert not missing, f"trace-completeness members missing on the wire: {sorted(missing)} (saw {sorted(seen)})"
+    record_result(
+        {
+            "framework": "bedrock_agents",
+            "variant": "trace-completeness",
+            "verdict": "pass",
+            "event_types": {t: 1 for t in result["seen_types"]},
+            "trace_ids": result["trace_ids"],
+        }
+    )

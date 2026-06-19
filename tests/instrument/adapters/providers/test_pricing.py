@@ -21,6 +21,7 @@ import pytest
 
 from layerlens.instrument.adapters.providers.pricing import (
     PRICING,
+    BEDROCK_PRICING,
     PRICING_OVERRIDE_ENV,
     CostRecord,
     PricingTable,
@@ -93,6 +94,47 @@ class TestFuzzyMatching:
         assert cost is not None
         assert cost == gpt_4o
         assert cost != gpt_4
+
+
+class TestBedrockNovaPricing:
+    """LAY-3605: Nova (the live Bedrock Agents default) must be priced — including
+    the region-prefixed inference-profile ids the real wire carries."""
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "amazon.nova-micro-v1:0",
+            "amazon.nova-lite-v1:0",
+            "amazon.nova-pro-v1:0",
+            "amazon.nova-premier-v1:0",
+        ],
+    )
+    def test_nova_models_priced(self, model: str) -> None:
+        cost = calculate_cost(model, _usage(), BEDROCK_PRICING)
+        assert cost is not None, f"{model} missing from BEDROCK_PRICING"
+        assert cost > 0
+
+    def test_region_prefixed_nova_resolves_to_base(self) -> None:
+        # Bedrock Agents requires an inference profile, so the live foundationModel
+        # is region-prefixed (us./eu./apac./us-gov.) — it must resolve to the bare id.
+        base = calculate_cost("amazon.nova-lite-v1:0", _usage(), BEDROCK_PRICING)
+        assert base is not None
+        for prefix in ("us.", "eu.", "apac.", "us-gov."):
+            cost = calculate_cost(prefix + "amazon.nova-lite-v1:0", _usage(), BEDROCK_PRICING)
+            assert cost == base, f"{prefix!r} prefix did not resolve to the base rate"
+
+    def test_inference_profile_arn_resolves(self) -> None:
+        arn = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.amazon.nova-pro-v1:0"
+        cost = calculate_cost(arn, _usage(), BEDROCK_PRICING)
+        base = calculate_cost("amazon.nova-pro-v1:0", _usage(), BEDROCK_PRICING)
+        assert cost is not None and cost == base
+
+    def test_region_prefix_normalization_also_fixes_bedrock_claude(self) -> None:
+        # The same normalization resolves the inference-profile Claude ids the
+        # bedrock PROVIDER adapter sees.
+        cost = calculate_cost("us.anthropic.claude-3-haiku-20240307-v1:0", _usage(), BEDROCK_PRICING)
+        base = calculate_cost("anthropic.claude-3-haiku-20240307-v1:0", _usage(), BEDROCK_PRICING)
+        assert cost is not None and cost == base
 
 
 class TestUnknownModelsGracefully:

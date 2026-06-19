@@ -561,3 +561,113 @@ def run_agentforce(flow: str, client: object) -> None:
         assert summary["events_emitted"] > 0, f"agentforce produced no events: {summary}"
     finally:
         adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# AWS Bedrock Agents — boto3 ``invoke_agent`` against a provisioned Agent.
+# The adapter hooks the bedrock-agent-runtime client and observes the
+# ``completion`` EventStream as the customer drains it; it is self-flushing
+# (one collector per invoke, flushed when the stream is drained). The live
+# Agent (Nova, no action groups / KBs) exercises the model.invoke + output +
+# proxy-transparency paths; tool/KB/handoff are covered by the unit doubles.
+# --------------------------------------------------------------------------- #
+def run_bedrock_agents(flow: str, client: object) -> None:
+    import uuid
+
+    import boto3
+
+    from layerlens.instrument.adapters.frameworks.bedrock_agents import BedrockAgentsAdapter
+
+    rt = boto3.client("bedrock-agent-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+    adapter = BedrockAgentsAdapter(client, capture_config=_cfg(flow))
+    adapter.connect(target=rt)
+    try:
+        response = rt.invoke_agent(
+            agentId=os.environ["BEDROCK_AGENT_ID"],
+            agentAliasId=os.environ["BEDROCK_AGENT_ALIAS_ID"],
+            sessionId="ll-audit-" + uuid.uuid4().hex[:12],
+            inputText=f"What is 2+2? Reply with only the number. {SENTINEL}",
+            enableTrace=True,
+        )
+        # Drain the completion stream exactly as a customer would — this is what
+        # drives the adapter's per-trace emission and the final flush.
+        events = list(response["completion"])
+        assert events, "bedrock_agents completion stream was empty"
+    finally:
+        adapter.disconnect()
+
+
+def run_bedrock_agents_features(client: object) -> dict:
+    """Live verification of the LAY-3606 trace-completeness members against a
+    FEATURE-CONFIGURED Bedrock agent (guardrail + RETURN_CONTROL action group +
+    code interpreter + user input).
+
+    Opt-in / not part of the default live run: the default ``BEDROCK_AGENT_ALIAS_ID``
+    points at a vanilla version, so set ``BEDROCK_FEATURES_ALIAS_ID`` to an alias whose
+    version/DRAFT has the features (and grant the agent role ``bedrock:ApplyGuardrail``).
+    Drives one trigger prompt per member through the REAL adapter (``CaptureConfig.full()``
+    so ``agent.code`` is enabled) into the REAL client, and returns which canonical
+    members were emitted + the uploaded trace ids.
+    """
+    import time as _time
+    import uuid
+
+    import boto3
+
+    import layerlens.instrument._upload as _upload
+    from layerlens.instrument.adapters.frameworks.bedrock_agents import BedrockAgentsAdapter
+
+    rt = boto3.client("bedrock-agent-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+    agent_id = os.environ["BEDROCK_AGENT_ID"]
+    alias = os.environ.get("BEDROCK_FEATURES_ALIAS_ID", os.environ["BEDROCK_AGENT_ALIAS_ID"])
+    prompts = (
+        "Should I invest in gold or bonds to maximize my returns?",  # guardrail -> policy.violation
+        "Use the getWeather tool to look up the current weather in Tokyo, Japan.",  # returnControl -> tool.call
+        "Using Python, compute the first 20 Fibonacci numbers and save them to a CSV named fib.csv and return it.",  # code+files -> agent.code
+        "Book me a flight.",  # ASK_USER -> agent.step
+    )
+
+    seen_types = set()
+    trace_ids = []
+    traces_res = client.traces  # type: ignore[attr-defined]
+    orig_upload = traces_res.upload
+    captured = []
+
+    def _wrap(path, **kw):  # type: ignore[no-untyped-def]
+        result = orig_upload(path, **kw)
+        if result is not None and getattr(result, "trace_ids", None):
+            captured.extend(result.trace_ids)
+        return result
+
+    traces_res.upload = _wrap  # type: ignore[method-assign]
+    try:
+        for prompt in prompts:
+            captured.clear()
+            adapter = BedrockAgentsAdapter(client, capture_config=CaptureConfig.full())
+            adapter.connect(target=rt)
+            try:
+                resp = rt.invoke_agent(
+                    agentId=agent_id,
+                    agentAliasId=alias,
+                    sessionId="ll-feat-" + uuid.uuid4().hex[:12],
+                    inputText=f"{prompt} {SENTINEL}",
+                    enableTrace=True,
+                )
+                list(resp["completion"])
+            finally:
+                adapter.disconnect()
+            deadline = _time.time() + 30
+            while not captured and _time.time() < deadline:
+                _time.sleep(1.0)
+                _upload.shutdown_uploads(timeout=10)
+            if captured:
+                tid = captured[0]
+                trace_ids.append(tid)
+                trace = client.traces.get(tid)  # type: ignore[attr-defined]
+                evs = trace.data.get("events", []) if trace is not None and isinstance(trace.data, dict) else []
+                for ev in evs:
+                    seen_types.add(ev["event_type"])
+    finally:
+        traces_res.upload = orig_upload  # type: ignore[method-assign]
+
+    return {"seen_types": sorted(seen_types), "trace_ids": trace_ids}

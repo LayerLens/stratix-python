@@ -179,6 +179,20 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         install_hint="layerlens[semantic-kernel] (py>=3.10); instruments SK AgentGroupChat",
     ),
     FrameworkCase(
+        id="bedrock_agents",
+        import_name="boto3",
+        runner=fs.run_bedrock_agents,
+        required_env=("BEDROCK_AGENT_ID", "BEDROCK_AGENT_ALIAS_ID"),
+        any_of_env=("AWS_ACCESS_KEY_ID", "AWS_PROFILE"),
+        expected_types=("model.invoke", "agent.output"),
+        supports_redaction=False,  # content gating covered deterministically in unit doubles
+        self_flushing=True,  # one collector per invoke_agent, flushed when the stream drains
+        install_hint=(
+            "boto3 (core dep); AWS creds + BEDROCK_AGENT_ID/BEDROCK_AGENT_ALIAS_ID "
+            "for a PREPARED Bedrock Agent with enableTrace"
+        ),
+    ),
+    FrameworkCase(
         id="langfuse",
         import_name="httpx",
         runner=fs.run_langfuse,

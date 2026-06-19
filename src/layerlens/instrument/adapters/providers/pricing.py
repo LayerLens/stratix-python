@@ -94,7 +94,33 @@ BEDROCK_PRICING: dict[str, dict[str, float]] = {
     "meta.llama3-1-8b-instruct-v1:0": {"input": 0.00022, "output": 0.00022},
     "cohere.command-r-plus-v1:0": {"input": 0.003, "output": 0.015},
     "cohere.command-r-v1:0": {"input": 0.0005, "output": 0.0015},
+    # Amazon Nova (the cheap default many Bedrock Agents run on). Region-prefixed
+    # inference-profile ids (us./eu./apac.) resolve to these via _resolve_rates.
+    "amazon.nova-micro-v1:0": {"input": 0.000035, "output": 0.00014},
+    "amazon.nova-lite-v1:0": {"input": 0.00006, "output": 0.00024},
+    "amazon.nova-pro-v1:0": {"input": 0.0008, "output": 0.0032},
+    "amazon.nova-premier-v1:0": {"input": 0.0025, "output": 0.0125},
 }
+
+# Cross-region inference-profile prefixes Bedrock prepends to a model id
+# (e.g. ``us.amazon.nova-lite-v1:0``). Nova on Agents requires an inference
+# profile, so the live ``foundationModel`` is always prefixed.
+_INFERENCE_PROFILE_PREFIX_RE = re.compile(r"^(?:us-gov|us|eu|apac)\.(.+)$")
+
+
+def _normalize_model_id(model: str) -> str:
+    """Strip a Bedrock inference-profile wrapper down to the bare model id.
+
+    Handles a full inference-profile/foundation-model ARN (take the trailing
+    segment) and a cross-region prefix (``us.``/``eu.``/``apac.``/``us-gov.``).
+    Returns ``model`` unchanged when neither applies.
+    """
+    if model.startswith("arn:"):
+        model = model.rsplit("/", 1)[-1]
+    match = _INFERENCE_PROFILE_PREFIX_RE.match(model)
+    if match:
+        model = match.group(1)
+    return model
 
 
 def _cached_token_discount(model: str) -> float:
@@ -154,10 +180,9 @@ def reset_pricing_cache() -> None:
     _env_overrides_cache = None
 
 
-def _resolve_rates(model: str, table: dict[str, dict[str, float]]) -> dict[str, float] | None:
-    """Look up rates with fuzzy fallback (LAY-3330 AC).
+def _lookup_rates(model: str, table: dict[str, dict[str, float]]) -> dict[str, float] | None:
+    """Exact / dated-suffix / longest-prefix lookup (LAY-3330 AC).
 
-    Resolution order:
     1. Exact match on ``model``.
     2. Strip a trailing dated suffix (``-YYYY-MM-DD`` or ``-YYYYMMDD``) and
        look up the base model name.
@@ -177,6 +202,18 @@ def _resolve_rates(model: str, table: dict[str, dict[str, float]]) -> dict[str, 
     if prefix_matches:
         best = max(prefix_matches, key=len)
         return table[best]
+    return None
+
+
+def _resolve_rates(model: str, table: dict[str, dict[str, float]]) -> dict[str, float] | None:
+    """Resolve rates, retrying against the bare model id when ``model`` is a
+    Bedrock inference-profile ARN / region-prefixed id (LAY-3605)."""
+    rates = _lookup_rates(model, table)
+    if rates is not None:
+        return rates
+    normalized = _normalize_model_id(model)
+    if normalized != model:
+        return _lookup_rates(normalized, table)
     return None
 
 

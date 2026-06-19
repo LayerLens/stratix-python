@@ -92,8 +92,14 @@ class FrameworkAdapter(BaseAdapter):
         run._token = _current_run.set(run)
         return run
 
-    def _end_run(self) -> None:
-        """Pop ContextVars and flush the collector."""
+    def _end_run(self, *, flush: bool = True) -> None:
+        """Pop ContextVars and (by default) flush the collector.
+
+        ``flush=False`` detaches the run from the ContextVars without flushing —
+        used by adapters (e.g. bedrock_agents) that defer emission to a later
+        point (a streamed response proxy) and flush the captured collector
+        themselves once that work completes.
+        """
         run = _current_run.get()
         if run is None:
             return
@@ -120,7 +126,7 @@ class FrameworkAdapter(BaseAdapter):
             _current_run.set(None)
 
         # Only flush if we own the collector (not shared from trace_context)
-        if run._col_token is not None:
+        if flush and run._col_token is not None:
             run.collector.flush()
 
     def _get_run(self) -> Optional[RunState]:

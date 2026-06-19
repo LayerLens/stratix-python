@@ -42,6 +42,11 @@ class TraceCollector:
     def config(self) -> CaptureConfig:
         return self._config
 
+    @property
+    def sealed(self) -> bool:
+        """True once :meth:`flush` has run — further ``emit`` calls are no-ops."""
+        return self._sealed
+
     def emit(
         self,
         event_type: str,

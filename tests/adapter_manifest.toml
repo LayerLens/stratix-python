@@ -194,6 +194,7 @@ family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 doubles = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents_doubles.py" }
+live_id = "bedrock_agents"
 
 [adapters.agentforce]
 family = "framework"
