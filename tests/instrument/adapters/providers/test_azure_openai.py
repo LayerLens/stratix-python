@@ -156,6 +156,38 @@ class TestEmitsEvents:
 
         provider.disconnect()
 
+    def test_model_invoke_includes_azure_endpoint(self, mock_client, capture_trace):
+        """The Azure resource endpoint captured at connect() must be emitted on
+        model.invoke so the azure identity reaches the trace (P4 / LAY-3582).
+
+        Azure reuses the OpenAI patch surface, so the event name (and derived
+        provider) is the openai one and the response body carries no endpoint —
+        the captured ``_endpoint`` is the only azure-resource signal, and it was
+        never emitted.
+        """
+        client, _ = _make_client()
+        provider = AzureOpenAIProvider()
+        provider.connect(client)
+
+        endpoint = provider._endpoint
+        assert endpoint is not None and endpoint.startswith("https://unit-test.openai.azure.com")
+
+        @trace(mock_client)
+        def my_agent():
+            client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hello?"}],
+            )
+
+        my_agent()
+
+        mi = find_event(capture_trace["events"], "model.invoke")
+        assert mi["payload"]["azure_endpoint"] == endpoint
+        # Never leak the query string (api-key / api-version) into the trace.
+        assert "?" not in mi["payload"]["azure_endpoint"]
+
+        provider.disconnect()
+
     def test_error_emits_agent_error(self, mock_client, capture_trace):
         client, _ = _make_client(
             response_json={

@@ -60,14 +60,24 @@ def adapter(mock_client):
     return LlamaIndexAdapter(mock_client)
 
 
+#: The adapter installs these handler classes on the global dispatcher
+#: (see ``llamaindex.py`` ``_make_span_handler`` / ``_make_event_handler``).
+#: The old filter matched ``"LayerLens"`` in the class name, which never hit
+#: these names — so cleanup was a no-op and handlers leaked across this module.
+_ADAPTER_HANDLER_NAMES = {"_SpanHandler", "_EventHandler"}
+
+
+def _drop_adapter_handlers(dispatcher: Any) -> None:
+    """Remove the LlamaIndex adapter's own handlers from the global dispatcher."""
+    dispatcher.event_handlers = [h for h in dispatcher.event_handlers if type(h).__name__ not in _ADAPTER_HANDLER_NAMES]
+    dispatcher.span_handlers = [h for h in dispatcher.span_handlers if type(h).__name__ not in _ADAPTER_HANDLER_NAMES]
+
+
 @pytest.fixture(autouse=True)
 def clean_dispatcher():
-    """Remove our handlers after each test to prevent leaks."""
+    """Remove our handlers after each test to prevent leaks across this module."""
     yield
-    dispatcher = get_dispatcher()
-    # Remove any _LayerLens handlers
-    dispatcher.event_handlers = [h for h in dispatcher.event_handlers if "LayerLens" not in type(h).__name__]
-    dispatcher.span_handlers = [h for h in dispatcher.span_handlers if "LayerLens" not in type(h).__name__]
+    _drop_adapter_handlers(get_dispatcher())
 
 
 def _find_events(adapter: LlamaIndexAdapter, event_type: str) -> List[Dict[str, Any]]:
@@ -974,3 +984,35 @@ class TestDisconnectLeaveNoTrace:
         adapter.disconnect()
         assert len(dispatcher.event_handlers) == baseline_events
         assert len(dispatcher.span_handlers) == baseline_spans
+
+
+class TestDispatcherHandlerHygiene:
+    """The adapter's handlers must not leak onto the global dispatcher across
+    this module's tests. ``clean_dispatcher`` is the autouse safety net for any
+    test that connects without disconnecting; pin that it actually removes the
+    adapter's ``_SpanHandler`` / ``_EventHandler`` (the old ``"LayerLens"``-name
+    filter never matched those class names, so cleanup was a no-op)."""
+
+    @staticmethod
+    def _ours(handlers: List[Any]) -> List[Any]:
+        return [h for h in handlers if type(h).__name__ in {"_SpanHandler", "_EventHandler"}]
+
+    def test_clean_dispatcher_removes_adapter_handlers(self, mock_client):
+        dispatcher = get_dispatcher()
+
+        adapter = LlamaIndexAdapter(mock_client)
+        adapter.connect()
+        # connect() installed our span + event handler on the global dispatcher.
+        assert self._ours(dispatcher.span_handlers), "adapter did not register a span handler"
+        assert self._ours(dispatcher.event_handlers), "adapter did not register an event handler"
+
+        foreign_spans = [h for h in dispatcher.span_handlers if h not in self._ours(dispatcher.span_handlers)]
+        foreign_events = [h for h in dispatcher.event_handlers if h not in self._ours(dispatcher.event_handlers)]
+
+        # Teardown cleanup must remove every adapter handler (none may leak)
+        # while leaving foreign handlers untouched.
+        _drop_adapter_handlers(dispatcher)
+        assert self._ours(dispatcher.span_handlers) == []
+        assert self._ours(dispatcher.event_handlers) == []
+        assert dispatcher.span_handlers == foreign_spans
+        assert dispatcher.event_handlers == foreign_events

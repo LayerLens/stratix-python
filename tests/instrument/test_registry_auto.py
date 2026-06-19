@@ -202,8 +202,8 @@ class TestAuto:
 # also resolves the interpreter-gated extras (crewai, autogen, ...), so the
 # wired set is env-dependent — assertions below use membership, never exact
 # equality. pydantic_ai and bedrock_agents are *detected* but their connect()
-# requires a target, so auto() warns and drops them — pinned in
-# test_auto_attempts_but_cannot_wire_target_requiring_adapters below.
+# requires a target, so auto() skips them quietly (explicit-wire-only) —
+# pinned in test_auto_skips_target_requiring_adapters_quietly below.
 _ALWAYS_AUTO_WIRED = {"langchain", "langgraph", "openai_agents"}
 
 
@@ -245,25 +245,36 @@ class TestAutoLiveWiring:
 
         assert _ALWAYS_AUTO_WIRED <= set(connected)
 
-    def test_auto_attempts_but_cannot_wire_target_requiring_adapters(self, caplog):
-        """pydantic_ai and bedrock_agents are discovered here (pydantic-ai and
-        boto3 are installed) and listed in ``_FRAMEWORK_ADAPTERS``, but their
-        ``connect()`` raises ``ValueError`` when called without a target, so
-        EVERY ``auto()`` call in an env like this one logs a warning for them
-        and omits them from the result.
+    def test_auto_skips_target_requiring_adapters_quietly(self, caplog):
+        """pydantic_ai and bedrock_agents are detected here (pydantic-ai and
+        boto3 are installed) and remain listed in ``_FRAMEWORK_ADAPTERS``, but
+        their ``connect()`` raises ``ValueError`` without an explicit target.
 
-        Pins CURRENT behavior: these two can never be auto-wired, yet they
-        are attempted anyway instead of being excluded from auto() the way
-        agentforce/langfuse are.
+        auto() must treat them as explicit-wire-only — skipped WITHOUT
+        attempting connect() and WITHOUT logging a warning — the same way
+        agentforce/langfuse are excluded. (bedrock_agents is probed via bare
+        boto3, so the old warn-and-drop fired on every AWS user's auto() call.)
         """
         connected = auto(Mock())
 
+        # Never auto-wired...
         assert "pydantic_ai" not in connected
         assert "bedrock_agents" not in connected
         assert get("pydantic_ai") is None
         assert get("bedrock_agents") is None
+
+        # ...and skipped quietly: not attempted, so nothing is logged for them.
         for name in ("pydantic_ai", "bedrock_agents"):
-            assert any(name in rec.message for rec in caplog.records), name
+            offending = [rec.message for rec in caplog.records if name in rec.message]
+            assert not offending, f"auto() should skip {name} quietly, but logged: {offending}"
+
+        # Still discoverable and still a known framework adapter (instantiable
+        # explicitly with a target).
+        discovered = discover_installed()["frameworks"]
+        assert "pydantic_ai" in discovered
+        assert "bedrock_agents" in discovered
+        assert "pydantic_ai" in _FRAMEWORK_ADAPTERS
+        assert "bedrock_agents" in _FRAMEWORK_ADAPTERS
 
     def test_connect_failure_in_one_adapter_does_not_block_others(self, monkeypatch, caplog):
         # LangGraphCallbackHandler subclasses LangChainCallbackHandler, so
@@ -324,10 +335,10 @@ class TestProbeFalsePositives:
         """``bedrock_agents`` is probed via ``boto3``
         (``_FRAMEWORK_PACKAGES["bedrock_agents"] == "boto3"``), so every
         environment with boto3 installed — effectively every AWS user — is
-        reported as having Bedrock Agents, and ``auto()`` instantiates and
-        attempts the adapter there (the connect then fails for lack of a
-        bedrock-agent-runtime client; see
-        test_auto_attempts_but_cannot_wire_target_requiring_adapters).
+        reported as having Bedrock Agents. (``auto()`` no longer attempts it:
+        it is skipped as explicit-wire-only — see
+        test_auto_skips_target_requiring_adapters_quietly. This test pins only
+        the detection probe, which is unchanged.)
 
         Same deferred probe-tightening caveat as the ``agents`` test above.
         """

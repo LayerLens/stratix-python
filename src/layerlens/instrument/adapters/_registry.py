@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import importlib
 import importlib.util
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional, FrozenSet
 
 from ._base import AdapterInfo, BaseAdapter
 
@@ -104,6 +104,16 @@ _FRAMEWORK_ADAPTERS: Dict[str, Tuple[str, str]] = {
     ),
 }
 
+# Framework adapters that ARE detected (so ``discover_installed()`` reports
+# them) and instantiable, but whose ``connect()`` requires an explicit target
+# — a specific agent / runtime-client object to wrap — and so cannot be wired
+# from a bare layerlens client. ``auto()`` skips these silently, the same way
+# the credential-only adapters (agentforce, langfuse) are simply never listed
+# in ``_FRAMEWORK_ADAPTERS``; users instantiate them explicitly with a target.
+# (bedrock_agents is probed via bare ``boto3``, so attempting it on every
+# ``auto()`` call previously logged a WARNING + traceback for every AWS user.)
+_TARGET_REQUIRED_ADAPTERS: FrozenSet[str] = frozenset({"pydantic_ai", "bedrock_agents"})
+
 
 def register(name: str, adapter: BaseAdapter) -> None:
     """Register an adapter. Disconnects any existing adapter with the same name."""
@@ -174,10 +184,10 @@ def auto(
     """Detect installed frameworks and register a connected adapter for each.
 
     Only frameworks that can connect with just a layerlens client are wired
-    here. Adapters that need credentials at connect time (agentforce,
-    langfuse) must be instantiated explicitly. Providers also need explicit
-    setup with the user's SDK client — use ``instrument_openai(client)``
-    etc. for those.
+    here. Adapters that need credentials (agentforce, langfuse) or an explicit
+    target object to wrap (pydantic_ai, bedrock_agents) at connect time must
+    be instantiated explicitly. Providers also need explicit setup with the
+    user's SDK client — use ``instrument_openai(client)`` etc. for those.
 
     Args:
         client: The ``layerlens.Stratix`` instance to attach.
@@ -194,6 +204,11 @@ def auto(
 
     for name, package in _FRAMEWORK_PACKAGES.items():
         if name in skip_set:
+            continue
+        if name in _TARGET_REQUIRED_ADAPTERS:
+            # Explicit-wire-only: connect() needs a target object to wrap, so
+            # it can't be auto-wired from just a client. Skip quietly rather
+            # than attempt a connect() that always raises.
             continue
         if not _is_installed(package):
             continue

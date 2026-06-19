@@ -230,13 +230,25 @@ class StrandsAdapter(FrameworkAdapter):
 
             # Emit per-cycle cost.record events matched to model spans.
             # accumulated_usage updates AFTER AfterModelCallEvent fires,
-            # so we read per-cycle tokens here instead.
-            self._emit_per_cycle_tokens(agent)
+            # so we read per-cycle tokens here instead. Isolated in its own
+            # guard: a bad cost payload (e.g. an unserializable value that
+            # breaks attestation hashing) must degrade to "no cost.record",
+            # never abort the run output or the flush below.
+            try:
+                self._emit_per_cycle_tokens(agent)
+            except Exception:
+                log.warning("layerlens: error emitting Strands per-cycle tokens", exc_info=True)
 
             self._fire("agent.output", payload, span_id=span_id, span_name=name)
-            self._end_trace()
         except Exception:
             log.warning("layerlens: error in Strands after_invocation", exc_info=True)
+        finally:
+            # Always flush the trace with whatever was captured — a failure
+            # above must never strand the run's events unsent.
+            try:
+                self._end_trace()
+            except Exception:
+                log.warning("layerlens: error flushing Strands trace", exc_info=True)
 
     def _on_before_model(self, event: Any) -> None:
         try:

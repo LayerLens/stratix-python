@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 
 from .openai import _CAPTURE_PARAMS, OpenAIProvider  # type: ignore[attr-defined]
 from .pricing import AZURE_PRICING
+from ._base_provider import MonkeyPatchProvider
 
 
 class AzureOpenAIProvider(OpenAIProvider):
@@ -39,6 +40,31 @@ class AzureOpenAIProvider(OpenAIProvider):
         if endpoint is not None:
             self._endpoint = endpoint
         return result
+
+    def _extractors(self) -> "MonkeyPatchProvider._Extractors":  # type: ignore[override]
+        # Surface the scrubbed Azure resource endpoint (captured at connect) in
+        # meta so the azure identity reaches the trace. The OpenAI patch surface
+        # otherwise loses it: provider derives to "openai" and the response body
+        # carries no endpoint. ``azure_api_version`` / ``azure_deployment``
+        # already flow through extract_meta when the SDK attaches them to the
+        # response. Read ``_endpoint`` lazily (per request) because connect()
+        # captures it only AFTER super().connect() has already bound these
+        # extractors onto the wrapped methods.
+        base = super()._extractors()
+        base_meta = base.meta
+
+        def meta_with_endpoint(response: Any) -> Dict[str, Any]:
+            meta = base_meta(response)
+            endpoint = getattr(self, "_endpoint", None)
+            if endpoint:
+                meta["azure_endpoint"] = endpoint
+            return meta
+
+        return MonkeyPatchProvider._Extractors(
+            output=base.output,
+            meta=meta_with_endpoint,
+            tool_calls=base.tool_calls,
+        )
 
 
 def _scrubbed_endpoint(client: Any) -> str | None:

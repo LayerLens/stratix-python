@@ -30,52 +30,52 @@
 family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_openai.py" }
 streaming = { path = "tests/instrument/adapters/providers/test_streaming.py" }
-async = { path = "tests/instrument/adapters/providers/test_async_providers.py", pending = "PR #10 (LAY-3575)" }
+async = { path = "tests/instrument/adapters/providers/test_async_providers.py" }
 redaction = { path = "tests/instrument/test_capture_config.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "openai"
 
 [adapters.anthropic]
 family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_anthropic.py" }
 streaming = { path = "tests/instrument/adapters/providers/test_streaming.py" }
-async = { path = "tests/instrument/adapters/providers/test_async_providers.py", pending = "PR #10 (LAY-3575)" }
+async = { path = "tests/instrument/adapters/providers/test_async_providers.py" }
 redaction = { path = "tests/instrument/test_capture_config.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "anthropic"
 
 [adapters.azure_openai]
 family = "provider"
-unit = { path = "tests/instrument/adapters/providers/test_azure_openai.py", pending = "T8 doubles (LAY-3582)" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
-doubles = { path = "tests/instrument/adapters/providers/test_azure_openai.py", pending = "T8 doubles (LAY-3582)" }
+unit = { path = "tests/instrument/adapters/providers/test_azure_openai.py" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+doubles = { path = "tests/instrument/adapters/providers/test_azure_openai.py" }
 live_id = "azure_openai"
 
 [adapters.google_vertex]
 family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_google_vertex.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
-doubles = { path = "tests/instrument/adapters/providers/test_google_vertex_doubles.py", pending = "T8 doubles (LAY-3582)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+doubles = { path = "tests/instrument/adapters/providers/test_google_vertex_doubles.py" }
 live_id = "google_vertex"
 
 [adapters.bedrock]
 family = "provider"
-unit = { path = "tests/instrument/adapters/providers/test_bedrock.py", pending = "T8 doubles (LAY-3582)" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
-doubles = { path = "tests/instrument/adapters/providers/test_bedrock.py", pending = "T8 doubles (LAY-3582)" }
+unit = { path = "tests/instrument/adapters/providers/test_bedrock.py" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+doubles = { path = "tests/instrument/adapters/providers/test_bedrock.py" }
 live_id = "bedrock"
 
 [adapters.ollama]
 family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_ollama.py" }
-async = { path = "tests/instrument/adapters/providers/test_async_providers.py", pending = "PR #10 (LAY-3575)" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+async = { path = "tests/instrument/adapters/providers/test_async_providers.py" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "ollama"
 
 [adapters.litellm]
 family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_litellm.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "litellm"
 
 # ---------------------------------------------------------------------------
@@ -86,44 +86,44 @@ live_id = "litellm"
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_langchain.py" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_langchain.py", pattern = "capture" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 matrix_row = "langchain"
 live_id = "langchain"
 
 [adapters.langgraph]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_langgraph.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 matrix_row = "langgraph"
 live_id = "langgraph"
 
 [adapters.crewai]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_crewai.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_crewai.py", pending = "PR #11 (LAY-3576), xfail(strict) until D1b" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_crewai.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_crewai.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_crewai.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "crewai"
 live_id = "crewai"
 
 [adapters.openai_agents]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_openai_agents.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_openai_agents.py", pending = "PR #11 (LAY-3576)" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_openai_agents.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_openai_agents.py" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_openai_agents.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "openai_agents"
 live_id = "openai_agents"
 
 [adapters.semantic_kernel]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel.py" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "semantic_kernel"
 live_id = "semantic_kernel"
 
 [adapters.ms_agent_framework]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework.py" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "semantic_kernel"
 live_id = "ms_agent_framework"
 
@@ -131,92 +131,92 @@ live_id = "ms_agent_framework"
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_pydantic_ai.py" }
 concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 matrix_row = "pydantic_ai"
 live_id = "pydantic_ai"
 
 [adapters.google_adk]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_google_adk.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_google_adk.py", pending = "PR #11 (LAY-3576), xfail(strict) until D1b" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_google_adk.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_google_adk.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_google_adk.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "google_adk"
 live_id = "google_adk"
 
 [adapters.strands]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_strands.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_strands.py", pending = "PR #11 (LAY-3576), xfail(strict) until D1b" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_strands.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_strands.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_strands.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "strands"
 live_id = "strands"
 
 [adapters.smolagents]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_smolagents.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_smolagents.py", pending = "PR #11 (LAY-3576), xfail(strict) until D1b" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_smolagents.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_smolagents.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_smolagents.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "smolagents"
 live_id = "smolagents"
 
 [adapters.llamaindex]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_llamaindex.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_llamaindex.py", pending = "PR #11 (LAY-3576)" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_llamaindex.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_llamaindex.py" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_llamaindex.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "llamaindex"
 live_id = "llamaindex"
 
 [adapters.haystack]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_haystack.py" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_haystack.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_haystack.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "haystack"
 live_id = "haystack"
 
 [adapters.autogen]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_autogen.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_autogen.py", pending = "PR #11 (LAY-3576), xfail(strict) until D1b" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_autogen.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_autogen.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_autogen.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "autogen"
 live_id = "autogen"
 
 [adapters.agno]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_agno.py" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_agno.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_agno.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "agno"
 live_id = "agno"
 
 [adapters.bedrock_agents]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
-doubles = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents_doubles.py", pending = "T8 doubles (LAY-3582)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+doubles = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents_doubles.py" }
 
 [adapters.agentforce]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_agentforce.py" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_agentforce.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
-doubles = { path = "tests/instrument/adapters/frameworks/test_agentforce.py", pending = "T8 doubles (LAY-3582)" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_agentforce.py", pattern = "TestDisconnectLeaveNoTrace" }
+doubles = { path = "tests/instrument/adapters/frameworks/test_agentforce.py" }
 
 [adapters.langfuse]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_langfuse.py" }
-disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_langfuse.py", pattern = "TestDisconnectLeaveNoTrace", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_langfuse.py", pattern = "TestDisconnectLeaveNoTrace" }
 live_id = "langfuse"
 
 [adapters.embedding]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_embedding.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "embedding"
 
 [adapters.vector_store]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_vector_store.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 matrix_row = "vector_store"
 live_id = "vector_store"
 
@@ -227,40 +227,40 @@ live_id = "vector_store"
 [adapters.mcp]
 family = "protocol"
 unit = { path = "tests/instrument/adapters/protocols/test_mcp_tool_wrapper.py" }
-redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py", pending = "PR #12 (LAY-3578)" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "mcp"
 
 [adapters.a2a]
 family = "protocol"
 unit = { path = "tests/instrument/adapters/protocols/test_a2a_client.py" }
-redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py", pending = "PR #12 (LAY-3578)" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "a2a"
 
 [adapters.agui]
 family = "protocol"
 unit = { path = "tests/instrument/adapters/protocols/test_agui_middleware.py" }
-redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py", pending = "PR #12 (LAY-3578)" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "agui"
 
 [adapters.ap2]
 family = "protocol"
 unit = { path = "tests/instrument/adapters/protocols/test_certification.py" }
-redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py", pending = "PR #12 (LAY-3578)" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "ap2"
 
 [adapters.ucp]
 family = "protocol"
 unit = { path = "tests/instrument/adapters/protocols/test_certification.py" }
-redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py", pending = "PR #12 (LAY-3578)" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "ucp"
 
 [adapters.a2ui]
 family = "protocol"
 unit = { path = "tests/instrument/adapters/protocols/test_certification.py" }
-disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py", pending = "PR #9 (LAY-3577)" }
+disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "a2ui"

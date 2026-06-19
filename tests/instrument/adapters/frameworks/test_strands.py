@@ -645,6 +645,93 @@ class TestErrorIsolation:
 
 
 # ---------------------------------------------------------------------------
+# Cost-emit isolation (P2 / LAY-3573)
+# ---------------------------------------------------------------------------
+
+
+class TestCostEmitIsolation:
+    """A failure while emitting per-cycle ``cost.record`` events must degrade
+    to "no cost.record" — it must NOT take down the run's ``agent.output`` or
+    skip the flush, silently dropping the whole trace.
+
+    Regression for the phase-4 finding: ``_on_after_invocation`` ran the cost
+    emit in the same ``try`` as ``_fire("agent.output")`` and the
+    ``_end_trace()`` flush, so one unserializable cost payload (e.g. a
+    non-string cycle ``stop_reason`` that breaks attestation hashing) was
+    swallowed by the blanket ``except`` and the entire trace was lost.
+    """
+
+    def test_cost_emit_failure_still_emits_output_and_flushes(self, mock_client, monkeypatch):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = StrandsAdapter(mock_client)
+        adapter.connect()
+
+        def boom(_agent):
+            raise RuntimeError("cost payload broke attestation hashing")
+
+        monkeypatch.setattr(adapter, "_emit_per_cycle_tokens", boom)
+
+        agent = _make_agent(name="ResilientAgent", model_id="claude-sonnet")
+        _simulate_invocation(adapter, agent, model_tokens={"input": 100, "output": 50})
+
+        events = uploaded["events"]
+        # The run output survives the cost-emit failure...
+        agent_out = find_event(events, "agent.output")
+        assert agent_out["payload"]["agent_name"] == "ResilientAgent"
+        # ...and the trace flushed instead of being dropped.
+        assert mock_client.traces.upload.called
+        assert uploaded.get("trace_id") is not None
+        assert uploaded["attestation"].get("root_hash") is not None
+        # The failed cost emit degraded cleanly to no cost.record.
+        assert find_events(events, "cost.record") == []
+
+        adapter.disconnect()
+
+    def test_unserializable_cost_payload_does_not_drop_trace(self, mock_client):
+        """The real trigger documented on ``_make_cycle``: a non-string cycle
+        ``stop_reason`` leaks into the ``cost.record`` payload and breaks
+        attestation hashing at emit time. The trace must still upload."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = StrandsAdapter(mock_client)
+        adapter.connect()
+
+        agent = _make_agent(name="RealisticAgent", model_id="claude-sonnet")
+
+        before_inv = BeforeInvocationEvent(agent=agent, invocation_state={}, messages="hi")
+        adapter._on_before_invocation(before_inv)
+        before_model = BeforeModelCallEvent(agent=agent, invocation_state={})
+        adapter._on_before_model(before_model)
+        after_model = AfterModelCallEvent(
+            agent=agent,
+            invocation_state={},
+            stop_response=_make_model_stop_response("end_turn"),
+        )
+        adapter._on_after_model(after_model)
+
+        # Plant a cycle with real tokens (so the cost branch runs) and an
+        # unserializable stop_reason — ``compute_hash`` raises ``TypeError`` on
+        # any type its ``_json_default`` doesn't recognize.
+        bad_cycle = {
+            "usage": {"inputTokens": 100, "outputTokens": 50},
+            "stop_reason": object(),
+        }
+        invocation = Mock()
+        invocation.cycles = [bad_cycle]
+        agent.event_loop_metrics.agent_invocations = [invocation]
+
+        after_inv = AfterInvocationEvent(agent=agent, invocation_state={}, result=_make_result())
+        adapter._on_after_invocation(after_inv)
+
+        events = uploaded["events"]
+        assert find_event(events, "agent.output")["payload"]["agent_name"] == "RealisticAgent"
+        assert mock_client.traces.upload.called
+        assert uploaded.get("trace_id") is not None
+        assert find_events(events, "cost.record") == []
+
+        adapter.disconnect()
+
+
+# ---------------------------------------------------------------------------
 # Disconnect leave-no-trace invariants (LAY-3577 / T3)
 # ---------------------------------------------------------------------------
 

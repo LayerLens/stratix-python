@@ -139,6 +139,39 @@ class TestLifecycle:
         provider = LiteLLMProvider()
         provider.disconnect()  # should not raise
 
+    def test_double_connect_is_idempotent(self):
+        """connect() guards against double-wrapping (litellm.py:43,48): a second
+        connect() with no intervening disconnect must not re-wrap or clobber the
+        saved original, so exactly one wrap survives and disconnect fully
+        restores. Verification + regression pin — the guard already holds.
+        """
+        original_completion = self.mock_litellm.completion
+        original_acompletion = self.mock_litellm.acompletion
+
+        provider = LiteLLMProvider()
+        provider.connect()
+        wrapped_completion = self.mock_litellm.completion
+        wrapped_acompletion = self.mock_litellm.acompletion
+        # First connect wrapped both methods...
+        assert wrapped_completion is not original_completion
+        assert wrapped_acompletion is not original_acompletion
+        # ...and saved the TRUE originals for restoration.
+        assert provider._originals["completion"] is original_completion
+        assert provider._originals["acompletion"] is original_acompletion
+
+        # Second connect without disconnect must be a no-op for wrapping.
+        provider.connect()
+        assert self.mock_litellm.completion is wrapped_completion  # not re-wrapped
+        assert self.mock_litellm.acompletion is wrapped_acompletion
+        # ...and must NOT clobber the saved originals with the wrappers.
+        assert provider._originals["completion"] is original_completion
+        assert provider._originals["acompletion"] is original_acompletion
+
+        # disconnect fully restores the true originals (no residual wrapper).
+        provider.disconnect()
+        assert self.mock_litellm.completion is original_completion
+        assert self.mock_litellm.acompletion is original_acompletion
+
 
 # ---------------------------------------------------------------------------
 # adapter_info
