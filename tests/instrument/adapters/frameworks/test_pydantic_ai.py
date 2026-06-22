@@ -22,7 +22,7 @@ from layerlens.instrument.adapters.frameworks.pydantic_ai import (
     PydanticAIAdapter,
 )  # noqa: E402
 
-from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
+from .conftest import find_event, find_events, record_for_schema_lock, capture_framework_trace  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -360,6 +360,7 @@ class TestMultipleRuns:
             with open(path) as f:
                 data = json.load(f)
             all_uploads.append(data[0])
+            record_for_schema_lock(data[0].get("events", []))
 
         mock_client.traces.upload.side_effect = _capture
 

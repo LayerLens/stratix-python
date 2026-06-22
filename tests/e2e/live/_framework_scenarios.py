@@ -181,6 +181,18 @@ def run_vector_store(flow: str) -> None:  # noqa: ARG001
     adapter.connect(coll)
     try:
         coll.query(query_embeddings=[[0.15, 0.25, 0.35]], n_results=2)
+        # Assert the live wire actually labelled this as Chroma. connect() routes
+        # via _auto_wrap, which used to mis-route a real Chroma Collection to the
+        # Pinecone wrapper -> provider='pinecone' / result_count=0, undetected
+        # (LAY-3616). Pin the corrected routing on the real backend.
+        from layerlens.instrument._context import _current_collector
+
+        collector = _current_collector.get()
+        retrieval = [e for e in (collector.events if collector else []) if e["event_type"] == "retrieval.query"]
+        assert retrieval, "vector_store emitted no retrieval.query event"
+        payload = retrieval[-1]["payload"]
+        assert payload["provider"] == "chroma", f"expected provider='chroma', got {payload.get('provider')!r}"
+        assert payload.get("result_count", 0) > 0, f"expected result_count>0, got {payload.get('result_count')!r}"
     finally:
         adapter.disconnect()
 

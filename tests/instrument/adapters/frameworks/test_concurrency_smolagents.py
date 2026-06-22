@@ -30,6 +30,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from .conftest import record_for_schema_lock
+
 smolagents = pytest.importorskip("smolagents")
 from smolagents import ToolCall, ActionStep  # noqa: E402
 from smolagents.memory import Timing  # noqa: E402
@@ -52,6 +54,7 @@ def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
         with open(path) as f:
             data = json.load(f)
         traces.append(data[0])
+        record_for_schema_lock(data[0].get("events", []))
 
     mock_client.traces.upload.side_effect = _capture
     return traces

@@ -5,6 +5,10 @@ import pytest
 
 from layerlens.instrument import _upload
 
+# Enable the ``pytester`` fixture so the schema-lock enforcement (LAY-3613) can be
+# guarded by an in-process inner pytest run (see test_event_schema.py).
+pytest_plugins = ["pytester"]
+
 
 @pytest.fixture(autouse=True)
 def _upload_sync_mode():

@@ -30,6 +30,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from .conftest import record_for_schema_lock
+
 pytest.importorskip("google.adk")
 
 from layerlens.instrument.adapters.frameworks.google_adk import (
@@ -49,6 +51,7 @@ def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
         with open(path) as f:
             data = json.load(f)
         traces.append(data[0])
+        record_for_schema_lock(data[0].get("events", []))
 
     mock_client.traces.upload.side_effect = _capture
     return traces

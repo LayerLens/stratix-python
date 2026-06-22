@@ -72,6 +72,46 @@ def _chat_completion_json(
     }
 
 
+def _chat_completion_with_tool_calls_json(
+    tool_name: str = "get_weather",
+    arguments: str = '{"city": "Seattle"}',
+    model: str = "gpt-4o-2024-05-13",
+) -> Dict[str, Any]:
+    """Realistic Azure OpenAI response whose assistant message dispatches a tool.
+
+    Azure's ``requires_tool_call=True`` live contract (``_registry.py``) has had
+    zero unit/double assertion — the inherited OpenAI ``extract_tool_calls`` had
+    never been exercised on any Azure response (LAY-3615). This pins that path.
+    """
+    return {
+        "id": "chatcmpl-azure-tool-0001",
+        "object": "chat.completion",
+        "created": 1717418400,
+        "model": model,
+        "system_fingerprint": "fp_azure_5f2a1b",
+        "prompt_filter_results": [{"prompt_index": 0, "content_filter_results": _CONTENT_FILTER}],
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_azure_abc123",
+                            "type": "function",
+                            "function": {"name": tool_name, "arguments": arguments},
+                        }
+                    ],
+                },
+                "content_filter_results": _CONTENT_FILTER,
+            }
+        ],
+        "usage": {"prompt_tokens": 50, "completion_tokens": 12, "total_tokens": 62},
+    }
+
+
 def _make_client(
     response_json: Optional[Dict[str, Any]] = None,
     status_code: int = 200,
@@ -186,6 +226,38 @@ class TestEmitsEvents:
         # Never leak the query string (api-key / api-version) into the trace.
         assert "?" not in mi["payload"]["azure_endpoint"]
 
+    def test_tool_call_emitted_from_azure_response(self, mock_client, capture_trace):
+        client, _ = _make_client(response_json=_chat_completion_with_tool_calls_json())
+        provider = AzureOpenAIProvider()
+        provider.connect(client)
+
+        @trace(mock_client)
+        def my_agent():
+            return client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Weather in Seattle?"}],
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "parameters": {"type": "object", "properties": {"city": {"type": "string"}}},
+                        },
+                    }
+                ],
+            )
+
+        my_agent()
+        events = capture_trace["events"]
+        tool_call = find_event(events, "tool.call")
+        assert tool_call["payload"]["tool_name"] == "get_weather"
+        assert tool_call["payload"]["arguments"] == {"city": "Seattle"}
+        # Azure reuses the OpenAI patch surface, so provider derives to "openai".
+        assert tool_call["payload"]["provider"] == "openai"
+        assert tool_call["payload"]["model"] == "gpt-4o-2024-05-13"
+        # The model.invoke still lands alongside the tool.call.
+        mi = find_event(events, "model.invoke")
+        assert mi["payload"]["finish_reason"] == "tool_calls"
         provider.disconnect()
 
     def test_error_emits_agent_error(self, mock_client, capture_trace):

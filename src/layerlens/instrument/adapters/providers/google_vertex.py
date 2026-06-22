@@ -21,11 +21,25 @@ _CAPTURE_PARAMS = frozenset(
 
 
 def _strip_models_prefix(name: str | None) -> str | None:
-    """Vertex `GenerativeModel.model_name` is typically prefixed with `models/`;
-    pricing lookups want the bare model id (`gemini-2.5-pro`)."""
-    if name and name.startswith("models/"):
-        return name[len("models/") :]
-    return name
+    """Return the bare model id from any Vertex resource form.
+
+    A real ``vertexai`` ``GenerativeModel`` stores the reconciled resource name,
+    not a bare id — ``_reconcile_model_name`` yields ``publishers/google/models/
+    <id>`` (or ``publishers/google/<id>``, or a fully-qualified ``projects/<p>/
+    locations/<l>/publishers/google/models/<id>``); older paths use ``models/
+    <id>``. Pricing lookups + the model field want the bare id, which is always
+    the final path segment. The previous implementation only stripped a literal
+    ``models/`` prefix, so every real model name fell through unstripped and
+    broke pricing + the ``response_model`` field (LAY-3615)."""
+    if not name:
+        return name
+    # Tuned-model / endpoint resources (``projects/.../endpoints/<numeric-id>``,
+    # a documented ``model_name`` form) have no bare model id — the last segment
+    # is an opaque endpoint number. Keep the full resource name so the model
+    # label stays meaningful (it isn't in the pricing table either way).
+    if "/endpoints/" in name:
+        return name
+    return name.rsplit("/", 1)[-1]
 
 
 class GoogleVertexProvider(MonkeyPatchProvider):

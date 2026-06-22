@@ -64,6 +64,32 @@ class TestStripModelsPrefix:
     def test_none_passthrough(self) -> None:
         assert _strip_models_prefix(None) is None
 
+    # The real ``vertexai`` GenerativeModel does not store ``models/<id>`` — its
+    # ``_reconcile_model_name`` produces ``publishers/google/models/<id>`` (or
+    # ``publishers/google/<id>``, or a fully-qualified ``projects/.../publishers/
+    # google/models/<id>``). The old strip only handled ``models/`` so every real
+    # model name fell through unstripped, breaking pricing + the model field
+    # (LAY-3615). These pin the bare id for the shapes the SDK actually emits.
+    def test_strips_publishers_google_models_prefix(self) -> None:
+        assert _strip_models_prefix("publishers/google/models/gemini-1.5-flash") == "gemini-1.5-flash"
+
+    def test_strips_publishers_google_prefix_without_models(self) -> None:
+        assert _strip_models_prefix("publishers/google/gemini-1.5-flash") == "gemini-1.5-flash"
+
+    def test_strips_fully_qualified_resource_name(self) -> None:
+        name = "projects/my-proj/locations/us-central1/publishers/google/models/gemini-2.5-pro"
+        assert _strip_models_prefix(name) == "gemini-2.5-pro"
+
+    def test_empty_string_passthrough(self) -> None:
+        assert _strip_models_prefix("") == ""
+
+    def test_tuned_model_endpoint_resource_kept_whole(self) -> None:
+        # vertexai documents a tuned-model *endpoint* resource as a valid
+        # model_name; its last segment is an opaque endpoint number, not a model
+        # id, so keep the full resource name rather than degrade to the number.
+        name = "projects/my-proj/locations/us-central1/endpoints/1234567890123456789"
+        assert _strip_models_prefix(name) == name
+
 
 # ---------------------------------------------------------------------------
 # Emit events
@@ -196,6 +222,17 @@ class TestModelNameResolution:
         provider = GoogleVertexProvider()
         provider.connect(vertex_model)
         assert provider._model_name == "gemini-1.5-pro"
+
+    def test_model_name_stripped_from_real_publishers_resource(self):
+        # The shape a real vertexai GenerativeModel stores (LAY-3615): the old
+        # strip left this fully prefixed, so pricing + the model field broke.
+        vertex_model = Mock(spec=["_model_name", "generate_content"])
+        vertex_model._model_name = "publishers/google/models/gemini-1.5-flash"
+        vertex_model.generate_content = lambda *a, **kw: None
+
+        provider = GoogleVertexProvider()
+        provider.connect(vertex_model)
+        assert provider._model_name == "gemini-1.5-flash"
 
 
 # ---------------------------------------------------------------------------

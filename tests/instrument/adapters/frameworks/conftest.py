@@ -5,15 +5,17 @@ from typing import Any, Dict
 from unittest.mock import Mock
 
 # Re-export from root conftest so framework tests can do `from .conftest import ...`
-from ...conftest import find_event, find_events  # noqa: F401
-from ..._event_schema import validate_events
+from ...conftest import find_event, find_events, record_for_schema_lock  # noqa: F401
 
 
 def capture_framework_trace(mock_client: Mock) -> Dict[str, Any]:
     """Capture the uploaded trace payload from a framework adapter.
 
     Accumulates events across multiple flushes (some adapters use
-    multiple collectors).
+    multiple collectors). Uploaded events are recorded for the schema lock,
+    which is enforced after the test by the ``_enforce_schema_lock`` autouse
+    fixture (validating inside the mocked upload is swallowed — see the note in
+    the root ``conftest.py``; LAY-3613).
     """
     uploaded: Dict[str, Any] = {"events": []}
 
@@ -25,9 +27,7 @@ def capture_framework_trace(mock_client: Mock) -> Dict[str, Any]:
         uploaded["events"].extend(payload.get("events", []))
         uploaded["capture_config"] = payload.get("capture_config", {})
         uploaded["attestation"] = payload.get("attestation", {})
-        # Schema lock (LAY-3583): every uploaded event must match the
-        # canonical payload vocabulary.
-        validate_events(payload.get("events", []))
+        record_for_schema_lock(payload.get("events", []))
 
     mock_client.traces.upload.side_effect = _capture
     return uploaded

@@ -27,6 +27,7 @@ from layerlens.instrument.adapters.providers.pricing import calculate_cost
 from layerlens.instrument.adapters.providers.token_usage import NormalizedTokenUsage
 
 from ._timing import TRACE_READBACK_DELAY_S, TRACE_READBACK_ATTEMPTS
+from ._linkage import verify_linkage
 from ._registry import ProviderCase, resolve_pricing_table
 from ._scenarios import SENTINEL
 
@@ -52,6 +53,12 @@ def run_case(client: Any, case: ProviderCase, variant: str) -> Dict[str, Any]:
         raise AssertionError(f"[{case.id}/{variant}] trace {backend_id} not found after polling")
     data_has_events = _reassert_roundtrip(trace, events, variant)
 
+    # Inbound-connector linkage. Records the stamped integration_id; asserts an
+    # exact match + Healthy only when LAYERLENS_LIVE_INTEGRATION_ID is set. The
+    # provider harness previously skipped this entirely (LAY-3618 / gap G7), so a
+    # provider trace's connector linkage was never verifiable like a framework's.
+    linkage = verify_linkage(client, backend_id)
+
     _teardown(client, backend_id)
 
     model = _first_model(by_type)
@@ -69,6 +76,9 @@ def run_case(client: Any, case: ProviderCase, variant: str) -> Dict[str, Any]:
         "redaction_ok": variant == "redaction",
         "attestation_ok": True,
         "data_has_events": data_has_events,
+        "linked": linkage.get("linked"),
+        "integration_id": linkage.get("integration_id"),
+        "linkage_status": linkage.get("status"),
         "status": "pass",
     }
 

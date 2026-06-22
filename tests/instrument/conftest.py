@@ -8,6 +8,49 @@ import pytest
 
 from ._event_schema import validate_events
 
+# ---------------------------------------------------------------------------
+# Schema lock (LAY-3583) — enforced OUTSIDE the swallowing upload path.
+#
+# The production upload path (``_upload._upload_sync`` / ``_worker_loop``) wraps
+# ``client.traces.upload`` in a blanket ``except Exception`` and swallows it —
+# correct best-effort-telemetry behaviour. But it means a ``validate_events``
+# call made *inside* the mocked ``traces.upload`` side-effect is swallowed too,
+# so the schema lock never failed a test (LAY-3613). Instead, the two shared
+# capture helpers (``capture_trace`` here, ``capture_framework_trace`` in the
+# frameworks conftest) record every uploaded event into this per-test buffer,
+# and the ``_enforce_schema_lock`` autouse fixture validates it *after* the test
+# body — where a violation actually fails the test (as a teardown ERROR).
+#
+# Scope: the two shared fixtures participate, and so do the suites with their own
+# upload-capturing helpers — the per-framework ``test_concurrency_*``
+# ``_collect_traces``, ``test_trace_context``'s local ``capture_trace``, and
+# ``test_pydantic_ai``'s ad-hoc ``upload.side_effect`` all now call
+# ``record_for_schema_lock`` too (validated across the hazardous-five venvs: the
+# interleaved/corrupted traces those suites collect are still schema-valid, so
+# the lock holds and the xfail(strict) outcomes are unchanged). Correctness
+# relies on ``tests/conftest.py`` forcing ``_upload._sync_mode = True`` (autouse),
+# so ``record_for_schema_lock`` runs synchronously on the main thread before
+# teardown; without that invariant a background upload could append to a later
+# test's buffer. A schema violation surfaces as a teardown ERROR (the test body
+# is still reported PASSED) — the message names the offending ``[marker/type]``.
+# ---------------------------------------------------------------------------
+_pending_schema_events: List[Dict[str, Any]] = []
+
+
+def record_for_schema_lock(events: List[Dict[str, Any]]) -> None:
+    """Record uploaded events for post-test schema-lock validation."""
+    _pending_schema_events.extend(events)
+
+
+@pytest.fixture(autouse=True)
+def _enforce_schema_lock():
+    _pending_schema_events.clear()
+    yield
+    events = list(_pending_schema_events)
+    _pending_schema_events.clear()
+    if events:
+        validate_events(events)
+
 
 @pytest.fixture
 def mock_client():
@@ -26,6 +69,9 @@ def capture_trace(mock_client):
       - "events": list of event dicts
       - "capture_config": dict
       - "attestation": dict
+
+    Uploaded events are recorded for the schema lock (validated after the test
+    by ``_enforce_schema_lock`` — see the note above).
     """
     uploaded: Dict[str, Any] = {}
 
@@ -38,9 +84,7 @@ def capture_trace(mock_client):
         uploaded["events"] = payload.get("events", [])
         uploaded["capture_config"] = payload.get("capture_config", {})
         uploaded["attestation"] = payload.get("attestation", {})
-        # Schema lock (LAY-3583): every event a unit suite uploads must match
-        # the canonical payload vocabulary.
-        validate_events(uploaded["events"])
+        record_for_schema_lock(uploaded["events"])
 
     mock_client.traces.upload.side_effect = _capture
     return uploaded

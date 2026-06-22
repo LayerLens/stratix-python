@@ -19,6 +19,8 @@ from collections import Counter
 
 import pytest
 
+from .conftest import record_for_schema_lock
+
 if sys.version_info < (3, 10):
     pytest.skip("openai-agents requires Python >= 3.10", allow_module_level=True)
 try:
@@ -99,6 +101,7 @@ def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
         with open(path) as f:
             data = json.load(f)
         traces.append(data[0])
+        record_for_schema_lock(data[0].get("events", []))
 
     mock_client.traces.upload.side_effect = _capture
     return traces

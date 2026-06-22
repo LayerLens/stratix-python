@@ -22,6 +22,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from .conftest import record_for_schema_lock
+
 llama_index_core = pytest.importorskip("llama_index.core")
 
 from llama_index.core.base.llms.types import (  # noqa: E402
@@ -86,6 +88,7 @@ def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
         with open(path) as f:
             data = json.load(f)
         traces.append(data[0])
+        record_for_schema_lock(data[0].get("events", []))
 
     mock_client.traces.upload.side_effect = _capture
     return traces

@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from layerlens.instrument import trace_context
 from layerlens.instrument.adapters.frameworks.vector_store import VectorStoreAdapter
 
@@ -138,6 +140,113 @@ class TestWeaviate:
         evt = find_event(uploaded["events"], "retrieval.query")
         assert evt["payload"]["query_type"] == "near_text"
         assert evt["payload"]["limit"] == 2
+
+
+class TestAutoWrap:
+    """``_auto_wrap`` is what ``connect(target=...)`` uses — the only routing the
+    customer touches, and the only path the other tests never exercised. The old
+    heuristic ("has .query and no .near_vector -> Pinecone") mis-routed BOTH
+    Chroma and Weaviate to Pinecone, so the live Chroma case silently emitted
+    provider='pinecone' / match_count=0 and stayed green (LAY-3616).
+    """
+
+    def test_routes_real_chroma_collection_to_chroma(self, mock_client):
+        # Use a REAL chromadb Collection (no mock): this is the backend the live
+        # suite exercises, and the one the bug mislabels.
+        chromadb = pytest.importorskip("chromadb")
+        uploaded = capture_framework_trace(mock_client)
+        adapter = VectorStoreAdapter(mock_client)
+
+        collection = chromadb.EphemeralClient().get_or_create_collection("autowrap_chroma")
+        collection.add(
+            ids=["a", "b", "c"],
+            embeddings=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]],
+            documents=["alpha", "beta", "gamma"],
+        )
+        adapter.connect(target=collection)
+
+        with trace_context(mock_client):
+            collection.query(query_embeddings=[[0.1, 0.2, 0.3]], n_results=2)
+
+        evt = find_event(uploaded["events"], "retrieval.query")
+        assert evt["payload"]["provider"] == "chroma"
+        assert evt["payload"]["result_count"] == 2
+        adapter.disconnect()
+
+    def test_routes_weaviate_shape_to_weaviate(self, mock_client):
+        # Weaviate's real Collection needs a running service; the distinguishing
+        # surface (a ``query`` object exposing ``near_vector``/``near_text``) is
+        # reproduced here. The OLD code routed this to Pinecone.
+        uploaded = capture_framework_trace(mock_client)
+        adapter = VectorStoreAdapter(mock_client)
+
+        near_vector = Mock(return_value=SimpleNamespace(objects=[SimpleNamespace(uuid="u0")]))
+        collection = SimpleNamespace(query=SimpleNamespace(near_vector=near_vector, near_text=Mock()))
+        adapter.connect(target=collection)
+
+        with trace_context(mock_client):
+            collection.query.near_vector(vector=[0.1] * 8, limit=5)
+
+        evt = find_event(uploaded["events"], "retrieval.query")
+        assert evt["payload"]["provider"] == "weaviate"
+        adapter.disconnect()
+
+    def test_routes_pinecone_shape_to_pinecone(self, mock_client):
+        # Pinecone's real Index needs a connection; its distinguishing surface
+        # (a ``query`` method whose result carries ``.matches``, and none of
+        # Chroma's add/get/count) is reproduced here. NB: ``query`` is a plain
+        # function, not a Mock — a Mock would auto-fabricate ``.near_vector`` and
+        # be misread as Weaviate, which a real bound method never does.
+        uploaded = capture_framework_trace(mock_client)
+        adapter = VectorStoreAdapter(mock_client)
+
+        result = SimpleNamespace(matches=[SimpleNamespace(score=0.9, id="x")])
+
+        def _query(*args, **kwargs):
+            return result
+
+        index = SimpleNamespace(query=_query, upsert=lambda *a, **k: None, describe_index_stats=lambda *a, **k: None)
+        adapter.connect(target=index)
+
+        with trace_context(mock_client):
+            index.query(vector=[0.1] * 8, top_k=3)
+
+        evt = find_event(uploaded["events"], "retrieval.query")
+        assert evt["payload"]["provider"] == "pinecone"
+        assert evt["payload"]["match_count"] == 1
+        adapter.disconnect()
+
+    def test_async_chroma_query_is_awaited_and_emits(self, mock_client):
+        # chromadb's async client (AsyncHttpClient) exposes query as a coroutine;
+        # a sync wrapper would hand back an un-awaited coroutine and record
+        # result_count=0. There is no in-process async chromadb, so the stand-in's
+        # query is a REAL `async def` returning the exact dict shape a real sync
+        # Chroma query returns (pinned by test_routes_real_chroma_collection_to_chroma);
+        # this test verifies the async wrapper awaits it and emits correct stats.
+        import asyncio
+
+        uploaded = capture_framework_trace(mock_client)
+        adapter = VectorStoreAdapter(mock_client)
+
+        real_chroma_result = {"ids": [["a", "b"]], "distances": [[0.1, 0.3]], "documents": [["x", "y"]]}
+
+        async def aquery(*args, **kwargs):
+            return real_chroma_result
+
+        # AsyncCollection has the same CRUD surface; routed via the add/get/count fallback.
+        collection = SimpleNamespace(query=aquery, add=lambda *a, **k: None, get=lambda *a, **k: None, count=lambda: 2)
+        adapter.connect(target=collection)
+
+        with trace_context(mock_client):
+            out = asyncio.get_event_loop().run_until_complete(
+                collection.query(query_embeddings=[[0.1, 0.2, 0.3]], n_results=2)
+            )
+
+        assert out is real_chroma_result  # caller still receives the awaited result
+        evt = find_event(uploaded["events"], "retrieval.query")
+        assert evt["payload"]["provider"] == "chroma"
+        assert evt["payload"]["result_count"] == 2
+        adapter.disconnect()
 
 
 class TestDisconnect:

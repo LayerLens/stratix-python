@@ -22,6 +22,7 @@ Usage::
 from __future__ import annotations
 
 import time
+import inspect
 import logging
 from typing import Any, Dict, List, Tuple, Optional
 
@@ -58,16 +59,32 @@ class VectorStoreAdapter(FrameworkAdapter):
         self._originals.clear()
 
     def _auto_wrap(self, target: Any) -> None:
-        # Pinecone: index.query
-        if hasattr(target, "query") and not hasattr(target, "near_vector"):
-            # Could be Pinecone or Chroma; try Pinecone first (returns objects
-            # with ``.matches``) then fall back to Chroma (returns dicts).
-            self.wrap_pinecone(target)
+        # The old heuristic ("has .query and no top-level .near_vector ->
+        # Pinecone") routed BOTH Chroma and Weaviate to Pinecone: a Chroma
+        # Collection and a Weaviate Collection both expose ``.query`` and neither
+        # exposes a *top-level* ``.near_vector`` (Weaviate's lives on the query
+        # sub-object). So a real Chroma run emitted provider='pinecone' /
+        # match_count=0 and Weaviate's wrapper was never reached (LAY-3616).
+        query_attr = getattr(target, "query", None)
+        if query_attr is None:
             return
-        # Weaviate: collection.query.near_vector / near_text
-        if hasattr(target, "query") and hasattr(target.query, "near_vector"):
+        # Weaviate: ``collection.query`` is an object exposing near_vector / near_text.
+        if hasattr(query_attr, "near_vector") or hasattr(query_attr, "near_text"):
             self.wrap_weaviate(target)
             return
+        # Chroma: a full-CRUD Collection whose ``.query`` returns dicts. Tell it
+        # apart from a Pinecone Index (whose ``.query`` returns objects with
+        # ``.matches``) by the chromadb module or its collection-management
+        # surface (add/get/count) — Pinecone indexes have none of those.
+        module_root = (type(target).__module__ or "").split(".", 1)[0]
+        is_chroma = module_root == "chromadb" or (
+            hasattr(target, "add") and hasattr(target, "get") and hasattr(target, "count")
+        )
+        if is_chroma:
+            self.wrap_chroma(target)
+            return
+        # Pinecone Index: ``index.query`` returns an object with ``.matches``.
+        self.wrap_pinecone(target)
 
     # ------------------------------------------------------------------
     # Public wrappers
@@ -156,17 +173,8 @@ class VectorStoreAdapter(FrameworkAdapter):
     def _make_chroma_wrapper(self, original: Any) -> Any:
         adapter = self
 
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            if _current_collector.get() is None:
-                return original(*args, **kwargs)
-            n_results = kwargs.get("n_results", 10)
-            has_filter = bool(kwargs.get("where"))
-            start = time.monotonic()
-            result = original(*args, **kwargs)
-            latency_ms = (time.monotonic() - start) * 1000
-
+        def _emit(result: Any, n_results: Any, has_filter: bool, latency_ms: float) -> None:
             result_count, distances = _chroma_result_stats(result)
-
             adapter._emit(
                 "retrieval.query",
                 adapter._payload(
@@ -178,6 +186,32 @@ class VectorStoreAdapter(FrameworkAdapter):
                     **_score_summary(distances, key_prefix="distance"),
                 ),
             )
+
+        # chromadb's async client (AsyncHttpClient) exposes ``query`` as a
+        # coroutine; a sync wrapper would hand the caller an un-awaited coroutine
+        # and record result_count=0. Install a matching async wrapper instead.
+        if inspect.iscoroutinefunction(original):
+
+            async def awrapper(*args: Any, **kwargs: Any) -> Any:
+                if _current_collector.get() is None:
+                    return await original(*args, **kwargs)
+                n_results = kwargs.get("n_results", 10)
+                has_filter = bool(kwargs.get("where"))
+                start = time.monotonic()
+                result = await original(*args, **kwargs)
+                _emit(result, n_results, has_filter, (time.monotonic() - start) * 1000)
+                return result
+
+            return awrapper
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            if _current_collector.get() is None:
+                return original(*args, **kwargs)
+            n_results = kwargs.get("n_results", 10)
+            has_filter = bool(kwargs.get("where"))
+            start = time.monotonic()
+            result = original(*args, **kwargs)
+            _emit(result, n_results, has_filter, (time.monotonic() - start) * 1000)
             return result
 
         return wrapper

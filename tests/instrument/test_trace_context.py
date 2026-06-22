@@ -23,7 +23,7 @@ from layerlens.instrument._context import _current_span_id, _current_collector
 from layerlens.instrument._collector import TraceCollector
 from layerlens.instrument.adapters.frameworks._base_framework import FrameworkAdapter
 
-from .conftest import find_event, find_events
+from .conftest import find_event, find_events, record_for_schema_lock
 
 # ---------------------------------------------------------------------------
 # Minimal concrete adapter for testing
@@ -70,6 +70,7 @@ def capture_trace(mock_client):
         with open(path) as f:
             data = json.load(f)
         uploads.append(data[0])
+        record_for_schema_lock(data[0].get("events", []))
 
     mock_client.traces.upload.side_effect = _capture
     return uploads

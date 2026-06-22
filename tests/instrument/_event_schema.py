@@ -51,6 +51,8 @@ KNOWN_EVENT_TYPES = frozenset(
         "agent.interaction",
         "agent.lifecycle",
         "agent.state.change",
+        "agent.node.enter",
+        "agent.node.exit",
         # model / cost / environment
         "model.invoke",
         "cost.record",
@@ -91,6 +93,8 @@ KNOWN_EVENT_TYPES = frozenset(
         "a2a.task.completed",
         "a2a.agent.card",
         "a2a.agent.card.served",
+        "a2a.agent.discovered",
+        "a2a.delegation",
         "agui.message",
         "agui.tool_call",
         "agui.state",
