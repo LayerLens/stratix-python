@@ -27,11 +27,16 @@ from .conftest import find_event, find_events, capture_framework_trace
 
 @pytest.fixture(autouse=True)
 def mock_haystack_tracing():
+    prev_tracing = _mod._hs_tracing
+    prev_has = _mod._HAS_HAYSTACK
     mock_tracing = MagicMock()
     _mod._hs_tracing = mock_tracing
     _mod._HAS_HAYSTACK = True
     yield mock_tracing
-    _mod._HAS_HAYSTACK = False
+    # Restore the real values rather than hard-resetting to False, so this file
+    # does not poison module globals for other adapter tests in the same process.
+    _mod._hs_tracing = prev_tracing
+    _mod._HAS_HAYSTACK = prev_has
 
 
 def _make_adapter(client: Any, config: Optional[CaptureConfig] = None) -> HaystackAdapter:

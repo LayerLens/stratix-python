@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import time
 import logging
 from typing import Any, Dict, Optional
 
 from ._utils import safe_serialize
-from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
@@ -54,14 +52,14 @@ class StrandsAdapter(FrameworkAdapter):
 
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)
-        self._collector: Optional[TraceCollector] = None
-        self._run_span_id: Optional[str] = None
-        self._current_agent_name: Optional[str] = None
-        self._timers: Dict[str, int] = {}
-        self._seen_agents: set = set()
+        # Run-scoped state (collector / run span id / timers / model.invoke
+        # span ids) lives in the per-run RunState via _begin_run/_end_run
+        # (ContextVar-isolated per asyncio.Task / thread), NOT instance
+        # scalars — concurrent agent invocations through one adapter instance
+        # would otherwise clobber each other's traces (LAY-3576 / D1b).
+        self._seen_agents: set = set()  # cross-run config dedup (intentional)
         self._target: Optional[Any] = None
         self._registered_callbacks: list = []
-        self._model_span_ids: list = []  # span_ids of emitted model.invoke events
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -77,7 +75,7 @@ class StrandsAdapter(FrameworkAdapter):
 
     def _on_disconnect(self) -> None:
         self._deregister_callbacks()
-        self._end_trace()
+        self._end_run(flush=True)
         self._target = None
         self._seen_agents.clear()
 
@@ -139,36 +137,16 @@ class StrandsAdapter(FrameworkAdapter):
         parent_span_id: Optional[str] = None,
         span_name: Optional[str] = None,
     ) -> None:
-        c = self._collector
-        if c is None:
+        run = self._get_run()
+        if run is None:
             return
-        c.emit(
+        run.collector.emit(
             event_type,
             payload,
             span_id=span_id or self._new_span_id(),
             parent_span_id=parent_span_id,
             span_name=span_name,
         )
-
-    def _tick(self, key: str) -> None:
-        self._timers[key] = time.time_ns()
-
-    def _tock(self, key: str) -> Optional[float]:
-        start = self._timers.pop(key, 0)
-        if not start:
-            return None
-        return (time.time_ns() - start) / 1_000_000
-
-    def _end_trace(self) -> None:
-        with self._lock:
-            collector = self._collector
-            self._collector = None
-            self._run_span_id = None
-            self._current_agent_name = None
-            self._timers.clear()
-            self._model_span_ids.clear()
-        if collector is not None:
-            collector.flush()
 
     # ------------------------------------------------------------------
     # Hook handlers
@@ -187,12 +165,10 @@ class StrandsAdapter(FrameworkAdapter):
         try:
             agent = event.agent
             name = _agent_name(agent)
-            span_id = self._new_span_id()
-            with self._lock:
-                self._collector = TraceCollector(self._client, self._config)
-                self._run_span_id = span_id
-                self._current_agent_name = name
-            self._tick("run")
+            run = self._begin_run()
+            span_id = run.root_span_id
+            run.data["agent_name"] = name
+            self._start_timer("run")
 
             # Re-emit config if we haven't seen this agent yet
             self._emit_agent_config(name, agent)
@@ -209,11 +185,14 @@ class StrandsAdapter(FrameworkAdapter):
             log.warning("layerlens: error in Strands before_invocation", exc_info=True)
 
     def _on_after_invocation(self, event: Any) -> None:
+        run = self._get_run()
+        if run is None:
+            return
         try:
             agent = event.agent
             name = _agent_name(agent)
-            latency_ms = self._tock("run")
-            span_id = self._run_span_id or self._new_span_id()
+            latency_ms = self._stop_timer("run")
+            span_id = self._get_root_span()
 
             payload = self._payload(agent_name=name)
             if latency_ms is not None:
@@ -246,7 +225,7 @@ class StrandsAdapter(FrameworkAdapter):
             # Always flush the trace with whatever was captured — a failure
             # above must never strand the run's events unsent.
             try:
-                self._end_trace()
+                self._end_run(flush=True)
             except Exception:
                 log.warning("layerlens: error flushing Strands trace", exc_info=True)
 
@@ -254,7 +233,7 @@ class StrandsAdapter(FrameworkAdapter):
         try:
             agent = event.agent
             name = _agent_name(agent)
-            self._tick(f"model:{name}")
+            self._start_timer(f"model:{name}")
         except Exception:
             log.warning("layerlens: error in Strands before_model", exc_info=True)
 
@@ -265,10 +244,13 @@ class StrandsAdapter(FrameworkAdapter):
         accumulated_usage AFTER this hook fires.  Tokens are emitted
         per-cycle from _on_after_invocation using the cycle data.
         """
+        run = self._get_run()
+        if run is None:
+            return
         try:
             agent = event.agent
             name = _agent_name(agent)
-            latency_ms = self._tock(f"model:{name}")
+            latency_ms = self._stop_timer(f"model:{name}")
 
             model_id = _model_id(agent)
             payload = self._payload()
@@ -289,11 +271,10 @@ class StrandsAdapter(FrameworkAdapter):
                 if stop_reason:
                     payload["stop_reason"] = str(stop_reason)
 
-            parent = self._run_span_id
+            parent = run.root_span_id
             span_id = self._new_span_id()
             self._fire("model.invoke", payload, span_id=span_id, parent_span_id=parent)
-            with self._lock:
-                self._model_span_ids.append(span_id)
+            run.data.setdefault("model_span_ids", []).append(span_id)
         except Exception:
             log.warning("layerlens: error in Strands after_model", exc_info=True)
 
@@ -308,11 +289,14 @@ class StrandsAdapter(FrameworkAdapter):
                 if isinstance(tool_use, dict)
                 else getattr(tool_use, "toolUseId", tool_name)
             )
-            self._tick(f"tool:{tool_id}")
+            self._start_timer(f"tool:{tool_id}")
         except Exception:
             log.warning("layerlens: error in Strands before_tool", exc_info=True)
 
     def _on_after_tool(self, event: Any) -> None:
+        run = self._get_run()
+        if run is None:
+            return
         try:
             tool_use = event.tool_use
             tool_name = (
@@ -324,9 +308,9 @@ class StrandsAdapter(FrameworkAdapter):
                 else getattr(tool_use, "toolUseId", tool_name)
             )
             tool_input = tool_use.get("input", None) if isinstance(tool_use, dict) else getattr(tool_use, "input", None)
-            latency_ms = self._tock(f"tool:{tool_id}")
+            latency_ms = self._stop_timer(f"tool:{tool_id}")
 
-            parent = self._run_span_id
+            parent = run.root_span_id
             span_id = self._new_span_id()
 
             call_payload = self._payload(tool_name=tool_name)
@@ -392,7 +376,7 @@ class StrandsAdapter(FrameworkAdapter):
         self._fire(
             "environment.config",
             payload,
-            parent_span_id=self._run_span_id,
+            parent_span_id=self._get_root_span(),
             span_name=f"config:{name}",
         )
 
@@ -402,11 +386,13 @@ class StrandsAdapter(FrameworkAdapter):
         Strands stores per-cycle usage at:
             agent.event_loop_metrics.agent_invocations[-1].cycles[i].usage
         Each cycle maps 1:1 with a model call, so we zip cycles with
-        the stored ``_model_span_ids`` to attribute tokens correctly.
+        the per-run ``model_span_ids`` to attribute tokens correctly.
         """
+        run = self._get_run()
+        if run is None:
+            return
         model_id = _model_id(agent)
-        with self._lock:
-            span_ids = list(self._model_span_ids)
+        span_ids = list(run.data.get("model_span_ids", []))
 
         cycles = _get_cycles(agent)
         if not cycles and not span_ids:
@@ -450,7 +436,7 @@ class StrandsAdapter(FrameworkAdapter):
             if model_id:
                 cost_payload["model"] = model_id
 
-            parent = span_ids[i] if i < len(span_ids) else self._run_span_id
+            parent = span_ids[i] if i < len(span_ids) else run.root_span_id
             self._fire("cost.record", cost_payload, parent_span_id=parent)
 
 

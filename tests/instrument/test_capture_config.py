@@ -436,6 +436,44 @@ class TestRedactionNestedParameters:
         assert parameters["prompt"] == _SENTINEL
         assert payload["messages"] == [{"role": "user", "content": _SENTINEL}]
 
+
+class TestRedactionBoundary:
+    """Pin redact_payload's EXACT depth + scope so no one over-trusts it (W5/G10).
+
+    The collector-side backstop scrubs only: model.invoke top-level
+    (messages/output_message) + one level into ``parameters`` (the
+    _CONTENT_PARAM_KEYS), and the protocol-event top-level keys in
+    PROTOCOL_CONTENT_KEYS. It does NOT recurse deeper, and it does NOT touch
+    framework content events — those rely entirely on emit-time
+    ``_set_if_capturing`` in each adapter (see the per-framework redaction
+    tests). Documenting the boundary is the W5 minimum (vs. full recursion).
+    """
+
+    def test_does_not_recurse_below_one_level_into_parameters(self):
+        # Content buried inside a NON-content-keyed parameters sub-dict survives:
+        # redact_payload filters parameters' direct content keys but does not
+        # walk arbitrary nested structures.
+        config = CaptureConfig(capture_content=False)
+        payload = {
+            "name": "openai.chat.completions.create",
+            "parameters": {"model": "gpt-4o", "response_format": {"hidden_prompt": _SENTINEL}},
+        }
+        redacted = config.redact_payload("model.invoke", payload)
+        # response_format is not a content key, so its nested sentinel is NOT scrubbed.
+        assert _SENTINEL in json.dumps(redacted), (
+            "boundary changed — redact_payload now recurses (update this doc-test)"
+        )
+
+    def test_is_noop_for_framework_content_event_types(self):
+        # agent.input/agent.output/tool.call are NOT in redact_payload's maps, so
+        # the collector backstop passes them through untouched. Framework content
+        # privacy is enforced at EMIT time (_set_if_capturing), not here.
+        config = CaptureConfig(capture_content=False)
+        for event_type in ("agent.input", "agent.output", "tool.call", "retrieval.query"):
+            payload = {"framework": "x", "input": _SENTINEL, "output": _SENTINEL}
+            redacted = config.redact_payload(event_type, payload)
+            assert redacted.get("input") == _SENTINEL, f"{event_type}: backstop unexpectedly scrubbed framework content"
+
     def test_ollama_chat_capture_content_off_no_leak(self, mock_client, capture_trace):
         from layerlens.instrument.adapters.providers.ollama import OllamaProvider
 

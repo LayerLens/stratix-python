@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.frameworks.ms_agent_framework import (
     MSAgentFrameworkAdapter,
     _detect_provider,
@@ -273,6 +274,105 @@ class TestMessageProcessing:
 
         assert find_events(uploaded["events"], "tool.call") == []
         assert find_events(uploaded["events"], "tool.result") == []
+
+
+# ---------------------------------------------------------------------------
+# Content redaction (W5 / G10) — capture_content=False must scrub the
+# framework's content fields (agent.input/agent.output/tool.call/tool.result)
+# through the per-adapter _set_if_capturing gate.
+# ---------------------------------------------------------------------------
+
+
+# A recognizable marker that should never survive into the emitted payloads
+# when content capture is disabled.
+_SENTINEL = "S3NT1NEL_ms_agent_framework_secret_payload"
+
+
+def _run_chat_with_content(adapter, capture):
+    """Drive a full content-bearing invocation: input kwarg + a tool
+    call/result whose fields all carry the SENTINEL, then return the
+    uploaded events. The yielded message string-serializes to the
+    SENTINEL so agent.output's content branch is exercised too.
+    """
+
+    class _SentinelMessage(SimpleNamespace):
+        def __str__(self):  # str(self) feeds safe_serialize -> agent.output content
+            return _SENTINEL
+
+    message = _SentinelMessage(
+        agent_name="primary",
+        items=[
+            _func_call("search", {"query": _SENTINEL}),
+            _func_result("search", f"result-{_SENTINEL}"),
+        ],
+        metadata=None,
+    )
+
+    chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+    chat.invoke = _make_invoke([message])
+    adapter.instrument_chat(chat)
+
+    async def consume():
+        # Pass the secret as the `input` kwarg so the agent.input content
+        # branch (kwargs.get("input")) is driven with the SENTINEL.
+        async for _ in chat.invoke(input=_SENTINEL):
+            pass
+
+    asyncio.run(consume())
+    return capture["events"]
+
+
+class TestCaptureContentRedaction:
+    """When ``CaptureConfig(capture_content=False)`` every content field the
+    adapter routes through ``_set_if_capturing`` (agent.input ``input``,
+    agent.output ``output``, tool.call ``input``, tool.result ``output``)
+    must be scrubbed — and the SENTINEL must not appear anywhere in the
+    emitted payloads. The control run with ``capture_content=True`` proves
+    the gate is real, not a vacuous pass."""
+
+    def _payloads_blob(self, events):
+        import json as _json
+
+        return _json.dumps([e.get("payload", {}) for e in events])
+
+    def test_content_scrubbed_when_capture_disabled(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client, capture_config=CaptureConfig(capture_content=False))
+        events = _run_chat_with_content(adapter, uploaded)
+
+        agent_in = find_event(events, "agent.input")
+        agent_out = find_event(events, "agent.output")
+        tool_call = find_event(events, "tool.call")
+        tool_result = find_event(events, "tool.result")
+
+        # The content keys must be absent under the gate.
+        assert "input" not in agent_in["payload"]
+        assert "output" not in agent_out["payload"]
+        assert "input" not in tool_call["payload"]
+        assert "output" not in tool_result["payload"]
+
+        # And the SENTINEL must not have leaked into ANY emitted payload.
+        assert _SENTINEL not in self._payloads_blob(events)
+
+    def test_content_present_when_capture_enabled(self, mock_client):
+        """Control: with capture_content=True the same SENTINEL content IS
+        emitted — proving the gate above does real work."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        events = _run_chat_with_content(adapter, uploaded)
+
+        agent_in = find_event(events, "agent.input")
+        agent_out = find_event(events, "agent.output")
+        tool_call = find_event(events, "tool.call")
+        tool_result = find_event(events, "tool.result")
+
+        assert agent_in["payload"]["input"] == _SENTINEL
+        assert agent_out["payload"]["output"] == _SENTINEL
+        assert tool_call["payload"]["input"] == {"query": _SENTINEL}
+        assert tool_result["payload"]["output"] == f"result-{_SENTINEL}"
+
+        # The SENTINEL is present somewhere when capture is on.
+        assert _SENTINEL in self._payloads_blob(events)
 
 
 # ---------------------------------------------------------------------------

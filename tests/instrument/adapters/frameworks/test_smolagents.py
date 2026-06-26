@@ -155,9 +155,9 @@ class TestLifecycle:
         agent = _make_mock_agent()
         adapter.connect(target=agent)
         adapter.disconnect()
-        assert adapter._collector is None
-        assert adapter._run_span_id is None
-        assert adapter._step_count == 0
+        # Run state is per-run (ContextVar RunState), not instance scalars, after
+        # the D1b concurrency fix: no active run remains and the target is released.
+        assert adapter._get_run() is None
         assert adapter._target_agent is None
 
     def test_connect_registers_step_callbacks(self, mock_client):
@@ -638,7 +638,7 @@ class TestDisconnectLeaveNoTrace:
         adapter.disconnect()  # must not raise
 
         assert agent.run is original_run
-        assert adapter._collector is None
+        assert adapter._get_run() is None
         assert adapter._target_agent is None
 
     def test_reconnect_cycle(self, mock_client):

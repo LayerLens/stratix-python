@@ -163,8 +163,7 @@ class TestLifecycle:
         adapter.connect()
         adapter.disconnect()
         assert adapter.plugin is None
-        assert adapter._collector is None
-        assert adapter._run_span_id is None
+        assert adapter._get_run() is None
 
     def test_adapter_info(self, mock_client):
         adapter = GoogleADKAdapter(mock_client)
@@ -814,7 +813,7 @@ class TestDisconnectLeaveNoTrace:
         asyncio.run(plugin.before_run_callback(invocation_context=inv_ctx))
         asyncio.run(plugin.after_run_callback(invocation_context=inv_ctx))
 
-        assert adapter._collector is None
+        assert adapter._get_run() is None
         assert uploaded["events"] == []
 
     def test_double_disconnect_is_safe(self, mock_client):
@@ -824,7 +823,7 @@ class TestDisconnectLeaveNoTrace:
         adapter.disconnect()  # must not raise
 
         assert adapter.plugin is None
-        assert adapter._collector is None
+        assert adapter._get_run() is None
 
     def test_reconnect_cycle(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
@@ -852,4 +851,4 @@ class TestDisconnectLeaveNoTrace:
         # Second disconnect cleans up again.
         adapter.disconnect()
         assert adapter.plugin is None
-        assert adapter._collector is None
+        assert adapter._get_run() is None

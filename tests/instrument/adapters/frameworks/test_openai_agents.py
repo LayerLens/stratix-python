@@ -715,6 +715,104 @@ class TestCaptureConfigGating:
         adapter.disconnect()
 
 
+class TestCaptureContentRedaction:
+    """W5/G10: prove content (model messages, tool args/output) is SCRUBBED
+    when ``CaptureConfig(capture_content=False)``, via ``_set_if_capturing``.
+
+    A control run with ``capture_content=True`` proves the SENTINEL *would*
+    appear, so the redaction assertions are not vacuous.
+    """
+
+    SENTINEL = "SENTINEL_SECRET_PAYLOAD_42"
+
+    def _drive(self, adapter) -> None:
+        """Drive a generation span + a function span carrying the SENTINEL."""
+        trace = _make_trace(trace_id="t_redact")
+        adapter.on_trace_start(trace)
+
+        gen = _make_span(
+            adapter,
+            "t_redact",
+            "s_gen",
+            GenerationSpanData(
+                input=[{"role": "user", "content": self.SENTINEL}],
+                output=[{"role": "assistant", "content": self.SENTINEL}],
+                model="gpt-4o",
+                model_config={},
+                usage={"input_tokens": 10, "output_tokens": 5},
+            ),
+        )
+        gen.start()
+        gen.finish()
+        adapter.on_span_end(gen)
+
+        func = _make_span(
+            adapter,
+            "t_redact",
+            "s_func",
+            FunctionSpanData(
+                name="lookup",
+                input='{"query":"' + self.SENTINEL + '"}',
+                output='{"answer":"' + self.SENTINEL + '"}',
+            ),
+        )
+        func.start()
+        func.finish()
+        adapter.on_span_end(func)
+
+        adapter.on_trace_end(trace)
+
+    def test_content_scrubbed_when_capture_content_false(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = OpenAIAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=False))
+        adapter.connect()
+
+        self._drive(adapter)
+
+        events = uploaded["events"]
+
+        # Per-field content keys must be gated out of the payloads.
+        model_evt = find_event(events, "model.invoke")
+        assert "messages" not in model_evt["payload"]
+        assert "output_message" not in model_evt["payload"]
+
+        tool_call = find_event(events, "tool.call")
+        assert "input" not in tool_call["payload"]
+        tool_result = find_event(events, "tool.result")
+        assert "output" not in tool_result["payload"]
+
+        # The SENTINEL must not appear anywhere in the emitted payloads.
+        blob = json.dumps(events)
+        assert self.SENTINEL not in blob
+
+        adapter.disconnect()
+
+    def test_content_present_when_capture_content_true(self, mock_client):
+        """Control: with capture_content=True the SENTINEL DOES appear,
+        proving the gate (not a vacuous pass)."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = OpenAIAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect()
+
+        self._drive(adapter)
+
+        events = uploaded["events"]
+
+        model_evt = find_event(events, "model.invoke")
+        assert "messages" in model_evt["payload"]
+        assert "output_message" in model_evt["payload"]
+
+        tool_call = find_event(events, "tool.call")
+        assert "input" in tool_call["payload"]
+        tool_result = find_event(events, "tool.result")
+        assert "output" in tool_result["payload"]
+
+        blob = json.dumps(events)
+        assert self.SENTINEL in blob
+
+        adapter.disconnect()
+
+
 class TestConcurrentTraces:
     """Test that multiple concurrent traces are isolated."""
 

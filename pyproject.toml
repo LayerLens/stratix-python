@@ -131,6 +131,10 @@ format = { chain = [
 
 "check:importable" = "python -c 'import layerlens'"
 
+# Core-scoped coverage gate (LAY-3614 / W3): enforces a floor on the shared core
+# machinery only (see tests/coverage-core.ini). fail_under lives in that config.
+"test:cov-core" = "pytest tests/ --cov=src/layerlens --cov-config=tests/coverage-core.ini --cov-report=term-missing --tb=short"
+
 # Type checking for production code only (excludes tests)
 "typecheck:src" = { chain = ["typecheck:pyright:src", "typecheck:mypy:src"] }
 

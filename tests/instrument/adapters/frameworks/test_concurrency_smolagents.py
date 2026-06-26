@@ -1,30 +1,28 @@
-"""Interleaved-run isolation guard for the SmolAgents adapter (LAY-3576 / T2).
+"""Interleaved-run isolation for the SmolAgents adapter (LAY-3576 / D1b).
 
-THE INVARIANT: two runs driven through ONE ``SmolAgentsAdapter`` instance,
-with lifecycle events interleaved (start A, start B, mid-run A, mid-run B,
-end A, end B), must upload two traces with distinct trace_ids, each holding
-exactly its own run's events — no cross-contamination, no lost events.
+THE INVARIANT: two runs driven through ONE ``SmolAgentsAdapter`` instance whose
+lifecycle events interleave must upload two traces with distinct trace_ids, each
+holding exactly its own run's events — no cross-contamination, no lost events.
 
-The adapter keeps run state in instance scalars
-(``src/layerlens/instrument/adapters/frameworks/smolagents.py`` —
-``self._collector``, ``self._run_span_id``, ``self._current_step_span_id``,
-``self._step_count``, ``self._timers``), so run B's start replaces run A's
-collector: run A's opening events are dropped unflushed, both runs' mid-run
-events land in run B's collector, one merged trace flushes when run A ends,
-and run B's closing events vanish (no collector left).
+FIXED (D1b): the adapter no longer keeps run state in instance scalars; it routes
+every run through ``_begin_run``/``_end_run`` so the collector + span ids + step
+count + timers live in a per-run ``RunState`` pushed into ContextVars (isolated
+per ``asyncio.Task`` / thread — the same mechanism PydanticAIAdapter uses). The
+step callbacks fire *inside* ``agent.run()``, i.e. within that run's context, so
+they resolve their own run's collector.
 
-Expected XFAIL (strict): this is the RED guard for the D1b
-collector-convergence work (stability report §3.1), which moves the
-self-flushing adapters onto the per-run RunState/ContextVar isolation that
-PydanticAIAdapter already uses (see test_concurrency.py). When D1b lands,
-the strict xfail turns into a strict XPASS failure and the marker must be
-removed. The interleave is single-threaded direct handler calls, so the
-corruption is deterministic and the xfail cannot flap.
+The interleave is exercised deterministically (no real threads, no RNG) by
+running each run's handler calls inside its OWN ``contextvars.Context`` — exactly
+how concurrent ``agent.run()`` calls in separate threads/tasks see independent
+ContextVar state — across several fixed schedules (sequential, fully interleaved,
+reversed, nested). Under the GIL a forced interleaving is a stricter race
+detector for this code than naive threading, and a fixed schedule cannot flap.
 """
 
 from __future__ import annotations
 
 import json
+import contextvars
 from typing import Any, Dict, List
 from unittest.mock import MagicMock
 
@@ -37,13 +35,7 @@ from smolagents import ToolCall, ActionStep  # noqa: E402
 from smolagents.memory import Timing  # noqa: E402
 from smolagents.monitoring import TokenUsage  # noqa: E402
 
-from layerlens.instrument.adapters.frameworks.smolagents import (
-    SmolAgentsAdapter,
-)  # noqa: E402
-
-# ---------------------------------------------------------------------------
-# Helpers (copied minimal — do not import private helpers from siblings)
-# ---------------------------------------------------------------------------
+from layerlens.instrument.adapters.frameworks.smolagents import SmolAgentsAdapter  # noqa: E402
 
 
 def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
@@ -61,7 +53,6 @@ def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
 
 
 def _make_mock_agent(name: str, model_id: str) -> MagicMock:
-    """Mock smolagents agent — only the attributes the adapter reads."""
     agent = MagicMock()
     agent.name = name
     agent.model = MagicMock()
@@ -72,11 +63,7 @@ def _make_mock_agent(name: str, model_id: str) -> MagicMock:
 
 
 def _make_action_step(tool_name: str, observations: str) -> ActionStep:
-    """Real smolagents ActionStep carrying run-distinctive markers."""
-    step = ActionStep(
-        step_number=1,
-        timing=Timing(start_time=100.0, end_time=101.0),
-    )
+    step = ActionStep(step_number=1, timing=Timing(start_time=100.0, end_time=101.0))
     step.tool_calls = [ToolCall(name=tool_name, arguments={"q": tool_name}, id=f"tc-{tool_name}")]
     step.token_usage = TokenUsage(input_tokens=10, output_tokens=5)
     step.model_output = None
@@ -87,65 +74,67 @@ def _make_action_step(tool_name: str, observations: str) -> ActionStep:
     return step
 
 
-# ---------------------------------------------------------------------------
-# Isolation invariant
-# ---------------------------------------------------------------------------
+# Each schedule is a list of (run_key, action). Every schedule must yield two
+# fully isolated traces — that is the post-D1b invariant.
+_SCHEDULES = {
+    "sequential": [("a", "start"), ("a", "step"), ("a", "end"), ("b", "start"), ("b", "step"), ("b", "end")],
+    "interleaved": [("a", "start"), ("b", "start"), ("a", "step"), ("b", "step"), ("a", "end"), ("b", "end")],
+    "reversed": [("b", "start"), ("a", "start"), ("b", "step"), ("a", "step"), ("b", "end"), ("a", "end")],
+    "nested": [("a", "start"), ("b", "start"), ("b", "step"), ("b", "end"), ("a", "step"), ("a", "end")],
+}
 
-XFAIL_REASON = (
-    "LAY-3576: SmolAgentsAdapter keeps run state in instance scalars "
-    "(smolagents.py — self._collector, self._run_span_id, self._current_step_span_id, "
-    "self._step_count, self._timers); interleaved runs on one instance corrupt traces. "
-    "RED guard for the D1b collector-convergence work (stability report §3.1) — "
-    "NOT fixed in phase 4."
-)
+_MARKERS = {
+    "a": {
+        "task": "task-alpha",
+        "agent": "agent-alpha",
+        "tool": "tool-alpha",
+        "obs": "obs-alpha",
+        "result": "result-alpha",
+    },
+    "b": {"task": "task-beta", "agent": "agent-beta", "tool": "tool-beta", "obs": "obs-beta", "result": "result-beta"},
+}
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
-def test_interleaved_runs_produce_two_isolated_traces(mock_client):
+@pytest.mark.parametrize("schedule_name", list(_SCHEDULES))
+def test_interleaved_runs_produce_two_isolated_traces(mock_client, schedule_name):
     traces = _collect_traces(mock_client)
     adapter = SmolAgentsAdapter(mock_client)
-    agent_a = _make_mock_agent(name="agent-alpha", model_id="model-alpha")
-    agent_b = _make_mock_agent(name="agent-beta", model_id="model-beta")
-    adapter.connect(target=agent_a)
+    agents = {k: _make_mock_agent(m["agent"], f"model-{k}") for k, m in _MARKERS.items()}
+    adapter.connect(target=agents["a"])
 
-    # Deterministic single-thread interleave: start A, start B, mid A, mid B,
-    # end A, end B.  (_handle_action_step is the unwrapped step handler — it
-    # raises loudly on a malformed step instead of swallowing the error.)
-    adapter._on_run_start(agent_a, "task-alpha")
-    adapter._on_run_start(agent_b, "task-beta")
-    adapter._handle_action_step(_make_action_step("tool-alpha", "obs-alpha"), agent_a)
-    adapter._handle_action_step(_make_action_step("tool-beta", "obs-beta"), agent_b)
-    adapter._on_run_end(agent_a, "result-alpha", None)
-    adapter._on_run_end(agent_b, "result-beta", None)
+    # Each run gets its own Context — the deterministic stand-in for concurrent
+    # agent.run() calls on separate threads/tasks, where ContextVar state is
+    # independent. Running each step in its run's context is what isolates them.
+    ctxs = {k: contextvars.copy_context() for k in _MARKERS}
+
+    for run_key, action in _SCHEDULES[schedule_name]:
+        ctx, agent, m = ctxs[run_key], agents[run_key], _MARKERS[run_key]
+        if action == "start":
+            ctx.run(adapter._on_run_start, agent, m["task"])
+        elif action == "step":
+            ctx.run(adapter._handle_action_step, _make_action_step(m["tool"], m["obs"]), agent)
+        elif action == "end":
+            ctx.run(adapter._on_run_end, agent, m["result"], None)
+
     adapter.disconnect()
 
     summaries = [[(e["event_type"], e.get("span_name")) for e in t["events"]] for t in traces]
-    assert traces, "SETUP BUG (not the isolation invariant): no trace was uploaded at all"
     assert len(traces) == 2, (
-        f"Each run must flush its own trace: expected 2 uploads, got {len(traces)}. "
-        f"Uploaded traces as (event_type, span_name): {summaries}"
+        f"[{schedule_name}] each run must flush its own trace: expected 2, got {len(traces)}: {summaries}"
     )
+    assert len({t["trace_id"] for t in traces}) == 2, f"[{schedule_name}] runs must not share a trace_id"
 
-    trace_ids = {t["trace_id"] for t in traces}
-    assert len(trace_ids) == 2, f"The two runs must not share a trace_id: {trace_ids}"
-
-    markers = {
-        "task-alpha": ("agent-alpha", "tool-alpha", "obs-alpha", "result-alpha"),
-        "task-beta": ("agent-beta", "tool-beta", "obs-beta", "result-beta"),
-    }
     by_task: Dict[str, Dict[str, Any]] = {}
     for trace in traces:
         inputs = [e for e in trace["events"] if e["event_type"] == "agent.input"]
-        assert len(inputs) == 1, (
-            f"Each trace must hold exactly one run's agent.input, got {[e['payload'].get('input') for e in inputs]}"
-        )
+        assert len(inputs) == 1, f"[{schedule_name}] each trace holds exactly one run's agent.input"
         by_task[inputs[0]["payload"]["input"]] = trace
-    assert set(by_task) == set(markers), f"Expected one trace per task, got {sorted(by_task)}"
+    assert set(by_task) == {m["task"] for m in _MARKERS.values()}, f"[{schedule_name}] one trace per task"
 
-    for task, own_markers in markers.items():
-        text = json.dumps(by_task[task]["events"])
-        for marker in (task, *own_markers):
-            assert marker in text, f"Trace for {task!r} lost its own event marker {marker!r}"
-        (other_task,) = [t for t in markers if t != task]
-        for marker in (other_task, *markers[other_task]):
-            assert marker not in text, f"Trace for {task!r} contaminated by other run's marker {marker!r}"
+    for key, m in _MARKERS.items():
+        text = json.dumps(by_task[m["task"]]["events"])
+        for marker in (m["task"], m["agent"], m["tool"], m["obs"], m["result"]):
+            assert marker in text, f"[{schedule_name}] trace for {m['task']!r} lost its own marker {marker!r}"
+        other = _MARKERS["b" if key == "a" else "a"]
+        for marker in (other["task"], other["tool"], other["obs"], other["result"]):
+            assert marker not in text, f"[{schedule_name}] trace for {m['task']!r} contaminated by {marker!r}"

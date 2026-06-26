@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import time
 import logging
 from typing import Any, Dict, Optional
 
 from ._utils import safe_serialize
-from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
@@ -56,12 +54,11 @@ class GoogleADKAdapter(FrameworkAdapter):
 
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)
-        self._collector: Optional[TraceCollector] = None
-        self._run_span_id: Optional[str] = None
-        self._agent_span_ids: Dict[str, str] = {}
-        self._current_agent_name: Optional[str] = None
-        self._timers: Dict[str, int] = {}
-        self._seen_agents: set = set()
+        # Run-scoped state (collector / run+agent span ids / current agent /
+        # config-seen set / timers) lives in the per-run RunState via
+        # _begin_run/_end_run (ContextVar-isolated per asyncio.Task / thread),
+        # NOT instance scalars — concurrent runs through one Runner+plugin would
+        # otherwise clobber each other's traces (LAY-3576 / D1b).
         self._plugin: Optional[Any] = None
 
     @property
@@ -80,9 +77,8 @@ class GoogleADKAdapter(FrameworkAdapter):
         return target
 
     def _on_disconnect(self) -> None:
-        self._end_trace()
+        self._end_run(flush=True)
         self._plugin = None
-        self._seen_agents.clear()
 
     # ------------------------------------------------------------------
     # Collector + state management
@@ -96,10 +92,10 @@ class GoogleADKAdapter(FrameworkAdapter):
         parent_span_id: Optional[str] = None,
         span_name: Optional[str] = None,
     ) -> None:
-        c = self._collector
-        if c is None:
+        run = self._get_run()
+        if run is None:
             return
-        c.emit(
+        run.collector.emit(
             event_type,
             payload,
             span_id=span_id or self._new_span_id(),
@@ -107,30 +103,15 @@ class GoogleADKAdapter(FrameworkAdapter):
             span_name=span_name,
         )
 
-    def _tick(self, key: str) -> None:
-        self._timers[key] = time.time_ns()
-
-    def _tock(self, key: str) -> Optional[float]:
-        start = self._timers.pop(key, 0)
-        if not start:
-            return None
-        return (time.time_ns() - start) / 1_000_000
-
     def _leaf_parent(self) -> Optional[str]:
-        if self._current_agent_name:
-            return self._agent_span_ids.get(self._current_agent_name, self._run_span_id)
-        return self._run_span_id
-
-    def _end_trace(self) -> None:
-        with self._lock:
-            collector = self._collector
-            self._collector = None
-            self._run_span_id = None
-            self._agent_span_ids.clear()
-            self._current_agent_name = None
-            self._timers.clear()
-        if collector is not None:
-            collector.flush()
+        run = self._get_run()
+        if run is None:
+            return None
+        run_span_id = run.root_span_id
+        current = run.data.get("current_agent_name")
+        if current:
+            return run.data.get("agent_span_ids", {}).get(current, run_span_id)
+        return run_span_id
 
     # ------------------------------------------------------------------
     # Run lifecycle handlers (called from plugin)
@@ -140,13 +121,11 @@ class GoogleADKAdapter(FrameworkAdapter):
         if not self._connected:
             # ADK has no plugin-removal API, so a Runner constructed with our
             # plugin keeps calling it after disconnect() — never start a new
-            # collector then (all other handlers no-op once _collector is None).
+            # run then (all other handlers no-op once there is no active run).
             return
-        span_id = self._new_span_id()
-        with self._lock:
-            self._collector = TraceCollector(self._client, self._config)
-            self._run_span_id = span_id
-        self._tick("run")
+        run = self._begin_run()
+        span_id = run.root_span_id
+        self._start_timer("run")
 
         agent = getattr(invocation_context, "agent", None)
         agent_name = _agent_name(agent)
@@ -184,27 +163,32 @@ class GoogleADKAdapter(FrameworkAdapter):
         self._fire("agent.input", payload, span_id=span_id, span_name=agent_name)
 
     def _on_after_run(self, invocation_context: Any) -> None:
-        latency_ms = self._tock("run")
-        span_id = self._run_span_id or self._new_span_id()
+        run = self._get_run()
+        if run is None:
+            return
+        latency_ms = self._stop_timer("run")
+        span_id = run.root_span_id
         agent = getattr(invocation_context, "agent", None)
         agent_name = _agent_name(agent)
         payload = self._payload(agent_name=agent_name)
         if latency_ms is not None:
             payload["duration_ns"] = int(latency_ms * 1_000_000)
         self._fire("agent.output", payload, span_id=span_id, span_name=agent_name)
-        self._end_trace()
+        self._end_run(flush=True)
 
     # ------------------------------------------------------------------
     # Agent lifecycle handlers
     # ------------------------------------------------------------------
 
     def _on_before_agent(self, agent: Any, callback_context: Any) -> None:
+        run = self._get_run()
+        if run is None:
+            return
         name = _agent_name(agent)
         span_id = self._new_span_id()
-        with self._lock:
-            self._agent_span_ids[name] = span_id
-            self._current_agent_name = name
-        self._tick(f"agent:{name}")
+        run.data.setdefault("agent_span_ids", {})[name] = span_id
+        run.data["current_agent_name"] = name
+        self._start_timer(f"agent:{name}")
 
         self._emit_agent_config(name, agent, callback_context)
 
@@ -215,17 +199,19 @@ class GoogleADKAdapter(FrameworkAdapter):
             "agent.input",
             payload,
             span_id=span_id,
-            parent_span_id=self._run_span_id,
+            parent_span_id=run.root_span_id,
             span_name=f"agent:{name}",
         )
 
     def _on_after_agent(self, agent: Any, callback_context: Any) -> None:
+        run = self._get_run()
+        if run is None:
+            return
         name = _agent_name(agent)
-        latency_ms = self._tock(f"agent:{name}")
-        with self._lock:
-            span_id = self._agent_span_ids.pop(name, self._new_span_id())
-            if self._current_agent_name == name:
-                self._current_agent_name = None
+        latency_ms = self._stop_timer(f"agent:{name}")
+        span_id = run.data.get("agent_span_ids", {}).pop(name, None) or self._new_span_id()
+        if run.data.get("current_agent_name") == name:
+            run.data["current_agent_name"] = None
 
         payload = self._payload(agent_name=name)
         if latency_ms is not None:
@@ -234,7 +220,7 @@ class GoogleADKAdapter(FrameworkAdapter):
             "agent.output",
             payload,
             span_id=span_id,
-            parent_span_id=self._run_span_id,
+            parent_span_id=run.root_span_id,
             span_name=f"agent:{name}",
         )
 
@@ -244,11 +230,11 @@ class GoogleADKAdapter(FrameworkAdapter):
 
     def _on_before_model(self, callback_context: Any, llm_request: Any) -> None:
         agent_name = getattr(callback_context, "agent_name", None) or "unknown"
-        self._tick(f"model:{agent_name}")
+        self._start_timer(f"model:{agent_name}")
 
     def _on_after_model(self, callback_context: Any, llm_response: Any) -> None:
         agent_name = getattr(callback_context, "agent_name", None) or "unknown"
-        latency_ms = self._tock(f"model:{agent_name}")
+        latency_ms = self._stop_timer(f"model:{agent_name}")
 
         payload = self._payload()
 
@@ -286,7 +272,7 @@ class GoogleADKAdapter(FrameworkAdapter):
 
     def _on_model_error(self, callback_context: Any, llm_request: Any, error: Exception) -> None:
         agent_name = getattr(callback_context, "agent_name", None) or "unknown"
-        self._tock(f"model:{agent_name}")  # clear timer
+        self._stop_timer(f"model:{agent_name}")  # clear timer
         model = getattr(llm_request, "model", None)
         payload = self._payload(error=str(error), error_type=type(error).__name__)
         if model:
@@ -300,12 +286,12 @@ class GoogleADKAdapter(FrameworkAdapter):
     def _on_before_tool(self, tool: Any, tool_args: Any, tool_context: Any) -> None:
         tool_name = getattr(tool, "name", None) or "unknown"
         call_id = getattr(tool_context, "function_call_id", None) or tool_name
-        self._tick(f"tool:{call_id}")
+        self._start_timer(f"tool:{call_id}")
 
     def _on_after_tool(self, tool: Any, tool_args: Any, tool_context: Any, result: Any) -> None:
         tool_name = getattr(tool, "name", None) or "unknown"
         call_id = getattr(tool_context, "function_call_id", None) or tool_name
-        latency_ms = self._tock(f"tool:{call_id}")
+        latency_ms = self._stop_timer(f"tool:{call_id}")
 
         span_id = self._new_span_id()
         parent = self._leaf_parent()
@@ -335,7 +321,7 @@ class GoogleADKAdapter(FrameworkAdapter):
     def _on_tool_error(self, tool: Any, tool_args: Any, tool_context: Any, error: Exception) -> None:
         tool_name = getattr(tool, "name", None) or "unknown"
         call_id = getattr(tool_context, "function_call_id", None) or tool_name
-        self._tock(f"tool:{call_id}")  # clear timer
+        self._stop_timer(f"tool:{call_id}")  # clear timer
         self._fire(
             "agent.error",
             self._payload(tool_name=tool_name, error=str(error), error_type=type(error).__name__),
@@ -347,6 +333,9 @@ class GoogleADKAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     def _on_event(self, invocation_context: Any, event: Any) -> None:
+        run = self._get_run()
+        if run is None:
+            return
         # Detect agent handoffs from event actions
         actions = getattr(event, "actions", None)
         if actions is None:
@@ -357,7 +346,7 @@ class GoogleADKAdapter(FrameworkAdapter):
             self._fire(
                 "agent.handoff",
                 self._payload(from_agent=author, to_agent=str(transfer_to)),
-                parent_span_id=self._run_span_id,
+                parent_span_id=run.root_span_id,
                 span_name=f"handoff:{author}->{transfer_to}",
             )
 
@@ -366,10 +355,13 @@ class GoogleADKAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     def _emit_agent_config(self, name: str, agent: Any, callback_context: Any) -> None:
-        with self._lock:
-            if name in self._seen_agents:
-                return
-            self._seen_agents.add(name)
+        run = self._get_run()
+        if run is None:
+            return
+        seen = run.data.setdefault("seen_agents", set())
+        if name in seen:
+            return
+        seen.add(name)
 
         payload = self._payload(agent_name=name, agent_type=type(agent).__name__)
 
@@ -399,7 +391,7 @@ class GoogleADKAdapter(FrameworkAdapter):
         self._fire(
             "environment.config",
             payload,
-            parent_span_id=self._run_span_id,
+            parent_span_id=run.root_span_id,
             span_name=f"config:{name}",
         )
 

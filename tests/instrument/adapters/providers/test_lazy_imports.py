@@ -35,6 +35,28 @@ def _purge_provider_sdks() -> None:
             del sys.modules[name]
 
 
+@pytest.fixture(autouse=True)
+def _restore_purged_modules():
+    """Restore the original module objects after a test purges them.
+
+    Purging leaves later tests to *re-import* these modules as brand-new objects.
+    Anything that imported a class earlier (e.g. a recorded-replay test's real
+    ``openai.OpenAI`` client, or ``OpenAIProvider``) keeps the original module in
+    its ``__globals__``, so a fresh re-import diverges — openai's own response
+    parsing then sees a ``ChatCompletion`` that no longer subclasses the
+    re-imported ``openai.BaseModel`` and raises. Re-inserting the originals keeps
+    a single canonical module object per name. Mirrors the frameworks
+    ``test_lazy_imports`` fixture of the same name.
+    """
+    saved = {
+        name: mod
+        for name, mod in sys.modules.items()
+        if name.startswith(_PROVIDER_SDK_PREFIXES) or name.startswith("layerlens.instrument.adapters.providers")
+    }
+    yield
+    sys.modules.update(saved)
+
+
 def test_providers_package_import_does_not_pull_sdks() -> None:
     """Bare `import layerlens.instrument.adapters.providers` must stay lean."""
     _purge_provider_sdks()

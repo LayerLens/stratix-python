@@ -11,7 +11,9 @@ that the record→validate wiring is in place.
 
 from __future__ import annotations
 
+import ast
 from typing import Any, Dict
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +23,41 @@ from tests.instrument._event_schema import (
     validate_event,
     validate_events,
 )
+
+# src/layerlens/instrument — the adapters (and the shared emit helpers) live here.
+_INSTRUMENT_SRC = Path(__file__).resolve().parents[2] / "src" / "layerlens" / "instrument"
+# Methods that take the event_type as their FIRST POSITIONAL arg.
+_EMIT_FUNCS = frozenset({"_emit", "emit", "emit_async"})
+
+
+def _literal_emit_event_types() -> Dict[str, str]:
+    """Statically collect every event-type STRING LITERAL passed as the first
+    positional arg to an emit call across the instrument source.
+
+    Only ``args[0]`` is inspected — ``span_name=`` / ``event=`` / ``name=``
+    keyword args (e.g. ``self._emit("tool.call", payload, span_name="bedrock.x")``)
+    are deliberately ignored, or they would surface as phantom ``bedrock.*``
+    event types. Constant references (``collector.emit(MODEL_INVOKE, ...)``) are
+    not literals and are covered by ``test_all_emitted_event_constants_are_registered``.
+    """
+    found: Dict[str, str] = {}
+    for py in sorted(_INSTRUMENT_SRC.rglob("*.py")):
+        tree = ast.parse(py.read_text(), filename=str(py))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name not in _EMIT_FUNCS:
+                continue
+            arg0 = node.args[0]
+            if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str):
+                lit = arg0.value
+                # Event types are dotted + lowercase; this filters non-event
+                # first-arg strings without masking a real unregistered type.
+                if "." in lit and lit.islower():
+                    found.setdefault(lit, f"{py.relative_to(_INSTRUMENT_SRC)}:{node.lineno}")
+    return found
 
 
 def _event(event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -130,6 +167,25 @@ class TestEnforcementWiring:
         }
         unregistered = sorted(emitted - set(KNOWN_EVENT_TYPES))
         assert not unregistered, f"event-type constants emitted but not registered in the schema lock: {unregistered}"
+
+    def test_no_string_literal_emit_is_unregistered(self) -> None:
+        """Every event-type STRING LITERAL emitted in adapter source must be in
+        ``KNOWN_EVENT_TYPES`` (LAY-3614 / W6). The constants guard above only sees
+        UPPERCASE ``_events`` constants; bare literals like langgraph's
+        ``self._emit("agent.node.enter", ...)`` are caught at runtime ONLY if a
+        unit test happens to exercise that path. This static AST scan makes
+        "emitted ⇒ registered" hold for literals regardless of test coverage —
+        catching the next unregistered literal before it ships.
+        """
+        found = _literal_emit_event_types()
+        # Sanity: the scan must actually find emit literals, or it is mis-targeted
+        # and would pass vacuously (langgraph alone has agent.node.enter/exit).
+        assert "agent.node.enter" in found, "emit-literal scan found nothing — mis-targeted?"
+        unregistered = {lit: loc for lit, loc in found.items() if lit not in KNOWN_EVENT_TYPES}
+        assert not unregistered, (
+            "string-literal event types emitted in adapter source but absent from "
+            f"KNOWN_EVENT_TYPES (register them in tests/instrument/_event_schema.py): {unregistered}"
+        )
 
     def test_record_for_schema_lock_feeds_the_validator(self) -> None:
         # Unit-level check of the recorder + validator the fixture composes (kept

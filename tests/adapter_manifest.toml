@@ -14,6 +14,12 @@
 #   concurrency         — concurrent-run isolation (xfail(strict) where unsafe)
 #   disconnect_restore  — leave-no-trace invariants
 #   doubles             — deterministic doubles for credential-gated services
+#                         (hand-built/fabricated response objects, in-test)
+#   recorded            — replays a REAL provider/service response captured once
+#                         offline into tests/fixtures/recorded/<adapter>/ and
+#                         asserts the emitted events (LAY-3614). Distinct from
+#                         `doubles`: the fixture is the actual captured wire/
+#                         object shape we do NOT control, not a fabricated one.
 #   matrix_row          — frameworks.toml row that runs the suite with the
 #                         real framework installed (skips are failures there)
 #   live_id             — id in the tests/e2e/live registries
@@ -33,6 +39,7 @@ streaming = { path = "tests/instrument/adapters/providers/test_streaming.py" }
 async = { path = "tests/instrument/adapters/providers/test_async_providers.py" }
 redaction = { path = "tests/instrument/test_capture_config.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+recorded = { path = "tests/instrument/adapters/providers/test_openai_recorded.py" }
 live_id = "openai"
 
 [adapters.anthropic]
@@ -42,6 +49,7 @@ streaming = { path = "tests/instrument/adapters/providers/test_streaming.py" }
 async = { path = "tests/instrument/adapters/providers/test_async_providers.py" }
 redaction = { path = "tests/instrument/test_capture_config.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+recorded = { path = "tests/instrument/adapters/providers/test_anthropic_recorded.py" }
 live_id = "anthropic"
 
 [adapters.azure_openai]
@@ -49,6 +57,9 @@ family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_azure_openai.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 doubles = { path = "tests/instrument/adapters/providers/test_azure_openai.py" }
+# Seeded (no Azure creds anywhere): real AzureOpenAI client deserializes a
+# seeded body over MockTransport. captured_at='pending-creds' in the fixture.
+recorded = { path = "tests/instrument/adapters/providers/test_azure_openai_recorded.py" }
 live_id = "azure_openai"
 
 [adapters.google_vertex]
@@ -56,26 +67,39 @@ family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_google_vertex.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 doubles = { path = "tests/instrument/adapters/providers/test_google_vertex_doubles.py" }
+# Seeded (no GCP creds anywhere): REAL proto-backed GenerationResponse via
+# from_dict. captured_at='pending-creds' in the fixture.
+recorded = { path = "tests/instrument/adapters/providers/test_google_vertex_recorded.py" }
 live_id = "google_vertex"
 
 [adapters.bedrock]
 family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_bedrock.py" }
+streaming = { path = "tests/instrument/adapters/providers/test_bedrock_streaming.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 doubles = { path = "tests/instrument/adapters/providers/test_bedrock.py" }
+recorded = { path = "tests/instrument/adapters/providers/test_bedrock_recorded.py" }
 live_id = "bedrock"
 
 [adapters.ollama]
 family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_ollama.py" }
+streaming = { path = "tests/instrument/adapters/providers/test_streaming.py", pattern = "TestOllamaStreaming" }
 async = { path = "tests/instrument/adapters/providers/test_async_providers.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+recorded = { path = "tests/instrument/adapters/providers/test_ollama_recorded.py" }
 live_id = "ollama"
 
 [adapters.litellm]
 family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_litellm.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+# No `recorded` tier: LiteLLMProvider delegates its entire parser to
+# OpenAIProvider.extract_* (litellm.py), so the openai `recorded` replay already
+# exercises litellm's parse path against a real shape. A separate litellm
+# recorded test must import the real `litellm`, which collides with
+# test_litellm.py's sys.modules teardown and litellm's openai-type model_rebuild
+# (order-dependent flakiness) — not worth it for zero added parser coverage.
 live_id = "litellm"
 
 # ---------------------------------------------------------------------------
@@ -87,20 +111,25 @@ family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_langchain.py" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_langchain.py", pattern = "capture" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_langchain_recorded.py" }
 matrix_row = "langchain"
 live_id = "langchain"
 
 [adapters.langgraph]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_langgraph.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_langgraph.py", pattern = "capture_content" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_langgraph_recorded.py" }
 matrix_row = "langgraph"
 live_id = "langgraph"
 
 [adapters.crewai]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_crewai.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_crewai.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+redaction = { path = "tests/instrument/adapters/frameworks/test_crewai.py", pattern = "capture_content" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_crewai_recorded.py" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_crewai.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_crewai.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "crewai"
 live_id = "crewai"
@@ -108,14 +137,19 @@ live_id = "crewai"
 [adapters.openai_agents]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_openai_agents.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_openai_agents.py", pattern = "capture_content" }
 concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_openai_agents.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_openai_agents.py", pattern = "TestDisconnectLeaveNoTrace" }
+# Recorded-replay skips on py<3.10 (base CI) and runs in the matrix venv.
+recorded = { path = "tests/instrument/adapters/frameworks/test_openai_agents_recorded.py" }
 matrix_row = "openai_agents"
 live_id = "openai_agents"
 
 [adapters.semantic_kernel]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel.py", pattern = "capture_content" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel_recorded.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "semantic_kernel"
 live_id = "semantic_kernel"
@@ -123,6 +157,8 @@ live_id = "semantic_kernel"
 [adapters.ms_agent_framework]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework.py", pattern = "capture_content" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework_recorded.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "semantic_kernel"
 live_id = "ms_agent_framework"
@@ -130,15 +166,19 @@ live_id = "ms_agent_framework"
 [adapters.pydantic_ai]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_pydantic_ai.py" }
+streaming = { path = "tests/instrument/adapters/frameworks/test_pydantic_ai.py", pattern = "TestStreaming" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_pydantic_ai.py", pattern = "capture_content" }
 concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_pydantic_ai_recorded.py" }
 matrix_row = "pydantic_ai"
 live_id = "pydantic_ai"
 
 [adapters.google_adk]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_google_adk.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_google_adk.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+redaction = { path = "tests/instrument/adapters/frameworks/test_google_adk.py", pattern = "capture_content" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_google_adk.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_google_adk.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "google_adk"
 live_id = "google_adk"
@@ -146,7 +186,8 @@ live_id = "google_adk"
 [adapters.strands]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_strands.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_strands.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+redaction = { path = "tests/instrument/adapters/frameworks/test_strands.py", pattern = "capture_content" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_strands.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_strands.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "strands"
 live_id = "strands"
@@ -154,7 +195,9 @@ live_id = "strands"
 [adapters.smolagents]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_smolagents.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_smolagents.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+redaction = { path = "tests/instrument/adapters/frameworks/test_smolagents.py", pattern = "capture_content" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_smolagents_recorded.py" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_smolagents.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_smolagents.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "smolagents"
 live_id = "smolagents"
@@ -162,6 +205,8 @@ live_id = "smolagents"
 [adapters.llamaindex]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_llamaindex.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_llamaindex.py", pattern = "capture_content" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_llamaindex_recorded.py" }
 concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_llamaindex.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_llamaindex.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "llamaindex"
@@ -170,6 +215,8 @@ live_id = "llamaindex"
 [adapters.haystack]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_haystack.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_haystack.py", pattern = "capture_content" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_haystack_recorded.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_haystack.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "haystack"
 live_id = "haystack"
@@ -177,7 +224,9 @@ live_id = "haystack"
 [adapters.autogen]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_autogen.py" }
-concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_autogen.py" }  # xfail(strict) until D1b (hazardous-five convergence)
+redaction = { path = "tests/instrument/adapters/frameworks/test_autogen.py", pattern = "capture_content" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_autogen_recorded.py" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_autogen.py" }  # xfail(strict): documented structural exception (global-logger instrumentation, no per-run boundary) — W2 residual
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_autogen.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "autogen"
 live_id = "autogen"
@@ -185,6 +234,8 @@ live_id = "autogen"
 [adapters.agno]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_agno.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_agno.py", pattern = "capture_content" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_agno_recorded.py" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_agno.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "agno"
 live_id = "agno"
@@ -192,20 +243,25 @@ live_id = "agno"
 [adapters.bedrock_agents]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents.py", pattern = "capture_content" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 doubles = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents_doubles.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_bedrock_agents_recorded.py" }
 live_id = "bedrock_agents"
 
 [adapters.agentforce]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_agentforce.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_agentforce.py", pattern = "capture_content" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_agentforce.py", pattern = "TestDisconnectLeaveNoTrace" }
 doubles = { path = "tests/instrument/adapters/frameworks/test_agentforce_doubles.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_agentforce_recorded.py" }
 live_id = "agentforce"
 
 [adapters.langfuse]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_langfuse.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_langfuse.py", pattern = "capture_content" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_langfuse.py", pattern = "TestDisconnectLeaveNoTrace" }
 live_id = "langfuse"
 
@@ -228,14 +284,18 @@ live_id = "vector_store"
 
 [adapters.mcp]
 family = "protocol"
-unit = { path = "tests/instrument/adapters/protocols/test_mcp_tool_wrapper.py" }
+# Behavioral tests driving the LIVE MCPProtocolAdapter (LAY-3617); the old
+# test_mcp_tool_wrapper.py exercised the dead tool_wrapper.py the adapter never calls.
+unit = { path = "tests/instrument/adapters/protocols/test_mcp_adapter.py" }
 redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "mcp"
 
 [adapters.a2a]
 family = "protocol"
-unit = { path = "tests/instrument/adapters/protocols/test_a2a_client.py" }
+# Behavioral tests driving the LIVE A2AProtocolAdapter + parse_agent_card/ACPNormalizer
+# (LAY-3617); test_a2a_client.py tests the separate wrapper class, not the live adapter.
+unit = { path = "tests/instrument/adapters/protocols/test_a2a_adapter.py" }
 redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "a2a"
@@ -249,20 +309,23 @@ live_id = "agui"
 
 [adapters.ap2]
 family = "protocol"
-unit = { path = "tests/instrument/adapters/protocols/test_certification.py" }
+# Behavioral mandate-chain + AP2Guardrails tests (LAY-3617); was contract-only certification.
+unit = { path = "tests/instrument/adapters/protocols/test_ap2_adapter.py" }
 redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "ap2"
 
 [adapters.ucp]
 family = "protocol"
-unit = { path = "tests/instrument/adapters/protocols/test_certification.py" }
+# Behavioral commerce-flow tests + session_duration_ms (LAY-3617); was contract-only.
+unit = { path = "tests/instrument/adapters/protocols/test_ucp_adapter.py" }
 redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "ucp"
 
 [adapters.a2ui]
 family = "protocol"
-unit = { path = "tests/instrument/adapters/protocols/test_certification.py" }
+# Behavioral SHA-256 hashing + no-cleartext sentinel tests (LAY-3617); was contract-only.
+unit = { path = "tests/instrument/adapters/protocols/test_a2ui_adapter.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "a2ui"

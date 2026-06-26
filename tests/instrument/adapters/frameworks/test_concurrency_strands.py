@@ -1,31 +1,31 @@
-"""Interleaved-run isolation guard for the Strands adapter (LAY-3576 / T2).
+"""Interleaved-run isolation for the Strands adapter (LAY-3576 / D1b).
 
-THE INVARIANT: two runs driven through ONE ``StrandsAdapter`` instance,
-with lifecycle events interleaved (start A, start B, mid-run A, mid-run B,
-end A, end B), must upload two traces with distinct trace_ids, each holding
-exactly its own run's events — no cross-contamination, no lost events.
+THE INVARIANT: two runs driven through ONE ``StrandsAdapter`` instance whose
+lifecycle events interleave must upload two traces with distinct trace_ids, each
+holding exactly its own run's events — no cross-contamination, no lost events.
 
-The adapter keeps run state in instance scalars
-(``src/layerlens/instrument/adapters/frameworks/strands.py`` —
-``self._collector``, ``self._run_span_id``, ``self._timers``,
-``self._model_span_ids``), so run B's BeforeInvocationEvent replaces run
-A's collector: run A's opening events are dropped unflushed, both runs'
-model events land in run B's collector, one merged trace flushes when run
-A's AfterInvocationEvent arrives, and run B's closing events vanish (no
-collector left).
+FIXED (D1b): the adapter no longer keeps run state in instance scalars
+(``self._collector``, ``self._run_span_id``, ``self._timers``,
+``self._model_span_ids``); it routes every invocation through
+``_begin_run``/``_end_run`` so the collector + run span id + timers + the
+per-run model.invoke span ids live in a per-run ``RunState`` pushed into
+ContextVars (isolated per ``asyncio.Task`` / thread — the same mechanism
+PydanticAIAdapter uses). The Strands hooks fire *inside* the agent invocation,
+i.e. within that run's context, so they resolve their own run's collector.
 
-Expected XFAIL (strict): this is the RED guard for the D1b
-collector-convergence work (stability report §3.1), which moves the
-self-flushing adapters onto the per-run RunState/ContextVar isolation that
-PydanticAIAdapter already uses (see test_concurrency.py). When D1b lands,
-the strict xfail turns into a strict XPASS failure and the marker must be
-removed. The interleave is single-threaded direct hook-handler calls, so
-the corruption is deterministic and the xfail cannot flap.
+The interleave is exercised deterministically (no real threads, no RNG) by
+running each run's hook-handler calls inside its OWN ``contextvars.Context`` —
+exactly how concurrent agent invocations in separate threads/tasks see
+independent ContextVar state — across several fixed schedules (sequential,
+fully interleaved, reversed, nested). Under the GIL a forced interleaving is a
+stricter race detector for this code than naive threading, and a fixed schedule
+cannot flap.
 """
 
 from __future__ import annotations
 
 import json
+import contextvars
 from typing import Any, Dict, List
 from unittest.mock import Mock
 
@@ -46,7 +46,7 @@ from layerlens.instrument.adapters.frameworks.strands import (
 )  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Helpers (copied minimal — do not import private helpers from siblings)
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -96,66 +96,71 @@ def _stop_response(stop_reason: str = "end_turn") -> Any:
 # Isolation invariant
 # ---------------------------------------------------------------------------
 
-XFAIL_REASON = (
-    "LAY-3576: StrandsAdapter keeps run state in instance scalars "
-    "(strands.py — self._collector, self._run_span_id, self._timers, "
-    "self._model_span_ids); interleaved runs on one instance corrupt traces. "
-    "RED guard for the D1b collector-convergence work (stability report §3.1) — "
-    "NOT fixed in phase 4."
-)
+# Each schedule is a list of (run_key, action). Every schedule must yield two
+# fully isolated traces — that is the post-D1b invariant.
+_SCHEDULES = {
+    "sequential": [("a", "start"), ("a", "model"), ("a", "end"), ("b", "start"), ("b", "model"), ("b", "end")],
+    "interleaved": [("a", "start"), ("b", "start"), ("a", "model"), ("b", "model"), ("a", "end"), ("b", "end")],
+    "reversed": [("b", "start"), ("a", "start"), ("b", "model"), ("a", "model"), ("b", "end"), ("a", "end")],
+    "nested": [("a", "start"), ("b", "start"), ("b", "model"), ("b", "end"), ("a", "model"), ("a", "end")],
+}
+
+_MARKERS = {
+    "a": {"prompt": "prompt-alpha", "agent": "agent-alpha", "model": "model-alpha", "answer": "answer-alpha"},
+    "b": {"prompt": "prompt-beta", "agent": "agent-beta", "model": "model-beta", "answer": "answer-beta"},
+}
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
-def test_interleaved_invocations_produce_two_isolated_traces(mock_client):
+@pytest.mark.parametrize("schedule_name", list(_SCHEDULES))
+def test_interleaved_invocations_produce_two_isolated_traces(mock_client, schedule_name):
     traces = _collect_traces(mock_client)
     adapter = StrandsAdapter(mock_client)
     adapter.connect()
-    agent_a = _make_agent(name="agent-alpha", model_id="model-alpha")
-    agent_b = _make_agent(name="agent-beta", model_id="model-beta")
+    agents = {k: _make_agent(m["agent"], m["model"]) for k, m in _MARKERS.items()}
 
-    # Deterministic single-thread interleave: start A, start B, mid A, mid B,
-    # end A, end B.
-    adapter._on_before_invocation(BeforeInvocationEvent(agent=agent_a, invocation_state={}, messages="prompt-alpha"))
-    adapter._on_before_invocation(BeforeInvocationEvent(agent=agent_b, invocation_state={}, messages="prompt-beta"))
-    adapter._on_before_model(BeforeModelCallEvent(agent=agent_a, invocation_state={}))
-    adapter._on_after_model(AfterModelCallEvent(agent=agent_a, invocation_state={}, stop_response=_stop_response()))
-    adapter._on_before_model(BeforeModelCallEvent(agent=agent_b, invocation_state={}))
-    adapter._on_after_model(AfterModelCallEvent(agent=agent_b, invocation_state={}, stop_response=_stop_response()))
-    adapter._on_after_invocation(
-        AfterInvocationEvent(agent=agent_a, invocation_state={}, result=_make_result("answer-alpha"))
-    )
-    adapter._on_after_invocation(
-        AfterInvocationEvent(agent=agent_b, invocation_state={}, result=_make_result("answer-beta"))
-    )
+    # Each run gets its own Context — the deterministic stand-in for concurrent
+    # agent invocations on separate threads/tasks, where ContextVar state is
+    # independent. Running each hook in its run's context is what isolates them.
+    ctxs = {k: contextvars.copy_context() for k in _MARKERS}
+
+    for run_key, action in _SCHEDULES[schedule_name]:
+        ctx, agent, m = ctxs[run_key], agents[run_key], _MARKERS[run_key]
+        if action == "start":
+            ctx.run(
+                adapter._on_before_invocation,
+                BeforeInvocationEvent(agent=agent, invocation_state={}, messages=m["prompt"]),
+            )
+        elif action == "model":
+            ctx.run(adapter._on_before_model, BeforeModelCallEvent(agent=agent, invocation_state={}))
+            ctx.run(
+                adapter._on_after_model,
+                AfterModelCallEvent(agent=agent, invocation_state={}, stop_response=_stop_response()),
+            )
+        elif action == "end":
+            ctx.run(
+                adapter._on_after_invocation,
+                AfterInvocationEvent(agent=agent, invocation_state={}, result=_make_result(m["answer"])),
+            )
+
     adapter.disconnect()
 
     summaries = [[(e["event_type"], e.get("span_name")) for e in t["events"]] for t in traces]
-    assert traces, "SETUP BUG (not the isolation invariant): no trace was uploaded at all"
     assert len(traces) == 2, (
-        f"Each invocation must flush its own trace: expected 2 uploads, got {len(traces)}. "
-        f"Uploaded traces as (event_type, span_name): {summaries}"
+        f"[{schedule_name}] each invocation must flush its own trace: expected 2, got {len(traces)}: {summaries}"
     )
+    assert len({t["trace_id"] for t in traces}) == 2, f"[{schedule_name}] runs must not share a trace_id"
 
-    trace_ids = {t["trace_id"] for t in traces}
-    assert len(trace_ids) == 2, f"The two runs must not share a trace_id: {trace_ids}"
-
-    markers = {
-        "prompt-alpha": ("agent-alpha", "model-alpha", "answer-alpha"),
-        "prompt-beta": ("agent-beta", "model-beta", "answer-beta"),
-    }
     by_prompt: Dict[str, Dict[str, Any]] = {}
     for trace in traces:
         inputs = [e for e in trace["events"] if e["event_type"] == "agent.input"]
-        assert len(inputs) == 1, (
-            f"Each trace must hold exactly one run's agent.input, got {[e['payload'].get('input') for e in inputs]}"
-        )
+        assert len(inputs) == 1, f"[{schedule_name}] each trace holds exactly one run's agent.input"
         by_prompt[inputs[0]["payload"]["input"]] = trace
-    assert set(by_prompt) == set(markers), f"Expected one trace per prompt, got {sorted(by_prompt)}"
+    assert set(by_prompt) == {m["prompt"] for m in _MARKERS.values()}, f"[{schedule_name}] one trace per prompt"
 
-    for prompt, own_markers in markers.items():
-        text = json.dumps(by_prompt[prompt]["events"])
-        for marker in (prompt, *own_markers):
-            assert marker in text, f"Trace for {prompt!r} lost its own event marker {marker!r}"
-        (other_prompt,) = [p for p in markers if p != prompt]
-        for marker in (other_prompt, *markers[other_prompt]):
-            assert marker not in text, f"Trace for {prompt!r} contaminated by other run's marker {marker!r}"
+    for key, m in _MARKERS.items():
+        text = json.dumps(by_prompt[m["prompt"]]["events"])
+        for marker in (m["prompt"], m["agent"], m["model"], m["answer"]):
+            assert marker in text, f"[{schedule_name}] trace for {m['prompt']!r} lost its own marker {marker!r}"
+        other = _MARKERS["b" if key == "a" else "a"]
+        for marker in (other["prompt"], other["agent"], other["model"], other["answer"]):
+            assert marker not in text, f"[{schedule_name}] trace for {m['prompt']!r} contaminated by {marker!r}"

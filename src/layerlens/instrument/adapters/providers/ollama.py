@@ -30,6 +30,25 @@ _CAPTURE_PARAMS = frozenset(
 # CaptureConfig.redact_payload manages it.
 
 
+def _as_dict(response: Any) -> Any:
+    """Coerce an ollama response object to a dict for parsing.
+
+    Older ollama-python returned plain dicts; modern versions return pydantic
+    ``ChatResponse``/``GenerateResponse``/``EmbedResponse`` objects. Both expose
+    ``model_dump``; anything else is returned unchanged so non-coercible inputs
+    fall through to the dict guards untouched.
+    """
+    if isinstance(response, dict):
+        return response
+    dump = getattr(response, "model_dump", None)
+    if callable(dump):
+        try:
+            return dump()
+        except Exception:  # pragma: no cover - defensive; never break a trace
+            return response
+    return response
+
+
 class OllamaProvider(MonkeyPatchProvider):
     name = "ollama"
     capture_params = _CAPTURE_PARAMS
@@ -43,6 +62,10 @@ class OllamaProvider(MonkeyPatchProvider):
 
     @staticmethod
     def extract_output(response: Any) -> Any:
+        # Modern ollama-python returns a ``ChatResponse``/``GenerateResponse``
+        # pydantic object, not the plain dict the older client returned; coerce
+        # it so the real response shape is parsed (LAY-3614).
+        response = _as_dict(response)
         # ``chat`` returns {"message": {"role", "content"}, ...}
         if isinstance(response, dict):
             msg = response.get("message")
@@ -64,6 +87,7 @@ class OllamaProvider(MonkeyPatchProvider):
 
     @staticmethod
     def extract_meta(response: Any) -> Dict[str, Any]:
+        response = _as_dict(response)
         if not isinstance(response, dict):
             return {}
         meta: Dict[str, Any] = {}
@@ -87,6 +111,40 @@ class OllamaProvider(MonkeyPatchProvider):
         if total_ns:
             meta["duration_ms"] = total_ns / 1_000_000
         return meta
+
+    @staticmethod
+    def aggregate_stream(chunks: list[Any]) -> Any:
+        """Merge an ollama stream into one response dict for the model.invoke.
+
+        Ollama's ``chat(stream=True)`` yields a ``ChatResponse`` per token (final
+        one carries ``done``/usage); ``generate(stream=True)`` yields ``response``
+        deltas. Without this override the base hook returns ``None`` and a stream
+        produced a content-less, usage-less model.invoke (the G8 gap). We
+        concatenate the deltas and keep the final chunk's metadata (model /
+        done_reason / *_eval_count / total_duration) so the existing
+        extract_output / extract_meta parse the aggregate unchanged.
+        """
+        dicts = [d for d in (_as_dict(c) for c in chunks) if isinstance(d, dict)]
+        if not dicts:
+            return None
+        parts: list[str] = []
+        has_message = False
+        for d in dicts:
+            msg = d.get("message")
+            if isinstance(msg, dict):
+                has_message = True
+                piece = msg.get("content")
+                if piece:
+                    parts.append(piece)
+            elif d.get("response"):
+                parts.append(d["response"])
+        aggregated = dict(dicts[-1])  # final chunk carries the done-metadata + usage
+        merged = "".join(parts)
+        if has_message:
+            aggregated["message"] = {"role": "assistant", "content": merged}
+        else:
+            aggregated["response"] = merged
+        return aggregated
 
     def connect(self, target: Any = None, **kwargs: Any) -> Any:  # noqa: ARG002
         self._client = target

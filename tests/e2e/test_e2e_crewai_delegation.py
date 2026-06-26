@@ -22,8 +22,20 @@ if sys.version_info < (3, 10):
     pytest.skip("crewai requires Python >= 3.10", allow_module_level=True)
 
 # crewai needs to be importable in full
+crewai = pytest.importorskip("crewai")
 crewai_events = pytest.importorskip("crewai.events")
 pytest.importorskip("crewai.tasks.task_output")
+
+# The adapter needs crewai's modern typed event bus (the 1.14 line); the base lock
+# resolves whatever the cross-adapter solve allows (0.193.2 or 1.6.1 by platform),
+# both too old. Only the pinned matrix (crewai==1.14.6) row is supported; skip below.
+from packaging.version import Version  # noqa: E402
+
+if Version(crewai.__version__) < Version("1.14"):
+    pytest.skip(
+        f"crewai adapter requires >= 1.14; got {crewai.__version__}",
+        allow_module_level=True,
+    )
 
 from crewai.events import (
     ToolUsageStartedEvent,

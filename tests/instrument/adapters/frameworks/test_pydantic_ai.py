@@ -174,6 +174,128 @@ class TestRunAsync:
 
 
 # ---------------------------------------------------------------------------
+# Streaming (G8 / W4)
+# ---------------------------------------------------------------------------
+
+
+class TestStreaming:
+    """Streaming coverage for the ``run_stream`` path.
+
+    pydantic-ai streams in production via ``Agent.run_stream`` (an async
+    context manager yielding a ``StreamedRunResult``); under the hood the
+    instrumented model's ``_InstrumentedModel.request_stream`` drives the SSE.
+    This exercises the real agent loop end-to-end with ``TestModel`` (fake, no
+    network) so we pin the *emitted* contract for a streamed run.
+
+    NO-TTFT LIMITATION (documented per task RULE 3): unlike the OpenAI/Anthropic
+    provider adapters — which wrap the raw SDK chunk iterator and so can anchor
+    ``ttft_ms`` on the first chunk and ``streaming_duration_ms`` on exhaustion —
+    pydantic-ai exposes no stable per-chunk hook. The adapter therefore emits a
+    SINGLE ``model.invoke`` with ``streaming=True`` from ``request_stream``'s
+    ``__aexit__`` (using the ``StreamedRunResult``'s final usage/model), plus an
+    ``agent.output`` with ``streaming=True`` from the run wrapper. There is no
+    ``ttft_ms`` / ``streaming_duration_ms`` here, and the adapter does NOT
+    aggregate per-chunk content (aggregation_added=false).
+
+    NO-OUTPUT-CONTENT LIMITATION: ``_finish_run_ok`` runs ``_extract_output``
+    against the *streamed* result, but pydantic-ai's ``StreamedRunResult``
+    exposes its result only via the ``await get_output()`` coroutine — it has
+    no ``.output`` attribute the way the non-streaming ``AgentRunResult`` does.
+    So the streamed ``agent.output`` legitimately carries NO ``output`` key
+    today. We pin that current contract rather than refactor the adapter to
+    await the streamed output (which would be a larger/risky change).
+
+    We assert exactly the current contract: a ``streaming=True`` ``model.invoke``
+    is emitted and ``agent.output`` carries ``streaming=True`` (no ``output``).
+    """
+
+    @staticmethod
+    def _run_stream(agent: Agent, prompt: str) -> str:
+        """Drive ``agent.run_stream`` to completion, returning the final output.
+
+        Consumes the text stream (delta mode) the way a production caller would,
+        which is what makes ``_InstrumentedModel.request_stream`` open *and*
+        close its async context — the close is where ``model.invoke`` fires.
+        """
+
+        async def _go() -> str:
+            async with agent.run_stream(prompt) as stream:
+                async for _ in stream.stream_text(delta=True):
+                    pass
+                return await stream.get_output()
+
+        return asyncio.get_event_loop().run_until_complete(_go())
+
+    def test_run_stream_emits_streaming_model_invoke_and_output(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client)
+        agent = _make_agent(name="stream_agent", output_text="Streamed hello")
+
+        adapter.connect(target=agent)
+        output = self._run_stream(agent, "stream me")
+        adapter.disconnect()
+
+        assert output == "Streamed hello"
+        events = uploaded["events"]
+
+        # agent.input recorded the prompt for the streamed run.
+        inp = find_event(events, "agent.input")
+        assert inp["payload"]["agent_name"] == "stream_agent"
+        assert inp["payload"]["input"] == "stream me"
+
+        # The model-level streaming invoke is the heart of this test: the
+        # instrumented WrapperModel must mark the streamed request as such.
+        model_invokes = find_events(events, "model.invoke")
+        assert len(model_invokes) >= 1
+        streaming_invokes = [m for m in model_invokes if m["payload"].get("streaming") is True]
+        assert len(streaming_invokes) >= 1, (
+            f"expected a streaming=True model.invoke from request_stream; "
+            f"got payloads {[m['payload'] for m in model_invokes]}"
+        )
+        mi = streaming_invokes[0]["payload"]
+        # request_stream still reports the model name + a latency reading.
+        assert isinstance(mi["model"], str) and mi["model"]
+        assert mi["latency_ms"] >= 0
+        # No per-chunk timing is surfaced on the pydantic-ai streaming path
+        # (no stable per-chunk hook) — pin that limitation so a future change
+        # that adds TTFT updates this test deliberately.
+        assert "ttft_ms" not in mi
+        assert "streaming_duration_ms" not in mi
+
+        # The run wrapper marks the aggregate agent.output as streamed too.
+        out = find_event(events, "agent.output")
+        assert out["payload"]["status"] == "ok"
+        assert out["payload"]["streaming"] is True
+        # NO-OUTPUT-CONTENT LIMITATION (see class docstring): StreamedRunResult
+        # has no ``.output`` attribute, so the streamed agent.output carries no
+        # ``output`` key. Pin this so a future fix that awaits get_output()
+        # has to update the assertion deliberately.
+        assert "output" not in out["payload"]
+
+    def test_run_stream_records_usage_and_cost(self, mock_client):
+        # A streamed run still resolves usage from the StreamedRunResult once
+        # the stream completes, so the same cost.record contract as the
+        # non-streaming path must hold.
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client)
+        agent = _make_agent(name="stream_cost_agent", output_text="tokens please")
+
+        adapter.connect(target=agent)
+        self._run_stream(agent, "count my tokens")
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        out = find_event(events, "agent.output")
+        # TestModel always reports some usage; the streamed agent.output carries
+        # the normalized token fields.
+        assert out["payload"]["tokens_prompt"] > 0
+        assert out["payload"]["tokens_completion"] > 0
+
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["tokens_total"] > 0
+
+
+# ---------------------------------------------------------------------------
 # Model invocation events
 # ---------------------------------------------------------------------------
 

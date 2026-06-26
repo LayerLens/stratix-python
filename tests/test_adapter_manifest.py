@@ -43,6 +43,7 @@ _TIER_KEYS = (
     "concurrency",
     "disconnect_restore",
     "doubles",
+    "recorded",
 )
 
 #: Adapters that exist in code but are wired explicitly (not in auto()).

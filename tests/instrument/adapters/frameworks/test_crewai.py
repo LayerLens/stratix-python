@@ -26,6 +26,19 @@ try:
 except (ImportError, TypeError):
     pytest.skip("crewai not installed or incompatible", allow_module_level=True)
 
+# The adapter needs crewai's modern typed event bus (the 1.14 line). The dev floor
+# is loose (crewai>=0.5.0) and the combined base lock resolves whatever the cross-
+# adapter solve allows — 0.193.2 or 1.6.1 depending on platform, both predating that
+# event surface. Only the pinned matrix (crewai==1.14.6) row is supported; skip below
+# 1.14 rather than fail in the base ``test`` job.
+from packaging.version import Version  # noqa: E402
+
+if Version(crewai.__version__) < Version("1.14"):
+    pytest.skip(
+        f"crewai adapter requires >= 1.14; got {crewai.__version__}",
+        allow_module_level=True,
+    )
+
 from crewai.events import (  # noqa: E402
     TaskFailedEvent,
     TaskStartedEvent,
@@ -84,9 +97,10 @@ class TestCrewAIAdapterLifecycle:
         with crewai_event_bus.scoped_handlers():
             adapter.connect()
         adapter.disconnect()
-        assert adapter._collector is None
-        assert adapter._crew_span_id is None
-        assert adapter._task_span_ids == {}
+        # Run state now lives in a per-run map keyed by event lineage
+        # (LAY-3576); disconnect drains and clears it.
+        assert adapter._runs == {}
+        assert adapter._event_root == {}
 
 
 class TestCrewKickoff:
@@ -149,8 +163,8 @@ class TestCrewKickoff:
         assert uploaded["trace_id"] is not None
         assert len(uploaded["events"]) >= 2
         assert uploaded["attestation"] is not None
-        # Collector should be reset after flush
-        assert adapter._collector is None
+        # The run is evicted after the crew completes and its collector flushes.
+        assert adapter._runs == {}
 
 
 class TestTaskEvents:
@@ -662,7 +676,10 @@ class TestMCPToolEvents:
     """Test MCP tool execution event handling."""
 
     def test_mcp_tool_completed(self, adapter_and_trace):
-        from crewai.events import MCPToolExecutionCompletedEvent
+        try:
+            from crewai.events import MCPToolExecutionCompletedEvent
+        except ImportError:
+            pytest.skip("installed crewai version ships no MCPToolExecutionCompletedEvent")
 
         adapter, uploaded = adapter_and_trace
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
@@ -694,7 +711,10 @@ class TestMCPToolEvents:
         assert tool_call["payload"]["output"] == "127.0.0.1 localhost"
 
     def test_mcp_tool_failed(self, adapter_and_trace):
-        from crewai.events import MCPToolExecutionFailedEvent
+        try:
+            from crewai.events import MCPToolExecutionFailedEvent
+        except ImportError:
+            pytest.skip("installed crewai version ships no MCPToolExecutionFailedEvent")
 
         adapter, uploaded = adapter_and_trace
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
@@ -1022,8 +1042,8 @@ class TestDelegation:
         assert handoff["payload"]["to_agent"] == "researcher"
 
     def test_delegation_state_clears_on_end_trace(self, adapter_and_trace):
-        """After a crew completes, the delegation counter resets so the next
-        trace starts at 1 again."""
+        """After a crew completes, its run (and the delegation counter it held)
+        is evicted, so the next trace starts at 1 again."""
         adapter, _ = adapter_and_trace
         self._begin_crew_with_agent(adapter, role="manager")
         adapter._on_tool_started(
@@ -1036,9 +1056,8 @@ class TestDelegation:
         )
         self._end_crew(adapter)
 
-        # Inspect post-end state directly
-        assert adapter._delegation_seq == 0
-        assert adapter._delegation_chain == []
+        # The completed run (and its delegation bookkeeping) is gone.
+        assert adapter._runs == {}
 
 
 class TestDisconnectLeaveNoTrace:
@@ -1088,7 +1107,7 @@ class TestDisconnectLeaveNoTrace:
 
             # Events emitted after disconnect must not reach the adapter.
             self._emit_and_wait(CrewKickoffStartedEvent(crew_name="Ghost", inputs={}))
-            assert adapter._collector is None
+            assert adapter._runs == {}
             assert uploaded["events"] == []
 
     def test_double_disconnect_is_safe(self, mock_client):
@@ -1128,3 +1147,138 @@ class TestDisconnectLeaveNoTrace:
             n_events = len(uploaded["events"])
             self._emit_and_wait(CrewKickoffStartedEvent(crew_name="Ghost", inputs={}))
             assert len(uploaded["events"]) == n_events
+
+
+class TestCaptureContentRedaction:
+    """W5/G10: content fields must be SCRUBBED under capture_content=False.
+
+    Drives the full crew lifecycle (crew start -> task start/complete ->
+    tool start/finish -> crew complete) with a recognizable SENTINEL in
+    every content-bearing field. Under ``CaptureConfig(capture_content=False)``
+    the per-adapter ``_set_if_capturing`` gate (and the explicit
+    ``capture_content`` check for task ``context``) must keep the SENTINEL —
+    and the ``input``/``output`` keys it rides on — out of every emitted
+    payload. A control run with ``capture_content=True`` proves the keys ARE
+    present otherwise, so the redaction assertion is not vacuously true.
+    """
+
+    SENTINEL = "REDACT_ME_CREWAI_SENTINEL_8f3a"
+
+    @staticmethod
+    def _drive_full_lifecycle(adapter):
+        """Fire the lifecycle handlers directly with SENTINEL-laden content.
+
+        Mirrors the handler-driving style of test_concurrency_crewai.py:
+        hand-built crewai.events objects passed straight to the adapter's
+        ``_on_*`` callbacks — no real CrewAI run.
+        """
+        sentinel = TestCaptureContentRedaction.SENTINEL
+
+        # crew start -> agent.input (input = crew inputs)
+        adapter._on_crew_started(
+            None,
+            CrewKickoffStartedEvent(crew_name="redact-crew", inputs={"topic": sentinel}),
+        )
+        # task start -> agent.input (context is content-bearing)
+        adapter._on_task_started(
+            None,
+            TaskStartedEvent(
+                context=f"task context {sentinel}",
+                task_name="redact-task",
+                agent_role="researcher",
+            ),
+        )
+        # tool start -> tool.call (input = tool_args)
+        adapter._on_tool_started(
+            None,
+            ToolUsageStartedEvent(
+                tool_name="web_search",
+                tool_args=f"search for {sentinel}",
+                agent_key="researcher_1",
+            ),
+        )
+        # tool finish -> tool.result (output = tool output)
+        now = datetime.datetime.now()
+        adapter._on_tool_finished(
+            None,
+            ToolUsageFinishedEvent(
+                tool_name="web_search",
+                tool_args=f"search for {sentinel}",
+                started_at=now,
+                finished_at=now,
+                output=f"found {sentinel}",
+            ),
+        )
+        # task complete -> agent.output (output = task output)
+        task_out = TaskOutput(description="redact-task", raw=f"task result {sentinel}", agent="researcher")
+        adapter._on_task_completed(None, TaskCompletedEvent(output=task_out, task_name="redact-task"))
+        # crew complete -> agent.output (output = crew output) + flush
+        crew_out = TaskOutput(description="final", raw=f"final result {sentinel}", agent="researcher")
+        adapter._on_crew_completed(None, CrewKickoffCompletedEvent(crew_name="redact-crew", output=crew_out))
+
+    def test_content_present_when_capturing(self, mock_client):
+        """Control: with capture_content=True the SENTINEL and content keys ARE emitted.
+
+        This guards against a vacuous pass of the redaction test — it proves
+        the lifecycle actually produces the content fields we later assert are
+        scrubbed.
+        """
+        import json
+
+        from layerlens.instrument._capture_config import CaptureConfig
+
+        uploaded = capture_framework_trace(mock_client)
+        adapter = CrewAIAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        with crewai_event_bus.scoped_handlers():
+            adapter.connect()
+            self._drive_full_lifecycle(adapter)
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        blob = json.dumps(events)
+        assert self.SENTINEL in blob, "control run must carry the SENTINEL when capturing content"
+
+        # The content keys themselves are present on the relevant payloads.
+        crew_in = find_events(events, "agent.input")
+        assert any("input" in e["payload"] for e in crew_in), "agent.input should carry 'input' when capturing"
+        agent_out = find_events(events, "agent.output")
+        assert any("output" in e["payload"] for e in agent_out), "agent.output should carry 'output' when capturing"
+        tool_call = find_event(events, "tool.call")
+        assert "input" in tool_call["payload"], "tool.call should carry 'input' (tool_args) when capturing"
+        tool_result = find_event(events, "tool.result")
+        assert "output" in tool_result["payload"], "tool.result should carry 'output' when capturing"
+
+    def test_content_scrubbed_when_not_capturing(self, mock_client):
+        """capture_content=False scrubs input/output/context/tool-args everywhere.
+
+        The SENTINEL must not appear anywhere in the uploaded trace, and the
+        content keys it rode on must be absent from each payload.
+        """
+        import json as _json
+
+        from layerlens.instrument._capture_config import CaptureConfig
+
+        uploaded = capture_framework_trace(mock_client)
+        adapter = CrewAIAdapter(mock_client, capture_config=CaptureConfig(capture_content=False))
+        with crewai_event_bus.scoped_handlers():
+            adapter.connect()
+            self._drive_full_lifecycle(adapter)
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        assert events, "lifecycle must still emit structural events without content"
+
+        # 1) The SENTINEL must not leak anywhere in the serialized trace.
+        blob = _json.dumps(events)
+        assert self.SENTINEL not in blob, "PRIVACY LEAK: SENTINEL content survived capture_content=False"
+
+        # 2) The content keys must be absent from every payload that would carry them.
+        for evt in find_events(events, "agent.input"):
+            assert "input" not in evt["payload"], "agent.input leaked 'input' under capture_content=False"
+            assert "context" not in evt["payload"], "agent.input leaked task 'context' under capture_content=False"
+        for evt in find_events(events, "agent.output"):
+            assert "output" not in evt["payload"], "agent.output leaked 'output' under capture_content=False"
+        tool_call = find_event(events, "tool.call")
+        assert "input" not in tool_call["payload"], "tool.call leaked 'input' (tool_args) under capture_content=False"
+        tool_result = find_event(events, "tool.result")
+        assert "output" not in tool_result["payload"], "tool.result leaked 'output' under capture_content=False"

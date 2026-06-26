@@ -1,0 +1,16 @@
+{
+  "provenance": {
+    "provider": "aws_bedrock",
+    "sdk_version": "1.42.91",
+    "model": "amazon.nova-micro-v1:0",
+    "scenario": "invoke_model",
+    "captured_at": "2026-06-22T22:55:00+00:00"
+  },
+  "transport": "boto3",
+  "service": "bedrock-runtime",
+  "operation": "invoke_model",
+  "response": {
+    "body_b64": "eyJvdXRwdXQiOnsibWVzc2FnZSI6eyJjb250ZW50IjpbeyJ0ZXh0IjoicG9uZyJ9XSwicm9sZSI6ImFzc2lzdGFudCJ9fSwic3RvcFJlYXNvbiI6ImVuZF90dXJuIiwidXNhZ2UiOnsiaW5wdXRUb2tlbnMiOjYsIm91dHB1dFRva2VucyI6MywidG90YWxUb2tlbnMiOjksImNhY2hlUmVhZElucHV0VG9rZW5Db3VudCI6MCwiY2FjaGVXcml0ZUlucHV0VG9rZW5Db3VudCI6MH19",
+    "content_type": "application/json"
+  }
+}

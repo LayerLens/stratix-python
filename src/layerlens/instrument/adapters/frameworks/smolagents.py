@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import time
 import logging
 from typing import Any, Dict, List, Optional
 
 from ._utils import safe_serialize
-from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
@@ -45,11 +43,10 @@ class SmolAgentsAdapter(FrameworkAdapter):
 
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)
-        self._collector: Optional[TraceCollector] = None
-        self._run_span_id: Optional[str] = None
-        self._current_step_span_id: Optional[str] = None
-        self._step_count: int = 0
-        self._timers: Dict[str, int] = {}
+        # Run-scoped state (collector / span ids / step count / timers) lives in
+        # the per-run RunState via _begin_run/_end_run (ContextVar-isolated per
+        # asyncio.Task / thread), NOT instance scalars — concurrent agent.run()
+        # calls would otherwise clobber each other's traces (LAY-3576 / D1b).
         self._original_run: Optional[Any] = None
         self._target_agent: Optional[Any] = None
         self._callbacks: List[Any] = []
@@ -71,7 +68,7 @@ class SmolAgentsAdapter(FrameworkAdapter):
     def _on_disconnect(self) -> None:
         self._unwrap_run()
         self._deregister_callbacks()
-        self._end_trace()
+        self._end_run(flush=True)
         self._target_agent = None
 
     # ------------------------------------------------------------------
@@ -155,10 +152,10 @@ class SmolAgentsAdapter(FrameworkAdapter):
         parent_span_id: Optional[str] = None,
         span_name: Optional[str] = None,
     ) -> None:
-        c = self._collector
-        if c is None:
+        run = self._get_run()
+        if run is None:
             return
-        c.emit(
+        run.collector.emit(
             event_type,
             payload,
             span_id=span_id or self._new_span_id(),
@@ -166,36 +163,15 @@ class SmolAgentsAdapter(FrameworkAdapter):
             span_name=span_name,
         )
 
-    def _tick(self, key: str) -> None:
-        self._timers[key] = time.time_ns()
-
-    def _tock(self, key: str) -> Optional[float]:
-        start = self._timers.pop(key, 0)
-        if not start:
-            return None
-        return (time.time_ns() - start) / 1_000_000
-
-    def _end_trace(self) -> None:
-        with self._lock:
-            collector = self._collector
-            self._collector = None
-            self._run_span_id = None
-            self._current_step_span_id = None
-            self._step_count = 0
-            self._timers.clear()
-        if collector is not None:
-            collector.flush()
-
     # ------------------------------------------------------------------
     # Run lifecycle handlers
     # ------------------------------------------------------------------
 
     def _on_run_start(self, agent: Any, task: Any) -> None:
-        span_id = self._new_span_id()
-        with self._lock:
-            self._collector = TraceCollector(self._client, self._config)
-            self._run_span_id = span_id
-        self._tick("run")
+        run = self._begin_run()
+        span_id = run.root_span_id
+        run.data["step_count"] = 0
+        self._start_timer("run")
 
         agent_name = _agent_name(agent)
         payload = self._payload(agent_name=agent_name, agent_type=type(agent).__name__)
@@ -220,8 +196,8 @@ class SmolAgentsAdapter(FrameworkAdapter):
         self._fire("agent.input", payload, span_id=span_id, span_name=agent_name)
 
     def _on_run_end(self, agent: Any, result: Any, error: Optional[Exception]) -> None:
-        latency_ms = self._tock("run")
-        span_id = self._run_span_id or self._new_span_id()
+        latency_ms = self._stop_timer("run")
+        span_id = self._get_root_span()
         agent_name = _agent_name(agent)
         payload = self._payload(agent_name=agent_name)
         if latency_ms is not None:
@@ -230,14 +206,14 @@ class SmolAgentsAdapter(FrameworkAdapter):
             payload["error"] = str(error)
         self._set_if_capturing(payload, "output", safe_serialize(result))
         self._fire("agent.output", payload, span_id=span_id, span_name=agent_name)
-        self._end_trace()
+        self._end_run(flush=True)
 
     def _on_run_error(self, agent: Any, exc: Exception) -> None:
         agent_name = _agent_name(agent)
         self._fire(
             "agent.error",
             self._payload(agent_name=agent_name, error=str(exc), error_type=type(exc).__name__),
-            parent_span_id=self._run_span_id,
+            parent_span_id=self._get_root_span(),
         )
 
     # ------------------------------------------------------------------
@@ -264,10 +240,13 @@ class SmolAgentsAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     def _handle_action_step(self, step: Any, agent: Any) -> None:
-        self._step_count += 1
+        run = self._get_run()
+        if run is None:
+            return
+        step_count = run.data.get("step_count", 0) + 1
+        run.data["step_count"] = step_count
         step_span_id = self._new_span_id()
-        with self._lock:
-            self._current_step_span_id = step_span_id
+        run.data["current_step_span_id"] = step_span_id
 
         model_id = _model_id(agent) if agent else None
 
@@ -284,7 +263,7 @@ class SmolAgentsAdapter(FrameworkAdapter):
         # step event — explicitly marked as the "action" phase so downstream UIs
         # can distinguish planning rounds from execution rounds when smolagents
         # runs in ReAct / planning mode.
-        step_payload = self._payload(step_number=self._step_count, phase="action")
+        step_payload = self._payload(step_number=step_count, phase="action")
         if model_id:
             step_payload["model"] = model_id
 
@@ -316,8 +295,8 @@ class SmolAgentsAdapter(FrameworkAdapter):
             "agent.step",
             step_payload,
             span_id=step_span_id,
-            parent_span_id=self._run_span_id,
-            span_name=f"step:{self._step_count}",
+            parent_span_id=self._get_root_span(),
+            span_name=f"step:{step_count}",
         )
 
     def _emit_model_invoke(self, step: Any, model_id: Optional[str], parent_span_id: str) -> None:
@@ -396,7 +375,7 @@ class SmolAgentsAdapter(FrameworkAdapter):
             "agent.step",
             payload,
             span_id=span_id,
-            parent_span_id=self._run_span_id,
+            parent_span_id=self._get_root_span(),
             span_name="planning",
         )
 

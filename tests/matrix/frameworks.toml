@@ -16,29 +16,43 @@ install = ["langchain-core==0.3.84", "langchain==0.3.28", "langchain-openai==0.3
 tests = [
     "tests/instrument/adapters/frameworks/test_langchain.py",
     "tests/instrument/adapters/frameworks/test_langchain_memory.py",
+    "tests/instrument/adapters/frameworks/test_langchain_recorded.py",
 ]
 
 [frameworks.langgraph]
 python = "3.11"
-install = ["langchain-core==0.3.84", "langgraph==1.0.1"]
-tests = ["tests/instrument/adapters/frameworks/test_langgraph.py"]
+install = ["langchain-core==0.3.84", "langgraph==1.0.1", "langchain-openai==0.3.35"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_langgraph.py",
+    "tests/instrument/adapters/frameworks/test_langgraph_recorded.py",
+]
 
 [frameworks.crewai]
 python = "3.11"
-install = ["crewai==1.14.6"]
-tests = ["tests/instrument/adapters/frameworks/test_crewai.py"]
+install = ["crewai==1.14.6", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_crewai.py",
+    "tests/instrument/adapters/frameworks/test_crewai_recorded.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_crewai.py",
+    "tests/e2e/test_e2e_crewai_delegation.py",
+]
 
 [frameworks.openai_agents]
 python = "3.11"
 install = ["openai-agents==0.4.2"]
-tests = ["tests/instrument/adapters/frameworks/test_openai_agents.py"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_openai_agents.py",
+    "tests/instrument/adapters/frameworks/test_openai_agents_recorded.py",
+]
 
 [frameworks.semantic_kernel]
 python = "3.11"
-install = ["semantic-kernel==1.36.0"]
+install = ["semantic-kernel==1.36.0", "openai"]
 tests = [
     "tests/instrument/adapters/frameworks/test_semantic_kernel.py",
     "tests/instrument/adapters/frameworks/test_ms_agent_framework.py",
+    "tests/instrument/adapters/frameworks/test_semantic_kernel_recorded.py",
+    "tests/instrument/adapters/frameworks/test_ms_agent_framework_recorded.py",
 ]
 
 [frameworks.pydantic_ai]
@@ -47,6 +61,7 @@ install = ["pydantic-ai==0.8.1"]
 tests = [
     "tests/instrument/adapters/frameworks/test_pydantic_ai.py",
     "tests/instrument/adapters/frameworks/test_concurrency.py",
+    "tests/instrument/adapters/frameworks/test_pydantic_ai_recorded.py",
 ]
 
 [frameworks.google_adk]
@@ -61,28 +76,43 @@ tests = ["tests/instrument/adapters/frameworks/test_strands.py"]
 
 [frameworks.smolagents]
 python = "3.11"
-install = ["smolagents==1.26.0"]
-tests = ["tests/instrument/adapters/frameworks/test_smolagents.py"]
+install = ["smolagents==1.26.0", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_smolagents.py",
+    "tests/instrument/adapters/frameworks/test_smolagents_recorded.py",
+]
 
 [frameworks.llamaindex]
 python = "3.11"
-install = ["llama-index-core==0.14.22"]
-tests = ["tests/instrument/adapters/frameworks/test_llamaindex.py"]
+install = ["llama-index-core==0.14.22", "llama-index-llms-openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_llamaindex.py",
+    "tests/instrument/adapters/frameworks/test_llamaindex_recorded.py",
+]
 
 [frameworks.haystack]
 python = "3.11"
-install = ["haystack-ai==2.30.1"]
-tests = ["tests/instrument/adapters/frameworks/test_haystack.py"]
+install = ["haystack-ai==2.30.1", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_haystack.py",
+    "tests/instrument/adapters/frameworks/test_haystack_recorded.py",
+]
 
 [frameworks.autogen]
 python = "3.11"
-install = ["autogen-core==0.7.5", "autogen-agentchat==0.7.5", "autogen-ext==0.7.5"]
-tests = ["tests/instrument/adapters/frameworks/test_autogen.py"]
+install = ["autogen-core==0.7.5", "autogen-agentchat==0.7.5", "autogen-ext[openai]==0.7.5", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_autogen.py",
+    "tests/instrument/adapters/frameworks/test_autogen_recorded.py",
+]
 
 [frameworks.agno]
 python = "3.11"
-install = ["agno==2.6.12"]
-tests = ["tests/instrument/adapters/frameworks/test_agno.py"]
+install = ["agno==2.6.12", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_agno.py",
+    "tests/instrument/adapters/frameworks/test_agno_recorded.py",
+]
 
 [frameworks.vector_store]
 python = "3.11"

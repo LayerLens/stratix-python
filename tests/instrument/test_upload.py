@@ -225,6 +225,19 @@ class TestSyncMode:
         client.traces.upload.side_effect = RuntimeError("backend down")
         assert _upload.enqueue_upload(client, {"trace_id": "t"}) is True  # never raises
 
+    def test_upload_failure_is_observable_not_silent(self, caplog: Any) -> None:
+        """The blanket ``except Exception`` in ``_upload_sync`` must DEGRADE
+        OBSERVABLY, not silently: a failed upload logs a WARNING and feeds the
+        circuit breaker. This is the same swallow that hid the schema lock
+        (LAY-3613) — line coverage alone wouldn't prove the drop is visible."""
+        client = _make_client()
+        client.traces.upload.side_effect = RuntimeError("backend down")
+        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+            _upload.enqueue_upload(client, {"trace_id": "t"})
+        assert any("trace upload failed" in r.message for r in caplog.records)
+        # The breaker counted the failure (a silent drop would leave it at 0).
+        assert _upload._get_channel(client)._error_count == 1
+
 
 # ---------------------------------------------------------------------------
 # Worker resilience

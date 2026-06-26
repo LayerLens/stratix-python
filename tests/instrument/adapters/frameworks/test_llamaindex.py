@@ -685,6 +685,114 @@ class TestCaptureConfigGating:
         assert len(events) >= 1
 
 
+class TestCaptureContentRedaction:
+    """W5/G10: with ``CaptureConfig(capture_content=False)`` the framework's
+    content (agent.input/agent.output/tool.call args + LLM messages) must be
+    SCRUBBED via the per-adapter ``_set_if_capturing`` gating. A control run
+    with ``capture_content=True`` proves the gate is real, not vacuous."""
+
+    SENTINEL = "SENTINEL_llamaindex_pii_4f7a9c2e"
+
+    def _drive(self, adapter: LlamaIndexAdapter) -> str:
+        """Drive content-bearing query/tool/LLM events carrying the SENTINEL."""
+        root = _create_span(adapter)
+
+        # agent.input — query text
+        _emit_event_via_dispatcher(
+            QueryStartEvent(query=f"query {self.SENTINEL}", span_id=root),
+            span_id=root,
+        )
+
+        # tool.call — argument string
+        tool = ToolMetadata(name="web_search", description="Search the web")
+        _emit_event_via_dispatcher(
+            AgentToolCallEvent(
+                arguments=f'{{"q": "{self.SENTINEL}"}}',
+                tool=tool,
+                span_id=root,
+            ),
+            span_id=root,
+        )
+
+        # model.invoke — chat messages + output_message
+        msg = ChatMessage(role=MessageRole.USER, content=f"prompt {self.SENTINEL}")
+        response = ChatResponse(
+            message=ChatMessage(role=MessageRole.ASSISTANT, content=f"answer {self.SENTINEL}"),
+            raw={"model": "gpt-4", "usage": {"prompt_tokens": 5, "completion_tokens": 3}},
+        )
+        _emit_event_via_dispatcher(
+            LLMChatEndEvent(messages=[msg], response=response, span_id=root),
+            span_id=root,
+        )
+
+        # agent.output — query response text
+        _emit_event_via_dispatcher(
+            QueryEndEvent(
+                query=f"query {self.SENTINEL}",
+                response=LlamaResponse(response=f"final {self.SENTINEL}"),
+                span_id=root,
+            ),
+            span_id=root,
+        )
+        return root
+
+    def test_content_scrubbed_when_capture_content_false(self, mock_client):
+        import json as _json
+
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=False))
+        adapter.connect()
+        self._drive(adapter)
+
+        agent_in = _find_events(adapter, "agent.input")
+        assert len(agent_in) >= 1
+        assert "input" not in agent_in[0]["payload"]
+
+        agent_out = _find_events(adapter, "agent.output")
+        assert len(agent_out) >= 1
+        assert "output" not in agent_out[0]["payload"]
+
+        tool_call = _find_events(adapter, "tool.call")
+        assert len(tool_call) >= 1
+        assert "input" not in tool_call[0]["payload"]
+
+        model_invoke = _find_events(adapter, "model.invoke")
+        assert len(model_invoke) >= 1
+        assert "messages" not in model_invoke[0]["payload"]
+        assert "output_message" not in model_invoke[0]["payload"]
+
+        # The SENTINEL must not appear anywhere in the emitted payloads.
+        blob = _json.dumps(_all_events(adapter), default=str)
+        assert self.SENTINEL not in blob
+
+        adapter.disconnect()
+
+    def test_content_present_when_capture_content_true(self, mock_client):
+        """Control: the SAME drive WITH capture_content=True must include the
+        SENTINEL — otherwise the redaction assertion above is vacuous."""
+        import json as _json
+
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect()
+        self._drive(adapter)
+
+        agent_in = _find_events(adapter, "agent.input")
+        assert agent_in[0]["payload"]["input"] == f"query {self.SENTINEL}"
+
+        agent_out = _find_events(adapter, "agent.output")
+        assert agent_out[0]["payload"]["output"] == f"final {self.SENTINEL}"
+
+        tool_call = _find_events(adapter, "tool.call")
+        assert self.SENTINEL in tool_call[0]["payload"]["input"]
+
+        model_invoke = _find_events(adapter, "model.invoke")
+        assert "messages" in model_invoke[0]["payload"]
+
+        blob = _json.dumps(_all_events(adapter), default=str)
+        assert self.SENTINEL in blob
+
+        adapter.disconnect()
+
+
 class TestSpanHierarchy:
     def test_root_span_creates_collector(self, adapter, mock_client):
         adapter.connect()

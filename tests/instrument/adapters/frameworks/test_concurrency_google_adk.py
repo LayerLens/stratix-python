@@ -1,30 +1,29 @@
-"""Interleaved-run isolation guard for the Google ADK adapter (LAY-3576 / T2).
+"""Interleaved-run isolation for the Google ADK adapter (LAY-3576 / D1b).
 
-THE INVARIANT: two runs driven through ONE ``GoogleADKAdapter`` instance,
-with lifecycle events interleaved (start A, start B, mid-run A, mid-run B,
-end A, end B), must upload two traces with distinct trace_ids, each holding
-exactly its own run's events — no cross-contamination, no lost events.
+THE INVARIANT: two runs driven through ONE ``GoogleADKAdapter`` instance whose
+lifecycle events interleave must upload two traces with distinct trace_ids, each
+holding exactly its own run's events — no cross-contamination, no lost events.
 
-The adapter keeps run state in instance scalars
-(``src/layerlens/instrument/adapters/frameworks/google_adk.py`` —
-``self._collector``, ``self._run_span_id``, ``self._agent_span_ids``), so
-run B's before_run replaces run A's collector: run A's opening events are
-dropped unflushed, both runs' agent-level events land in run B's collector,
-one merged trace flushes when run A's after_run arrives, and run B's
-closing events vanish (no collector left).
+FIXED (D1b): the adapter no longer keeps run state in instance scalars; it routes
+every run through ``_begin_run``/``_end_run`` so the collector + run/agent span
+ids + current-agent marker + config-seen set + timers live in a per-run
+``RunState`` pushed into ContextVars (isolated per ``asyncio.Task`` / thread —
+the same mechanism PydanticAIAdapter uses). The ADK Runner invokes the plugin
+callbacks *inside* each run's task, i.e. within that run's context, so the
+handlers resolve their own run's collector.
 
-Expected XFAIL (strict): this is the RED guard for the D1b
-collector-convergence work (stability report §3.1), which moves the
-self-flushing adapters onto the per-run RunState/ContextVar isolation that
-PydanticAIAdapter already uses (see test_concurrency.py). When D1b lands,
-the strict xfail turns into a strict XPASS failure and the marker must be
-removed. The interleave is single-threaded direct plugin-handler calls, so
-the corruption is deterministic and the xfail cannot flap.
+The interleave is exercised deterministically (no real threads, no RNG) by
+running each run's handler calls inside its OWN ``contextvars.Context`` — exactly
+how concurrent runs in separate threads/tasks see independent ContextVar state —
+across several fixed schedules (sequential, fully interleaved, reversed, nested).
+Under the GIL a forced interleaving is a stricter race detector for this code
+than naive threading, and a fixed schedule cannot flap.
 """
 
 from __future__ import annotations
 
 import json
+import contextvars
 from typing import Any, Dict, List
 from unittest.mock import Mock
 
@@ -104,70 +103,73 @@ def _make_callback_context(agent_name: str, user_content: str) -> Mock:
 # Isolation invariant
 # ---------------------------------------------------------------------------
 
-XFAIL_REASON = (
-    "LAY-3576: GoogleADKAdapter keeps run state in instance scalars "
-    "(google_adk.py — self._collector, self._run_span_id, self._agent_span_ids); "
-    "interleaved runs on one instance corrupt traces. "
-    "RED guard for the D1b collector-convergence work (stability report §3.1) — "
-    "NOT fixed in phase 4."
-)
+# Each schedule is a list of (run_key, action). Every schedule must yield two
+# fully isolated traces — that is the post-D1b invariant.
+_SCHEDULES = {
+    "sequential": [("a", "start"), ("a", "step"), ("a", "end"), ("b", "start"), ("b", "step"), ("b", "end")],
+    "interleaved": [("a", "start"), ("b", "start"), ("a", "step"), ("b", "step"), ("a", "end"), ("b", "end")],
+    "reversed": [("b", "start"), ("a", "start"), ("b", "step"), ("a", "step"), ("b", "end"), ("a", "end")],
+    "nested": [("a", "start"), ("b", "start"), ("b", "step"), ("b", "end"), ("a", "step"), ("a", "end")],
+}
+
+# Per-run markers: ask (run-level input), root agent, worker agent (mid-run),
+# and the worker's followup input. Distinct strings so contamination is visible.
+_MARKERS = {
+    "a": {"ask": "ask-alpha", "root": "root-alpha", "worker": "worker-alpha", "followup": "followup-alpha"},
+    "b": {"ask": "ask-beta", "root": "root-beta", "worker": "worker-beta", "followup": "followup-beta"},
+}
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
-def test_interleaved_runs_produce_two_isolated_traces(mock_client):
+@pytest.mark.parametrize("schedule_name", list(_SCHEDULES))
+def test_interleaved_runs_produce_two_isolated_traces(mock_client, schedule_name):
     traces = _collect_traces(mock_client)
     adapter = GoogleADKAdapter(mock_client)
     adapter.connect()
 
-    ctx_a = _make_invocation_context("root-alpha", "ask-alpha", run_key="alpha")
-    ctx_b = _make_invocation_context("root-beta", "ask-beta", run_key="beta")
-    worker_a = _make_agent("worker-alpha")
-    worker_b = _make_agent("worker-beta")
-    cb_a = _make_callback_context("worker-alpha", "followup-alpha")
-    cb_b = _make_callback_context("worker-beta", "followup-beta")
+    inv = {k: _make_invocation_context(m["root"], m["ask"], run_key=k) for k, m in _MARKERS.items()}
+    workers = {k: _make_agent(m["worker"]) for k, m in _MARKERS.items()}
+    cbs = {k: _make_callback_context(m["worker"], m["followup"]) for k, m in _MARKERS.items()}
 
-    # Deterministic single-thread interleave: start A, start B, mid A, mid B,
-    # end A, end B.
-    adapter._on_before_run(ctx_a)
-    adapter._on_before_run(ctx_b)
-    adapter._on_before_agent(worker_a, cb_a)
-    adapter._on_before_agent(worker_b, cb_b)
-    adapter._on_after_agent(worker_a, cb_a)
-    adapter._on_after_agent(worker_b, cb_b)
-    adapter._on_after_run(ctx_a)
-    adapter._on_after_run(ctx_b)
+    # Each run gets its own Context — the deterministic stand-in for concurrent
+    # runs on separate threads/tasks, where ContextVar state is independent.
+    # Running each handler in its run's context is what isolates them.
+    ctxs = {k: contextvars.copy_context() for k in _MARKERS}
+
+    for run_key, action in _SCHEDULES[schedule_name]:
+        ctx = ctxs[run_key]
+        if action == "start":
+            ctx.run(adapter._on_before_run, inv[run_key])
+        elif action == "step":
+            ctx.run(adapter._on_before_agent, workers[run_key], cbs[run_key])
+            ctx.run(adapter._on_after_agent, workers[run_key], cbs[run_key])
+        elif action == "end":
+            ctx.run(adapter._on_after_run, inv[run_key])
+
     adapter.disconnect()
 
     summaries = [[(e["event_type"], e.get("span_name")) for e in t["events"]] for t in traces]
-    assert traces, "SETUP BUG (not the isolation invariant): no trace was uploaded at all"
     assert len(traces) == 2, (
-        f"Each run must flush its own trace: expected 2 uploads, got {len(traces)}. "
-        f"Uploaded traces as (event_type, span_name): {summaries}"
+        f"[{schedule_name}] each run must flush its own trace: expected 2, got {len(traces)}: {summaries}"
     )
+    assert len({t["trace_id"] for t in traces}) == 2, f"[{schedule_name}] runs must not share a trace_id"
 
-    trace_ids = {t["trace_id"] for t in traces}
-    assert len(trace_ids) == 2, f"The two runs must not share a trace_id: {trace_ids}"
-
-    markers = {
-        "ask-alpha": ("root-alpha", "worker-alpha", "followup-alpha"),
-        "ask-beta": ("root-beta", "worker-beta", "followup-beta"),
-    }
+    markers = {m["ask"]: (m["root"], m["worker"], m["followup"]) for m in _MARKERS.values()}
     by_ask: Dict[str, Dict[str, Any]] = {}
     for trace in traces:
         run_inputs = [
             e for e in trace["events"] if e["event_type"] == "agent.input" and e["payload"].get("input") in markers
         ]
         assert len(run_inputs) == 1, (
-            f"Each trace must hold exactly one run-level agent.input, got "
+            f"[{schedule_name}] each trace holds exactly one run-level agent.input, got "
             f"{[e['payload'].get('input') for e in run_inputs]}"
         )
         by_ask[run_inputs[0]["payload"]["input"]] = trace
-    assert set(by_ask) == set(markers), f"Expected one trace per run input, got {sorted(by_ask)}"
+    assert set(by_ask) == set(markers), f"[{schedule_name}] expected one trace per run input, got {sorted(by_ask)}"
 
     for ask, own_markers in markers.items():
         text = json.dumps(by_ask[ask]["events"])
         for marker in (ask, *own_markers):
-            assert marker in text, f"Trace for {ask!r} lost its own event marker {marker!r}"
+            assert marker in text, f"[{schedule_name}] trace for {ask!r} lost its own marker {marker!r}"
         (other_ask,) = [a for a in markers if a != ask]
         for marker in (other_ask, *markers[other_ask]):
-            assert marker not in text, f"Trace for {ask!r} contaminated by other run's marker {marker!r}"
+            assert marker not in text, f"[{schedule_name}] trace for {ask!r} contaminated by {marker!r}"

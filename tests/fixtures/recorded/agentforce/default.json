@@ -1,0 +1,309 @@
+{
+  "provenance": {
+    "provider": "agentforce",
+    "sdk_version": "salesforce-stdm",
+    "model": "ssot__AiAgent*__dlm",
+    "scenario": "default",
+    "captured_at": "2026-06-22T23:15:59+00:00"
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/services/oauth2/token"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "access_token": "[REDACTED]",
+          "signature": "[REDACTED]",
+          "scope": "cdp_query_api api cdp_profile_api",
+          "instance_url": "https://orgfarm-ed439d65be-dev-ed.develop.my.salesforce.com",
+          "id": "https://login.salesforce.com/id/00Dfj00000RXFrxEAH/005fj00000Gz7jJAAR",
+          "token_type": "Bearer",
+          "issued_at": "1782170151590"
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "x-request-id": "e55464caa1dc8ed92a39d51c595a633a"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/services/data/v62.0/query/"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "totalSize": 2,
+          "done": true,
+          "records": [
+            {
+              "attributes": {
+                "type": "ssot__AiAgentSession__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentSession__dlm/q0x000NQ1ivEGAhAGO"
+              },
+              "ssot__Id__c": "019ed365-eb7b-73f6-bb95-15e93f8ed2f0",
+              "ssot__AiAgentChannelType__c": "Builder",
+              "ssot__AiAgentSessionEndType__c": "NOT_SET",
+              "ssot__StartTimestamp__c": "2026-06-17T02:25:33.251+0000",
+              "ssot__EndTimestamp__c": null
+            },
+            {
+              "attributes": {
+                "type": "ssot__AiAgentSession__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentSession__dlm/q0x000kF1wtcGXgAEM"
+              },
+              "ssot__Id__c": "019ed362-6b20-785f-893c-5727929c5365",
+              "ssot__AiAgentChannelType__c": "Builder",
+              "ssot__AiAgentSessionEndType__c": "NOT_SET",
+              "ssot__StartTimestamp__c": "2026-06-17T02:21:43.988+0000",
+              "ssot__EndTimestamp__c": null
+            }
+          ]
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "x-request-id": "9afcdfb3b8b6d262e85f43d03390005f"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/services/data/v62.0/query/"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "totalSize": 3,
+          "done": true,
+          "records": [
+            {
+              "attributes": {
+                "type": "ssot__AiAgentSessionParticipant__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentSessionParticipant__dlm/q0w000rKSGZvYpbA2F"
+              },
+              "ssot__AiAgentApiName__c": "Agentforce_Employee_Agent",
+              "ssot__AiAgentVersionApiName__c": "v1",
+              "ssot__AiAgentType__c": "AgentforceEmployeeAgent",
+              "ssot__AiAgentSessionParticipantRole__c": "USER",
+              "ssot__ParticipantId__c": "005fj00000Gz7jJAAR"
+            },
+            {
+              "attributes": {
+                "type": "ssot__AiAgentSessionParticipant__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentSessionParticipant__dlm/q0w000U6AcyBQaTAKW"
+              },
+              "ssot__AiAgentApiName__c": "Agentforce_Employee_Agent",
+              "ssot__AiAgentVersionApiName__c": "v1",
+              "ssot__AiAgentType__c": "AgentforceEmployeeAgent",
+              "ssot__AiAgentSessionParticipantRole__c": "USER",
+              "ssot__ParticipantId__c": "005fj00000Gz7jJAAR"
+            },
+            {
+              "attributes": {
+                "type": "ssot__AiAgentSessionParticipant__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentSessionParticipant__dlm/q0w000VaERIb2bKA0R"
+              },
+              "ssot__AiAgentApiName__c": "Agentforce_Employee_Agent",
+              "ssot__AiAgentVersionApiName__c": "v1",
+              "ssot__AiAgentType__c": "AgentforceEmployeeAgent",
+              "ssot__AiAgentSessionParticipantRole__c": "AGENT",
+              "ssot__ParticipantId__c": "16jfj000001nP7xAAE"
+            }
+          ]
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "x-request-id": "9c5062be804f690f3310f32fa415b041"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/services/data/v62.0/query/"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "totalSize": 1,
+          "done": true,
+          "records": [
+            {
+              "attributes": {
+                "type": "ssot__AiAgentInteraction__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentInteraction__dlm/q0t000ifpF5tPytAQE"
+              },
+              "ssot__Id__c": "4c47dd00-390a-4173-9b22-bc476d894bff",
+              "ssot__AiAgentInteractionType__c": "TURN",
+              "ssot__TopicApiName__c": "GeneralFAQ_16jfj000001nP7x",
+              "ssot__TelemetryTraceId__c": "ad91cc668ac1db7b",
+              "ssot__PrevInteractionId__c": "NOT_SET",
+              "ssot__StartTimestamp__c": "2026-06-17T02:25:42.878+0000",
+              "ssot__EndTimestamp__c": "2026-06-17T02:25:43.688+0000"
+            }
+          ]
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "x-request-id": "acf62404bb7a7150aaa231428f68500e"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/services/data/v62.0/query/"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "totalSize": 2,
+          "done": true,
+          "records": [
+            {
+              "attributes": {
+                "type": "ssot__AiAgentInteractionStep__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentInteractionStep__dlm/q0s000jb891uaYWAAY"
+              },
+              "ssot__Id__c": "bcb6aae2-7640-42ed-84f7-a8a7d9173502",
+              "ssot__AiAgentInteractionStepType__c": "TOPIC_STEP",
+              "SubType__c": null,
+              "ssot__Name__c": "GeneralFAQ_16jfj000001nP7x",
+              "ssot__InputValueText__c": "NOT_SET",
+              "ssot__OutputValueText__c": "NOT_SET",
+              "ssot__GenerationId__c": "NOT_SET",
+              "ssot__GenAiGatewayRequestId__c": "NOT_SET",
+              "ssot__GenAiGatewayResponseId__c": "NOT_SET",
+              "ssot__ErrorMessageText__c": "NOT_SET",
+              "ssot__StartTimestamp__c": "2026-06-17T02:25:42.911+0000",
+              "ssot__EndTimestamp__c": "2026-06-17T02:25:42.911+0000"
+            },
+            {
+              "attributes": {
+                "type": "ssot__AiAgentInteractionStep__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentInteractionStep__dlm/q0s0005pnKChiftAQB"
+              },
+              "ssot__Id__c": "bd42b125-f94a-40b6-9c19-d003faf3287c",
+              "ssot__AiAgentInteractionStepType__c": "LLM_STEP",
+              "SubType__c": null,
+              "ssot__Name__c": "AiCopilot__ReactInitialPrompt",
+              "ssot__InputValueText__c": "{\n  \"historyEntryType\" : \"LLM_STEP\",\n  \"planId\" : \"4c47dd00-390a-4173-9b22-bc476d894bff\",\n  \"intentLabel\" : \"GeneralFAQ_16jfj000001nP7x\",\n  \"stepId\" : \"1351249768988044\",\n  \"messages\" : [ {\n    \"role\" : \"user\",\n    \"content\" : \"What's the current date and time?\",\n    \"moderation_settings\" : {\n      \"enable_moderation\" : true\n    }\n  }, {\n    \"role\" : \"assistant\",\n    \"content\" : \"\",\n    \"moderation_settings\" : {\n      \"enable_moderation\" : true\n    },\n    \"tool_invocations\" : [ {\n      \"id\" : \"datetime-example\",\n      \"function\" : {\n        \"name\" : \"GetDateTime\",\n        \"arguments\" : \"{\\\"timeZone\\\":\\\"UTC\\\",\\\"format\\\":\\\"ISO\\\"}\"\n      }\n    } ]\n  }, {\n    \"role\" : \"tool\",\n    \"content\" : \"{\\\"output\\\":\\\"Wednesday 2026-06-17T02:00:00Z\\\"}\",\n    \"moderation_settings\" : {\n      \"enable_moderation\" : true\n    },\n    \"tool_call_id\" : \"datetime-example\",\n    \"tool_call_name\" : \"GetDateTime\"\n  }, {\n    \"role\" : \"assistant\",\n    \"content\" : \"The current date and time is Wednesday 2026-06-17T02:00:00Z\",\n    \"moderation_settings\" : {\n      \"enable_moderation\" : true\n    }\n  }, {\n    \"role\" : \"user\",\n    \"content\" : \"Hello who are you\",\n    \"moderation_settings\" : {\n      \"enable_moderation\" : true\n    }\n  } ],\n  \"tools\" : [ {\n    \"function\" : {\n      \"description\" : \"Displays an input form for the user to pass inputs for a given function. Always use this to ask for function input rather than only asking a question\",\n      \"name\" : \"userInput\",\n      \"parameters\" : {\n        \"type\" : \"object\",\n        \"properties\" : {\n          \"caption\" : {\n            \"type\" : \"string\"\n          },\n          \"functionName\" : {\n            \"type\" : \"string\",\n            \"description\" : \"target function that the inputs will be used for. The function name should not include any namespaces (e.g., avoid using periods '.')\"\n          },\n          \"properties\" : {\n            \"type\" : \"array\",\n            \"items\" : {\n              \"type\" : \"string\"\n            },\n            \"description\" : \"top-level input property names of the target function to collect user inputs for. Never add input parameter child properties in this array\"\n          }\n        },\n        \"required\" : [ \"caption\", \"functionName\", \"properties\" ]\n      }\n    }\n  }, {\n    \"function\" : {\n      \"description\" : \"Answers questions about company policies and procedures, troubleshooting steps, or product information. For example: \u201cWhat is your return policy?\u201d \u201cHow do I fix an issue?\u201d or \u201cWhat features does a product have?\u201d\",\n      \"name\" : \"AnswerQuestionsWithKnowledge\",\n      \"parameters\" : {\n        \"required\" : [ \"query\" ],\n        \"unevaluatedProperties\" : false,\n        \"type\" : \"object\",\n        \"properties\" : {\n          \"query\" : {\n            \"description\" : \"Required. A string created by generative AI to be used in the knowledge article search.\",\n            \"type\" : \"string\",\n            \"maxLength\" : 255,\n            \"lightning:isPublic\" : true\n          },\n          \"citationsUrl\" : {\n            \"description\" : \"The URL to use for citations for custom Agents.\",\n            \"type\" : \"string\",\n            \"maxLength\" : 255,\n            \"lightning:isPublic\" : true\n          },\n          \"ragFeatureConfigId\" : {\n            \"description\" : \"The RAG Feature ID to use for grounding this copilot action invocation.\",\n            \"type\" : \"string\",\n            \"maxLength\" : 255,\n            \"lightning:isPublic\" : true\n          }\n        },\n        \"description\" : \"Represents a complex data structure with multiple fields.\",\n        \"lightning:isPublic\" : true\n      }\n    }\n  } ],\n  \"toolConfig\" : {\n    \"mode\" : \"auto\",\n    \"parallel_calls\" : true\n  },\n  \"promptName\" : \"AiCopilot__ReactInitialPrompt\",\n  \"promptVariables\" : { },\n  \"stepType\" : \"LLM_STEP\",\n  \"lightningMessages\" : [ ],\n  \"enableOutputSafetyScoring\" : true,\n  \"enableCitations\" : true,\n  \"promptStreamingSettings\" : {\n    \"enableStreaming\" : true,\n    \"streamableFunctions\" : [ {\n      \"name\" : \"show\",\n      \"streamableArguments\" : [ \"caption\" ]\n    }, {\n      \"name\" : \"userInput\",\n      \"streamableArguments\" : [ \"caption\" ]\n    }, {\n      \"name\" : \"userSelect\",\n      \"streamableArguments\" : [ \"caption\" ]\n    } ],\n    \"chunkType\" : \"Text\",\n    \"streamingFunctionMode\" : \"PARTIAL_ARGS\"\n  }\n}",
+              "ssot__OutputValueText__c": "{\n  \"historyEntryType\" : \"LLM_COMPLETION_RESPONSE\",\n  \"sequenceId\" : 0,\n  \"inReplyToStepId\" : \"1351249768988044\",\n  \"plannerMessageType\" : \"LLM_COMPLETION_RESPONSE\",\n  \"llmResponse\" : \"Hi there! I'm Einstein Copilot, your friendly AI assistant developed by Salesforce. I'm here to help with any questions or issues you have about our company, products, policies, or procedures. How can I assist you today?\",\n  \"toolInvocations\" : [ ]\n}",
+              "ssot__GenerationId__c": "1bb3b25e-fba3-4354-8fdf-d8af222cf4ba",
+              "ssot__GenAiGatewayRequestId__c": "565a8546-2d03-bb39-a3e9-8366d4da4a0e",
+              "ssot__GenAiGatewayResponseId__c": "chatcmpl-DraGFq8eIFanQilvIKczlQtMSlzTC",
+              "ssot__ErrorMessageText__c": "NOT_SET",
+              "ssot__StartTimestamp__c": "2026-06-17T02:25:42.929+0000",
+              "ssot__EndTimestamp__c": "2026-06-17T02:25:43.665+0000"
+            }
+          ]
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "x-request-id": "60b33d62514e26ada389f965111ee4e7"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/services/data/v62.0/query/"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "totalSize": 2,
+          "done": true,
+          "records": [
+            {
+              "attributes": {
+                "type": "ssot__AiAgentInteractionMessage__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentInteractionMessage__dlm/q0r000iwo5I2UpxAAF"
+              },
+              "ssot__Id__c": "d007d940-6f28-4494-85b7-c2d4ce662010",
+              "ssot__AiAgentInteractionMessageType__c": "Input",
+              "ssot__ContentText__c": "Hello who are you",
+              "ssot__MessageSentTimestamp__c": "2026-06-17T02:25:42.878+0000"
+            },
+            {
+              "attributes": {
+                "type": "ssot__AiAgentInteractionMessage__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentInteractionMessage__dlm/q0r000Tgv7COBsjACH"
+              },
+              "ssot__Id__c": "bbb3a65e-f912-45bb-a550-8055a57a2b0f",
+              "ssot__AiAgentInteractionMessageType__c": "Output",
+              "ssot__ContentText__c": "Hi there! I'm Einstein Copilot, your friendly AI assistant developed by Salesforce. I'm here to help with any questions or issues you have about our company, products, policies, or procedures. How can I assist you today?",
+              "ssot__MessageSentTimestamp__c": "2026-06-17T02:25:43.682+0000"
+            }
+          ]
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "x-request-id": "cf801b9514abbb7f04e753b645586bbc"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/services/data/v62.0/query/"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "totalSize": 1,
+          "done": true,
+          "records": [
+            {
+              "attributes": {
+                "type": "ssot__AiAgentSessionParticipant__dlm",
+                "url": "/services/data/v62.0/sobjects/ssot__AiAgentSessionParticipant__dlm/q0w000CTy0gxG1kAGE"
+              },
+              "ssot__AiAgentApiName__c": "Agentforce_Employee_Agent",
+              "ssot__AiAgentVersionApiName__c": "v1",
+              "ssot__AiAgentType__c": "AgentforceEmployeeAgent",
+              "ssot__AiAgentSessionParticipantRole__c": "USER",
+              "ssot__ParticipantId__c": "005fj00000Gz7jJAAR"
+            }
+          ]
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "x-request-id": "6eb4246ccc6e603517e573a9a2673977"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/services/data/v62.0/query/"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "totalSize": 0,
+          "done": true,
+          "records": []
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "x-request-id": "56bea2c03656d026c5bf9eeaba481bb4"
+        }
+      }
+    }
+  ]
+}

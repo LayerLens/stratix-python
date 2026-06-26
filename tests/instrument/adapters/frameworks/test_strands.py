@@ -206,8 +206,9 @@ class TestLifecycle:
         adapter = StrandsAdapter(mock_client)
         adapter.connect()
         adapter.disconnect()
-        assert adapter._collector is None
-        assert adapter._run_span_id is None
+        # Run-scoped state now lives in the per-run RunState (ContextVar),
+        # not instance scalars — the invariant is "no run active" (LAY-3576).
+        assert adapter._get_run() is None
         assert adapter._target is None
 
     def test_register_hooks_protocol(self, mock_client):
@@ -776,7 +777,7 @@ class TestDisconnectLeaveNoTrace:
 
         # Hooks fired after disconnect must not reach the adapter.
         agent.hooks.invoke_callbacks(BeforeInvocationEvent(agent=agent, invocation_state={}))
-        assert adapter._collector is None
+        assert adapter._get_run() is None
         assert uploaded["events"] == []
 
     def test_double_disconnect_is_safe(self, mock_client):

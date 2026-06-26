@@ -238,9 +238,10 @@ class TestAutoWrap:
         adapter.connect(target=collection)
 
         with trace_context(mock_client):
-            out = asyncio.get_event_loop().run_until_complete(
-                collection.query(query_embeddings=[[0.1, 0.2, 0.3]], n_results=2)
-            )
+            # asyncio.run() owns a fresh loop for this call; get_event_loop()
+            # raises "no current event loop" on 3.10+ once a prior asyncio.run()
+            # in the same worker has reset the policy's loop to None.
+            out = asyncio.run(collection.query(query_embeddings=[[0.1, 0.2, 0.3]], n_results=2))
 
         assert out is real_chroma_result  # caller still receives the awaited result
         evt = find_event(uploaded["events"], "retrieval.query")

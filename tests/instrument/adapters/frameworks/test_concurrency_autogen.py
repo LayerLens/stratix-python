@@ -109,11 +109,18 @@ def _llm_call(content: str, model: str) -> LLMCallEvent:
 # ---------------------------------------------------------------------------
 
 XFAIL_REASON = (
-    "LAY-3576: AutoGenAdapter keeps run state in instance scalars "
-    "(autogen.py — lazily created self._collector, self._root_span_id); "
-    "interleaved runs on one instance corrupt traces. "
-    "RED guard for the D1b collector-convergence work (stability report §3.1) — "
-    "NOT fixed in phase 4."
+    "LAY-3576 / D1b: autogen is the documented STRUCTURAL EXCEPTION among the "
+    "hazardous five (the other four — crewai/google_adk/strands/smolagents — were "
+    "migrated to per-run RunState/ContextVar isolation). AutoGen instruments via a "
+    "GLOBAL logging handler on the autogen event logger, not a per-run callback, so "
+    "events arrive outside any run call-stack (ContextVar isolation does not apply); "
+    "the conversation id is present only on message events, not on the llm.call / "
+    "tool.call events; and there is no per-conversation flush boundary (one collector "
+    "is flushed at disconnect). Splitting concurrent conversations into isolated "
+    "traces therefore needs a non-trivial redesign (correlate llm/tool events to a "
+    "conversation + a per-conversation flush) or upstream autogen event changes — out "
+    "of scope here; tracked as the W2 residual. The structural anti-reintroduction "
+    "guard (test_framework_run_state.py) allowlists autogen with this reason."
 )
 
 

@@ -406,6 +406,7 @@ import pytest
 
 from layerlens.instrument import trace
 from tests.instrument.conftest import find_event as _find_event
+from layerlens.instrument.adapters.providers.ollama import OllamaProvider as _OLP
 from layerlens.instrument.adapters.providers.openai import OpenAIProvider as _OP
 from layerlens.instrument.adapters.providers.anthropic import AnthropicProvider as _AP
 
@@ -823,3 +824,132 @@ class TestAnthropicStreamingTTFT:
         assert payload["ttft_ms"] >= 20.0  # the ~30ms sleep before first delta
         # And TTFT < streaming_duration (delta wasn't the last event).
         assert payload["ttft_ms"] <= payload["streaming_duration_ms"]
+
+
+# ---------------------------------------------------------------------------
+# Ollama streaming (G8 / W4): the adapter had NO aggregate_stream override, so a
+# stream produced a content-less, usage-less model.invoke. Drive the real
+# OllamaProvider end-to-end over a stream of REAL ``ollama.ChatResponse`` chunks.
+# ---------------------------------------------------------------------------
+
+
+class TestOllamaStreaming:
+    def test_stream_aggregates_content_usage_and_ttft(self, mock_client, capture_trace):
+        ollama = pytest.importorskip("ollama")
+
+        def fake_stream():
+            _time.sleep(0.03)  # measurable pre-first-chunk delay for TTFT
+            yield ollama.ChatResponse(model="llama3:8b", message={"role": "assistant", "content": "He"}, done=False)
+            yield ollama.ChatResponse(
+                model="llama3:8b",
+                message={"role": "assistant", "content": "llo"},
+                done=True,
+                done_reason="stop",
+                prompt_eval_count=11,
+                eval_count=2,
+                total_duration=231_000_000,
+            )
+
+        client = SimpleNamespace(chat=lambda **kwargs: fake_stream())
+        provider = _OLP()
+        provider.connect(client)
+
+        @trace(mock_client)
+        def my_agent():
+            for _ in client.chat(model="llama3:8b", messages=[{"role": "user", "content": "hi"}], stream=True):
+                pass
+            return "done"
+
+        my_agent()
+        payload = _find_event(capture_trace["events"], "model.invoke")["payload"]
+        # aggregate_stream merged the deltas + kept the final chunk's usage.
+        assert payload["output_message"] == {"role": "assistant", "content": "Hello"}
+        assert payload["response_model"] == "llama3:8b"
+        assert payload["finish_reason"] == "stop"
+        assert payload["usage"] == {"prompt_tokens": 11, "completion_tokens": 2, "total_tokens": 13}
+        assert "ttft_ms" in payload and payload["ttft_ms"] >= 20.0
+        assert payload["streaming_duration_ms"] >= payload["ttft_ms"]
+        provider.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Real SDK chunk types (G8 / W4): the aggregators are exercised above with
+# SimpleNamespace shims (fine for edge cases — both adapters use getattr only).
+# This pins them against the ACTUAL library classes so a real chunk-shape change
+# is caught at the unit layer, not only live.
+# ---------------------------------------------------------------------------
+
+
+class TestRealSdkChunkTypes:
+    def test_openai_aggregate_real_chatcompletionchunk(self):
+        from openai.types import CompletionUsage
+        from openai.types.chat import ChatCompletionChunk
+        from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
+
+        chunks = [
+            ChatCompletionChunk(
+                id="chatcmpl-real",
+                object="chat.completion.chunk",
+                created=1,
+                model="gpt-4o-mini-2024-07-18",
+                choices=[Choice(index=0, delta=ChoiceDelta(role="assistant", content="po"))],
+            ),
+            ChatCompletionChunk(
+                id="chatcmpl-real",
+                object="chat.completion.chunk",
+                created=1,
+                model="gpt-4o-mini-2024-07-18",
+                choices=[Choice(index=0, delta=ChoiceDelta(content="ng"), finish_reason="stop")],
+                usage=CompletionUsage(prompt_tokens=12, completion_tokens=1, total_tokens=13),
+            ),
+        ]
+        agg = _OP.aggregate_stream(chunks)
+        # getattr-based extractors must parse the REAL aggregated shape.
+        assert _OP.extract_output(agg) == {"role": "assistant", "content": "pong"}
+        meta = _OP.extract_meta(agg)
+        assert meta["response_model"] == "gpt-4o-mini-2024-07-18"
+        assert meta["finish_reason"] == "stop"
+        assert meta["usage"] == {"prompt_tokens": 12, "completion_tokens": 1, "total_tokens": 13}
+
+    def test_anthropic_aggregate_real_stream_events(self):
+        from anthropic.types import (
+            Usage,
+            Message,
+            TextBlock,
+            MessageDeltaUsage,
+            RawMessageDeltaEvent,
+            RawMessageStartEvent,
+            RawContentBlockDeltaEvent,
+            RawContentBlockStartEvent,
+        )
+        from anthropic.types.text_delta import TextDelta
+        from anthropic.types.raw_message_delta_event import Delta
+
+        start = RawMessageStartEvent(
+            type="message_start",
+            message=Message(
+                id="msg-real",
+                type="message",
+                role="assistant",
+                model="claude-haiku-4-5-20251001",
+                content=[],
+                stop_reason=None,
+                usage=Usage(input_tokens=12, output_tokens=0),
+            ),
+        )
+        block_start = RawContentBlockStartEvent(
+            type="content_block_start", index=0, content_block=TextBlock(type="text", text="")
+        )
+        delta = RawContentBlockDeltaEvent(
+            type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="pong")
+        )
+        msg_delta = RawMessageDeltaEvent(
+            type="message_delta",
+            delta=Delta(stop_reason="end_turn", stop_sequence=None),
+            usage=MessageDeltaUsage(output_tokens=5),
+        )
+        agg = _AP.aggregate_stream([start, block_start, delta, msg_delta])
+        assert _AP.extract_output(agg) == {"type": "text", "text": "pong"}
+        meta = _AP.extract_meta(agg)
+        assert meta["usage"]["prompt_tokens"] == 12
+        assert meta["usage"]["completion_tokens"] == 5
