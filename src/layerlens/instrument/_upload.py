@@ -26,6 +26,17 @@ from typing import Any, Dict, Tuple, Optional
 log: logging.Logger = logging.getLogger(__name__)
 
 
+def _upload_succeeded(result: Any) -> bool:
+    """True only if the backend ACCEPTED the trace (returned trace_ids).
+
+    ``traces.upload`` returns an empty/None ``trace_ids`` when the backend REJECTS
+    the upload WITHOUT raising (e.g. a schema reject that the SDK swallows). Such a
+    reject must count as a FAILURE (F-L7-002), not a success — otherwise the circuit
+    breaker stays blind to persistent rejects and the trace is silently lost while
+    counted as delivered."""
+    return result is not None and bool(getattr(result, "trace_ids", None))
+
+
 # ---------------------------------------------------------------------------
 # Per-client upload channel
 # ---------------------------------------------------------------------------
@@ -99,8 +110,15 @@ class UploadChannel:
                 log.warning("layerlens: failed to serialize trace for upload", exc_info=True)
                 continue
             try:
-                client.traces.upload(path)
-                self._on_success()
+                result = client.traces.upload(path)
+                if _upload_succeeded(result):
+                    self._on_success()
+                else:
+                    self._on_failure()
+                    log.warning(
+                        "layerlens: background trace upload rejected (no trace_ids) for trace %s",
+                        payload.get("trace_id", "?"),
+                    )
             except Exception:
                 self._on_failure()
                 log.warning("layerlens: background trace upload failed", exc_info=True)
@@ -152,8 +170,15 @@ class UploadChannel:
             log.warning("layerlens: failed to serialize trace for upload", exc_info=True)
             return
         try:
-            client.traces.upload(path)
-            self._on_success()
+            result = client.traces.upload(path)
+            if _upload_succeeded(result):
+                self._on_success()
+            else:
+                self._on_failure()
+                log.warning(
+                    "layerlens: trace upload rejected (no trace_ids) for trace %s",
+                    payload.get("trace_id", "?"),
+                )
         except Exception:
             self._on_failure()
             log.warning("layerlens: trace upload failed", exc_info=True)

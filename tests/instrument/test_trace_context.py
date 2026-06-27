@@ -10,6 +10,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from layerlens.models import CreateTracesResponse
 from layerlens.instrument import (
     CaptureConfig,
     emit,
@@ -66,11 +67,15 @@ def capture_trace(mock_client):
     """Capture uploaded trace payloads. Supports multiple uploads."""
     uploads: List[Dict[str, Any]] = []
 
-    def _capture(path: str) -> None:
+    def _capture(path: str):
         with open(path) as f:
             data = json.load(f)
         uploads.append(data[0])
         record_for_schema_lock(data[0].get("events", []))
+        # Mirror the real backend accept contract: return non-empty trace_ids so
+        # the upload channel records a success (F-L7-002 — an empty/None return is
+        # now treated as a reject/failure, so a faithful capture must hand one back).
+        return CreateTracesResponse(trace_ids=[data[0].get("trace_id") or "mock-trace-id"])
 
     mock_client.traces.upload.side_effect = _capture
     return uploads

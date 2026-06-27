@@ -9,10 +9,21 @@ from typing import Any, Dict, List, Callable, Optional
 from layerlens.attestation import HashChain
 
 from ._upload import enqueue_upload
-from ._secret_scrub import scrub_payload
+from ._secret_scrub import scrub_payload, scrub_secrets
 from ._capture_config import CaptureConfig
 
 log: logging.Logger = logging.getLogger(__name__)
+
+
+def _json_safe(value: Any) -> Any:
+    """Coerce *value* to JSON-native types (non-native -> str), matching the
+    upload path's ``json.dump(default=str)``. The emit() fallback (F-L1-003) so a
+    Decimal/bytes/etc. payload value cannot raise out of the attestation hash and
+    crash the host app — instrumentation must never crash the app it observes."""
+    import json
+
+    return json.loads(json.dumps(value, default=str))
+
 
 # Attestation fail-CLOSED quarantine sink (A9 / R8 / LAY-3628). A trace whose
 # hash chain can't be built (or was terminate()-d by a safety-stop) must NOT be
@@ -137,6 +148,13 @@ class TraceCollector:
             if priced is not None:
                 payload = {**payload, "cost_usd": priced}
 
+        # Scrub secrets from the span_name envelope field too (F-L5-001): redact_payload
+        # and scrub_payload only touch ``payload``, so a credential templated into a
+        # span_name (a tool/agent label) would otherwise ship cleartext even under
+        # capture_content=False. Secrets are orthogonal to capture_content.
+        if span_name:
+            span_name = scrub_secrets(span_name)
+
         with self._lock:
             if self._sealed:
                 return
@@ -162,7 +180,21 @@ class TraceCollector:
                 "timestamp_ns": time.time_ns(),
                 "payload": payload,
             }
-            self._chain.add_event(event)
+            try:
+                self._chain.add_event(event)
+            except Exception:
+                # F-L1-003: a non-JSON-native payload value (Decimal/bytes/...) must
+                # not raise out of the attestation hash and crash the host app.
+                # Coerce to JSON-safe (matching the upload path) and retry; if it is
+                # still unhashable, drop the single event (rolling back the sequence
+                # bump) with a warning rather than propagate.
+                event["payload"] = _json_safe(event["payload"])
+                try:
+                    self._chain.add_event(event)
+                except Exception:
+                    self._sequence -= 1
+                    log.warning("layerlens: dropping unhashable event %s", event_type, exc_info=True)
+                    return
             self._events.append(event)
 
     @property
