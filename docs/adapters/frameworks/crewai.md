@@ -30,12 +30,14 @@ adapter.disconnect()             # tears down handlers when done
 
 ## Event surface
 
-- `agent.start` / `agent.end` per agent step.
-- `task.start` / `task.end` per Crew task.
+- `agent.input` / `agent.output` per agent step and Crew task boundary.
 - `tool.call` for every tool invocation, with the tool name + arguments.
+- `tool.result` for each tool's output.
 - `model.invoke` for the underlying LLM calls (provider-aware via the
   CrewAI agent's `llm` attribute).
+- `cost.record` alongside `model.invoke` when token counts are reported.
 - `agent.handoff` when CrewAI delegates between agents.
+- `agent.error` for agent/tool failures.
 
 Thread-safety: CrewAI dispatches handlers across threads, so the adapter
 manages collector and span state on the instance rather than via

@@ -39,14 +39,17 @@ specific `Kernel` instance rather than monkey-patching a module.
 
 The adapter registers three SK filters and emits flat events:
 
-- `tool.call` from the function invocation filter — one event per plugin
-  function call with arguments and result.
-- `prompt.render` from the prompt rendering filter — the rendered prompt
-  template with substituted variables.
-- `tool.call` from the auto function invocation filter — LLM-initiated
-  function calls discovered during a chat completion.
+- `tool.call` / `tool.result` from the function invocation filter — one pair
+  per plugin function call with arguments and result. The auto function
+  invocation filter emits the same pair for LLM-initiated calls discovered
+  during a chat completion.
+- `agent.code` from the prompt rendering filter — the rendered prompt
+  template (with substituted variables) under `event_subtype="prompt_render"`.
 - `model.invoke` from wrapped chat services on the kernel, including model
   name and token usage when reported by the service.
+- `cost.record` alongside `model.invoke` when the service reports token usage.
+- `environment.config` when a plugin is discovered/registered on the kernel.
+- `agent.error` when a function invocation raises.
 
 Run boundaries are detected by a nesting depth counter: `_begin_run` fires
 on the outermost function invocation and `_end_run` on its completion.

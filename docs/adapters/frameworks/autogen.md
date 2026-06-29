@@ -36,12 +36,14 @@ The adapter listens for AutoGen's structured event classes and emits:
 
 - `model.invoke` for `LLMCallEvent` and `LLMStreamEndEvent` (provider-aware,
   pulls the model name from the response payload).
+- `cost.record` alongside `model.invoke` when prompt/completion token counts
+  are present on the call.
 - `tool.call` for `ToolCallEvent`, including tool name and arguments.
-- `agent.message` for `MessageEvent` between participants.
+- `agent.output` for response messages (a `MessageEvent` whose kind contains
+  `RESPOND`) and `agent.input` for all other messages between participants.
+  Both carry conversation/turn/message indices grouped by topic/session ID.
 - `agent.error` for `MessageDroppedEvent`, `MessageHandlerExceptionEvent`,
   and `AgentConstructionExceptionEvent`.
-- `conversation.ended` per topic/session when the trace tears down, with the
-  participant set, message count, and turn count.
 
 Thread-safety: AutoGen dispatches log events from any thread, so the adapter
 holds the collector and run state on the instance rather than via ContextVars.

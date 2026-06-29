@@ -77,9 +77,11 @@ re-importing.
 Each Agentforce session becomes its own trace via `_begin_run` /
 `_end_run`. Inside a session:
 
-- `environment.config` — one event per session with the agent configuration
-  (model name, instructions, topic/action counts) pulled from
-  `AIAgentConfiguration__dlm`.
+- `agent.lifecycle` — one event per session marking the session start, with
+  the agent configuration (model name, instructions, topic/action counts)
+  pulled from `AIAgentConfiguration__dlm`.
+- `agent.input` for the session's first input and `agent.output` for its
+  last output.
 - `model.invoke` for LLM/generative steps (`StepType` ∈ {llm, model,
   generative}), with prompt/completion token counts.
 - `tool.call` for action/function/tool/flow steps, with tool name, input,
@@ -87,6 +89,7 @@ Each Agentforce session becomes its own trace via `_begin_run` /
 - `agent.handoff` for escalation/handoff/transfer steps, with the escalation
   target.
 - `agent.error` for steps with a non-empty `ErrorMessage`.
+- `agent.interaction` for message steps and any unrecognized step type.
 
 Step types are detected from the `StepType` field on
 `AIAgentInteraction__dlm` and dispatched through `_STEP_DISPATCH`.
