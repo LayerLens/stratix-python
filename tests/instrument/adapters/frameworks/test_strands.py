@@ -727,7 +727,13 @@ class TestCostEmitIsolation:
         assert find_event(events, "agent.output")["payload"]["agent_name"] == "RealisticAgent"
         assert mock_client.traces.upload.called
         assert uploaded.get("trace_id") is not None
-        assert find_events(events, "cost.record") == []
+        # F-L1-003: the unserializable stop_reason that leaked into the cost.record
+        # payload is coerced to a string (matching the upload path's default=str) so
+        # the event still hashes — the cost.record now SURVIVES instead of being
+        # dropped on the hash failure, and emit() never raises into the host app.
+        costs = find_events(events, "cost.record")
+        assert len(costs) == 1
+        assert isinstance(costs[0]["payload"]["stop_reason"], str)
 
         adapter.disconnect()
 
