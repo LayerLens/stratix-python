@@ -100,6 +100,16 @@ BEDROCK_PRICING: dict[str, dict[str, float]] = {
     "amazon.nova-lite-v1:0": {"input": 0.00006, "output": 0.00024},
     "amazon.nova-pro-v1:0": {"input": 0.0008, "output": 0.0032},
     "amazon.nova-premier-v1:0": {"input": 0.0025, "output": 0.0125},
+    # Mistral on Bedrock (LAY-3452). The family is parsed by the provider
+    # adapter but had no rates, so cost resolved to None.
+    "mistral.mistral-7b-instruct-v0:2": {"input": 0.00015, "output": 0.0002},
+    "mistral.mixtral-8x7b-instruct-v0:1": {"input": 0.00045, "output": 0.0007},
+    "mistral.mistral-large-2402-v1:0": {"input": 0.004, "output": 0.012},
+    "mistral.mistral-large-2407-v1:0": {"input": 0.002, "output": 0.006},
+    "mistral.mistral-small-2402-v1:0": {"input": 0.001, "output": 0.003},
+    # AI21 Jamba on Bedrock (LAY-3452).
+    "ai21.jamba-1-5-large-v1:0": {"input": 0.002, "output": 0.008},
+    "ai21.jamba-1-5-mini-v1:0": {"input": 0.0002, "output": 0.0004},
 }
 
 # Cross-region inference-profile prefixes Bedrock prepends to a model id

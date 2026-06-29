@@ -67,6 +67,14 @@ class MonkeyPatchProvider(BaseAdapter):
     def derive_params(kwargs: Dict[str, Any]) -> Dict[str, Any]:  # noqa: ARG004
         return {}
 
+    # Optional hook (LAY-3455): routing providers (LiteLLM) override this to
+    # attribute the call to the underlying provider that actually served the
+    # request, derived from the request kwargs (typically the model string).
+    # Returning ``None`` keeps the default ``event_name.split(".")[0]`` behavior.
+    @staticmethod
+    def classify_provider(event_name: str, kwargs: Dict[str, Any]) -> Optional[str]:  # noqa: ARG004
+        return None
+
     def _wrap_auto(self, event_name: str, original: Any) -> Any:
         """Route to the matching wrapper for *original*.
 
@@ -110,6 +118,7 @@ class MonkeyPatchProvider(BaseAdapter):
                 pricing_table=self.pricing_table,
                 extract_tool_calls=extractors.tool_calls,
                 extra_params=type(self).derive_params(kwargs),
+                provider=type(self).classify_provider(event_name, kwargs),
             )
             return response
 
@@ -145,6 +154,7 @@ class MonkeyPatchProvider(BaseAdapter):
                 pricing_table=self.pricing_table,
                 extract_tool_calls=extractors.tool_calls,
                 extra_params=type(self).derive_params(kwargs),
+                provider=type(self).classify_provider(event_name, kwargs),
             )
             return response
 
@@ -172,6 +182,7 @@ class MonkeyPatchProvider(BaseAdapter):
             capture_params=self.capture_params,
             pricing_table=self.pricing_table,
             extra_params=type(self).derive_params(kwargs),
+            provider=type(self).classify_provider(event_name, kwargs),
         )
 
     def _wrap_async_stream_iterator(
@@ -194,6 +205,7 @@ class MonkeyPatchProvider(BaseAdapter):
             capture_params=self.capture_params,
             pricing_table=self.pricing_table,
             extra_params=type(self).derive_params(kwargs),
+            provider=type(self).classify_provider(event_name, kwargs),
         )
 
     def disconnect(self) -> None:

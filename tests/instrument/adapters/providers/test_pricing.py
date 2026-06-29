@@ -137,6 +137,51 @@ class TestBedrockNovaPricing:
         assert cost is not None and cost == base
 
 
+class TestBedrockMistralAI21Pricing:
+    """LAY-3452: the Bedrock provider parses the Mistral and AI21 families but
+    they had no rates in BEDROCK_PRICING, so cost resolved to None. These assert
+    real, positive, non-None costs — they FAIL if the rate entries are removed."""
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "mistral.mistral-7b-instruct-v0:2",
+            "mistral.mixtral-8x7b-instruct-v0:1",
+            "mistral.mistral-large-2402-v1:0",
+            "mistral.mistral-large-2407-v1:0",
+            "mistral.mistral-small-2402-v1:0",
+            "ai21.jamba-1-5-large-v1:0",
+            "ai21.jamba-1-5-mini-v1:0",
+        ],
+    )
+    def test_mistral_and_ai21_models_priced(self, model: str) -> None:
+        cost = calculate_cost(model, _usage(), BEDROCK_PRICING)
+        assert cost is not None, f"{model} missing from BEDROCK_PRICING"
+        assert cost > 0
+
+    def test_mistral_large_exact_cost(self) -> None:
+        # mistral.mistral-large-2402-v1:0 = $0.004/1k input, $0.012/1k output.
+        cost = calculate_cost(
+            "mistral.mistral-large-2402-v1:0",
+            _usage(prompt=1000, completion=1000),
+            BEDROCK_PRICING,
+        )
+        assert cost is not None and cost > 0
+        # 1000 * 0.004/1000 + 1000 * 0.012/1000 = 0.004 + 0.012 = 0.016
+        assert cost == pytest.approx(0.016)
+
+    def test_ai21_jamba_mini_exact_cost(self) -> None:
+        # ai21.jamba-1-5-mini-v1:0 = $0.0002/1k input, $0.0004/1k output.
+        cost = calculate_cost(
+            "ai21.jamba-1-5-mini-v1:0",
+            _usage(prompt=1000, completion=1000),
+            BEDROCK_PRICING,
+        )
+        assert cost is not None and cost > 0
+        # 1000 * 0.0002/1000 + 1000 * 0.0004/1000 = 0.0002 + 0.0004 = 0.0006
+        assert cost == pytest.approx(0.0006)
+
+
 class TestUnknownModelsGracefully:
     def test_completely_unknown_model_returns_none(self) -> None:
         assert calculate_cost("totally-fake-model-9000", _usage()) is None

@@ -43,11 +43,16 @@ def emit_llm_events(
     extra_params: Optional[Dict[str, Any]] = None,
     ttft_ms: Optional[float] = None,
     streaming_duration_ms: Optional[float] = None,
+    provider: Optional[str] = None,
 ) -> None:
     """Emit ``model.invoke`` + optional ``tool.call`` + ``cost.record`` events.
 
     Builds the full payload; the collector handles CaptureConfig gating
     (L3 suppresses model.invoke entirely; capture_content strips messages).
+
+    ``provider`` overrides the default ``name.split(".")[0]`` derivation so
+    routing layers (LiteLLM) can attribute the call to the underlying provider
+    that actually served the request (LAY-3455).
     """
     collector = _current_collector.get()
     if collector is None:
@@ -63,9 +68,9 @@ def emit_llm_events(
     if extra_params:
         parameters.update(extra_params)
 
-    provider = name.split(".")[0]
+    resolved = provider or name.split(".")[0]
     otel_attrs = gen_ai_attributes(
-        provider=provider,
+        provider=resolved,
         operation=_derive_operation(name),
         parameters=parameters,
         response_meta=response_meta,
@@ -104,7 +109,7 @@ def emit_llm_events(
             collector.emit(
                 TOOL_CALL,
                 {
-                    "provider": name.split(".")[0],
+                    "provider": resolved,
                     "model": model_name,
                     **tc,
                 },
@@ -116,7 +121,7 @@ def emit_llm_events(
     if usage:
         _emit_cost(
             collector,
-            provider=name.split(".")[0],
+            provider=resolved,
             model=model_name,
             usage=usage,
             pricing_table=pricing_table,

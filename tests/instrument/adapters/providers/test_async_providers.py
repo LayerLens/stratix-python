@@ -118,7 +118,9 @@ class TestAsyncLiteLLM:
         # A sync mis-wrap would await nothing and measure ~0 ms.
         assert payload["latency_ms"] >= 15
         cost = find_event(capture_trace["events"], "cost.record")
-        assert cost["payload"]["provider"] == "litellm"
+        # LAY-3455: litellm classify_provider attributes the event to the routed
+        # underlying provider (``gpt-4`` -> openai), not the "litellm" facade.
+        assert cost["payload"]["provider"] == "openai"
 
     def test_awaited_acompletion_streaming_aggregates(self, mock_client, capture_trace) -> None:
         from layerlens.instrument.adapters.providers.litellm import instrument_litellm

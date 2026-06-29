@@ -67,8 +67,9 @@ print(response["message"]["content"])
   Payload includes `model`, `usage` (from `prompt_eval_count` +
   `eval_count`), `finish_reason` (from `done_reason`), `endpoint`, and
   `duration_ms` (from `total_duration`).
-- `cost.record` with `cost_usd: 0.0` since Ollama is self-hosted; token
-  counts are still emitted so downstream cost analytics can attribute infra
+- `cost.record` with `cost_usd: None` — Ollama is self-hosted and has no
+  per-token API price, so the model is intentionally unpriced. Token counts
+  are still emitted so downstream cost analytics can attribute infra
   separately.
 - When `cost_per_second` is configured (see below), each `model.invoke`
   payload includes `infra_cost_usd` derived from `eval_duration +
@@ -76,18 +77,25 @@ print(response["message"]["content"])
 
 ## Pricing
 
-Ollama models have no public API price — inference is local. The adapter
-treats Ollama API cost as `$0.00` and surfaces zero-cost entries through
-the standard cost-record path. Callers who want to attribute hardware
-cost can pass:
+Ollama models have no public API price — inference is local and there is no
+per-token pricing table for it. The adapter therefore leaves the model
+**unpriced**: `cost.record.cost_usd` is `None` (not a fabricated `0.0`),
+which honestly signals "no per-token API cost was charged" rather than
+implying a real zero-dollar billed call.
+
+Callers who want to attribute hardware/compute cost can pass an optional
+`cost_per_second` to the constructor:
 
 ```python
 OllamaProvider(cost_per_second=0.0001)   # $0.0001/sec of GPU/CPU time
 ```
 
-This computes `infra_cost_usd = (eval_ns + prompt_eval_ns) / 1e9 *
-cost_per_second` for each invoke and includes it in the `model.invoke`
-payload. Rough rule of thumb for a hosted GPU at ~$0.50/hr: ~$0.000139/sec.
+This attributes compute time as `infra_cost_usd` on each `model.invoke`
+event, computed as `(eval_duration + prompt_eval_duration) / _NS_PER_SECOND
+* cost_per_second` (the two durations are the response's nanosecond
+`eval_duration` and `prompt_eval_duration`; `_NS_PER_SECOND` is `1e9`).
+`infra_cost_usd` is distinct from the (unpriced) `cost.record.cost_usd`.
+Rough rule of thumb for a hosted GPU at ~$0.50/hr: ~$0.000139/sec.
 
 ## Sample
 

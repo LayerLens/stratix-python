@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import sys
 import types
+from types import SimpleNamespace
+from typing import Any, List, Optional
 from unittest.mock import Mock
 
 from layerlens.instrument import trace
 from layerlens.instrument.adapters.providers.litellm import (
     LiteLLMProvider,
+    _route_provider,
     instrument_litellm,
     uninstrument_litellm,
 )
@@ -16,7 +19,7 @@ from .conftest import (
     make_openai_response_no_usage,
     make_openai_response_empty_choices,
 )
-from ...conftest import find_event
+from ...conftest import find_event, find_events
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -37,6 +40,43 @@ def _remove_mock_litellm():
     for key in list(sys.modules.keys()):
         if key.startswith("litellm"):
             del sys.modules[key]
+
+
+def _openai_chunk(
+    *,
+    content: Optional[str] = None,
+    role: Optional[str] = None,
+    finish_reason: Optional[str] = None,
+    model: Optional[str] = None,
+    response_id: Optional[str] = None,
+    usage: Any = None,
+) -> SimpleNamespace:
+    """An OpenAI-shaped streaming chunk (litellm yields these)."""
+    delta = SimpleNamespace(content=content, role=role, tool_calls=None)
+    choice = SimpleNamespace(delta=delta, finish_reason=finish_reason, index=0)
+    return SimpleNamespace(
+        choices=[choice],
+        model=model,
+        id=response_id,
+        system_fingerprint=None,
+        service_tier=None,
+        usage=usage,
+    )
+
+
+def _install_streaming_litellm(chunks: List[Any], model: str = "gpt-4") -> Any:
+    """Inject a fake litellm whose completion(stream=True) yields *chunks*."""
+    mock_mod = types.ModuleType("litellm")
+
+    def _completion(**kwargs: Any) -> Any:
+        if kwargs.get("stream") is True:
+            return iter(chunks)
+        return make_openai_response(model=model)
+
+    mock_mod.completion = Mock(side_effect=_completion)
+    mock_mod.acompletion = Mock()
+    sys.modules["litellm"] = mock_mod
+    return mock_mod
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +112,9 @@ class TestEmitsEvents:
         assert "latency_ms" in model_invoke["payload"]
 
         cost = find_event(events, "cost.record")
-        assert cost["payload"]["provider"] == "litellm"
+        # LAY-3455: the cost event is attributed to the underlying routed
+        # provider (gpt-4 -> openai), not the "litellm" router itself.
+        assert cost["payload"]["provider"] == "openai"
         assert cost["payload"]["total_tokens"] == 15
 
     def test_error_emits_agent_error(self, mock_client, capture_trace):
@@ -348,3 +390,112 @@ class TestExtractors:
         r = make_openai_response_no_usage()
         meta = LiteLLMProvider.extract_meta(r)
         assert "usage" not in meta
+
+
+# ---------------------------------------------------------------------------
+# LAY-3621a: streaming litellm.completion must NOT drop telemetry
+# ---------------------------------------------------------------------------
+
+
+class TestStreaming:
+    def teardown_method(self):
+        _remove_mock_litellm()
+
+    def test_stream_emits_single_model_invoke_and_cost_record(self, mock_client, capture_trace):
+        """Before LAY-3621 LiteLLMProvider had no aggregate_stream override, so
+        the base returned None and the streamed call produced ZERO model.invoke
+        / cost.record events. This test bites: revert aggregate_stream and the
+        ``find_event`` calls below raise (no events emitted)."""
+        usage = SimpleNamespace(prompt_tokens=7, completion_tokens=4, total_tokens=11)
+        chunks = [
+            _openai_chunk(role="assistant", content="Hel", model="gpt-4", response_id="chatcmpl-s1"),
+            _openai_chunk(content="lo"),
+            _openai_chunk(content="!", usage=usage, finish_reason="stop"),
+        ]
+        self.mock_litellm = _install_streaming_litellm(chunks)
+        instrument_litellm()
+
+        @trace(mock_client)
+        def my_agent():
+            import litellm
+
+            for _ in litellm.completion(model="gpt-4", messages=[{"role": "user", "content": "Hi"}], stream=True):
+                pass
+            return "done"
+
+        my_agent()
+        events = capture_trace["events"]
+
+        invokes = find_events(events, "model.invoke")
+        assert len(invokes) == 1, f"expected exactly one model.invoke, got {len(invokes)}"
+        payload = invokes[0]["payload"]
+        assert payload["name"] == "litellm.completion"
+        assert payload["output_message"]["content"] == "Hello!"
+        assert "ttft_ms" in payload  # streaming path was taken
+
+        costs = find_events(events, "cost.record")
+        assert len(costs) == 1, f"expected exactly one cost.record, got {len(costs)}"
+        assert costs[0]["payload"]["total_tokens"] == 11  # non-None tokens aggregated from stream
+
+
+# ---------------------------------------------------------------------------
+# LAY-3455: routing classification -> underlying provider
+# ---------------------------------------------------------------------------
+
+
+class TestRouteProvider:
+    def test_bare_openai_models(self):
+        assert _route_provider("gpt-4o") == "openai"
+        assert _route_provider("gpt-4") == "openai"
+        assert _route_provider("o1-preview") == "openai"
+        assert _route_provider("o3-mini") == "openai"
+        assert _route_provider("chatgpt-4o-latest") == "openai"
+
+    def test_bare_other_families(self):
+        assert _route_provider("claude-3-5-sonnet") == "anthropic"
+        assert _route_provider("gemini-1.5-pro") == "google"
+        assert _route_provider("command-r-plus") == "cohere"
+        assert _route_provider("mistral-large") == "mistral"
+        assert _route_provider("mixtral-8x7b") == "mistral"
+        assert _route_provider("llama3-70b") == "meta"
+        assert _route_provider("totally-unknown-model") == "litellm"
+
+    def test_prefixed_route_strings(self):
+        assert _route_provider("bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0") == "bedrock"
+        assert _route_provider("azure/gpt-4o") == "azure"
+        assert _route_provider("vertex_ai/gemini-1.5-pro") == "google_vertex"
+        assert _route_provider("gemini/gemini-1.5-flash") == "google"
+        assert _route_provider("ollama/llama3") == "ollama"
+        assert _route_provider("anthropic/claude-3-opus") == "anthropic"
+        assert _route_provider("openrouter/some-model") == "openrouter"
+        # Unknown prefix falls through verbatim.
+        assert _route_provider("customvendor/some-model") == "customvendor"
+
+    def test_classify_provider_reads_model_kwarg(self):
+        assert LiteLLMProvider.classify_provider("litellm.completion", {"model": "claude-3-5-sonnet"}) == "anthropic"
+        assert LiteLLMProvider.classify_provider("litellm.completion", {}) is None
+
+
+class TestRoutingEndToEnd:
+    def setup_method(self):
+        self.mock_litellm = _install_mock_litellm(make_openai_response(model="claude-3-5-sonnet"))
+
+    def teardown_method(self):
+        _remove_mock_litellm()
+
+    def test_cost_record_provider_is_underlying_provider(self, mock_client, capture_trace):
+        """A litellm.completion(model="claude-3-5-sonnet") must emit cost.record
+        with provider="anthropic" (not "litellm"). Revert classify_provider and
+        this asserts on "litellm" instead -> fails."""
+        instrument_litellm()
+
+        @trace(mock_client)
+        def my_agent():
+            import litellm
+
+            litellm.completion(model="claude-3-5-sonnet", messages=[{"role": "user", "content": "Hi"}])
+            return "done"
+
+        my_agent()
+        cost = find_event(capture_trace["events"], "cost.record")
+        assert cost["payload"]["provider"] == "anthropic"

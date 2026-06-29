@@ -39,6 +39,8 @@ class SemanticKernelAdapter(FrameworkAdapter):
 
     name = "semantic_kernel"
     package = "semantic-kernel"
+    # semantic-kernel >= 1.0 is Pydantic v2-only (LAY-3450 catalog manifest AC).
+    requires_pydantic: str = "2"
 
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)

@@ -97,6 +97,7 @@ def stream_chunks_sync(
     capture_params: frozenset[str],
     pricing_table: Optional[dict[str, dict[str, float]]],
     extra_params: Dict[str, Any],
+    provider: Optional[str] = None,
 ) -> Iterator[Any]:
     """Generator that yields every chunk and emits the consolidated event on close.
 
@@ -137,6 +138,7 @@ def stream_chunks_sync(
             extra_params=extra_params,
             ttft_ms=wrapper.ttft_ms,
             streaming_duration_ms=latency_ms,
+            provider=provider,
         )
 
     return generator()
@@ -155,6 +157,7 @@ def stream_chunks_async(
     capture_params: frozenset[str],
     pricing_table: Optional[dict[str, dict[str, float]]],
     extra_params: Dict[str, Any],
+    provider: Optional[str] = None,
 ) -> AsyncIterator[Any]:
     """Async sibling of :func:`stream_chunks_sync`."""
     wrapper = StreamingResponseWrapper(event_name, kwargs, start)
@@ -191,6 +194,7 @@ def stream_chunks_async(
             extra_params=extra_params,
             ttft_ms=wrapper.ttft_ms,
             streaming_duration_ms=latency_ms,
+            provider=provider,
         )
 
     return generator()
