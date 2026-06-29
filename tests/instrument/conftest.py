@@ -6,6 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from layerlens.models import CreateTracesResponse
+
 from ._secret_scan import scan_for_secrets
 from ._event_schema import validate_events
 
@@ -94,7 +96,7 @@ def capture_trace(mock_client):
     """
     uploaded: Dict[str, Any] = {}
 
-    def _capture(path: str) -> None:
+    def _capture(path: str):
         with open(path) as f:
             data = json.load(f)
         # upload_trace wraps in a list
@@ -104,6 +106,11 @@ def capture_trace(mock_client):
         uploaded["capture_config"] = payload.get("capture_config", {})
         uploaded["attestation"] = payload.get("attestation", {})
         record_for_schema_lock(uploaded["events"])
+        # Return a realistic success response (non-empty trace_ids) so the mock
+        # mirrors the real backend's accept contract — the upload channel now
+        # treats an empty/None trace_ids return as a REJECT/failure (F-L7-002),
+        # so a faithful "successful capture" must hand back a trace id.
+        return CreateTracesResponse(trace_ids=[payload.get("trace_id") or "mock-trace-id"])
 
     mock_client.traces.upload.side_effect = _capture
     return uploaded
