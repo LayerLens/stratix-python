@@ -16,9 +16,23 @@ from ._framework_harness import run_framework_case
 from ._protocol_registry import PROTOCOLS
 
 
+def _variants(case) -> tuple:
+    """Run the ``redaction`` variant too for content-bearing protocols — the
+    end-to-end proof that payment/commerce/delegation content never reaches the
+    platform under ``capture_content=False`` (L1-L4 / LAY-3578)."""
+    out = ["default"]
+    if case.supports_redaction:
+        out.append("redaction")
+    return tuple(out)
+
+
+_CASES = [(c, v) for c in PROTOCOLS for v in _variants(c)]
+_IDS = [f"{c.id}-{v}" for c, v in _CASES]
+
+
 @pytest.mark.live
-@pytest.mark.parametrize("case", PROTOCOLS, ids=[c.id for c in PROTOCOLS])
-def test_protocol_live(case, stratix_live_client, record_result) -> None:
+@pytest.mark.parametrize("case, variant", _CASES, ids=_IDS)
+def test_protocol_live(case, variant, stratix_live_client, record_result) -> None:
     pytest.importorskip(case.import_name, reason=f"{case.id}: '{case.import_name}' not installed")
-    row = run_framework_case(stratix_live_client, case, "default")
+    row = run_framework_case(stratix_live_client, case, variant)
     record_result(row)

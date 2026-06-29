@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from ._secret_scan import scan_for_secrets
 from ._event_schema import validate_events
 
 # ---------------------------------------------------------------------------
@@ -50,6 +51,9 @@ def _enforce_schema_lock():
     _pending_schema_events.clear()
     if events:
         validate_events(events)
+        # Credential-sprawl net: no secret-shaped value may reach an uploaded
+        # event (orthogonal to capture_content; runs over every adapter suite).
+        scan_for_secrets(events)
 
 
 @pytest.fixture

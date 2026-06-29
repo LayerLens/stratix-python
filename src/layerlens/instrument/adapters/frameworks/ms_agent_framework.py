@@ -179,6 +179,8 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
                     output_payload["latency_ms"] = latency_ms
                 if error is not None:
                     output_payload["error"] = str(error)
+                    output_payload["error_type"] = type(error).__name__
+                    output_payload["status"] = "error"
                     adapter._set_if_capturing(output_payload, "output", safe_serialize(last_message))
                     adapter._emit("agent.error", output_payload)
                 else:

@@ -96,11 +96,18 @@ class AP2ProtocolAdapter(BaseProtocolAdapter):
         mandate_id = kwargs.get("mandate_id") or (args[0] if args else None)
         verdict = self._evaluate_guardrails(mandate_id, kwargs)
         if verdict is not None:
+            reason_code, detail = verdict
+            # ``reason_code`` is a structured category (always safe to keep) so a
+            # customer still sees WHY a payment was blocked under
+            # ``capture_content=False``; ``reason`` is the free-text detail that
+            # interpolates merchant/amount and is a CONTENT field (stripped by
+            # redaction under no-content) — see PAYMENT_MANDATE_SIGNED in
+            # _capture_config._CONTENT_KEYS (LAY-3578 / L1).
             self.emit(
                 PAYMENT_MANDATE_SIGNED,
-                {"mandate_id": mandate_id, "status": "blocked", "reason": verdict},
+                {"mandate_id": mandate_id, "status": "blocked", "reason_code": reason_code, "reason": detail},
             )
-            raise PermissionError(f"AP2 guardrail blocked mandate {mandate_id}: {verdict}")
+            raise PermissionError(f"AP2 guardrail blocked mandate {mandate_id}: {detail}")
         result = original(*args, **kwargs)
         amount = kwargs.get("amount") or self._intent_mandates.get(mandate_id, {}).get("amount") or 0
         self._cumulative_spend += float(amount or 0)
@@ -131,21 +138,30 @@ class AP2ProtocolAdapter(BaseProtocolAdapter):
 
     # --- guardrail evaluator ---
 
-    def _evaluate_guardrails(self, mandate_id: str | None, kwargs: Dict[str, Any]) -> str | None:
+    def _evaluate_guardrails(self, mandate_id: str | None, kwargs: Dict[str, Any]) -> tuple[str, str] | None:
+        """Return ``(reason_code, detail)`` for a blocked mandate, else ``None``.
+
+        ``reason_code`` is a structured, content-free category (e.g.
+        ``MAX_TRANSACTION_EXCEEDED``); ``detail`` is the free-text explanation
+        that interpolates merchant/amount and must be treated as content.
+        """
         g = self._guardrails
         amount = float(kwargs.get("amount") or 0)
         merchant = kwargs.get("merchant")
 
         if g.max_transaction is not None and amount > g.max_transaction:
-            return f"amount {amount} exceeds max_transaction {g.max_transaction}"
+            return ("MAX_TRANSACTION_EXCEEDED", f"amount {amount} exceeds max_transaction {g.max_transaction}")
         if g.merchant_whitelist and merchant is not None and merchant not in g.merchant_whitelist:
-            return f"merchant {merchant!r} not in whitelist"
+            return ("MERCHANT_NOT_WHITELISTED", f"merchant {merchant!r} not in whitelist")
         if g.cumulative_threshold is not None and (self._cumulative_spend + amount) > g.cumulative_threshold:
-            return f"cumulative spend {self._cumulative_spend + amount} would exceed threshold {g.cumulative_threshold}"
+            return (
+                "CUMULATIVE_THRESHOLD_EXCEEDED",
+                f"cumulative spend {self._cumulative_spend + amount} would exceed threshold {g.cumulative_threshold}",
+            )
         if g.mandate_ttl_seconds is not None and mandate_id in self._intent_mandates:
             age = time.time() - self._intent_mandates[mandate_id]["created_at"]
             if age > g.mandate_ttl_seconds:
-                return f"mandate age {age:.1f}s exceeds ttl {g.mandate_ttl_seconds}s"
+                return ("MANDATE_EXPIRED", f"mandate age {age:.1f}s exceeds ttl {g.mandate_ttl_seconds}s")
         return None
 
 

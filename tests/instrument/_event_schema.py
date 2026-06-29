@@ -79,10 +79,6 @@ KNOWN_EVENT_TYPES = frozenset(
         "protocol.task.submitted",
         "protocol.task.completed",
         "protocol.async_task",
-        "protocol.elicitation.request",
-        "protocol.elicitation.response",
-        "protocol.tool.structured_output",
-        "protocol.mcp_app.invocation",
         "mcp.tool.call",
         "mcp.tools.listed",
         "mcp.async_task",
@@ -213,6 +209,19 @@ def validate_event(event: Dict[str, Any]) -> List[str]:
         cost = payload.get("cost_usd")
         if cost is not None and not isinstance(cost, Number):
             problems.append(f"{tag} cost_usd must be a number, got {type(cost).__name__}")
+
+    # INVARIANT (LAY-3620, redact-without-going-blind): agent.error must carry a
+    # surviving CATEGORY. The capture_content=False backstop strips the free-text
+    # error/error_message, so without error_type/error_code/status a failure
+    # becomes indistinguishable from a benign event. Runs over every uploaded
+    # event in every adapter suite — this is the population-complete net that
+    # would have caught the error_type-blindness gap at authoring time.
+    if event_type == "agent.error" and not any(payload.get(k) for k in ("error_type", "error_code", "status")):
+        problems.append(
+            f"{tag} agent.error has no surviving category — set error_type "
+            "(or error_code/status). The redaction backstop strips the free-text "
+            "error under capture_content=False, so the failure would otherwise vanish."
+        )
 
     return problems
 

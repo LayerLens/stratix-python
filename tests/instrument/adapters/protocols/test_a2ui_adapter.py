@@ -49,7 +49,10 @@ _NO_CONTENT = CaptureConfig(capture_content=False)
 
 
 def _sha(value: Any) -> str:
-    """Reproduce a2ui._sha independently so the test pins the exact format."""
+    """Plain unkeyed SHA-256 — the OLD a2ui hash, kept as a NEGATIVE control:
+    the adapter now emits a keyed HMAC (``a2ui._hash``), which must NOT equal
+    this. The emitted value is reproduced per-instance via ``adapter._hash``
+    (the key is a secret per-instance random and is never emitted)."""
     return "sha256:" + hashlib.sha256(str(value).encode()).hexdigest()
 
 
@@ -115,10 +118,10 @@ class TestUserActionViaConnect:
             )
 
         events = _run_collected(go, collector_config)
-        return events, called
+        return events, called, adapter
 
     def test_emits_user_action_with_hashed_context(self) -> None:
-        events, called = self._drive(None, None)
+        events, called, adapter = self._drive(None, None)
 
         # Exactly one commerce.ui.user_action event, and nothing else.
         assert _types(events) == [COMMERCE_UI_USER_ACTION]
@@ -128,9 +131,12 @@ class TestUserActionViaConnect:
         assert payload["protocol"] == "a2ui"
         assert payload["surface_id"] == "surf-42"
         assert payload["action_type"] == "add_to_cart"
-        assert payload["action_context_hash"] == _sha(SECRET_CONTEXT)
+        assert payload["action_context_hash"] == adapter._hash(SECRET_CONTEXT)
         assert payload["action_context_hash"].startswith("sha256:")
         assert len(payload["action_context_hash"]) == len("sha256:") + 64
+        # The hash is a KEYED HMAC, not a plain unsalted sha256 a brute-forcer
+        # could rainbow-table back to the low-entropy commerce context.
+        assert payload["action_context_hash"] != _sha(SECRET_CONTEXT)
 
         # The wrapper still delegates to the original (instrumentation is
         # transparent), with the real cleartext context.
@@ -138,24 +144,26 @@ class TestUserActionViaConnect:
         assert called["surface_id"] == "surf-42"
 
     def test_cleartext_context_never_leaks_only_its_hash(self) -> None:
-        events, _ = self._drive(None, None)
+        events, _, adapter = self._drive(None, None)
         text = _all_payload_text(events)
         assert SECRET_CONTEXT not in text, "raw action context leaked into a2ui telemetry"
         # Defence: even a fragment (the embedded card number) must be absent.
         assert "4111-1111" not in text
-        assert _sha(SECRET_CONTEXT) in text, "hashed context missing — the only retained signal"
+        assert adapter._hash(SECRET_CONTEXT) in text, "hashed context missing — the only retained signal"
 
     def test_no_content_config_keeps_the_hash(self) -> None:
         # A2UI has no redaction tier: there is nothing to strip because the
         # only sensitive field is pre-hashed. capture_content=False on either
         # side must leave the metadata + hash intact, and never the cleartext.
-        events_adapter, _ = self._drive(_NO_CONTENT, None)
-        events_collector, _ = self._drive(None, _NO_CONTENT)
-        for events in (events_adapter, events_collector):
+        events_adapter, _, adapter_a = self._drive(_NO_CONTENT, None)
+        events_collector, _, adapter_c = self._drive(None, _NO_CONTENT)
+        # Each drive builds its own adapter (its own keyed-HMAC key), so the
+        # expected hash is reproduced per-instance.
+        for events, adapter in ((events_adapter, adapter_a), (events_collector, adapter_c)):
             text = _all_payload_text(events)
             assert SECRET_CONTEXT not in text
             payload = _payloads_of(events, COMMERCE_UI_USER_ACTION)[0]
-            assert payload["action_context_hash"] == _sha(SECRET_CONTEXT)
+            assert payload["action_context_hash"] == adapter._hash(SECRET_CONTEXT)
             assert payload["surface_id"] == "surf-42"
             assert payload["action_type"] == "add_to_cart"
 
@@ -223,11 +231,11 @@ class TestRecordHelpers:
         payload = _payloads_of(events, COMMERCE_UI_USER_ACTION)[0]
         assert payload["surface_id"] == "surf-1"
         assert payload["action_type"] == "checkout_confirm"
-        assert payload["action_context_hash"] == _sha(SECRET_CONTEXT)
+        assert payload["action_context_hash"] == adapter._hash(SECRET_CONTEXT)
 
         text = _all_payload_text(events)
         assert SECRET_CONTEXT not in text, "record_user_action leaked raw context"
-        assert _sha(SECRET_CONTEXT) in text
+        assert adapter._hash(SECRET_CONTEXT) in text
 
     def test_record_user_action_no_content_keeps_hash(self) -> None:
         adapter = A2UIProtocolAdapter(capture_config=_NO_CONTENT)
@@ -242,7 +250,7 @@ class TestRecordHelpers:
         events = _run_collected(go, _NO_CONTENT)
         payload = _payloads_of(events, COMMERCE_UI_USER_ACTION)[0]
         # Nothing to redact: the hash survives a no-content config.
-        assert payload["action_context_hash"] == _sha(SECRET_CONTEXT)
+        assert payload["action_context_hash"] == adapter._hash(SECRET_CONTEXT)
         assert SECRET_CONTEXT not in _all_payload_text(events)
 
     def test_record_surface_created_metadata(self) -> None:
@@ -272,6 +280,6 @@ class TestRecordHelpers:
         events = _run_collected(go)
         hashes = [p["action_context_hash"] for p in _payloads_of(events, COMMERCE_UI_USER_ACTION)]
         assert len(hashes) == 3
-        assert hashes[0] == hashes[2] == _sha("context-A")
-        assert hashes[1] == _sha("context-B")
+        assert hashes[0] == hashes[2] == adapter._hash("context-A")
+        assert hashes[1] == adapter._hash("context-B")
         assert hashes[0] != hashes[1]

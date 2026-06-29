@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from layerlens.attestation import HashChain
 
 from ._upload import enqueue_upload
+from ._secret_scrub import scrub_payload
 from ._capture_config import CaptureConfig
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -60,6 +61,11 @@ class TraceCollector:
             return
 
         payload = self._config.redact_payload(event_type, payload)
+        # Credential-sprawl chokepoint: scrub secrets from free-text error fields
+        # on EVERY event, regardless of capture_content (provider exceptions echo
+        # API keys and are uploaded even under the default config). One place
+        # covers every adapter's str(exc) site (LAY-3567 P2).
+        payload = scrub_payload(payload)
 
         with self._lock:
             if self._sealed:

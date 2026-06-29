@@ -1,0 +1,53 @@
+# Invariant Gates (LAY-3620 / LAY-3572).
+#
+# A dedicated, fast, REQUIRED status check that runs only the contract guards —
+# so even if the full test job is slow or a test is deselected, the invariants
+# cannot silently rot. Set this job as a required status check in branch
+# protection for `main`.
+#
+# What it enforces (see CONTRIBUTING.md > "Invariants & guards"):
+#   * keys-must-match: every _CONTENT_KEYS type is layer-mapped + schema-registered,
+#     and every content-layer event type has a strip list (reverse guard);
+#   * layer suppression: disabling a layer / minimal() actually suppresses;
+#   * no-content sweep: no SENTINEL survives capture_content=False (protocol adapters);
+#   * secret scrub: no secret-shaped value reaches an uploaded event;
+#   * schema lock self-tests incl. the agent.error "surviving category" invariant.
+# The runtime invariants (agent.error category, secret scan) ALSO run inside the
+# full `Run Tests` suite via the autouse fixture; this job is the focused gate.
+
+name: Invariant Gates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  invariants:
+    name: Invariant Gates (privacy / observability / schema)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rye
+        uses: eifinger/setup-rye@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: |
+          rye pin 3.11
+          rye sync
+
+      - name: Run invariant gates (-m invariant)
+        run: |
+          set -o pipefail
+          if ! rye run pytest -m invariant -q; then
+            echo "::error title=SDK invariant broken::A privacy / observability / schema contract is violated. \
+            See CONTRIBUTING.md > 'Invariants & guards'. Do NOT merge until this is green."
+            exit 1
+          fi

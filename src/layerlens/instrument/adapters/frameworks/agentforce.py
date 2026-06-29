@@ -676,6 +676,8 @@ class AgentforceAdapter(FrameworkAdapter):
             step_name=_clean(step.get(_STDM.ST_NAME)),
             step_type=_clean(step.get(_STDM.ST_TYPE)),
             error_message=_clean(step.get(_STDM.ST_ERROR)),
+            error_type="step_error",
+            status="error",
         )
         self._emit("agent.error", payload, span_id=self._new_span_id(), span_name="error")
         return 1

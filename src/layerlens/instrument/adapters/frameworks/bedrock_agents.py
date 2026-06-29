@@ -651,7 +651,11 @@ class _CompletionProxy:
         self._emit("agent.handoff", payload, span_name="bedrock.handoff")
 
     def _on_failure(self, failure: Dict[str, Any]) -> None:
-        payload = self._adapter._payload(error=str(failure.get("failureReason") or "agent failure"))
+        payload = self._adapter._payload(
+            error=str(failure.get("failureReason") or "agent failure"),
+            error_type="agent_failure",
+            status="error",
+        )
         code = failure.get("failureCode")
         if isinstance(code, int):
             payload["error_code"] = code

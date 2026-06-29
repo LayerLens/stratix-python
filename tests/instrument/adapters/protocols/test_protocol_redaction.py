@@ -121,14 +121,61 @@ class TestMCPRedaction:
         events = self._drive(mock_client, _NO_CONTENT, None)
         text = _all_payload_text(events)
         assert SECRET_QUERY not in text, "tool arguments leaked despite adapter capture_content=False (N7)"
-        assert SECRET_TEXT not in text, "tool result leaked despite adapter capture_content=False (N7)"
-        assert any(e["payload"].get("tool_name") == "search" for e in events), "metadata over-stripped"
+        # `result` is summarized to a descriptor before emit AND stripped by
+        # redaction under no-content — assert the key is gone (bites on the
+        # redaction fix; SECRET_TEXT-absence alone would be carried by the
+        # summarization, not the redaction).
+        calls = [e["payload"] for e in events if e["event_type"] == "mcp.tool.call"]
+        assert calls and all("result" not in p for p in calls), "mcp.tool.call result not stripped under no-content"
+        assert any(p.get("tool_name") == "search" for p in calls), "metadata over-stripped"
 
     def test_collector_side_no_content_strips_args_and_result(self, mock_client: Any) -> None:
         events = self._drive(mock_client, None, _NO_CONTENT)
         text = _all_payload_text(events)
         assert SECRET_QUERY not in text, "collector backstop missing for mcp.tool.call arguments (N7)"
-        assert SECRET_TEXT not in text, "collector backstop missing for mcp.tool.call result (N7)"
+        calls = [e["payload"] for e in events if e["event_type"] == "mcp.tool.call"]
+        assert calls and all("result" not in p for p in calls), (
+            "collector backstop missing for mcp.tool.call result (N7)"
+        )
+
+    # --- L3: the ERROR path puts str(exc) into 'error', bypassing args redaction ---
+
+    def _drive_error(self, mock_client: Any, adapter_config: Optional[CaptureConfig]) -> List[Dict[str, Any]]:
+        from layerlens.instrument.adapters.protocols.mcp.adapter import MCPProtocolAdapter
+
+        def _raise(name: str, arguments: Any = None, **kw: Any) -> Any:
+            # Real tool failures routinely echo the failing argument back.
+            raise ValueError(f"charge failed for card {SECRET_QUERY}")
+
+        adapter = MCPProtocolAdapter(capture_config=adapter_config)
+        target = SimpleNamespace(call_tool=_raise)
+        adapter.connect(target=target)
+
+        def go() -> None:
+            with pytest.raises(ValueError):
+                target.call_tool(name="charge", arguments={"card": SECRET_QUERY})
+
+        return _run_collected(mock_client, go, None)
+
+    def test_error_path_no_content_strips_exception_string(self, mock_client: Any) -> None:
+        events = self._drive_error(mock_client, _NO_CONTENT)
+        text = _all_payload_text(events)
+        assert SECRET_QUERY not in text, "mcp error path leaked str(exc) under capture_content=False (L3)"
+        # Redact without going blind: the tool.call still carries the tool_name,
+        # and the failure stays observable via the async-task lifecycle.
+        calls = [e["payload"] for e in events if e["event_type"] == "mcp.tool.call"]
+        assert calls and any(p.get("tool_name") == "charge" for p in calls), "tool_name over-stripped"
+        assert any(e["event_type"] == "mcp.async_task" and e["payload"].get("status") == "failed" for e in events), (
+            "failure no longer observable — over-stripped"
+        )
+
+    def test_error_path_default_captures_exception_string(self, mock_client: Any) -> None:
+        # Sanity: under the default config the exception string IS captured, so
+        # the no-content assertion above is meaningful (not vacuous).
+        events = self._drive_error(mock_client, None)
+        assert SECRET_QUERY in _all_payload_text(events), (
+            "error str(exc) not captured by default — test would be vacuous"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +270,73 @@ class TestAP2Redaction:
         assert SECRET_MERCHANT not in text, "collector backstop missing for payment merchant (N7)"
         assert str(SECRET_AMOUNT) not in text, "collector backstop missing for payment amount (N7)"
 
+    # --- L1: the BLOCKED guardrail path (the riskier, previously-untested one) ---
+
+    def _drive_blocked(
+        self, mock_client: Any, adapter_config: Optional[CaptureConfig], guardrails: Any, **sign_kwargs: Any
+    ) -> List[Dict[str, Any]]:
+        """Drive a guardrail-BLOCKED sign through the REAL adapter."""
+        from layerlens.instrument.adapters.protocols.ap2 import AP2ProtocolAdapter
+
+        adapter = AP2ProtocolAdapter(guardrails=guardrails, capture_config=adapter_config)
+        target = SimpleNamespace(sign_payment_mandate=lambda **kw: {"ok": True})
+        adapter.connect(target=target)
+
+        def go() -> None:
+            with pytest.raises(PermissionError):
+                target.sign_payment_mandate(**sign_kwargs)
+
+        return _run_collected(mock_client, go, None)
+
+    def test_blocked_over_cap_default_captures_reason(self, mock_client: Any) -> None:
+        from layerlens.instrument.adapters.protocols.ap2 import AP2Guardrails
+
+        events = self._drive_blocked(
+            mock_client, None, AP2Guardrails(max_transaction=10.0), mandate_id="m1", amount=SECRET_AMOUNT, merchant="ok"
+        )
+        blocked = [e for e in events if e["payload"].get("status") == "blocked"]
+        assert blocked, "no blocked payment.mandate_signed event emitted"
+        # Default (content captured): the amount detail AND the reason_code are present.
+        assert str(SECRET_AMOUNT) in _all_payload_text(events), "default should still carry the reason detail"
+        assert blocked[0]["payload"].get("reason_code") == "MAX_TRANSACTION_EXCEEDED"
+
+    def test_blocked_over_cap_no_content_strips_amount_keeps_reason_code(self, mock_client: Any) -> None:
+        from layerlens.instrument.adapters.protocols.ap2 import AP2Guardrails
+
+        events = self._drive_blocked(
+            mock_client,
+            _NO_CONTENT,
+            AP2Guardrails(max_transaction=10.0),
+            mandate_id="m1",
+            amount=SECRET_AMOUNT,
+            merchant="ok",
+        )
+        text = _all_payload_text(events)
+        assert str(SECRET_AMOUNT) not in text, "blocked-payment reason leaked amount under capture_content=False (L1)"
+        blocked = [e for e in events if e["payload"].get("status") == "blocked"]
+        assert blocked, "blocked event suppressed entirely — over-stripped"
+        assert blocked[0]["payload"].get("reason_code") == "MAX_TRANSACTION_EXCEEDED", (
+            "reason_code (why blocked) over-stripped — observability blinded"
+        )
+
+    def test_blocked_off_whitelist_no_content_strips_merchant_keeps_reason_code(self, mock_client: Any) -> None:
+        from layerlens.instrument.adapters.protocols.ap2 import AP2Guardrails
+
+        events = self._drive_blocked(
+            mock_client,
+            _NO_CONTENT,
+            AP2Guardrails(merchant_whitelist=["ALLOWED-MERCHANT"]),
+            mandate_id="m1",
+            amount=5,
+            merchant=SECRET_MERCHANT,
+        )
+        text = _all_payload_text(events)
+        assert SECRET_MERCHANT not in text, "blocked-payment reason leaked merchant under capture_content=False (L1)"
+        blocked = [e for e in events if e["payload"].get("status") == "blocked"]
+        assert blocked and blocked[0]["payload"].get("reason_code") == "MERCHANT_NOT_WHITELISTED", (
+            "reason_code (why blocked) over-stripped — observability blinded"
+        )
+
 
 # ---------------------------------------------------------------------------
 # UCP — checkout amount + catalog query
@@ -276,6 +390,16 @@ class TestUCPRedaction:
 # ---------------------------------------------------------------------------
 
 
+# A2A delegation: who delegates WHICH skill to WHOM is the core delegation
+# signal (business-sensitive). The SENTINELs go on ``agent_id``/``skill`` (the
+# fields the adapter actually emits as a2a.delegation target_agent/skill) — NOT
+# on ``message``, which _summarize drops BEFORE redaction runs (the old test
+# asserted ``message`` absent and so passed whether redaction worked or not —
+# vacuous; LAY-3578 / L4).
+SECRET_AGENT = "SENTINEL-billing-agent"
+SECRET_SKILL = "SENTINEL-process-refund"
+
+
 class TestA2ARedaction:
     def _drive(
         self, mock_client: Any, adapter_config: Optional[CaptureConfig], collector_config: Optional[CaptureConfig]
@@ -295,15 +419,126 @@ class TestA2ARedaction:
         adapter.connect(target=target)
 
         def go() -> None:
-            target.send_task(agent_id="a1", skill="answer", message=SECRET_TEXT)
+            target.send_task(agent_id=SECRET_AGENT, skill=SECRET_SKILL, message=SECRET_TEXT)
 
         return _run_collected(mock_client, go, collector_config)
 
-    def test_adapter_side_no_content_strips_request_summary(self, mock_client: Any) -> None:
+    def test_content_present_by_default(self, mock_client: Any) -> None:
+        # Sanity: the delegation edge IS captured under the default config, so
+        # the redaction assertions below are meaningful (not vacuous).
+        events = self._drive(mock_client, None, None)
+        delegations = [e for e in events if e["event_type"] == "a2a.delegation"]
+        assert delegations, "no a2a.delegation event emitted — test would be vacuous"
+        text = _all_payload_text(delegations)
+        assert SECRET_AGENT in text and SECRET_SKILL in text
+
+    def test_adapter_side_no_content_strips_delegation_target_and_skill(self, mock_client: Any) -> None:
         events = self._drive(mock_client, _NO_CONTENT, None)
         text = _all_payload_text(events)
-        assert SECRET_TEXT not in text, "a2a request content leaked despite adapter capture_content=False (N7)"
+        assert SECRET_AGENT not in text, "a2a.delegation target_agent leaked despite capture_content=False (L4)"
+        assert SECRET_SKILL not in text, "a2a.delegation skill leaked despite capture_content=False (L4)"
+        # metadata (task_id) must survive so the delegation edge is still visible
+        assert any(e["payload"].get("task_id") for e in events if e["event_type"] == "a2a.delegation"), (
+            "delegation task_id over-stripped"
+        )
 
-    def test_collector_side_no_content_strips_request_summary(self, mock_client: Any) -> None:
+    def test_collector_side_no_content_strips_delegation_target_and_skill(self, mock_client: Any) -> None:
         text = _all_payload_text(self._drive(mock_client, None, _NO_CONTENT))
-        assert SECRET_TEXT not in text, "collector backstop missing for a2a request summary (N7)"
+        assert SECRET_AGENT not in text, "collector backstop missing for a2a.delegation target_agent (L4)"
+        assert SECRET_SKILL not in text, "collector backstop missing for a2a.delegation skill (L4)"
+
+
+# ---------------------------------------------------------------------------
+# AG-UI fallback + middleware — raw SSE event passthrough (#4/#5/#12)
+# ---------------------------------------------------------------------------
+
+
+class TestAGUIFallbackRedaction:
+    """Un-handled AG-UI events fall through to a raw passthrough that rides
+    agent.state.change (MESSAGES_SNAPSHOT) / tool.call (TOOL_CALL_RESULT) with
+    the entire raw event under ``payload`` (adapter) / ``data`` (middleware).
+    Under capture_content=False the raw event must not survive."""
+
+    def _drive_stream(
+        self, mock_client: Any, adapter_config: Optional[CaptureConfig], collector_config: Optional[CaptureConfig]
+    ) -> List[Dict[str, Any]]:
+        from layerlens.instrument.adapters.protocols.agui.adapter import AGUIProtocolAdapter
+
+        stream = [
+            {"type": "MESSAGES_SNAPSHOT", "messages": [{"role": "user", "content": SECRET_TEXT}]},
+            {"type": "TOOL_CALL_RESULT", "toolCallId": "tc1", "content": SECRET_QUERY},
+        ]
+        adapter = (
+            AGUIProtocolAdapter(capture_config=adapter_config) if adapter_config is not None else AGUIProtocolAdapter()
+        )
+
+        def go() -> None:
+            for _ in adapter.wrap_stream(iter(stream)):
+                pass
+
+        return _run_collected(mock_client, go, collector_config)
+
+    def test_content_present_by_default(self, mock_client: Any) -> None:
+        text = _all_payload_text(self._drive_stream(mock_client, None, None))
+        assert SECRET_TEXT in text and SECRET_QUERY in text, "raw passthrough not captured — test would be vacuous"
+
+    def test_adapter_side_no_content_strips_raw_event(self, mock_client: Any) -> None:
+        text = _all_payload_text(self._drive_stream(mock_client, _NO_CONTENT, None))
+        assert SECRET_TEXT not in text, "agui MESSAGES_SNAPSHOT raw payload leaked under capture_content=False (#5)"
+        assert SECRET_QUERY not in text, "agui TOOL_CALL_RESULT raw payload leaked under capture_content=False (#12)"
+
+    def test_collector_side_no_content_strips_raw_event(self, mock_client: Any) -> None:
+        text = _all_payload_text(self._drive_stream(mock_client, None, _NO_CONTENT))
+        assert SECRET_TEXT not in text and SECRET_QUERY not in text, (
+            "collector backstop missing for agui raw passthrough"
+        )
+
+    def test_middleware_no_content_strips_raw_data(self, mock_client: Any) -> None:
+        from layerlens.instrument.adapters.protocols.agui.adapter import AGUIProtocolAdapter
+        from layerlens.instrument.adapters.protocols.agui.middleware import _process_sse_chunk
+
+        adapter = AGUIProtocolAdapter(capture_config=_NO_CONTENT)
+        chunk = (
+            'data: {"type": "MESSAGES_SNAPSHOT", "messages": [{"role": "user", "content": "' + SECRET_TEXT + '"}]}\n'
+            'data: {"type": "TOOL_CALL_RESULT", "toolCallId": "tc1", "content": "' + SECRET_QUERY + '"}\n'
+        ).encode()
+
+        def go() -> None:
+            _process_sse_chunk(adapter, chunk)
+
+        text = _all_payload_text(_run_collected(mock_client, go, None))
+        assert SECRET_TEXT not in text, "agui middleware raw 'data' leaked under capture_content=False (#4)"
+        assert SECRET_QUERY not in text, "agui middleware raw 'data' leaked under capture_content=False (#4)"
+
+
+# ---------------------------------------------------------------------------
+# A2UI — the hash IS the privacy story; it must be keyed, not plain SHA-256 (P3)
+# ---------------------------------------------------------------------------
+
+
+class TestA2UIHashing:
+    def _emit_hash(self, mock_client: Any, adapter: Any) -> str:
+        def go() -> None:
+            adapter.record_user_action(surface_id="cart-1", action_type="add_to_cart", context={"amount": "49.99"})
+
+        events = _run_collected(mock_client, go, None)
+        actions = [e for e in events if e["event_type"] == "commerce.ui.user_action"]
+        assert actions, "no commerce.ui.user_action emitted"
+        return actions[0]["payload"]["action_context_hash"]
+
+    def test_hash_is_keyed_not_plain_sha256(self, mock_client: Any) -> None:
+        import hashlib
+
+        from layerlens.instrument.adapters.protocols.a2ui import A2UIProtocolAdapter
+
+        ctx = {"amount": "49.99"}
+        plain = "sha256:" + hashlib.sha256(str(ctx).encode()).hexdigest()
+        emitted = self._emit_hash(mock_client, A2UIProtocolAdapter())
+        assert emitted != plain, "action_context_hash is plain unsalted SHA-256 — trivially reversible (P3)"
+
+    def test_hash_is_per_instance_keyed(self, mock_client: Any) -> None:
+        from layerlens.instrument.adapters.protocols.a2ui import A2UIProtocolAdapter
+
+        h_a = self._emit_hash(mock_client, A2UIProtocolAdapter())
+        h_b = self._emit_hash(mock_client, A2UIProtocolAdapter())
+        assert h_a != h_b, "same value -> same digest across instances: not keyed, rainbow-reversible (P3)"

@@ -508,7 +508,7 @@ class CrewAIAdapter(FrameworkAdapter):
         self._fire(
             run,
             "agent.error",
-            self._payload(crew_name=crew_name, error=error),
+            self._payload(crew_name=crew_name, error=error, error_type="crew_error", status="error"),
             span_id=span_id,
             parent_span_id=None,
             span_name=crew_name,
@@ -582,7 +582,12 @@ class CrewAIAdapter(FrameworkAdapter):
         self._fire(
             run,
             "agent.error",
-            self._payload(task_name=task_name, error=str(getattr(event, "error", "unknown error"))),
+            self._payload(
+                task_name=task_name,
+                error=str(getattr(event, "error", "unknown error")),
+                error_type="task_error",
+                status="error",
+            ),
             span_id=span_id,
             parent_span_id=parent,
         )
@@ -674,7 +679,7 @@ class CrewAIAdapter(FrameworkAdapter):
         self._fire(
             run,
             "agent.error",
-            self._payload(agent_role=agent_role, error=error),
+            self._payload(agent_role=agent_role, error=error, error_type="agent_error", status="error"),
             span_id=span_id,
             parent_span_id=parent,
             span_name=f"agent:{agent_role[:60]}",
@@ -845,7 +850,7 @@ class CrewAIAdapter(FrameworkAdapter):
             return
         error = str(getattr(event, "error", "unknown error"))
         model = getattr(event, "model", None) or run.data.get("llm_in_flight_model")
-        payload = self._payload(error=error)
+        payload = self._payload(error=error, error_type="llm_error", status="error")
         if model:
             payload["model"] = model
         self._fire(run, "agent.error", payload, parent_span_id=self._leaf_parent(run))
@@ -908,7 +913,7 @@ class CrewAIAdapter(FrameworkAdapter):
         self._fire(
             run,
             "agent.error",
-            self._payload(tool_name=tool_name, error=error),
+            self._payload(tool_name=tool_name, error=error, error_type="tool_error", status="error"),
             parent_span_id=self._leaf_parent(run),
         )
 
@@ -984,6 +989,8 @@ class CrewAIAdapter(FrameworkAdapter):
         error = str(getattr(event, "error", "unknown error"))
         server_name = getattr(event, "server_name", None)
         payload = self._payload(tool_name=tool_name, error=error)
+        payload["error_type"] = "mcp_tool_error"
+        payload["status"] = "error"
         if server_name:
             payload["mcp_server"] = server_name
         self._fire(run, "agent.error", payload, parent_span_id=self._leaf_parent(run))

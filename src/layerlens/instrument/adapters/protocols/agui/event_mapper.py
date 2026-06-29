@@ -39,9 +39,13 @@ class AGUIEventType(str, Enum):
 
 
 _AGUI_EVENT_MAP: dict[str, dict[str, str]] = {
-    "RUN_STARTED": {"stratix_event": "agent.state.change", "category": "lifecycle"},
-    "RUN_FINISHED": {"stratix_event": "agent.state.change", "category": "lifecycle"},
-    "RUN_ERROR": {"stratix_event": "agent.state.change", "category": "lifecycle"},
+    # Run lifecycle + state events map to SUPPRESSIBLE L6b stream types, not the
+    # ALWAYS-ENABLED agent.state.change — so l6b_protocol_streams=False /
+    # minimal() actually suppress them, and their raw event (carried under
+    # data/payload) is stripped under capture_content=False (LAY-3578).
+    "RUN_STARTED": {"stratix_event": "protocol.stream.event", "category": "lifecycle"},
+    "RUN_FINISHED": {"stratix_event": "protocol.stream.event", "category": "lifecycle"},
+    "RUN_ERROR": {"stratix_event": "protocol.stream.event", "category": "lifecycle"},
     "TEXT_MESSAGE_START": {
         "stratix_event": "protocol.stream.event",
         "category": "text",
@@ -55,9 +59,12 @@ _AGUI_EVENT_MAP: dict[str, dict[str, str]] = {
     "TOOL_CALL_ARGS": {"stratix_event": "protocol.stream.event", "category": "tool"},
     "TOOL_CALL_END": {"stratix_event": "protocol.stream.event", "category": "tool"},
     "TOOL_CALL_RESULT": {"stratix_event": "tool.call", "category": "tool"},
-    "STATE_SNAPSHOT": {"stratix_event": "agent.state.change", "category": "state"},
-    "STATE_DELTA": {"stratix_event": "agent.state.change", "category": "state"},
-    "MESSAGES_SNAPSHOT": {"stratix_event": "agent.state.change", "category": "state"},
+    # agui.state matches the adapter's explicit STATE_* branches (reconciles the
+    # wrap_stream vs middleware dual-path) and is L6b-suppressible with content
+    # keys covering state/operations/payload/data.
+    "STATE_SNAPSHOT": {"stratix_event": "agui.state", "category": "state"},
+    "STATE_DELTA": {"stratix_event": "agui.state", "category": "state"},
+    "MESSAGES_SNAPSHOT": {"stratix_event": "agui.state", "category": "state"},
     "STEP_STARTED": {"stratix_event": "protocol.stream.event", "category": "special"},
     "STEP_FINISHED": {"stratix_event": "protocol.stream.event", "category": "special"},
     "RAW": {"stratix_event": "protocol.stream.event", "category": "special"},

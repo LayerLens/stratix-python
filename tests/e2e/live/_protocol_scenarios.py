@@ -24,7 +24,10 @@ def run_agui(flow: str) -> None:  # noqa: ARG001
         {"type": "TOOL_CALL_START", "toolCallId": "tc1", "toolCallName": "lookup"},
         {"type": "TOOL_CALL_ARGS", "toolCallId": "tc1", "delta": '{"q": "x ' + SENTINEL + '"}'},
         {"type": "TOOL_CALL_END", "toolCallId": "tc1"},
-        {"type": "STATE_SNAPSHOT", "state": {"turn": 1}},
+        {"type": "STATE_SNAPSHOT", "state": {"turn": 1, "note": SENTINEL}},
+        # un-handled events that fall through to the raw passthrough (#5/#12):
+        {"type": "MESSAGES_SNAPSHOT", "messages": [{"role": "user", "content": f"snapshot {SENTINEL}"}]},
+        {"type": "TOOL_CALL_RESULT", "toolCallId": "tc1", "content": f"result {SENTINEL}"},
     ]
     adapter = AGUIProtocolAdapter()
     for _ in adapter.wrap_stream(iter(stream)):
@@ -63,6 +66,14 @@ def run_ap2(flow: str) -> None:  # noqa: ARG001
         client.create_intent_mandate(mandate_id="m-1", amount=50, merchant=merchant)
         client.sign_payment_mandate(mandate_id="m-1", amount=50, merchant=merchant)
         client.issue_receipt(receipt_id="r-1", mandate_id="m-1", amount=50, merchant=merchant)
+        # BLOCKED path (L1): a non-whitelisted merchant -> the guardrail verdict
+        # interpolates the merchant into the free-text reason. Under the
+        # redaction variant only reason_code may reach the trace, never the
+        # merchant string.
+        try:
+            client.sign_payment_mandate(mandate_id="m-2", amount=50, merchant=f"Evil {SENTINEL}")
+        except PermissionError:
+            pass
     finally:
         uninstrument_ap2()
 
@@ -83,6 +94,9 @@ def run_ucp(flow: str) -> None:  # noqa: ARG001
         def complete_checkout(self, session_id, *, supplier_id, amount):
             return {"session_id": session_id, "status": "completed"}
 
+        def issue_refund(self, *, session_id, amount, reason):
+            return {"session_id": session_id, "status": "refunded"}
+
     client = _FakeUCPClient()
     instrument_ucp(client)
     try:
@@ -90,6 +104,8 @@ def run_ucp(flow: str) -> None:  # noqa: ARG001
         client.browse_catalog(supplier_id="acme", query=f"novel {SENTINEL}")
         client.start_checkout(supplier_id="acme", session_id="s-1")
         client.complete_checkout("s-1", supplier_id="acme", amount=29.99)
+        # refund reason is free text (commerce.refund_issued.reason) -> content.
+        client.issue_refund(session_id="s-1", amount=29.99, reason=f"defective {SENTINEL}")
     finally:
         uninstrument_ucp()
 
@@ -129,10 +145,10 @@ def run_a2a(flow: str) -> None:  # noqa: ARG001
 
     class _FakeA2AClient:
         def send_task(self, *, agent_id: str, skill: str, payload: dict) -> dict:
-            return {"status": "completed", "result": f"{agent_id}/{skill}"}
+            return {"status": "completed"}
 
         def get_agent_card(self, agent_id: str) -> dict:
-            return {"id": agent_id, "name": "researcher", "skills": ["lookup", "summarize"]}
+            return {"id": agent_id, "name": f"researcher {SENTINEL}", "skills": [f"skill {SENTINEL}"]}
 
         def register_handler(self, handler, *, skill: str) -> None:
             pass
@@ -140,7 +156,12 @@ def run_a2a(flow: str) -> None:  # noqa: ARG001
     client = _FakeA2AClient()
     instrument_a2a(client)
     try:
+        # SENTINEL rides the DELEGATION signal (target_agent/skill) and the
+        # discovered agent card name/skills — the fields that actually leak (L4).
+        # (Putting it only on `payload` would be vacuous: _summarize drops it.)
         client.get_agent_card("agent-1")
-        client.send_task(agent_id="agent-1", skill="summarize", payload={"text": f"hi {SENTINEL}"})
+        client.send_task(
+            agent_id=f"agent {SENTINEL}", skill=f"summarize {SENTINEL}", payload={"text": f"hi {SENTINEL}"}
+        )
     finally:
         uninstrument_a2a()

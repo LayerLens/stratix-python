@@ -84,6 +84,8 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
                     "tool_name": name,
                     "arguments": arguments,
                     "error": str(exc),
+                    "error_type": type(exc).__name__,
+                    "status": "error",
                     "latency_ms": (time.time() - start) * 1000,
                 },
                 parent_span_id=parent,

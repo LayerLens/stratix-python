@@ -20,7 +20,9 @@ PROTOCOLS: Tuple[FrameworkCase, ...] = (
         id="agui", import_name="layerlens", runner=ps.run_agui, supports_redaction=True, install_hint="built-in"
     ),
     FrameworkCase(
-        # a2ui only ever emits ids/counts/hashes — nothing to redact.
+        # a2ui emits only ids/counts and a KEYED HMAC of the action context
+        # (per-instance random key, never emitted) — no cleartext content to
+        # redact, and the digest is not reversible (P3 fix, LAY-3578).
         id="a2ui",
         import_name="layerlens",
         runner=ps.run_a2ui,

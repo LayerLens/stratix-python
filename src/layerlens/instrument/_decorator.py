@@ -55,7 +55,7 @@ def trace(
                 except Exception as exc:
                     collector.emit(
                         "agent.error",
-                        {"name": span_name, "error": str(exc), "status": "error"},
+                        {"name": span_name, "error": str(exc), "error_type": type(exc).__name__, "status": "error"},
                         span_id=root_span_id,
                         span_name=span_name,
                     )
@@ -101,7 +101,7 @@ def trace(
                 except Exception as exc:
                     collector.emit(
                         "agent.error",
-                        {"name": span_name, "error": str(exc), "status": "error"},
+                        {"name": span_name, "error": str(exc), "error_type": type(exc).__name__, "status": "error"},
                         span_id=root_span_id,
                         span_name=span_name,
                     )

@@ -24,6 +24,9 @@ from tests.instrument._event_schema import (
     validate_events,
 )
 
+# Run as a required CI gate via `-m invariant` (see .github/workflows/invariants.yaml).
+pytestmark = pytest.mark.invariant
+
 # src/layerlens/instrument — the adapters (and the shared emit helpers) live here.
 _INSTRUMENT_SRC = Path(__file__).resolve().parents[2] / "src" / "layerlens" / "instrument"
 # Methods that take the event_type as their FIRST POSITIONAL arg.
@@ -62,6 +65,22 @@ def _literal_emit_event_types() -> Dict[str, str]:
 
 def _event(event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"event_type": event_type, "payload": payload}
+
+
+class TestAgentErrorCategoryInvariant:
+    """LAY-3620: agent.error must carry a surviving category (error_type/
+    error_code/status) so a redacted error isn't indistinguishable from a benign
+    event. This runtime invariant runs over every uploaded event in every adapter
+    suite — the population-complete net that would have caught the error_type gap."""
+
+    def test_agent_error_without_category_is_flagged(self) -> None:
+        problems = validate_event(_event("agent.error", {"error": "boom"}))
+        assert any("no surviving category" in p for p in problems), "invariant did not fire (would be vacuous)"
+
+    @pytest.mark.parametrize("category", [{"error_type": "ValueError"}, {"error_code": "E1"}, {"status": "error"}])
+    def test_agent_error_with_category_passes(self, category: Dict[str, Any]) -> None:
+        problems = validate_event(_event("agent.error", {"error": "boom", **category}))
+        assert not any("no surviving category" in p for p in problems)
 
 
 class TestValidatorCatchesDrift:

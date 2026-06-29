@@ -14,6 +14,7 @@ from ..._events import (
 )
 from ..._context import _current_span_id, _current_collector
 from .token_usage import NormalizedTokenUsage
+from ..._secret_scrub import safe_error
 
 
 def _derive_operation(name: str) -> str:
@@ -147,7 +148,9 @@ def emit_llm_error(
     span_id = uuid.uuid4().hex[:16]
     payload: Dict[str, Any] = {
         "name": name,
-        "error": str(error),
+        # Provider auth/validation exceptions routinely echo the API key /
+        # bearer token; scrub before it enters the (always-uploaded) payload.
+        "error": safe_error(error),
         "error_type": type(error).__name__,
         "latency_ms": latency_ms,
     }

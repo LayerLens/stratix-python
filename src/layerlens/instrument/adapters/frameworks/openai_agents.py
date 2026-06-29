@@ -216,6 +216,7 @@ class OpenAIAgentsAdapter(*_Bases):
             out_payload["duration_ms"] = duration_ms
         if span.error:
             out_payload["error"] = safe_serialize(span.error)
+            out_payload["error_type"] = "span_error"
 
         self._emit(
             event_type,
@@ -248,6 +249,8 @@ class OpenAIAgentsAdapter(*_Bases):
 
         if span.error:
             payload["error"] = safe_serialize(span.error)
+            payload["error_type"] = "span_error"
+            payload["status"] = "error"
             self._emit("agent.error", payload, span_id=span_id, parent_span_id=parent_id)
         else:
             self._emit("model.invoke", payload, span_id=span_id, parent_span_id=parent_id)
@@ -304,7 +307,9 @@ class OpenAIAgentsAdapter(*_Bases):
         # Emit tool.result or agent.error
         duration_ms = _compute_duration_ms(span)
         if span.error:
-            err_payload = self._payload(tool_name=tool_name, error=safe_serialize(span.error))
+            err_payload = self._payload(
+                tool_name=tool_name, error=safe_serialize(span.error), error_type="span_error", status="error"
+            )
             if duration_ms is not None:
                 err_payload["latency_ms"] = duration_ms
             self._emit("agent.error", err_payload, span_id=span_id, parent_span_id=parent_id)
@@ -375,6 +380,8 @@ class OpenAIAgentsAdapter(*_Bases):
 
         if span.error:
             payload["error"] = safe_serialize(span.error)
+            payload["error_type"] = "span_error"
+            payload["status"] = "error"
             self._emit("agent.error", payload, span_id=span_id, parent_span_id=parent_id)
         else:
             self._emit("model.invoke", payload, span_id=span_id, parent_span_id=parent_id)

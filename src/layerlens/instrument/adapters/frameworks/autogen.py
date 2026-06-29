@@ -282,6 +282,8 @@ class AutoGenAdapter(FrameworkAdapter):
         kind = _get_field(event, "kind")
 
         payload = self._payload(dropped=True)
+        payload["error_type"] = "message_dropped"
+        payload["status"] = "error"
         if sender is not None:
             payload["sender"] = str(sender)
         if receiver is not None:

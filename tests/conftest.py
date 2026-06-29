@@ -21,6 +21,17 @@ def _upload_sync_mode():
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "live: run against the real LayerLens API")
+    config.addinivalue_line(
+        "markers",
+        "privacy_evidence: proves no PII/secrets/payment/delegation content leaves the "
+        "SDK under capture_content=False (doubles as SOC2/GDPR evidence)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "invariant: a structural/runtime contract guard (keys-must-match, layer "
+        "suppression, no-content sweep, secret scrub, cost pricing). Run as a "
+        "required CI gate via `-m invariant` so the build fails if an invariant breaks.",
+    )
 
 
 @pytest.fixture

@@ -25,6 +25,7 @@ from ..._events import AGENT_ERROR, MODEL_INVOKE
 from ..._context import _current_span_id, _current_collector
 from .token_usage import NormalizedTokenUsage
 from ._emit_helpers import _emit_cost  # type: ignore[attr-defined]
+from ..._secret_scrub import safe_error
 
 log = logging.getLogger(__name__)
 
@@ -474,7 +475,13 @@ def _emit_error(event: str, exc: Exception, latency_ms: float) -> None:
         return
     collector.emit(
         AGENT_ERROR,
-        {"name": event, "error": str(exc), "latency_ms": latency_ms},
+        {
+            "name": event,
+            "error": safe_error(exc),
+            "error_type": type(exc).__name__,
+            "status": "error",
+            "latency_ms": latency_ms,
+        },
         span_id=uuid.uuid4().hex[:16],
         parent_span_id=_current_span_id.get(),
     )

@@ -11,9 +11,11 @@ cleartext commerce interactions never land in telemetry.
 
 from __future__ import annotations
 
+import hmac
 import uuid
 import hashlib
 import logging
+import secrets
 from typing import Any, Dict
 
 from ..._events import COMMERCE_UI_USER_ACTION, COMMERCE_UI_SURFACE_CREATED
@@ -22,13 +24,22 @@ from ._base_protocol import BaseProtocolAdapter
 log = logging.getLogger(__name__)
 
 
-def _sha(value: Any) -> str:
-    return "sha256:" + hashlib.sha256(str(value).encode()).hexdigest()
-
-
 class A2UIProtocolAdapter(BaseProtocolAdapter):
     PROTOCOL = "a2ui"
     PROTOCOL_VERSION = "0.1.0"
+
+    def __init__(self, *, capture_config: Any = None) -> None:
+        super().__init__(capture_config=capture_config)
+        # Per-instance random key turns the privacy hash into a keyed HMAC.
+        # Plain unsalted SHA-256 of a LOW-ENTROPY commerce value (an amount like
+        # "49.99", a short SKU/order id, a known merchant, a small action enum)
+        # is trivially reversible by brute force / rainbow table — so the old
+        # ``_sha`` was false privacy. HMAC-SHA256 with a secret per-instance key
+        # is one-way without the key, which is never emitted (P3 / LAY-3578).
+        self._hash_key = secrets.token_bytes(32)
+
+    def _hash(self, value: Any) -> str:
+        return "sha256:" + hmac.new(self._hash_key, str(value).encode(), hashlib.sha256).hexdigest()
 
     def connect(self, target: Any = None, **kwargs: Any) -> Any:  # noqa: ARG002
         self._client = target
@@ -49,7 +60,7 @@ class A2UIProtocolAdapter(BaseProtocolAdapter):
             surface_id = kwargs.get("surface_id") or (args[0] if args else uuid.uuid4().hex[:16])
             payload: Dict[str, Any] = {"surface_id": surface_id}
             if hash_payload:
-                payload["action_context_hash"] = _sha(kwargs.get("context") or args[1:] or "")
+                payload["action_context_hash"] = self._hash(kwargs.get("context") or args[1:] or "")
                 payload["action_type"] = kwargs.get("action_type")
             else:
                 payload["surface_type"] = kwargs.get("surface_type") or kwargs.get("type")
@@ -87,7 +98,7 @@ class A2UIProtocolAdapter(BaseProtocolAdapter):
             {
                 "surface_id": surface_id,
                 "action_type": action_type,
-                "action_context_hash": _sha(context),
+                "action_context_hash": self._hash(context),
             },
         )
 

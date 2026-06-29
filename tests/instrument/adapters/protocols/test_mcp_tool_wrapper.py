@@ -102,3 +102,81 @@ class TestAsyncWrapper:
         once = wrap_mcp_tool_call_async(coro, adapter)
         twice = wrap_mcp_tool_call_async(once, adapter)
         assert once is twice
+
+
+# ---------------------------------------------------------------------------
+# Proven-to-bite redaction (the existing tests use a MagicMock adapter, so they
+# never exercise the collector backstop — nothing proved wrap_mcp_tool_call's
+# args/result/error are actually stripped under capture_content=False).
+# ---------------------------------------------------------------------------
+
+
+class TestWrapMcpRealRedaction:
+    SECRET_ARG = "SENTINEL-private-query"
+    SECRET_RES = "SENTINEL-secret-result"
+    SECRET_ERR = "SENTINEL-boom-with-args"
+
+    def _run(self, fn, *, capture_content):
+        from layerlens.instrument._context import _current_collector
+        from layerlens.instrument._collector import TraceCollector
+        from layerlens.instrument._capture_config import CaptureConfig
+        from layerlens.instrument.adapters.protocols.mcp.adapter import MCPProtocolAdapter
+
+        adapter = MCPProtocolAdapter(capture_config=CaptureConfig(capture_content=capture_content))
+        collector = TraceCollector(object(), CaptureConfig(capture_content=capture_content))
+        token = _current_collector.set(collector)
+        try:
+            fn(adapter)
+        except RuntimeError:
+            pass
+        finally:
+            _current_collector.reset(token)
+        return [e for e in collector.events if e["event_type"] == MCP_TOOL_CALL]
+
+    def test_arguments_and_result_stripped_under_no_content(self):
+        def go(adapter):
+            wrap_mcp_tool_call(lambda **_k: {"content": self.SECRET_RES}, adapter)(
+                name="search", arguments={"q": self.SECRET_ARG}
+            )
+
+        calls = self._run(go, capture_content=False)
+        assert calls, "no mcp.tool.call emitted"
+        p = calls[0]["payload"]
+        assert "arguments" not in p and "result" not in p, "args/result not stripped (real backstop)"
+        assert p.get("tool_name") == "search" and "latency_ms" in p, "metadata over-stripped"
+        blob = repr(p)
+        assert self.SECRET_ARG not in blob and self.SECRET_RES not in blob
+
+    def test_error_string_stripped_under_no_content(self):
+        def go(adapter):
+            def broken(**_k):
+                raise RuntimeError(self.SECRET_ERR)
+
+            wrap_mcp_tool_call(broken, adapter)(name="charge", arguments={"q": self.SECRET_ARG})
+
+        calls = self._run(go, capture_content=False)
+        assert calls and "error" not in calls[0]["payload"], "error str(exc) not stripped (real backstop)"
+        assert self.SECRET_ERR not in repr(calls[0]["payload"])
+
+    def test_content_kept_when_capture_content_true(self):
+        # over-strip guard: default config keeps the content
+        def go(adapter):
+            wrap_mcp_tool_call(lambda **_k: {"content": self.SECRET_RES}, adapter)(
+                name="s", arguments={"q": self.SECRET_ARG}
+            )
+
+        calls = self._run(go, capture_content=True)
+        assert calls[0]["payload"]["arguments"] == {"q": self.SECRET_ARG}
+
+    def test_async_path_stripped(self):
+        import asyncio
+
+        async def coro(**_k):
+            return {"content": self.SECRET_RES}
+
+        def go(adapter):
+            asyncio.run(wrap_mcp_tool_call_async(coro, adapter)(name="s", arguments={"q": self.SECRET_ARG}))
+
+        calls = self._run(go, capture_content=False)
+        assert calls and "arguments" not in calls[0]["payload"]
+        assert self.SECRET_ARG not in repr(calls[0]["payload"])
