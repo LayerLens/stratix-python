@@ -7,6 +7,8 @@ from layerlens.attestation import (
     verify_trial,
     detect_tampering,
 )
+from layerlens.attestation._hash import compute_hash
+from layerlens.attestation._envelope import AttestationEnvelope
 
 
 class TestVerifyChain:
@@ -145,3 +147,74 @@ class TestDetectTampering:
         result = detect_tampering(chain.envelopes, tampered)
         assert result.tampered
         assert 1 in result.modified_indices
+
+
+# ---------------------------------------------------------------------------
+# End-to-end tamper detection for the FULL attack surface (LAY-3572 / integrity).
+# The existing tests cover modify (detect_tampering). These add REORDER, DELETE,
+# and (the subtle one) a FULLY-RELINKED INSERT — which keeps the event chain
+# internally consistent, so detect_tampering alone returns tampered=False. The
+# finalized TRIAL ROOT (computed over the original event hashes, server-anchored
+# at ingest) is what catches it. These are the population-complete tamper
+# invariants the audit found missing.
+# ---------------------------------------------------------------------------
+
+
+class TestTamperDetectionEndToEnd:
+    def _chain(self, n=3):
+        data = [{"event": i, "name": chr(ord("a") + i)} for i in range(n)]
+        chain = HashChain()
+        for d in data:
+            chain.add_event(d)
+        return chain, data
+
+    def test_reorder_is_detected(self):
+        chain, data = self._chain(3)
+        envs = chain.envelopes
+        # swap events 1 and 2 (both envelope and data, as an attacker would)
+        envs[1], envs[2] = envs[2], envs[1]
+        data[1], data[2] = data[2], data[1]
+        result = detect_tampering(envs, data)
+        assert result.tampered and result.chain_broken, "event reorder not detected"
+
+    def test_delete_of_event_pair_is_detected(self):
+        chain, data = self._chain(3)
+        envs = chain.envelopes
+        # drop the middle (event, envelope) pair — counts still match, but the
+        # surviving link no longer chains.
+        del envs[1]
+        del data[1]
+        result = detect_tampering(envs, data)
+        assert result.tampered and result.chain_broken, "event deletion not detected"
+
+    def test_fully_relinked_insert_is_caught_by_trial_root(self):
+        chain, data = self._chain(3)
+        trial = chain.finalize()  # server-anchored root over the ORIGINAL 3 hashes
+        envs = chain.envelopes
+        # Forge an event between index 0 and 1, recomputing its hash AND relinking
+        # the following envelope so the CHAIN stays internally consistent.
+        forged_data = {"event": 99, "name": "FORGED"}
+        forged_hash = compute_hash({**forged_data, "_previous_hash": envs[0].hash})
+        forged_env = AttestationEnvelope(hash=forged_hash, scope=HashScope.EVENT, previous_hash=envs[0].hash)
+        envs[1].previous_hash = forged_hash  # relink the real event 1 onto the forgery
+        tampered_envs = [envs[0], forged_env, envs[1], envs[2]]
+
+        # The chain itself now verifies clean — proving detect_tampering/chain
+        # checks are NOT sufficient against a relinked insert:
+        assert verify_chain(tampered_envs).valid, "precondition: relinked chain should look continuous"
+
+        # ...but the finalized trial root (over the original event-hash set) does
+        # not match the tampered event set -> the insert IS caught.
+        result = verify_trial(tampered_envs, trial)
+        assert not result.valid, "relinked insert slipped past the trial-root check"
+        assert not result.trial_hash_valid, "trial root failed to detect the inserted event"
+
+    def test_verify_trial_reports_broken_event_chain(self):
+        chain, _ = self._chain(3)
+        envs = chain.envelopes
+        trial = chain.finalize()
+        envs[1].previous_hash = "sha256:" + "0" * 64  # break the link
+        result = verify_trial(envs, trial)
+        assert not result.valid
+        assert not result.chain_valid
+        assert any("Chain integrity failed" in e for e in result.errors)

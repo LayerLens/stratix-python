@@ -24,6 +24,7 @@ pydantic_ai = pytest.importorskip("pydantic_ai")
 from pydantic_ai import Agent  # noqa: E402
 from pydantic_ai.models.test import TestModel  # noqa: E402
 
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.pydantic_ai import (
     PydanticAIAdapter,
 )  # noqa: E402
@@ -71,7 +72,7 @@ class TestConcurrentRunIsolation:
             return f"72F in {city}"
 
         agent = _make_agent(output_text="done", tools=[get_weather])
-        adapter = PydanticAIAdapter(mock_client)
+        adapter = PydanticAIAdapter(mock_client, CaptureConfig(capture_content=True))
         adapter.connect(target=agent)
 
         prompts = [f"question {i}" for i in range(6)]
@@ -120,7 +121,7 @@ class TestConcurrentRunIsolation:
         traces = _collect_traces(mock_client)
 
         agent = _make_agent(output_text="ok")
-        adapter = PydanticAIAdapter(mock_client)
+        adapter = PydanticAIAdapter(mock_client, CaptureConfig(capture_content=True))
         adapter.connect(target=agent)
 
         prompts = [f"thread question {i}" for i in range(4)]

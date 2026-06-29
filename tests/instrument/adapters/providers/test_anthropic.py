@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.anthropic import (
     AnthropicProvider,
     instrument_anthropic,
@@ -25,7 +26,7 @@ class TestEmitsEvents:
         provider = AnthropicProvider()
         provider.connect(anthropic_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             r = anthropic_client.messages.create(
                 model="claude-3-opus-20240229",
@@ -59,7 +60,7 @@ class TestEmitsEvents:
         provider = AnthropicProvider()
         provider.connect(anthropic_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             try:
                 anthropic_client.messages.create(model="claude-3-opus-20240229", max_tokens=1024, messages=[])

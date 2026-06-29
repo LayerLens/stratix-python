@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from typing import Any, Optional
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.ollama import OllamaProvider
 from layerlens.instrument.adapters.providers.openai import OpenAIProvider
 from layerlens.instrument.adapters.providers.anthropic import AnthropicProvider
@@ -165,7 +166,7 @@ class TestAsyncOpenAICreate:
         client = _async_openai_client(make_openai_response(), delay=0.02)
         OpenAIProvider().connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         async def my_agent() -> str:
             r = await client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
             return r.choices[0].message.content
@@ -195,7 +196,7 @@ class TestAsyncOpenAICreate:
         client = _async_openai_client(error=RuntimeError("API error"))
         OpenAIProvider().connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         async def my_agent() -> str:
             try:
                 await client.chat.completions.create(model="gpt-4", messages=[])

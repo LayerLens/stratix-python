@@ -43,35 +43,74 @@ def run_a2ui(flow: str) -> None:  # noqa: ARG001
 
 
 def run_ap2(flow: str) -> None:  # noqa: ARG001
-    from layerlens.instrument.adapters.protocols.ap2 import (
-        AP2Guardrails,
-        instrument_ap2,
-        uninstrument_ap2,
-    )
+    # Real AP2 v0.2 mandate chain (LAY-3625). Built from the pinned ``ap2`` SDK's
+    # own pydantic models so the live workload matches the real wire shape; lazy
+    # import + graceful no-op if ap2 is not installed in the runner env.
+    try:
+        from ap2.models.mandate import CartMandate, CartContents, IntentMandate, PaymentMandate, PaymentMandateContents
+        from ap2.models.payment_request import (
+            PaymentItem,
+            PaymentRequest,
+            PaymentResponse,
+            PaymentMethodData,
+            PaymentDetailsInit,
+            PaymentCurrencyAmount,
+        )
+    except ImportError:
+        return
 
-    class _FakeAP2Client:
-        def create_intent_mandate(self, *, mandate_id, amount, merchant, expires_at=None):
-            return {"mandate_id": mandate_id}
-
-        def sign_payment_mandate(self, *, mandate_id, amount, merchant):
-            return {"mandate_id": mandate_id, "signature": "sig-xyz"}
-
-        def issue_receipt(self, *, receipt_id, mandate_id, amount, merchant):
-            return {"receipt_id": receipt_id}
+    from layerlens.instrument.adapters.protocols.ap2 import AP2Guardrails, instrument_ap2, uninstrument_ap2
 
     merchant = f"Bookstore {SENTINEL}"
-    client = _FakeAP2Client()
-    instrument_ap2(client, guardrails=AP2Guardrails(max_transaction=100.0, merchant_whitelist=[merchant]))
+    far_future = "2999-01-01T00:00:00Z"
+
+    def _cart(cart_id: str, value: float, merchant_name: str) -> CartMandate:
+        item = PaymentItem(label=f"Book {SENTINEL}", amount=PaymentCurrencyAmount(currency="USD", value=value))
+        details = PaymentDetailsInit(id="pd-1", display_items=[item], total=item)
+        pr = PaymentRequest(method_data=[PaymentMethodData(supported_methods="card")], details=details)
+        contents = CartContents(
+            id=cart_id,
+            user_cart_confirmation_required=True,
+            payment_request=pr,
+            cart_expiry=far_future,
+            merchant_name=merchant_name,
+        )
+        return CartMandate(contents=contents, merchant_authorization="eyJ.merchant-cart-sig.zzz")
+
+    def _payment(pmid: str, value: float) -> PaymentMandate:
+        contents = PaymentMandateContents(
+            payment_mandate_id=pmid,
+            payment_details_id="pd-1",
+            payment_details_total=PaymentItem(label="Total", amount=PaymentCurrencyAmount(currency="USD", value=value)),
+            payment_response=PaymentResponse(request_id="pd-1", method_name="card"),
+            merchant_agent=merchant,
+        )
+        return PaymentMandate(payment_mandate_contents=contents, user_authorization="eyJ.user-vp.zzz")
+
+    # MandateClient stand-in: create() echoes a token; the adapter observes the
+    # real mandate object in payloads[0] before calling through.
+    class _FakeMandateClient:
+        def create(self, payloads, issuer_key=None, sd=None):
+            return "sd-jwt-token"
+
+    client = _FakeMandateClient()
+    adapter = instrument_ap2(client, guardrails=AP2Guardrails(max_transaction=100.0, merchant_whitelist=[merchant]))
     try:
-        client.create_intent_mandate(mandate_id="m-1", amount=50, merchant=merchant)
-        client.sign_payment_mandate(mandate_id="m-1", amount=50, merchant=merchant)
-        client.issue_receipt(receipt_id="r-1", mandate_id="m-1", amount=50, merchant=merchant)
-        # BLOCKED path (L1): a non-whitelisted merchant -> the guardrail verdict
-        # interpolates the merchant into the free-text reason. Under the
+        adapter.record_intent_mandate(
+            IntentMandate(
+                natural_language_description=f"a book {SENTINEL}", intent_expiry=far_future, merchants=[merchant]
+            ),
+            mandate_id="m-1",
+        )
+        adapter.record_cart_mandate(_cart("cart-1", 50.0, merchant), intent_mandate_id="m-1")
+        adapter.record_payment_mandate(_payment("pay-1", 50.0), cart_id="cart-1")
+        adapter.issue_receipt(cart_id="cart-1")
+        # BLOCKED path (L1): an off-whitelist merchant -> the guardrail verdict
+        # interpolates the merchant into the free-text reason/detail. Under the
         # redaction variant only reason_code may reach the trace, never the
         # merchant string.
         try:
-            client.sign_payment_mandate(mandate_id="m-2", amount=50, merchant=f"Evil {SENTINEL}")
+            adapter.record_cart_mandate(_cart("cart-2", 50.0, f"Evil {SENTINEL}"), intent_mandate_id="m-1")
         except PermissionError:
             pass
     finally:

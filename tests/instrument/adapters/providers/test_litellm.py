@@ -7,12 +7,15 @@ from typing import Any, List, Optional
 from unittest.mock import Mock
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.litellm import (
     LiteLLMProvider,
     _route_provider,
     instrument_litellm,
     uninstrument_litellm,
 )
+from layerlens.instrument.adapters.providers.pricing import PRICING, calculate_cost
+from layerlens.instrument.adapters.providers.token_usage import NormalizedTokenUsage
 
 from .conftest import (
     make_openai_response,
@@ -20,6 +23,22 @@ from .conftest import (
     make_openai_response_empty_choices,
 )
 from ...conftest import find_event, find_events
+
+
+def _expected_cost(model: str, usage: dict) -> float:
+    """Recompute the expected cost_usd from the SAME usage the event carries, so
+    the assertion bites on a dropped cost_usd OR a changed pricing formula."""
+    return calculate_cost(
+        model,
+        NormalizedTokenUsage(
+            prompt_tokens=usage.get("prompt_tokens", 0) or 0,
+            completion_tokens=usage.get("completion_tokens", 0) or 0,
+            total_tokens=usage.get("total_tokens", 0) or 0,
+            cached_tokens=usage.get("cached_tokens"),
+        ),
+        PRICING,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -94,7 +113,7 @@ class TestEmitsEvents:
     def test_model_invoke_and_cost_record(self, mock_client, capture_trace):
         instrument_litellm()
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             import litellm
 
@@ -111,17 +130,26 @@ class TestEmitsEvents:
         assert model_invoke["payload"]["usage"]["total_tokens"] == 15
         assert "latency_ms" in model_invoke["payload"]
 
-        cost = find_event(events, "cost.record")
+        # Exactly ONE cost.record per priced provider call (no double-count
+        # across the model.invoke/_emit_cost fork) — LAY-3572 / B2.
+        costs = find_events(events, "cost.record")
+        assert len(costs) == 1, f"expected exactly one cost.record, got {len(costs)}"
+        cost = costs[0]
         # LAY-3455: the cost event is attributed to the underlying routed
         # provider (gpt-4 -> openai), not the "litellm" router itself.
         assert cost["payload"]["provider"] == "openai"
         assert cost["payload"]["total_tokens"] == 15
+        # The cost_usd VALUE must be present and correct, not just the tokens
+        # (LAY-3572 / B1 / W1 — the old test never asserted the value).
+        expected = _expected_cost("gpt-4", model_invoke["payload"]["usage"])
+        assert expected is not None and expected > 0, "gpt-4 must price to a positive cost"
+        assert cost["payload"]["cost_usd"] == expected, "cost_usd missing or miscomputed on the provider cost.record"
 
     def test_error_emits_agent_error(self, mock_client, capture_trace):
         self.mock_litellm.completion = Mock(side_effect=RuntimeError("rate limited"))
         instrument_litellm()
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             import litellm
 
@@ -163,7 +191,7 @@ class TestStreaming:
         self.mock_litellm.completion = Mock(side_effect=lambda **kw: fake_stream(**kw))
         instrument_litellm()
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             import litellm
 
@@ -179,8 +207,50 @@ class TestStreaming:
         assert model_invoke["payload"].get("output_message", {}).get("content") == "hi there", (
             "streamed content chunks not concatenated"
         )
-        cost = find_event(events, "cost.record")
+        costs = find_events(events, "cost.record")
+        assert len(costs) == 1, f"streaming call must emit exactly one cost.record, got {len(costs)}"
+        cost = costs[0]
         assert cost["payload"]["total_tokens"] == 8
+        # cost_usd must be priced from the AGGREGATED streamed usage (W2).
+        expected = _expected_cost("gpt-4o", model_invoke["payload"]["usage"])
+        assert expected is not None and expected > 0
+        assert cost["payload"]["cost_usd"] == expected, "streaming cost_usd missing or miscomputed"
+
+    def test_stream_emits_single_model_invoke_and_cost_record(self, mock_client, capture_trace):
+        """Before LAY-3621 LiteLLMProvider had no aggregate_stream override, so
+        the base returned None and the streamed call produced ZERO model.invoke
+        / cost.record events. This test bites: revert aggregate_stream and the
+        ``find_event`` calls below raise (no events emitted)."""
+        usage = SimpleNamespace(prompt_tokens=7, completion_tokens=4, total_tokens=11)
+        chunks = [
+            _openai_chunk(role="assistant", content="Hel", model="gpt-4", response_id="chatcmpl-s1"),
+            _openai_chunk(content="lo"),
+            _openai_chunk(content="!", usage=usage, finish_reason="stop"),
+        ]
+        self.mock_litellm = _install_streaming_litellm(chunks)
+        instrument_litellm()
+
+        @trace(mock_client, capture_config=CaptureConfig.full())
+        def my_agent():
+            import litellm
+
+            for _ in litellm.completion(model="gpt-4", messages=[{"role": "user", "content": "Hi"}], stream=True):
+                pass
+            return "done"
+
+        my_agent()
+        events = capture_trace["events"]
+
+        invokes = find_events(events, "model.invoke")
+        assert len(invokes) == 1, f"expected exactly one model.invoke, got {len(invokes)}"
+        payload = invokes[0]["payload"]
+        assert payload["name"] == "litellm.completion"
+        assert payload["output_message"]["content"] == "Hello!"
+        assert "ttft_ms" in payload  # streaming path was taken
+
+        costs = find_events(events, "cost.record")
+        assert len(costs) == 1, f"expected exactly one cost.record, got {len(costs)}"
+        assert costs[0]["payload"]["total_tokens"] == 11  # non-None tokens aggregated from stream
 
 
 # ---------------------------------------------------------------------------
@@ -390,52 +460,6 @@ class TestExtractors:
         r = make_openai_response_no_usage()
         meta = LiteLLMProvider.extract_meta(r)
         assert "usage" not in meta
-
-
-# ---------------------------------------------------------------------------
-# LAY-3621a: streaming litellm.completion must NOT drop telemetry
-# ---------------------------------------------------------------------------
-
-
-class TestStreaming:
-    def teardown_method(self):
-        _remove_mock_litellm()
-
-    def test_stream_emits_single_model_invoke_and_cost_record(self, mock_client, capture_trace):
-        """Before LAY-3621 LiteLLMProvider had no aggregate_stream override, so
-        the base returned None and the streamed call produced ZERO model.invoke
-        / cost.record events. This test bites: revert aggregate_stream and the
-        ``find_event`` calls below raise (no events emitted)."""
-        usage = SimpleNamespace(prompt_tokens=7, completion_tokens=4, total_tokens=11)
-        chunks = [
-            _openai_chunk(role="assistant", content="Hel", model="gpt-4", response_id="chatcmpl-s1"),
-            _openai_chunk(content="lo"),
-            _openai_chunk(content="!", usage=usage, finish_reason="stop"),
-        ]
-        self.mock_litellm = _install_streaming_litellm(chunks)
-        instrument_litellm()
-
-        @trace(mock_client)
-        def my_agent():
-            import litellm
-
-            for _ in litellm.completion(model="gpt-4", messages=[{"role": "user", "content": "Hi"}], stream=True):
-                pass
-            return "done"
-
-        my_agent()
-        events = capture_trace["events"]
-
-        invokes = find_events(events, "model.invoke")
-        assert len(invokes) == 1, f"expected exactly one model.invoke, got {len(invokes)}"
-        payload = invokes[0]["payload"]
-        assert payload["name"] == "litellm.completion"
-        assert payload["output_message"]["content"] == "Hello!"
-        assert "ttft_ms" in payload  # streaming path was taken
-
-        costs = find_events(events, "cost.record")
-        assert len(costs) == 1, f"expected exactly one cost.record, got {len(costs)}"
-        assert costs[0]["payload"]["total_tokens"] == 11  # non-None tokens aggregated from stream
 
 
 # ---------------------------------------------------------------------------

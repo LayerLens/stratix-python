@@ -4,7 +4,7 @@ import time
 import uuid
 import logging
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Callable, Optional
 
 from layerlens.attestation import HashChain
 
@@ -13,6 +13,60 @@ from ._secret_scrub import scrub_payload
 from ._capture_config import CaptureConfig
 
 log: logging.Logger = logging.getLogger(__name__)
+
+# Attestation fail-CLOSED quarantine sink (A9 / R8 / LAY-3628). A trace whose
+# hash chain can't be built (or was terminate()-d by a safety-stop) must NOT be
+# uploaded as if attested. flush() routes it here instead of enqueue_upload.
+# Default None => the trace is dropped from the normal upload path and logged at
+# ERROR (never silently presented as attested). An integrator can set a sink
+# (set_quarantine_sink) to persist quarantined payloads to a separate
+# inspection/quarantine destination — quarantine preserves the events, it is not
+# a silent drop.
+_quarantine_sink: Optional[Callable[[Dict[str, Any]], None]] = None
+
+
+def set_quarantine_sink(sink: Optional[Callable[[Dict[str, Any]], None]]) -> None:
+    """Route quarantined (unattested) trace payloads to *sink* instead of dropping."""
+    global _quarantine_sink
+    _quarantine_sink = sink
+
+
+# Collector-seam trace observer (A4 / R5 / LAY-3627). flush() calls this with the
+# FINAL trace payload at the REAL upload boundary, BEFORE enqueue_upload — the one
+# synchronous point every uploaded trace passes, independent of the load-bearing
+# _sync_mode and of whether a suite uses the capture_trace helper. Default None
+# (zero prod overhead). The test harness installs an observer that runs the
+# schema-lock + secret-scan over the real uploaded events, so EVERY flushing suite
+# is validated population-completely (not just the capture-helper suites).
+_trace_observer: Optional[Callable[[Dict[str, Any]], None]] = None
+
+
+def set_trace_observer(observer: Optional[Callable[[Dict[str, Any]], None]]) -> None:
+    """Install a test-only observer of the final uploaded trace payload (A4 seam)."""
+    global _trace_observer
+    _trace_observer = observer
+
+
+def _is_attested(payload: Dict[str, Any]) -> bool:
+    """True iff the trace carries a verifiable attestation (a root_hash and no
+    build error). The fail-closed gate for upload."""
+    attestation = payload.get("attestation") or {}
+    return "attestation_error" not in attestation and attestation.get("root_hash") is not None
+
+
+def _quarantine(payload: Dict[str, Any]) -> None:
+    """Fail closed: log + route to the quarantine sink; never upload as attested."""
+    attestation = payload.get("attestation") or {}
+    log.error(
+        "layerlens: trace %s quarantined — unattested (%s); NOT uploaded",
+        payload.get("trace_id"),
+        attestation.get("attestation_error") or attestation.get("terminated_reason") or "no root_hash",
+    )
+    if _quarantine_sink is not None:
+        try:
+            _quarantine_sink(payload)
+        except Exception:  # a broken sink must not crash the emit thread
+            log.warning("layerlens: quarantine sink raised", exc_info=True)
 
 
 class TraceCollector:
@@ -66,6 +120,22 @@ class TraceCollector:
         # API keys and are uploaded even under the default config). One place
         # covers every adapter's str(exc) site (LAY-3567 P2).
         payload = scrub_payload(payload)
+
+        # Centralized price-on-emit chokepoint (A1 / A11 / LAY-3626): the single
+        # place every cost.record passes. FILL-WHEN-ABSENT — if a priced model's
+        # record arrives without a cost_usd (an emit path forgot the hook), price
+        # it here from its own payload (model + usage + service_tier + provider),
+        # so no path can ship a tokens-only record. Adapter-computed costs
+        # (langfuse vendor cost, bedrock_agents, the _fire helpers) are PRESERVED
+        # — we only fill, never clobber. Tier (A2) / cache-write (A3) pricing
+        # flows through the shared calculate_cost both here and at the sites.
+        # Lazy import avoids an adapters-package init cycle.
+        if event_type == "cost.record" and payload.get("cost_usd") is None:
+            from .adapters.providers.pricing import price_cost_record
+
+            priced = price_cost_record(payload)
+            if priced is not None:
+                payload = {**payload, "cost_usd": priced}
 
         with self._lock:
             if self._sealed:
@@ -156,11 +226,27 @@ class TraceCollector:
             trace_payload["max_events"] = self.MAX_EVENTS
         return trace_payload
 
+    def terminate(self, reason: str) -> None:
+        """Permanently mark this trace non-attestable (a safety-stop / policy
+        halt). The next flush() fails CLOSED: the chain can no longer be
+        finalized, so the trace is quarantined rather than uploaded (A9)."""
+        with self._lock:
+            self._chain.terminate(reason)
+
     def flush(self) -> None:
-        """Seal the collector, build attestation, and enqueue the trace for background upload."""
+        """Seal the collector and either UPLOAD a well-attested trace or
+        QUARANTINE one whose attestation could not be built (fail-closed, A9)."""
         with self._lock:
             if self._sealed or not self._events:
                 return
             self._sealed = True
             payload = self._build_trace_payload()
-        enqueue_upload(self._client, payload)
+        # Collector seam (A4): observe the FINAL payload at the real upload
+        # boundary, before enqueue/quarantine routing, so the test nets see every
+        # flushing trace regardless of the capture-helper / _sync_mode.
+        if _trace_observer is not None:
+            _trace_observer(payload)
+        if _is_attested(payload):
+            enqueue_upload(self._client, payload)
+        else:
+            _quarantine(payload)

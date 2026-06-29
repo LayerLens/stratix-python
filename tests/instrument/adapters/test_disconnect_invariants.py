@@ -243,14 +243,17 @@ CASES: List[Case] = [
         patched_paths=["dispatch_event", "emit_event", "publish"],
     ),
     Case(
+        # The real AP2 surface is ap2.sdk.mandate.MandateClient.create / .present
+        # (LAY-3625). Connect/disconnect is pure attribute-patching, independent
+        # of the ap2 lib, so SimpleNamespace stubs of those two methods exercise
+        # the leave-no-trace invariant in the base venv too.
         id="protocol-ap2",
         make_adapter=_ap2_adapter,
         make_target=lambda: SimpleNamespace(
-            create_intent_mandate=_stub("create_intent_mandate"),
-            sign_payment_mandate=_stub("sign_payment_mandate"),
-            issue_receipt=_stub("issue_receipt"),
+            create=_stub("create"),
+            present=_stub("present"),
         ),
-        patched_paths=["create_intent_mandate", "sign_payment_mandate", "issue_receipt"],
+        patched_paths=["create", "present"],
     ),
     Case(
         id="protocol-ucp",

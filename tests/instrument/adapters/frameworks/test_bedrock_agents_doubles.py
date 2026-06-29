@@ -662,7 +662,9 @@ class TestEmissionLifecycle:
         assert uploaded["events"], "draining the stream should flush the trace"
 
     def test_agent_input_and_config(self, mock_client):
-        adapter, uploaded, boto, _ = _setup(mock_client, _FakeEventStream(_full_stream()))
+        adapter, uploaded, boto, _ = _setup(
+            mock_client, _FakeEventStream(_full_stream()), config=CaptureConfig(capture_content=True)
+        )
         _drain(_invoke(boto))
         adapter.disconnect()
 
@@ -679,7 +681,7 @@ class TestEmissionLifecycle:
 
     def test_agent_output_from_accumulated_chunks(self, mock_client):
         stream = _FakeEventStream([_final_observation("Hello, world"), _chunk("Hello, "), _chunk("world")])
-        adapter, uploaded, boto, _ = _setup(mock_client, stream)
+        adapter, uploaded, boto, _ = _setup(mock_client, stream, config=CaptureConfig(capture_content=True))
         _drain(_invoke(boto))
         adapter.disconnect()
 
@@ -773,7 +775,9 @@ class TestModelInvocation:
 
 class TestActionGroup:
     def test_action_group_tool_call(self, mock_client):
-        adapter, uploaded, boto, _ = _setup(mock_client, _FakeEventStream(_full_stream()))
+        adapter, uploaded, boto, _ = _setup(
+            mock_client, _FakeEventStream(_full_stream()), config=CaptureConfig(capture_content=True)
+        )
         _drain(_invoke(boto))
         adapter.disconnect()
 
@@ -819,7 +823,7 @@ class TestCollaboratorHandoff:
 class TestFailureTrace:
     def test_failure_trace_emits_agent_error(self, mock_client):
         stream = _FakeEventStream([_model_invocation_input(), _model_invocation_output(), _failure()])
-        adapter, uploaded, boto, _ = _setup(mock_client, stream)
+        adapter, uploaded, boto, _ = _setup(mock_client, stream, config=CaptureConfig(capture_content=True))
         _drain(_invoke(boto))
         adapter.disconnect()
 
@@ -869,7 +873,7 @@ class TestGuardrail:
 
     def test_action_none_emits_no_policy_violation(self, mock_client):
         stream = _FakeEventStream([_guardrail_event("NONE"), _chunk("here you go")])
-        adapter, uploaded, boto, _ = _setup(mock_client, stream)
+        adapter, uploaded, boto, _ = _setup(mock_client, stream, config=CaptureConfig(capture_content=True))
         seen = _drain(_invoke(boto))
         adapter.disconnect()
 
@@ -1035,7 +1039,9 @@ class TestReprompt:
     @pytest.mark.parametrize("source", ["ACTION_GROUP", "KNOWLEDGE_BASE", "PARSER"])
     def test_reprompt_emits_agent_step_not_error(self, mock_client, source):
         events_in = [_reprompt_observation(source=source), _chunk("Here is the corrected answer.")]
-        adapter, uploaded, boto, _ = _setup(mock_client, _FakeEventStream(events_in))
+        adapter, uploaded, boto, _ = _setup(
+            mock_client, _FakeEventStream(events_in), config=CaptureConfig(capture_content=True)
+        )
         seen = _drain(_invoke(boto))
         adapter.disconnect()
 
@@ -1050,7 +1056,9 @@ class TestReprompt:
 
     def test_ask_user_emits_agent_step(self, mock_client):
         events_in = [_ask_user_observation()]
-        adapter, uploaded, boto, _ = _setup(mock_client, _FakeEventStream(events_in))
+        adapter, uploaded, boto, _ = _setup(
+            mock_client, _FakeEventStream(events_in), config=CaptureConfig(capture_content=True)
+        )
         seen = _drain(_invoke(boto))
         adapter.disconnect()
 
@@ -1336,7 +1344,9 @@ class TestStreamLifecycleEdges:
         # the customer and emit no LayerLens event (forward-compat / transparency).
         unknown = {"someFutureMember": {"foo": "bar"}}
         events = [unknown, _chunk("done")]
-        adapter, uploaded, boto, _ = _setup(mock_client, _FakeEventStream(events))
+        adapter, uploaded, boto, _ = _setup(
+            mock_client, _FakeEventStream(events), config=CaptureConfig(capture_content=True)
+        )
         seen = _drain(_invoke(boto))
         adapter.disconnect()
 
@@ -1413,8 +1423,10 @@ class TestConcurrency:
 
 class TestTraceContextNesting:
     def test_emits_into_shared_collector_without_early_flush(self, mock_client):
-        adapter, uploaded, boto, _ = _setup(mock_client, _FakeEventStream(_full_stream()))
-        with trace_context(mock_client):
+        adapter, uploaded, boto, _ = _setup(
+            mock_client, _FakeEventStream(_full_stream()), config=CaptureConfig(capture_content=True)
+        )
+        with trace_context(mock_client, capture_config=CaptureConfig(capture_content=True)):
             resp = _invoke(boto)
             list(resp["completion"])  # proxy emits into the shared outer collector
             # Must NOT flush — the trace_context owns the collector.
@@ -1444,7 +1456,9 @@ class TestEnableTraceGuard:
     def test_warns_and_degrades_without_enable_trace(self, mock_client, caplog):
         # Without enableTrace=True the stream carries only chunks; the adapter warns
         # once and the trace degrades to input + (text) output with no step events.
-        adapter, uploaded, boto, _ = _setup(mock_client, _FakeEventStream([_chunk("hi there")]))
+        adapter, uploaded, boto, _ = _setup(
+            mock_client, _FakeEventStream([_chunk("hi there")]), config=CaptureConfig(capture_content=True)
+        )
         with caplog.at_level(logging.WARNING, logger=_ADAPTER_LOGGER):
             resp = boto.invoke_agent(agentId=_AGENT_ID, agentAliasId=_ALIAS_ID, sessionId=_SESSION_ID, inputText="hi")
             list(resp["completion"])

@@ -54,6 +54,7 @@ boto3 = pytest.importorskip("boto3")
 from botocore.stub import ANY, Stubber  # noqa: E402
 
 from layerlens.instrument import trace  # noqa: E402
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.providers.bedrock import BedrockProvider  # noqa: E402
 
 from ...conftest import find_event, find_events  # noqa: E402
@@ -194,7 +195,7 @@ class TestInvokeModelWithResponseStream:
 
         collected: List[dict] = []
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             r = client.invoke_model_with_response_stream(modelId=_MODEL_ID, body=_anthropic_request_body())
             # Iterator passthrough: the adapter must NOT consume the stream; the
@@ -241,7 +242,7 @@ class TestInvokeModelWithResponseStream:
             http_status_code=400,
         )
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             from botocore.exceptions import ClientError
 
@@ -286,7 +287,7 @@ class TestConverseStream:
 
         collected: List[dict] = []
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             r = client.converse_stream(
                 modelId=_MODEL_ID,
@@ -332,7 +333,7 @@ class TestConverseStream:
             http_status_code=429,
         )
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             from botocore.exceptions import ClientError
 

@@ -28,6 +28,7 @@ from layerlens.instrument._capture_config import (
     _CONTENT_KEYS,
     _ALWAYS_ENABLED,
     _EVENT_TYPE_MAP,
+    known_event_types,
 )
 
 from ._event_schema import KNOWN_EVENT_TYPES
@@ -101,6 +102,31 @@ def test_every_always_enabled_type_is_schema_registered() -> None:
     assert not missing, f"_ALWAYS_ENABLED entries not in KNOWN_EVENT_TYPES: {missing}"
 
 
+def test_runtime_known_event_types_matches_schema_lock() -> None:
+    """The RUNTIME event-type registry (``known_event_types``, used by the
+    replay fail-closed gate in ``layerlens.replay.snapshot``) must equal the
+    test-side schema-lock vocabulary (``KNOWN_EVENT_TYPES``).
+
+    If they drift, replay either OVER-blocks a legitimately-registered type (a
+    real recorded trace is wrongly rejected) or UNDER-blocks a type the CI lock
+    forbids. ``src/`` cannot import the test lock, so this guard is the seam that
+    keeps the runtime registry and the CI lock in lock-step — register a new type
+    in BOTH ``_capture_config`` and ``_event_schema`` in the same PR.
+
+    BITE: drop any single type from ``_EVENT_TYPE_MAP``/``_ALWAYS_ENABLED``/
+    ``_CONTENT_KEYS`` (or from ``KNOWN_EVENT_TYPES``) and this fails.
+    """
+    runtime = known_event_types()
+    only_runtime = sorted(runtime - KNOWN_EVENT_TYPES)
+    only_lock = sorted(KNOWN_EVENT_TYPES - runtime)
+    assert runtime == KNOWN_EVENT_TYPES, (
+        "runtime known_event_types() drifted from the schema lock KNOWN_EVENT_TYPES — "
+        f"only in runtime: {only_runtime}; only in lock: {only_lock} (register new "
+        "types in BOTH src/layerlens/instrument/_capture_config.py and "
+        "tests/instrument/_event_schema.py)"
+    )
+
+
 def test_every_emitted_event_constant_is_schema_registered() -> None:
     """Every event-name constant in _events.py must be registered in the schema
     lock."""
@@ -143,7 +169,20 @@ def test_content_surface_types_have_strip_lists() -> None:
     must have a _CONTENT_KEYS strip list (or be explicitly content-free). This is
     the '13/14 protocol types fail-open' regression class — a new content type
     with NO strip list would otherwise pass every other guard here."""
-    content_layers = {"l1_agent_io", "l5a_tool_calls", "l6b_protocol_streams", "l6c_protocol_lifecycle"}
+    # ALL layers that can carry content (LAY-3572 / B19): the original guard only
+    # inspected l1/l5a/l6b/l6c, so a new content-bearing type landing on
+    # l2_agent_code / l3_model_metadata / l5b_tool_logic / l5c_tool_environment
+    # with no strip list would fail-open undetected.
+    content_layers = {
+        "l1_agent_io",
+        "l2_agent_code",
+        "l3_model_metadata",
+        "l5a_tool_calls",
+        "l5b_tool_logic",
+        "l5c_tool_environment",
+        "l6b_protocol_streams",
+        "l6c_protocol_lifecycle",
+    }
     offenders = sorted(
         et
         for et, layer in _EVENT_TYPE_MAP.items()

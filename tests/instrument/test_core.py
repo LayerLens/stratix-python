@@ -4,6 +4,7 @@ import pytest
 
 from layerlens.instrument import emit, span, trace
 from layerlens.instrument._context import _current_span_id, _current_collector
+from layerlens.instrument._capture_config import CaptureConfig
 
 from .conftest import find_event
 
@@ -29,7 +30,7 @@ class TestTraceDecorator:
         assert agent_input["payload"]["name"] == "custom_name"
 
     def test_trace_captures_input(self, mock_client, capture_trace):
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_func(query):
             return "result"
 
@@ -39,7 +40,7 @@ class TestTraceDecorator:
         assert agent_input["payload"]["input"] == "hello"
 
     def test_trace_captures_output(self, mock_client, capture_trace):
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_func():
             return {"answer": 42}
 
@@ -49,7 +50,7 @@ class TestTraceDecorator:
         assert agent_output["payload"]["output"] == {"answer": 42}
 
     def test_trace_on_error(self, mock_client, capture_trace):
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_func():
             raise ValueError("boom")
 

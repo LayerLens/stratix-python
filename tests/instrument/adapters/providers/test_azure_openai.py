@@ -21,6 +21,7 @@ import openai
 from openai import AzureOpenAI
 from openai.types.chat import ChatCompletion
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.azure_openai import (
     AzureOpenAIProvider,
     _scrubbed_endpoint,
@@ -144,7 +145,7 @@ class TestEmitsEvents:
         provider = AzureOpenAIProvider()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             r = client.chat.completions.create(
                 model="gpt-4o",  # Azure deployment name
@@ -231,7 +232,7 @@ class TestEmitsEvents:
         provider = AzureOpenAIProvider()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             return client.chat.completions.create(
                 model="gpt-4o",
@@ -273,7 +274,7 @@ class TestEmitsEvents:
         provider = AzureOpenAIProvider()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             try:
                 client.chat.completions.create(model="missing-deployment", messages=[])

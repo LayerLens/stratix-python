@@ -17,6 +17,7 @@ import httpx
 
 import openai
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.openai import OpenAIProvider
 
 from ...conftest import find_event
@@ -36,7 +37,7 @@ class TestOpenAIRecorded:
         provider = OpenAIProvider()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def agent():
             r = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -79,7 +80,7 @@ class TestOpenAIRecorded:
         provider = OpenAIProvider()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def agent():
             return client.chat.completions.create(
                 model="gpt-4o-mini",

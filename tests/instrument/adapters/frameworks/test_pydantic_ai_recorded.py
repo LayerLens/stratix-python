@@ -21,6 +21,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.frameworks.pydantic_ai import PydanticAIAdapter
 
 from .conftest import find_event, capture_framework_trace
@@ -42,7 +43,7 @@ class TestPydanticAIRecorded:
         uploaded = capture_framework_trace(mock_client)
 
         agent = _agent(fixture)
-        adapter = PydanticAIAdapter(mock_client)
+        adapter = PydanticAIAdapter(mock_client, capture_config=CaptureConfig.full())
         adapter.connect(target=agent)
         result = agent.run_sync("Reply with exactly: pong")
         adapter.disconnect()

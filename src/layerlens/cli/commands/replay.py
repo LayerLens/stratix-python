@@ -3,48 +3,23 @@
 from __future__ import annotations
 
 import json
-import importlib
 from typing import Callable, cast
 
 import click
 
 from ...replay import ReplayRequest, ReplayController
+from .._safe_loader import load_callable
 from ...models.trace import Trace
-
-_BLOCKED_MODULES = frozenset(
-    {
-        "os",
-        "sys",
-        "subprocess",
-        "shutil",
-        "builtins",
-        "importlib",
-        "runpy",
-        "ctypes",
-        "pty",
-        "pickle",
-        "marshal",
-        "socket",
-    }
-)
 
 
 def _load_callable(spec: str) -> Callable[..., Trace]:
-    """Resolve ``module.submodule:attr`` into a callable."""
-    if ":" not in spec:
-        raise click.BadParameter(f"expected 'module:attr' (got {spec!r})", param_hint="--replay-fn")
-    module_name, attr = spec.split(":", 1)
-    root = module_name.split(".", 1)[0]
-    if root in _BLOCKED_MODULES:
-        raise click.BadParameter(
-            f"refusing to load callable from stdlib module {root!r}",
-            param_hint="--replay-fn",
-        )
-    module = importlib.import_module(module_name)
-    fn = getattr(module, attr, None)
-    if fn is None or not callable(fn):
-        raise click.BadParameter(f"{spec!r} is not callable", param_hint="--replay-fn")
-    return cast(Callable[..., Trace], fn)
+    """Resolve ``module.submodule:attr`` into a callable (allowlist-guarded).
+
+    See :mod:`layerlens.cli._safe_loader`: the loader refuses any stdlib/builtin
+    root BEFORE importing, so a malicious ``--replay-fn`` (``posix:system``,
+    ``os:system``, an import-side-effect module) cannot execute.
+    """
+    return cast(Callable[..., Trace], load_callable(spec, param_hint="--replay-fn"))
 
 
 @click.group()

@@ -28,6 +28,7 @@ import httpx
 import pytest
 
 import layerlens.instrument.adapters.frameworks.agentforce as _mod
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.frameworks.agentforce import AgentforceAdapter
 
 from .conftest import find_event, find_events, capture_framework_trace
@@ -353,6 +354,7 @@ def _setup(
     monkeypatch: Any,
     api: Optional[FakeSalesforceAPI] = None,
     connect: bool = True,
+    capture_config: Optional[CaptureConfig] = None,
 ) -> tuple:
     """Patch the httpx seam, capture uploads, and (optionally) connect."""
     api = api or FakeSalesforceAPI()
@@ -366,7 +368,7 @@ def _setup(
 
     monkeypatch.setattr(_mod, "httpx", _HttpxShim)
     uploaded = capture_framework_trace(mock_client)
-    adapter = AgentforceAdapter(mock_client)
+    adapter = AgentforceAdapter(mock_client, capture_config)
     if connect:
         adapter.connect(
             credentials={
@@ -423,7 +425,7 @@ class TestConnect:
 
 class TestImportSessions:
     def test_two_sessions_normalized_to_trace_events(self, mock_client, monkeypatch):
-        adapter, api, uploaded = _setup(mock_client, monkeypatch)
+        adapter, api, uploaded = _setup(mock_client, monkeypatch, capture_config=CaptureConfig(capture_content=True))
         summary = adapter.import_sessions(limit=50)
         adapter.disconnect()
 

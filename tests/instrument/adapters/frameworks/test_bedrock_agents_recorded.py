@@ -21,6 +21,7 @@ import pytest
 
 boto3 = pytest.importorskip("boto3")
 
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.bedrock_agents import BedrockAgentsAdapter  # noqa: E402
 
 from .conftest import find_event, capture_framework_trace  # noqa: E402
@@ -49,7 +50,7 @@ def _stream_injector(stream: Any):
     return _inject
 
 
-def _setup(mock_client: Any):
+def _setup(mock_client: Any, capture_config: Any = None):
     from botocore.stub import Stubber
 
     fixture = load_recorded("bedrock_agents", "default")
@@ -57,7 +58,7 @@ def _setup(mock_client: Any):
     boto = _make_boto_client()
     boto.meta.events.register(_AFTER_HOOK, _stream_injector(fake_completion_stream(fixture)))
 
-    adapter = BedrockAgentsAdapter(mock_client)
+    adapter = BedrockAgentsAdapter(mock_client, capture_config=capture_config)
     adapter.connect(target=boto)
 
     stubber = Stubber(boto)
@@ -111,7 +112,7 @@ class TestBedrockAgentsRecorded:
         assert cost["span_id"] == mi["span_id"]
 
     def test_agent_output_from_real_chunk(self, mock_client):
-        adapter, uploaded, boto = _setup(mock_client)
+        adapter, uploaded, boto = _setup(mock_client, capture_config=CaptureConfig.full())
         _drain(_invoke(boto))
         adapter.disconnect()
 

@@ -29,6 +29,7 @@ pytest.importorskip("agno")  # skips in the base venv (not installed there)
 from agno.agent import Agent  # noqa: E402
 from agno.models.openai import OpenAIChat
 
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.frameworks.agno import AgnoAdapter
 
 from .conftest import find_event, capture_framework_trace
@@ -55,7 +56,7 @@ class TestAgnoRecorded:
         uploaded = capture_framework_trace(mock_client)
 
         agent = _agent(fixture)
-        adapter = AgnoAdapter(mock_client)
+        adapter = AgnoAdapter(mock_client, capture_config=CaptureConfig.full())
         agent = adapter.connect(target=agent)
         result = agent.run("Reply with exactly: pong")
         adapter.disconnect()

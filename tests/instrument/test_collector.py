@@ -12,6 +12,8 @@ from typing import Any
 from layerlens.instrument._collector import TraceCollector
 from layerlens.instrument._capture_config import CaptureConfig
 
+from ._event_schema import KNOWN_EVENT_TYPES
+
 
 def _emit(collector: TraceCollector, n: int = 1, prefix: str = "s") -> None:
     for i in range(n):
@@ -114,3 +116,39 @@ class TestThreadSafety:
         assert sorted(seqs) == list(range(1, n_threads * per_thread + 1))
         # Attestation chain must be intact over the concurrent emissions.
         assert capture_trace["attestation"].get("root_hash")
+
+
+class TestUploadPayloadContract:
+    """Linkage (LAY-3572 / B49): the payload flush() hands to ``client.traces.upload``
+    must satisfy the inbound contract the backend links a trace by — through the
+    REAL serialize→tempfile→read path (capture_trace). This is the fast, CI-able
+    half of linkage; the live atlas-app acceptance stays an e2e/live concern.
+    A dropped/mis-typed top-level key here is a silent linkage break."""
+
+    def test_flushed_payload_satisfies_inbound_contract(self, mock_client: Any, capture_trace: Any) -> None:
+        from numbers import Number
+
+        collector = TraceCollector(mock_client, CaptureConfig())
+        collector.emit("model.invoke", {"model": "gpt-4o", "latency_ms": 3}, span_id="s1")
+        collector.emit("cost.record", {"provider": "openai", "total_tokens": 10, "cost_usd": 0.001}, span_id="s2")
+        collector.emit("agent.error", {"error_type": "ValueError", "status": "error"}, span_id="s3")
+        collector.flush()
+
+        # top-level envelope
+        trace_id = capture_trace["trace_id"]
+        assert isinstance(trace_id, str) and trace_id, "trace_id missing/empty — backend cannot key the trace"
+        cfg = capture_trace["capture_config"]
+        assert isinstance(cfg, dict) and "capture_content" in cfg, "capture_config block missing from upload"
+        att = capture_trace["attestation"]
+        assert isinstance(att, dict) and att.get("root_hash") and "chain" in att, "attestation envelope incomplete"
+
+        # per-event contract — every event the backend ingests must self-describe
+        events = capture_trace["events"]
+        assert len(events) == 3
+        for e in events:
+            assert e["event_type"] in KNOWN_EVENT_TYPES, f"unregistered event type would not link: {e['event_type']}"
+            assert e["trace_id"] == trace_id, "event trace_id does not match the envelope — orphaned event"
+            assert isinstance(e["span_id"], str) and e["span_id"], "event missing span_id"
+            assert isinstance(e["sequence_id"], int), "event missing/!int sequence_id (ordering key)"
+            assert isinstance(e["timestamp_ns"], Number), "event missing timestamp_ns"
+            assert isinstance(e["payload"], dict), "event payload must be a dict"

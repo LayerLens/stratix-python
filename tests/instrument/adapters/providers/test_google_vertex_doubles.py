@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.google_vertex import GoogleVertexProvider
 
 from ...conftest import find_event, find_events
@@ -147,7 +148,7 @@ class TestSyncGenerateContent:
     def test_model_invoke_usage_and_cost(self, mock_client, capture_trace):
         provider, model = _connect()
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             r = model.generate_content("Summarize the Q2 report", temperature=0.1)
             return r.candidates[0].content.parts[0].text
@@ -178,7 +179,7 @@ class TestSyncGenerateContent:
     def test_error_emits_agent_error(self, mock_client, capture_trace):
         provider, model = _connect(response=RuntimeError("503 The service is currently unavailable"))
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             try:
                 model.generate_content("Hi")
@@ -231,7 +232,7 @@ class TestAsyncGenerateContent:
     def test_async_error_emits_agent_error(self, mock_client, capture_trace):
         provider, model = _connect(response=RuntimeError("DeadlineExceeded: 504"))
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             try:
                 asyncio.run(model.generate_content_async("Hi"))
@@ -266,7 +267,7 @@ class TestUsageExtraction:
         response = FakeGenerationResponse(candidates=[])
         provider, model = _connect(response=response)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             model.generate_content("Hi")
             return "done"

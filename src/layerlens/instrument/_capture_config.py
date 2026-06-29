@@ -42,6 +42,10 @@ _EVENT_TYPE_MAP: Dict[str, str] = {
     "mcp.elicitation": "l5a_tool_calls",
     "mcp.structured_output": "l5a_tool_calls",
     "mcp.async_task": "l5a_tool_calls",
+    # MCP sampling is a nested LLM call (the server samples the client's model),
+    # so it is L3 model metadata — l3-off / minimal() suppresses it like any
+    # other model.invoke. Its paired cost.record is _ALWAYS_ENABLED (cost).
+    "mcp.sampling": "l3_model_metadata",
     # L5b: Tool logic
     "tool.logic": "l5b_tool_logic",
     # L5c: Tool environment
@@ -65,6 +69,7 @@ _EVENT_TYPE_MAP: Dict[str, str] = {
     "a2a.task.completed": "l6c_protocol_lifecycle",
     "a2a.delegation": "l6c_protocol_lifecycle",
     "payment.intent_mandate": "l6c_protocol_lifecycle",
+    "payment.cart_mandate": "l6c_protocol_lifecycle",
     "payment.mandate_signed": "l6c_protocol_lifecycle",
     "payment.receipt_issued": "l6c_protocol_lifecycle",
     "commerce.supplier_discovered": "l6c_protocol_lifecycle",
@@ -128,6 +133,48 @@ _CONTENT_PARAM_KEYS = frozenset(
 # (error_type, error_code, reason_code), ids, counts, statuses, hashes,
 # latencies, topology (from_agent/to_agent), and currencies stay METADATA so
 # redaction never blinds observability.
+#
+# Commerce / payment PII + PCI field names (A15 / UCP-Q2). Shared across the
+# commerce.* content-key sets so a checkout/refund hook that carries the buyer's
+# address or card cannot leak it under capture_content=False. Names cover both
+# real specs the census pinned: Google UCP v2026-04-08 (``billing_address``,
+# ``shipping_address``, ``payment``/``payment_instrument``/``instrument``,
+# ``credential``, ``card``) and ACP/OpenAI+Stripe 2026-04-17
+# (``PaymentMethodCard.number``/``cvc``/``exp_month``/``exp_year``, ``Buyer``
+# email/phone, ``Address`` lines). ``card``/``payment``/``instrument`` strip the
+# whole nested card/instrument object (the recursive stripper removes the key
+# wherever it appears); the individual leaf names (``pan``/``number``/``cvc``…)
+# catch a card whose fields were flattened to the top level.
+_COMMERCE_PII_KEYS: FrozenSet[str] = frozenset(
+    {
+        # addresses (whole objects + flattened buyer-identity leaves)
+        "billing_address",
+        "shipping_address",
+        "address",
+        "email",
+        "phone",
+        "phone_number",
+        "first_name",
+        "last_name",
+        "full_name",
+        # card / payment instrument (whole objects)
+        "card",
+        "payment",
+        "payment_instrument",
+        "instrument",
+        "credential",
+        "payment_method",
+        # flattened card leaves (PCI: PAN + CVC + expiry)
+        "pan",
+        "number",
+        "card_number",
+        "cvc",
+        "cvv",
+        "exp_month",
+        "exp_year",
+    }
+)
+
 _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     # --- core agent / model / tool surfaces (backstop; adapters also gate) ---
     "agent.input": frozenset({"input", "messages", "content", "prompt", "system", "value"}),
@@ -171,20 +218,80 @@ _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     "protocol.stream.event": frozenset({"payload", "data"}),
     "mcp.tool.call": frozenset({"arguments", "result", "error"}),
     "mcp.async_task": frozenset({"error"}),
-    "mcp.elicitation": frozenset({"title"}),
+    # MCP elicitation (D1/D2). The user-facing prompt rides the REAL field name
+    # ``message`` ("Enter card number to confirm $499" — content, not a metadata
+    # title); ``title`` is kept for back-compat. ``content_hash`` is a hash
+    # DERIVED from the submitted form data (only present on accept) — a
+    # content-derived value, so it is stripped under no-content. The surviving
+    # fields are the consent CATEGORY (``action`` ∈ accept/decline/cancel), the
+    # ``mode`` (form/url), ids, and latency — so a refusal is auditable WITHOUT
+    # leaking what was (or would have been) submitted.
+    "mcp.elicitation": frozenset({"title", "message", "content_hash", "response_hash"}),
+    # MCP sampling (D3): the sampled completion text (``output``/``content``) and
+    # the request prompt (``messages``/``system_prompt``) are content; the
+    # surviving fields are model id, token counts, stop_reason, latency.
+    "mcp.sampling": frozenset({"messages", "system_prompt", "content", "output", "prompt"}),
     "mcp.structured_output": frozenset({"validation_errors"}),
     "mcp.tools.listed": frozenset({"tool_names"}),
-    "a2a.task.created": frozenset({"request", "skill"}),
+    "a2a.task.created": frozenset({"request", "skill", "skill_description"}),
     "a2a.task.updated": frozenset({"error", "error_message"}),
-    "a2a.delegation": frozenset({"target_agent", "skill", "from_agent", "target_url"}),
-    "a2a.agent.discovered": frozenset({"name", "skills"}),
-    "payment.intent_mandate": frozenset({"amount", "merchant"}),
-    "payment.mandate_signed": frozenset({"amount", "cumulative_spend", "reason"}),
-    "payment.receipt_issued": frozenset({"amount", "merchant"}),
+    # A2A delegation provenance (A15 / D3, user-approved 2026-06-25). The
+    # DELEGATION TOPOLOGY survives capture_content=False so cross-agent
+    # provenance is auditable under privacy-on (mirrors agent.handoff keeping
+    # from_agent/to_agent): the redaction-SURVIVING fields are the delegator
+    # id (``from_agent``), the delegatee ids (``to_agent``/``target_agent``),
+    # the ``task_id``, and the keyed-HMAC ``delegation_fp`` of (target+skill)
+    # for server-anchored verification. STRIPPED as content: the free-text
+    # ``skill_description`` (what the skill DOES), the ``target_url``, and any
+    # free-text ``context``/``skill`` blob.
+    "a2a.delegation": frozenset({"skill", "skill_description", "target_url", "context"}),
+    # Agent-card discovery/serving (D2). Free-text ``name``/``skills``/
+    # ``description`` are content; the SURVIVING provenance is the signature
+    # PRESENCE (``signature_present``/``signature_count``), the keyed-HMAC
+    # ``signature_fp`` (never the raw JWS), ``agent_id``, ``protocolVersion``,
+    # and ``authScheme``.
+    "a2a.agent.discovered": frozenset({"name", "skills", "description"}),
+    "a2a.agent.card.served": frozenset({"name", "skills", "description"}),
+    # AP2 v0.2 (LAY-3625). Financial details are CONTENT: the binding cart
+    # ``amount`` (the total value), the ``merchant``/``merchant_name`` the user
+    # buys from, the intent ``merchants`` whitelist (a list of merchant names),
+    # the user's free-text ``description`` (natural_language_description), the
+    # running ``cumulative_spend``, and the free-text ``reason``/``detail`` that
+    # interpolate amount/merchant. The redaction-SURVIVING fields are deliberately
+    # NOT here: ids (cart_id/mandate ids/receipt_id), ``status``, ``reason_code``,
+    # ``currency`` (a code, not a sum), ``cart_expiry``/``intent_expiry`` (an
+    # instant, not money), and the merchant-signature PRESENCE + keyed-HMAC
+    # ``merchant_signature_fp`` (provenance, not the raw JWT) — so a customer can
+    # still audit WHO/WHEN/WHY under capture_content=False.
+    "payment.intent_mandate": frozenset({"amount", "merchant", "merchants", "description"}),
+    "payment.cart_mandate": frozenset({"amount", "merchant", "merchant_name", "description"}),
+    "payment.mandate_signed": frozenset({"amount", "cumulative_spend", "reason", "merchant", "merchant_name"}),
+    "payment.receipt_issued": frozenset({"amount", "merchant", "merchant_name"}),
+    # Payment-guard block: the free-text ``reason``/``detail`` interpolate the
+    # over-cap amount / off-whitelist merchant; ``reason_code`` (the category)
+    # stays so a customer sees WHY a charge was refused under no-content.
+    # (bedrock_agents' policy.violation carries action/stage/policies/ids only —
+    # none of these keys — so this is a no-op for it.)
+    "policy.violation": frozenset({"reason", "detail", "amount", "merchant", "merchant_name"}),
     "commerce.supplier_discovered": frozenset({"name"}),
     "commerce.catalog.browsed": frozenset({"query"}),
-    "commerce.checkout_completed": frozenset({"amount"}),
-    "commerce.refund_issued": frozenset({"amount", "reason"}),
+    # Commerce checkout/start PII (A15 / UCP-Q2 fail-open, user-approved
+    # 2026-06-25). A checkout can carry the buyer's billing/shipping address,
+    # the card / PAN / CVC / expiry, the tokenized payment instrument, and the
+    # buyer's email/phone/name — all CONTENT that must be stripped under
+    # capture_content=False (ACP rfc.delegate_payment §277 "logs MUST NOT
+    # contain full PAN or CVC"; UCP "Never log raw credentials"). The previous
+    # set listed only ``amount``, so any of these fields on a real checkout hook
+    # LEAKED under no-content. The SURVIVING metadata is the financial-flow
+    # skeleton: ids (session_id/supplier_id/order_id), ``currency`` (a code, not
+    # a sum), counts, statuses, and latencies — so a customer can still audit
+    # WHO/WHEN/HOW-MUCH without leaking the card or the address. (The amount-as-
+    # a-value is content; the currency code is metadata.) The card/PAN/CVC are
+    # ALSO scrubbed at the collector chokepoint regardless of capture_content
+    # (_secret_scrub.SECRET_PATTERNS PAN/CVC) — defense in depth.
+    "commerce.checkout.started": frozenset(_COMMERCE_PII_KEYS),
+    "commerce.checkout_completed": frozenset({"amount"} | _COMMERCE_PII_KEYS),
+    "commerce.refund_issued": frozenset({"amount", "reason"} | _COMMERCE_PII_KEYS),
 }
 
 # Backwards-compatible alias: the protocol subset (the original LAY-3578 map).
@@ -193,6 +300,42 @@ PROTOCOL_CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     for k, v in _CONTENT_KEYS.items()
     if k.split(".")[0] in {"agui", "mcp", "a2a", "payment", "commerce", "protocol"}
 }
+
+
+def known_event_types() -> FrozenSet[str]:
+    """The RUNTIME set of registered event-type strings.
+
+    The single source of truth for "is this a real layerlens event type" inside
+    ``src/`` — the union of every type the capture config knows how to gate
+    (``_EVENT_TYPE_MAP``), every always-emitted type (``_ALWAYS_ENABLED``), and
+    every type with a declared content-key set (``_CONTENT_KEYS``). The test-side
+    schema lock (``tests/instrument/_event_schema.py::KNOWN_EVENT_TYPES``) is the
+    mirror of this used in CI; this function is what runtime code (e.g. the
+    replay fail-closed gate) consults, since ``src/`` cannot import from
+    ``tests/``.
+
+    Used by :func:`layerlens.replay.snapshot.replay_events` /
+    :func:`load_snapshot` to REJECT a recorded event whose ``event_type`` is not
+    registered (fail closed) — a garbage/forged recorded trace must not inject an
+    arbitrary type into a fresh collector that then uploads it.
+    """
+    return frozenset(_EVENT_TYPE_MAP) | _ALWAYS_ENABLED | frozenset(_CONTENT_KEYS)
+
+
+def _strip_content_keys(value: Any, content_keys: FrozenSet[str]) -> Any:
+    """Recursively drop any key in *content_keys* from dicts anywhere in *value*.
+
+    Returns a redacted copy; non-dict/list scalars pass through unchanged.
+    Lists/tuples are walked element-wise so content nested in a list survives
+    neither at the top level nor inside a wrapper object.
+    """
+    if isinstance(value, dict):
+        return {k: _strip_content_keys(v, content_keys) for k, v in value.items() if k not in content_keys}
+    if isinstance(value, list):
+        return [_strip_content_keys(v, content_keys) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_content_keys(v, content_keys) for v in value)
+    return value
 
 
 @dataclass(frozen=True)
@@ -226,7 +369,14 @@ class CaptureConfig:
     # L6c: Protocol lifecycle (task events)
     l6c_protocol_lifecycle: bool = True
     # Gates LLM message content (prompts/completions) independently of L-layers
-    capture_content: bool = True
+    # Privacy-by-default (A10 / LAY-3628, product-approved 2026-06-25): the
+    # out-of-the-box default REDACTS content. The default config (and standard()/
+    # minimal()) emit structure + metadata only; raw prompt/response/tool content
+    # is opt-in via full() or an explicit capture_content=True. This makes a
+    # forgotten _CONTENT_KEYS entry fail CLOSED (the redactor runs by default)
+    # rather than leaking a whole field. Secrets are scrubbed independently of
+    # this flag at the collector chokepoint (_secret_scrub.scrub_payload).
+    capture_content: bool = False
 
     def redact_payload(self, event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Return a copy of *payload* with content fields removed per config.
@@ -238,19 +388,23 @@ class CaptureConfig:
         tool_name, ids, counts, statuses, hashes, latencies, topology) is
         preserved so redaction does not blind observability. ``model.invoke``
         additionally has content stripped out of its ``parameters`` sub-dict.
+
+        Stripping is RECURSIVE (LAY-3572 / R1): a content key is removed wherever
+        it appears in the payload tree — top-level, inside a ``metadata``/``extra``
+        wrapper, or nested in a list element — because adapters routinely nest
+        content (``model.invoke.parameters``, langgraph graph state, AG-UI raw
+        passthrough). A non-recursive (top-level-only) strip left nested content
+        leaking under ``capture_content=False``.
         """
         if self.capture_content:
             return payload
         content_keys = _CONTENT_KEYS.get(event_type)
         if content_keys:
-            payload = {k: v for k, v in payload.items() if k not in content_keys}
+            payload = _strip_content_keys(payload, content_keys)
         if event_type == "model.invoke":
             parameters = payload.get("parameters")
             if isinstance(parameters, dict):
-                payload = {
-                    **payload,
-                    "parameters": {k: v for k, v in parameters.items() if k not in _CONTENT_PARAM_KEYS},
-                }
+                payload = {**payload, "parameters": _strip_content_keys(parameters, _CONTENT_PARAM_KEYS)}
         return payload
 
     def is_layer_enabled(self, event_type: str) -> bool:
@@ -278,22 +432,26 @@ class CaptureConfig:
             l6a_protocol_discovery=True,
             l6b_protocol_streams=False,
             l6c_protocol_lifecycle=True,
-            capture_content=True,
+            capture_content=False,
         )
 
     @classmethod
     def standard(cls) -> CaptureConfig:
-        """Balanced telemetry: agent I/O, model metadata, tools, protocols. Same as default."""
+        """Balanced telemetry: agent I/O, model metadata, tools, protocols. Same
+        as the default — privacy-by-default, so content is redacted. Opt into raw
+        content with ``full()`` or ``capture_content=True``."""
         return cls()
 
     @classmethod
     def full(cls) -> CaptureConfig:
-        """Full capture: all layers enabled. Development/debugging."""
+        """Full capture: all layers enabled INCLUDING raw content. Development/
+        debugging or an explicit content-capture opt-in (privacy review required)."""
         return cls(
             l2_agent_code=True,
             l4b_environment_metrics=True,
             l5b_tool_logic=True,
             l5c_tool_environment=True,
+            capture_content=True,
         )
 
     def to_dict(self) -> Dict[str, Any]:

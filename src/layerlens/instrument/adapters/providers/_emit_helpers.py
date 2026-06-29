@@ -127,6 +127,7 @@ def emit_llm_events(
             pricing_table=pricing_table,
             span_id=span_id,
             parent_span_id=parent_span_id,
+            service_tier=response_meta.get("service_tier"),
         )
 
 
@@ -207,8 +208,15 @@ def _emit_cost(
     pricing_table: Optional[dict[str, dict[str, float]]],
     span_id: str,
     parent_span_id: Optional[str],
+    service_tier: Optional[str] = None,
 ) -> None:
-    """Emit cost.record. Accepts either a dict usage or NormalizedTokenUsage."""
+    """Emit cost.record. Accepts either a dict usage or NormalizedTokenUsage.
+
+    ``cost_usd`` is computed here for back-compat, but the authoritative price is
+    (re)computed at the collector chokepoint (A1) from this payload, which is why
+    ``service_tier`` is threaded into the payload — so the central formula can
+    apply tier pricing uniformly.
+    """
     if isinstance(usage, NormalizedTokenUsage):
         normalized = usage
         usage_payload = usage.as_event_dict()
@@ -226,16 +234,22 @@ def _emit_cost(
     else:
         return
 
-    cost_usd = calculate_cost(model or "", normalized, pricing_table or PRICING) if model else None
+    cost_usd = (
+        calculate_cost(model or "", normalized, pricing_table or PRICING, service_tier=service_tier) if model else None
+    )
+
+    cost_payload: Dict[str, Any] = {
+        "provider": provider,
+        "model": model,
+        "cost_usd": cost_usd,
+        **usage_payload,
+    }
+    if service_tier is not None:
+        cost_payload["service_tier"] = service_tier
 
     collector.emit(
         COST_RECORD,
-        {
-            "provider": provider,
-            "model": model,
-            "cost_usd": cost_usd,
-            **usage_payload,
-        },
+        cost_payload,
         span_id=span_id,
         parent_span_id=parent_span_id,
     )

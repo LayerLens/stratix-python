@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.openai import (
     OpenAIProvider,
     instrument_openai,
@@ -29,7 +30,7 @@ class TestEmitsEvents:
         provider = OpenAIProvider()
         provider.connect(openai_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             r = openai_client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
             return r.choices[0].message.content
@@ -58,7 +59,7 @@ class TestEmitsEvents:
         provider = OpenAIProvider()
         provider.connect(openai_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             try:
                 openai_client.chat.completions.create(model="gpt-4", messages=[])

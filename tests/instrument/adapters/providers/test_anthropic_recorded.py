@@ -18,6 +18,7 @@ import httpx
 import anthropic
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.anthropic import AnthropicProvider
 
 from ...conftest import find_event
@@ -37,7 +38,7 @@ class TestAnthropicRecorded:
         provider = AnthropicProvider()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def agent():
             r = client.messages.create(
                 model="claude-haiku-4-5",
@@ -87,7 +88,7 @@ class TestAnthropicRecorded:
         provider = AnthropicProvider()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def agent():
             return client.messages.create(
                 model="claude-haiku-4-5",

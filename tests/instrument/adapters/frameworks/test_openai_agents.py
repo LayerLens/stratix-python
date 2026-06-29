@@ -109,7 +109,7 @@ def adapter_and_trace(mock_client):
     directly — no separate processor object.
     """
     uploaded = capture_framework_trace(mock_client)
-    adapter = OpenAIAgentsAdapter(mock_client)
+    adapter = OpenAIAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
     adapter.connect()
     yield adapter, uploaded
     adapter.disconnect()

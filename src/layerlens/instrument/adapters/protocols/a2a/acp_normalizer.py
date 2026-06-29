@@ -21,13 +21,21 @@ from typing import Any, Optional
 log = logging.getLogger(__name__)
 
 
+# Map legacy ACP status strings to the REAL a2a-sdk 1.1.0 TaskState spellings
+# (hyphen in input-required; single-L canceled) so a normalized ACP task drives
+# the FSM instead of being dropped as "unknown" (D5).
 _ACP_STATUS_MAP: dict[str, str] = {
     "running": "working",
     "completed": "completed",
     "failed": "failed",
-    "cancelled": "cancelled",
+    "cancelled": "canceled",
+    "canceled": "canceled",
     "pending": "submitted",
-    "input_required": "input_required",
+    "input_required": "input-required",
+    "input-required": "input-required",
+    "rejected": "rejected",
+    "auth_required": "auth-required",
+    "auth-required": "auth-required",
 }
 
 

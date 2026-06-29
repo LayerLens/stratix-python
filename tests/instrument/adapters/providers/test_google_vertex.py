@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import Mock
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.google_vertex import (
     GoogleVertexProvider,
     _strip_models_prefix,
@@ -105,7 +106,7 @@ class TestEmitsEvents:
         provider = GoogleVertexProvider()
         provider.connect(vertex_model)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent() -> str:
             r = vertex_model.generate_content("Hi")
             return r.candidates[0].content.parts[0].text
@@ -165,7 +166,7 @@ class TestEmitsEvents:
         provider = GoogleVertexProvider()
         provider.connect(vertex_model)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent() -> None:
             vertex_model.generate_content("What's the weather?")
 
@@ -184,7 +185,7 @@ class TestEmitsEvents:
         provider = GoogleVertexProvider()
         provider.connect(vertex_model)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent() -> str:
             try:
                 vertex_model.generate_content("Hi")

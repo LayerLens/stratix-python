@@ -28,6 +28,7 @@ from .models import (
     BatchReplayFilter,
 )
 from .snapshot import (
+    SnapshotIntegrityError,
     dump as dump_snapshot,
     load_snapshot,
     replay_events,
@@ -53,6 +54,7 @@ __all__ = [
     "ReplayResult",
     "ReplayStatus",
     "ReplayStore",
+    "SnapshotIntegrityError",
     "dump_collector",
     "dump_snapshot",
     "load_snapshot",

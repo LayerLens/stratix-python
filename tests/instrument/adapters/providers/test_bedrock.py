@@ -30,6 +30,7 @@ from botocore.response import StreamingBody  # noqa: E402
 from botocore.exceptions import ClientError  # noqa: E402
 
 from layerlens.instrument import trace  # noqa: E402
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.providers.bedrock import (  # noqa: E402
     BedrockProvider,
     instrument_bedrock,
@@ -170,7 +171,7 @@ class TestInvokeModel:
             },
         )
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             r = client.invoke_model(
                 modelId=_MODEL_ID,
@@ -235,7 +236,7 @@ class TestInvokeModel:
             http_status_code=400,
         )
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             try:
                 client.invoke_model(modelId="anthropic.not-a-model", body=_anthropic_request_body())
@@ -275,7 +276,7 @@ class TestInvokeModelNova:
             {"modelId": model_id, "body": ANY, "accept": "application/json", "contentType": "application/json"},
         )
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def run():
             r = client.invoke_model(
                 modelId=model_id,
@@ -357,7 +358,7 @@ class TestConverse:
             },
         )
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             r = client.converse(
                 modelId=_MODEL_ID,
@@ -403,7 +404,7 @@ class TestConverse:
             http_status_code=429,
         )
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             try:
                 client.converse(

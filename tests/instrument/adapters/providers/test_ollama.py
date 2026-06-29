@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import Mock
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.ollama import (
     OllamaProvider,
     instrument_ollama,
@@ -71,7 +72,7 @@ class TestEmitsEvents:
         provider = OllamaProvider()
         provider.connect(ollama_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent() -> str:
             r = ollama_client.chat(model="llama3", messages=[{"role": "user", "content": "Hi"}])
             return r["message"]["content"]
@@ -98,7 +99,7 @@ class TestEmitsEvents:
         provider = OllamaProvider()
         provider.connect(ollama_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent() -> str:
             r = ollama_client.generate(model="llama3", prompt="Hi")
             return r["response"]
@@ -120,7 +121,7 @@ class TestEmitsEvents:
         provider = OllamaProvider()
         provider.connect(ollama_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent() -> int:
             r = ollama_client.embeddings(model="nomic-embed-text", prompt="hi")
             return len(r["embedding"])
@@ -139,7 +140,7 @@ class TestEmitsEvents:
         provider = OllamaProvider()
         provider.connect(ollama_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent() -> str:
             try:
                 ollama_client.chat(model="llama3", messages=[])

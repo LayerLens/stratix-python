@@ -111,6 +111,60 @@ class TestValidatorCatchesDrift:
         problems = validate_event(_event("cost.record", {"provider": "openai"}))
         assert problems and "without any token counts" in problems[0]
 
+    def test_priced_model_cost_record_without_cost_usd_fails(self) -> None:
+        # A11/LAY-3626: a model that resolves to a rate MUST carry cost_usd (the
+        # central chokepoint fills it). None here means the price was dropped —
+        # fail closed. Bite: drop the is_priced branch -> this passes (RED).
+        problems = validate_event(
+            _event(
+                "cost.record",
+                {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15,
+                },
+            )
+        )
+        assert problems and any("cost_usd" in p for p in problems)
+
+    def test_unpriced_model_cost_record_without_cost_usd_passes(self) -> None:
+        # Genuinely unpriced model (local/custom) — None cost_usd is legitimate.
+        assert (
+            validate_event(
+                _event(
+                    "cost.record",
+                    {
+                        "provider": "ollama",
+                        "model": "some-local-model-xyz",
+                        "prompt_tokens": 10,
+                        "completion_tokens": 5,
+                        "total_tokens": 15,
+                    },
+                )
+            )
+            == []
+        )
+
+    def test_priced_model_cost_record_with_cost_usd_passes(self) -> None:
+        assert (
+            validate_event(
+                _event(
+                    "cost.record",
+                    {
+                        "provider": "openai",
+                        "model": "gpt-4o",
+                        "prompt_tokens": 10,
+                        "completion_tokens": 5,
+                        "total_tokens": 15,
+                        "cost_usd": 0.0001,
+                    },
+                )
+            )
+            == []
+        )
+
     def test_bad_latency_type_fails(self) -> None:
         problems = validate_event(_event("tool.call", {"latency_ms": "fast"}))
         assert problems and "latency_ms" in problems[0]

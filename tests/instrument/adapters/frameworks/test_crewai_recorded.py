@@ -67,6 +67,7 @@ if Version(crewai.__version__) < Version("1.14"):
 from crewai import LLM, Crew, Task, Agent, Process  # noqa: E402
 from crewai.events import crewai_event_bus
 
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.frameworks.crewai import CrewAIAdapter
 
 from .conftest import find_event, find_events, capture_framework_trace
@@ -123,7 +124,7 @@ class TestCrewAIRecorded:
         fixture = load_recorded("openai", "default")
         uploaded = capture_framework_trace(mock_client)
 
-        adapter = CrewAIAdapter(mock_client)
+        adapter = CrewAIAdapter(mock_client, capture_config=CaptureConfig.full())
         # ``scoped_handlers`` isolates our bus subscription to this test (the
         # proven pattern in ``test_crewai.TestEventBusIntegration``).
         with crewai_event_bus.scoped_handlers():

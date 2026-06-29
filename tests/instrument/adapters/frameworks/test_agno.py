@@ -200,7 +200,12 @@ class TestLifecycle:
 class TestSyncAgentIO:
     def test_input_and_output(self, mock_client):
         agent = _make_agent(content="world")
-        uploaded = _connect_and_run(mock_client, agent=agent, message="hello")
+        uploaded = _connect_and_run(
+            mock_client,
+            agent=agent,
+            message="hello",
+            config=CaptureConfig(capture_content=True),
+        )
         events = uploaded["events"]
 
         inp = find_event(events, "agent.input")
@@ -228,7 +233,7 @@ class TestSyncAgentIO:
     def test_error_propagates(self, mock_client):
         agent = _make_agent()
         uploaded = capture_framework_trace(mock_client)
-        adapter = AgnoAdapter(mock_client)
+        adapter = AgnoAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect(target=agent)
 
         # Sabotage the original run to raise
@@ -294,7 +299,11 @@ class TestSyncAgentIO:
 class TestAsyncRun:
     def test_arun_emits_agent_io(self, mock_client):
         agent = _make_agent(name="async_agent", content="async world")
-        uploaded = _connect_and_arun(mock_client, agent=agent)
+        uploaded = _connect_and_arun(
+            mock_client,
+            agent=agent,
+            config=CaptureConfig(capture_content=True),
+        )
         events = uploaded["events"]
         inp = find_event(events, "agent.input")
         assert inp["payload"]["agent_name"] == "async_agent"
@@ -304,7 +313,7 @@ class TestAsyncRun:
     def test_arun_error_propagates(self, mock_client):
         agent = _make_agent()
         uploaded = capture_framework_trace(mock_client)
-        adapter = AgnoAdapter(mock_client)
+        adapter = AgnoAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect(target=agent)
 
         # Replace arun with one that raises
@@ -421,7 +430,7 @@ class TestToolCalls:
     def test_tool_call_and_result(self, mock_client):
         agent = _make_agent()
         uploaded = capture_framework_trace(mock_client)
-        adapter = AgnoAdapter(mock_client)
+        adapter = AgnoAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect(target=agent)
 
         # Replace run with result that has tool executions

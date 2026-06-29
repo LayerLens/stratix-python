@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import itertools
 from typing import Any, Dict, Optional
 
 from ._utils import truncate, safe_serialize
+from ..._context import RunState, _current_run, _current_collector
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -56,10 +58,24 @@ def _enum_name(value: Any) -> str:
 class AutoGenAdapter(FrameworkAdapter):
     """AutoGen adapter using the structured event logging API (autogen-core >= 0.4).
 
-    Attaches a ``logging.Handler`` to AutoGen's event logger to capture
-    LLM calls, tool executions, agent messages, and errors. Events flow
-    through the handler from any thread, so the adapter manages its own
-    collector on the instance (like CrewAI).
+    Concurrency model (LAY-3576 / A6 fix)
+    -------------------------------------
+    AutoGen has no per-run callback: it logs ``LLMCallEvent`` / ``MessageEvent``
+    through the **module-global** ``EVENT_LOGGER_NAME`` logger, and those events
+    carry no run/topic/session id (``LLMCallEvent`` has only ``agent_id``;
+    ``MessageEvent`` only sender/receiver). The old adapter funnelled every run
+    into one lazily-created ``self._collector`` shared across all conversations —
+    two concurrent ``team.run()`` calls merged into a single trace.
+
+    But each AgentChat team owns its own ``SingleThreadedAgentRuntime`` whose
+    message loop drains on its own asyncio task / thread, and the logging handler
+    runs **inline on the emitting task/thread** (no context-copy). So a
+    ``RunState`` opened lazily on the first event and bound to ``_current_run``
+    is isolated per concurrent run by the task/thread ContextVar copy (verified
+    live for two interleaved runtimes — distinct runs even for the sender-less
+    ``LLMCallEvent``). The adapter keeps one ``RunState`` per run in
+    ``self._runs`` and flushes each as its own trace on ``disconnect()``. This
+    mirrors ``openai_agents.py`` (keyed map + per-callback ``_current_collector``).
 
     Usage::
 
@@ -85,10 +101,46 @@ class AutoGenAdapter(FrameworkAdapter):
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)
         self._handler: Optional[_LayerLensHandler] = None
-        self._collector: Optional[TraceCollector] = None
-        self._root_span_id: Optional[str] = None
-        # Conversation state: topic/session → {participants: set, turn_count: int, message_count: int}
-        self._conversations: Dict[str, Dict[str, Any]] = {}
+        # token -> RunState (one per concurrent conversation/run).
+        self._runs: Dict[str, RunState] = {}
+        self._run_seq = itertools.count()
+        # Fallback slots for callers that drive ``_fire`` outside a run (the
+        # cost-pricing invariant test instantiates via ``__new__``).
+        self._fallback_collector: Optional[TraceCollector] = None
+        self._fallback_root_span_id: Optional[str] = None
+
+    # ------------------------------------------------------------------
+    # Per-run state access (resolved through the active _current_run)
+    # ------------------------------------------------------------------
+
+    @property
+    def _collector(self) -> Optional[TraceCollector]:
+        run = _current_run.get()
+        if run is not None:
+            return run.collector
+        return self._fallback_collector
+
+    @_collector.setter
+    def _collector(self, value: Optional[TraceCollector]) -> None:
+        self._fallback_collector = value
+
+    @property
+    def _root_span_id(self) -> Optional[str]:
+        run = _current_run.get()
+        if run is not None:
+            return run.root_span_id
+        return self._fallback_root_span_id
+
+    @_root_span_id.setter
+    def _root_span_id(self, value: Optional[str]) -> None:
+        self._fallback_root_span_id = value
+
+    @property
+    def _conversations(self) -> Dict[str, Dict[str, Any]]:
+        run = _current_run.get()
+        if run is None:
+            return {}
+        return run.data.setdefault("conversations", {})
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -107,11 +159,83 @@ class AutoGenAdapter(FrameworkAdapter):
             logger = logging.getLogger(_EVENT_LOGGER_NAME)
             logger.removeHandler(self._handler)
             self._handler = None
-        self._end_trace()
+        # Flush every open run as its own trace (autogen gives no per-run end
+        # signal, so completion is at disconnect).
+        with self._lock:
+            runs = list(self._runs.values())
+            self._runs.clear()
+        # Unbind the run bound to THIS context first, so a stale RunState never
+        # leaks into the next adapter on the same thread.
+        active = _current_run.get()
+        for run in runs:
+            self._flush_run(run)
+        if active is not None and active in runs:
+            self._unbind(active)
+        self._fallback_collector = None
+        self._fallback_root_span_id = None
+
+    @staticmethod
+    def _unbind(run: RunState) -> None:
+        """Reset the ContextVars this run set when it opened."""
+        if run._col_token is not None:
+            try:
+                _current_collector.reset(run._col_token)
+            except ValueError:
+                _current_collector.set(None)
+            run._col_token = None
+        if run._token is not None:
+            try:
+                _current_run.reset(run._token)
+            except ValueError:
+                _current_run.set(None)
+            run._token = None
 
     # ------------------------------------------------------------------
-    # Collector + state management
+    # Collector + run-state management
     # ------------------------------------------------------------------
+
+    def _ensure_run(self) -> RunState:
+        """Lazily open a run on the current context and bind it.
+
+        Concurrent conversations call this on their own task/thread, so the
+        ContextVar copy keeps each run isolated. Subsequent events on the same
+        context re-resolve the same run via ``_current_run``.
+        """
+        run = _current_run.get()
+        if run is not None:
+            return run
+        collector = TraceCollector(self._client, self._config)
+        root_span_id = self._new_span_id()
+        run = RunState(collector=collector, root_span_id=root_span_id, data={"conversations": {}})
+        token = f"autogen-run-{next(self._run_seq)}"
+        run.data["token"] = token
+        with self._lock:
+            self._runs[token] = run
+        run._col_token = _current_collector.set(collector)
+        run._token = _current_run.set(run)
+        return run
+
+    def _flush_run(self, run: RunState) -> None:
+        """Emit per-run conversation summaries, then flush the run's collector."""
+        collector = run.collector
+        conversations = run.data.get("conversations", {})
+        for conv_id, state in list(conversations.items()):
+            collector.emit(
+                "conversation.ended",
+                self._payload(
+                    conversation_id=conv_id,
+                    participants=sorted(state["participants"]),
+                    message_count=state["message_count"],
+                    turn_count=state["turn_count"],
+                    reason="trace_end",
+                ),
+                span_id=self._new_span_id(),
+                parent_span_id=run.root_span_id,
+            )
+        try:
+            collector.flush()
+        except Exception:
+            log.warning("layerlens: error flushing AutoGen run", exc_info=True)
 
     def _fire(
         self,
@@ -134,35 +258,6 @@ class AutoGenAdapter(FrameworkAdapter):
             span_name=span_name,
         )
 
-    def _ensure_collector(self) -> None:
-        if self._collector is None:
-            self._collector = TraceCollector(self._client, self._config)
-            self._root_span_id = self._new_span_id()
-
-    def _end_trace(self) -> None:
-        with self._lock:
-            collector = self._collector
-            self._collector = None
-            self._root_span_id = None
-            # Flush any open conversations as summary events before tearing down.
-            for conv_id, state in list(self._conversations.items()):
-                if collector is not None:
-                    collector.emit(
-                        "conversation.ended",
-                        self._payload(
-                            conversation_id=conv_id,
-                            participants=sorted(state["participants"]),
-                            message_count=state["message_count"],
-                            turn_count=state["turn_count"],
-                            reason="trace_end",
-                        ),
-                        span_id=self._new_span_id(),
-                        parent_span_id=self._root_span_id,
-                    )
-            self._conversations.clear()
-        if collector is not None:
-            collector.flush()
-
     # ------------------------------------------------------------------
     # Event dispatch (called by handler)
     # ------------------------------------------------------------------
@@ -172,8 +267,9 @@ class AutoGenAdapter(FrameworkAdapter):
         handler_name = self._EVENT_DISPATCH.get(event_class)
         if handler_name is None:
             return
-        with self._lock:
-            self._ensure_collector()
+        # Open/resolve this run on the current task/thread context BEFORE the
+        # handler runs, so concurrent conversations stay isolated.
+        self._ensure_run()
         try:
             getattr(self, handler_name)(event)
         except Exception:
@@ -234,7 +330,8 @@ class AutoGenAdapter(FrameworkAdapter):
         # analysis can reason about multi-agent turn-taking.
         topic_id = _get_field(event, "topic_id") or _get_field(event, "session_id")
         conv_id = str(topic_id) if topic_id is not None else f"{sender}->{receiver}"
-        state = self._conversations.setdefault(
+        conversations = self._conversations
+        state = conversations.setdefault(
             conv_id,
             {
                 "participants": set(),

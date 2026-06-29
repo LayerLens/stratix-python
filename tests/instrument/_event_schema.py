@@ -86,6 +86,7 @@ KNOWN_EVENT_TYPES = frozenset(
         "mcp.tools.listed",
         "mcp.async_task",
         "mcp.elicitation",
+        "mcp.sampling",
         "mcp.structured_output",
         "a2a.task.created",
         "a2a.task.updated",
@@ -105,6 +106,7 @@ KNOWN_EVENT_TYPES = frozenset(
         "commerce.ui.surface_created",
         "commerce.ui.user_action",
         "payment.intent_mandate",
+        "payment.cart_mandate",
         "payment.mandate_signed",
         "payment.receipt_issued",
     }
@@ -212,6 +214,21 @@ def validate_event(event: Dict[str, Any]) -> List[str]:
         cost = payload.get("cost_usd")
         if cost is not None and not isinstance(cost, Number):
             problems.append(f"{tag} cost_usd must be a number, got {type(cost).__name__}")
+        # INVARIANT (LAY-3626 / A11, fail-closed cost): a model that resolves to a
+        # rate MUST carry cost_usd. The central price-on-emit chokepoint
+        # (TraceCollector.emit) fills it, so a None here means a priced model's
+        # cost was DROPPED — indistinguishable from a genuinely-unpriced
+        # local/custom model unless we enforce it. None stays legal only for
+        # unpriced models (ollama/local/custom).
+        if cost is None and has_tokens:
+            from layerlens.instrument.adapters.providers.pricing import is_priced
+
+            if is_priced(payload.get("model"), payload.get("provider")):
+                problems.append(
+                    f"{tag} priced model {payload.get('model')!r} has no cost_usd — a priced "
+                    "cost.record must carry cost_usd (the central price-on-emit chokepoint fills "
+                    "it; None means the price was dropped). Unpriced local/custom models may omit it."
+                )
 
     # INVARIANT (LAY-3620, redact-without-going-blind): agent.error must carry a
     # surviving CATEGORY. The capture_content=False backstop strips the free-text
@@ -225,6 +242,29 @@ def validate_event(event: Dict[str, Any]) -> List[str]:
             "(or error_code/status). The redaction backstop strips the free-text "
             "error under capture_content=False, so the failure would otherwise vanish."
         )
+
+    # INVARIANT (D1/D8, consent-faithful elicitation): an mcp.elicitation in the
+    # RESPONSE phase MUST carry an ``action`` in {accept, decline, cancel}. The
+    # action is the entire point of the real ElicitResult — a decline/cancel must
+    # be distinguishable from an accept downstream (the old code hardcoded
+    # "submit" and emitted no action at all, so a refused consent looked identical
+    # to a granted one). Fail CLOSED: a response with no/invalid action is a
+    # consent-record bug, not a benign omission.
+    if event_type == "mcp.elicitation" and payload.get("phase") == "response":
+        action = payload.get("action")
+        if action not in {"accept", "decline", "cancel"}:
+            problems.append(
+                f"{tag} mcp.elicitation (phase=response) has action={action!r} — a response MUST "
+                "carry action ∈ {accept, decline, cancel} read from the real ElicitResult so a "
+                "decline/cancel is distinguishable from an accept (consent-faithful, D1)."
+            )
+        # A non-accept (refusal) must NOT carry a content-derived hash of a payload
+        # the user did not submit — declined/cancelled telemetry hashes nothing.
+        if action in {"decline", "cancel"} and payload.get("content_hash") is not None:
+            problems.append(
+                f"{tag} mcp.elicitation action={action!r} carries a content_hash — a refused "
+                "elicitation must not hash a submitted payload (it has none)."
+            )
 
     return problems
 

@@ -118,7 +118,7 @@ def _make_event(obs_id="evt-001", name="status-update"):
 def connected_adapter(mock_client):
     """Return a pre-connected adapter, the uploaded-data dict, and the mock HTTP client."""
     uploaded = capture_framework_trace(mock_client)
-    adapter = LangfuseAdapter(mock_client)
+    adapter = LangfuseAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
     mock_http = _make_mock_http()
     adapter._http = mock_http
     adapter._connected = True

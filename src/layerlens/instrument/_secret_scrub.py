@@ -17,7 +17,7 @@ secret-shaped value reaches an uploaded event (so the two can never drift).
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Pattern
+from typing import Any, Dict, List, Pattern, FrozenSet
 
 REDACTION = "[REDACTED-SECRET]"
 
@@ -55,7 +55,58 @@ SECRET_PATTERNS: List[tuple[str, Pattern[str]]] = [
     ),
     # JWTs (three base64url segments)
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}")),
+    # PEM private keys (RSA/EC/OPENSSH/DSA/plain) — header alone is a strong
+    # signal; the optional body+footer are swept too when present.
+    (
+        "private_key_pem",
+        re.compile(
+            r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----(?:[\s\S]*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----)?"
+        ),
+    ),
+    # Azure Storage / Service-Bus SAS signature query parameter (?sv=...&sig=...).
+    ("azure_sas", re.compile(r"(?i)[?&]sig=[A-Za-z0-9%/+]{16,}")),
+    # Credit-card PAN (PCI / ACP rfc.delegate_payment §277 "logs MUST NOT
+    # contain full PAN or CVC"; UCP "Never log raw credentials"). 13-19 digits
+    # in card-grouping form: contiguous (4111111111111111) or grouped by single
+    # spaces/dashes (4111 1111 1111 1111 / 4111-1111-1111-1111). The regex alone
+    # is a CANDIDATE — every match is Luhn-validated (see ``_LUHN_VALIDATED``)
+    # before it is flagged/scrubbed, so a random 16-digit value or an order id
+    # with letters is NOT over-scrubbed (only mod-10-valid card numbers are).
+    ("card_pan", re.compile(r"(?<![\d.-])(?:\d[ -]?){12,18}\d(?![\d.-])")),
+    # CVC / CVV — a bare 3-4 digit number is everywhere, so this matches ONLY in
+    # a LABELED context (cvc: 123 / "cvv":"4321" / security_code=123). The label
+    # makes it specific without a checksum.
+    (
+        "card_cvc",
+        re.compile(
+            r"""(?i)\b(?:cvc2?|cvv2?|cid|security[ _-]?code|card[ _-]?verification[ _-]?(?:value|code))\b["']?\s*[:=]\s*["']?\d{3,4}\b"""
+        ),
+    ),
 ]
+
+# Pattern names whose regex is only a CANDIDATE matcher; a hit is kept only when
+# the matched text passes :func:`_luhn_ok`. Keeps the PAN pattern from nuking a
+# 16-digit order id / tracking number that happens to look card-shaped.
+_LUHN_VALIDATED: FrozenSet[str] = frozenset({"card_pan"})
+
+
+def _luhn_ok(text: str) -> bool:
+    """True iff the digits in *text* (13-19 of them) satisfy the Luhn mod-10
+    checksum used by every real card scheme. A random/sequential number fails
+    this ~90% of the time, so requiring it keeps the PAN scrubber specific."""
+    digits = [int(c) for c in text if c.isdigit()]
+    if not (13 <= len(digits) <= 19):
+        return False
+    total = 0
+    # Double every second digit from the right.
+    for i, d in enumerate(reversed(digits)):
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
 
 # Free-text fields that routinely carry ``str(exc)`` — scrubbed unconditionally
 # at the collector chokepoint (secrets leak under the DEFAULT
@@ -67,8 +118,14 @@ def scrub_secrets(text: str) -> str:
     """Replace every secret-shaped substring in *text* with a redaction marker."""
     if not text:
         return text
-    for _name, pattern in SECRET_PATTERNS:
-        text = pattern.sub(REDACTION, text)
+    for name, pattern in SECRET_PATTERNS:
+        if name in _LUHN_VALIDATED:
+            # Only redact candidate matches that pass the checksum, so a benign
+            # 16-digit value is left intact (CPython re.sub returns the input
+            # unchanged when the callback redacts nothing — identity preserved).
+            text = pattern.sub(lambda m: REDACTION if _luhn_ok(m.group(0)) else m.group(0), text)
+        else:
+            text = pattern.sub(REDACTION, text)
     return text
 
 
@@ -81,24 +138,63 @@ def find_secrets(text: str) -> List[str]:
     """Return the names of every secret pattern that matches *text* (for guards)."""
     if not text:
         return []
-    return [name for name, pattern in SECRET_PATTERNS if pattern.search(text)]
+    hits: List[str] = []
+    for name, pattern in SECRET_PATTERNS:
+        if name in _LUHN_VALIDATED:
+            # A checksum-validated pattern flags only when a candidate match
+            # actually passes Luhn (consistent with scrub_secrets).
+            if any(_luhn_ok(m.group(0)) for m in pattern.finditer(text)):
+                hits.append(name)
+        elif pattern.search(text):
+            hits.append(name)
+    return hits
+
+
+def _scrub_value(value: object) -> object:
+    """Recursively scrub secret-shaped substrings from every string nested in
+    *value*. COPY-ON-WRITE: returns the SAME object when nothing matched (the
+    common case — the hot path allocates nothing), otherwise a scrubbed copy.
+
+    Identity preservation relies on :func:`scrub_secrets` returning the original
+    ``str`` object when no pattern matches (CPython ``re.sub`` returns the input
+    unchanged on no-op), so a deeply-nested clean payload is detected as clean
+    without a value-compare per node.
+    """
+    if isinstance(value, str):
+        return scrub_secrets(value)
+    if isinstance(value, dict):
+        out = value
+        for k, v in value.items():
+            cleaned = _scrub_value(v)
+            if cleaned is not v:
+                if out is value:
+                    out = dict(value)
+                out[k] = cleaned
+        return out
+    if isinstance(value, list):
+        cleaned_items = [_scrub_value(v) for v in value]
+        if any(ci is not orig for ci, orig in zip(cleaned_items, value)):
+            return cleaned_items
+        return value
+    if isinstance(value, tuple):
+        cleaned_items = [_scrub_value(v) for v in value]
+        if any(ci is not orig for ci, orig in zip(cleaned_items, value)):
+            return tuple(cleaned_items)
+        return value
+    return value
 
 
 def scrub_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Scrub secrets from the free-text error fields of an event payload.
+    """Scrub secret-shaped values from EVERY string field of an event payload.
 
     The COLLECTOR-SIDE chokepoint: runs unconditionally on every event (secrets
-    must be scrubbed regardless of ``capture_content``), covering every adapter's
-    ``str(exc)`` error site at once instead of relying on each emit site calling
-    ``safe_error``. Copy-on-write — only allocates when something is scrubbed.
+    are ORTHOGONAL to ``capture_content`` — a credential in tool-call arguments,
+    model output, an AG-UI state-delta value, or an elicitation prompt ships
+    under the DEFAULT ``capture_content=True`` where ``redact_payload`` is a
+    no-op). Broadened from the 4 ``ERROR_KEYS`` to the whole payload
+    (LAY-3625 / A10, user-approved 2026-06-25) so a leaked key anywhere is
+    caught, not just in an error string. Copy-on-write via :func:`_scrub_value`
+    — a clean payload (the common case) is returned unchanged with no allocation.
     """
-    scrubbed = payload
-    for key in ERROR_KEYS:
-        value = payload.get(key)
-        if isinstance(value, str):
-            cleaned = scrub_secrets(value)
-            if cleaned != value:
-                if scrubbed is payload:
-                    scrubbed = dict(payload)
-                scrubbed[key] = cleaned
-    return scrubbed
+    cleaned = _scrub_value(payload)
+    return cleaned if isinstance(cleaned, dict) else payload

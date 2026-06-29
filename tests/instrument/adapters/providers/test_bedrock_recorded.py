@@ -23,6 +23,7 @@ boto3 = pytest.importorskip("boto3")
 from botocore.stub import ANY, Stubber  # noqa: E402
 
 from layerlens.instrument import trace  # noqa: E402
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.providers.bedrock import BedrockProvider  # noqa: E402
 
 from ...conftest import find_event  # noqa: E402
@@ -73,7 +74,7 @@ class TestBedrockRecorded:
             {"modelId": _MODEL_ID, "messages": ANY, "inferenceConfig": {"maxTokens": 16}},
         )
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def agent():
             r = client.converse(
                 modelId=_MODEL_ID,
@@ -129,7 +130,7 @@ class TestBedrockRecorded:
             },
         )
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def agent():
             r = client.invoke_model(
                 modelId=_MODEL_ID,

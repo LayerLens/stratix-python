@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.google_vertex import GoogleVertexProvider
 
 from ...conftest import find_event
@@ -38,7 +39,7 @@ class TestGoogleVertexRecorded:
         provider = GoogleVertexProvider()
         provider.connect(model)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def agent():
             r = model.generate_content("Reply with exactly: pong", temperature=0)
             return r.candidates[0].content.parts[0].text

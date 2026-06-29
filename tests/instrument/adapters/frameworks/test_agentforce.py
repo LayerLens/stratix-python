@@ -401,7 +401,11 @@ class TestSessionProcessing:
         assert out["payload"]["outcome"] == "Completed"
 
     def test_agent_input_content_from_first_input_message(self, mock_client):
-        adapter, uploaded, _ = _setup(mock_client, **_one_turn_session())
+        adapter, uploaded, _ = _setup(
+            mock_client,
+            capture_config=CaptureConfig(capture_content=True),
+            **_one_turn_session(),
+        )
         adapter.import_sessions()
         inp = find_event(uploaded["events"], "agent.input")
         assert inp["payload"]["content"] == "Hello who are you"
@@ -425,7 +429,11 @@ class TestSessionProcessing:
 
 class TestLLMStep:
     def test_model_invoke_emitted_with_gen_ids(self, mock_client):
-        adapter, uploaded, _ = _setup(mock_client, **_one_turn_session())
+        adapter, uploaded, _ = _setup(
+            mock_client,
+            capture_config=CaptureConfig(capture_content=True),
+            **_one_turn_session(),
+        )
         adapter.import_sessions()
         me = find_event(uploaded["events"], "model.invoke")
         assert me["payload"]["messages"] == "What is the weather?"
@@ -472,6 +480,7 @@ class TestToolStep:
     def test_tool_call_emitted(self, mock_client):
         adapter, uploaded, _ = _setup(
             mock_client,
+            capture_config=CaptureConfig(capture_content=True),
             **_one_turn_session(
                 steps=[
                     _make_step(
@@ -521,7 +530,11 @@ class TestToolStep:
 
 class TestMessages:
     def test_messages_emitted_as_interaction_events(self, mock_client):
-        adapter, uploaded, _ = _setup(mock_client, **_one_turn_session())
+        adapter, uploaded, _ = _setup(
+            mock_client,
+            capture_config=CaptureConfig(capture_content=True),
+            **_one_turn_session(),
+        )
         adapter.import_sessions()
         interactions = find_events(uploaded["events"], "agent.interaction")
         roles = {e["payload"].get("role") for e in interactions}
@@ -576,6 +589,7 @@ class TestErrorStep:
     def test_error_step_emits_agent_error(self, mock_client):
         adapter, uploaded, _ = _setup(
             mock_client,
+            capture_config=CaptureConfig(capture_content=True),
             **_one_turn_session(
                 steps=[
                     _make_step(
@@ -870,17 +884,29 @@ class TestMultiTurnSession:
         assert {e["payload"]["interaction_id"] for e in invokes} == {"int-1", "int-2"}
 
     def test_input_content_is_first_input_across_turns(self, mock_client):
-        adapter, uploaded, _ = _setup(mock_client, **_two_turn_session())
+        adapter, uploaded, _ = _setup(
+            mock_client,
+            capture_config=CaptureConfig(capture_content=True),
+            **_two_turn_session(),
+        )
         adapter.import_sessions()
         assert find_event(uploaded["events"], "agent.input")["payload"]["content"] == "first question"
 
     def test_output_content_is_last_output_across_turns(self, mock_client):
-        adapter, uploaded, _ = _setup(mock_client, **_two_turn_session())
+        adapter, uploaded, _ = _setup(
+            mock_client,
+            capture_config=CaptureConfig(capture_content=True),
+            **_two_turn_session(),
+        )
         adapter.import_sessions()
         assert find_event(uploaded["events"], "agent.output")["payload"]["content"] == "final answer"
 
     def test_all_messages_emitted_across_turns(self, mock_client):
-        adapter, uploaded, _ = _setup(mock_client, **_two_turn_session())
+        adapter, uploaded, _ = _setup(
+            mock_client,
+            capture_config=CaptureConfig(capture_content=True),
+            **_two_turn_session(),
+        )
         adapter.import_sessions()
         interactions = find_events(uploaded["events"], "agent.interaction")
         assert len(interactions) == 4
@@ -902,7 +928,11 @@ class TestStaggeredIngestion:
         # The real org ingests DMOs on staggered streams: interactions + messages
         # land before steps. A session whose steps have not arrived yet must still
         # yield a complete, readable conversation trace (just no model.invoke).
-        adapter, uploaded, _ = _setup(mock_client, **_one_turn_session(steps=[]))
+        adapter, uploaded, _ = _setup(
+            mock_client,
+            capture_config=CaptureConfig(capture_content=True),
+            **_one_turn_session(steps=[]),
+        )
         adapter.import_sessions()
         events = uploaded["events"]
         assert len(find_events(events, "model.invoke")) == 0

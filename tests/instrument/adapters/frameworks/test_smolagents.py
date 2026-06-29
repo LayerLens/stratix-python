@@ -188,7 +188,7 @@ class TestLifecycle:
 class TestRunWrapper:
     def test_successful_run_emits_input_and_output(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = SmolAgentsAdapter(mock_client)
+        adapter = SmolAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         agent = _make_mock_agent(name="MyAgent", model_id="gpt-4o")
         adapter.connect(target=agent)
 
@@ -211,7 +211,7 @@ class TestRunWrapper:
 
     def test_run_error_emits_error_event(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = SmolAgentsAdapter(mock_client)
+        adapter = SmolAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         agent = _make_mock_agent(name="FailAgent")
         adapter.connect(target=agent)
 
@@ -347,7 +347,7 @@ class TestActionStep:
 
     def test_action_step_with_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = SmolAgentsAdapter(mock_client)
+        adapter = SmolAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         agent = _make_mock_agent()
         adapter.connect(target=agent)
 
@@ -415,7 +415,7 @@ class TestActionStep:
 class TestPlanningStep:
     def test_planning_step_emits_step_and_model(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = SmolAgentsAdapter(mock_client)
+        adapter = SmolAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         agent = _make_mock_agent(model_id="gpt-4o")
         adapter.connect(target=agent)
 
@@ -643,7 +643,7 @@ class TestDisconnectLeaveNoTrace:
 
     def test_reconnect_cycle(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = SmolAgentsAdapter(mock_client)
+        adapter = SmolAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         agent = _make_mock_agent()
         original_run = agent.run
 

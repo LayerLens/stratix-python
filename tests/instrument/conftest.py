@@ -45,8 +45,23 @@ def record_for_schema_lock(events: List[Dict[str, Any]]) -> None:
 
 @pytest.fixture(autouse=True)
 def _enforce_schema_lock():
+    # A4 collector seam (LAY-3627): install an observer at the REAL upload
+    # boundary (TraceCollector.flush) so EVERY flushing trace — not only the
+    # capture_trace-helper suites — feeds the schema-lock + secret-scan, even
+    # the ~18 suites that build a collector and read .events directly. This is
+    # population-complete and independent of _sync_mode. Idempotent with the
+    # capture helpers (double-recording an event just validates it twice).
+    from layerlens.instrument import _collector as _collector_mod
+
+    def _observe(payload: Dict[str, Any]) -> None:
+        record_for_schema_lock(payload.get("events", []))
+
+    _collector_mod.set_trace_observer(_observe)
     _pending_schema_events.clear()
-    yield
+    try:
+        yield
+    finally:
+        _collector_mod.set_trace_observer(None)
     events = list(_pending_schema_events)
     _pending_schema_events.clear()
     if events:

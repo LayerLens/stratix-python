@@ -165,7 +165,7 @@ class TestInvokeWrapping:
 
     def test_error_in_invoke_emits_agent_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = MSAgentFrameworkAdapter(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client, CaptureConfig(capture_content=True))
 
         async def failing_invoke(*_a, **_kw):
             yield _msg(agent_name="primary")
@@ -193,7 +193,7 @@ class TestInvokeWrapping:
 class TestMessageProcessing:
     def test_tool_call_and_result_emitted(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = MSAgentFrameworkAdapter(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client, CaptureConfig(capture_content=True))
 
         chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
         _run_chat(

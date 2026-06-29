@@ -64,8 +64,10 @@ from layerlens.instrument.adapters.frameworks.crewai import CrewAIAdapter  # noq
 @pytest.fixture
 def adapter_and_trace(mock_client):
     """Create a connected CrewAI adapter with trace capture."""
+    from layerlens.instrument._capture_config import CaptureConfig
+
     uploaded = capture_framework_trace(mock_client)
-    adapter = CrewAIAdapter(mock_client)
+    adapter = CrewAIAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
     with crewai_event_bus.scoped_handlers():
         adapter.connect()
         yield adapter, uploaded

@@ -111,7 +111,7 @@ class TestPydanticAIAdapterLifecycle:
 class TestRunSync:
     def test_basic_run(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = PydanticAIAdapter(mock_client)
+        adapter = PydanticAIAdapter(mock_client, capture_config=CaptureConfig.full())
         agent = _make_agent(output_text="The weather is sunny")
 
         adapter.connect(target=agent)
@@ -156,7 +156,7 @@ class TestRunSync:
 class TestRunAsync:
     def test_async_run(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = PydanticAIAdapter(mock_client)
+        adapter = PydanticAIAdapter(mock_client, capture_config=CaptureConfig.full())
         agent = _make_agent(name="async_agent", output_text="Async result")
 
         adapter.connect(target=agent)
@@ -228,7 +228,7 @@ class TestStreaming:
 
     def test_run_stream_emits_streaming_model_invoke_and_output(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = PydanticAIAdapter(mock_client)
+        adapter = PydanticAIAdapter(mock_client, capture_config=CaptureConfig.full())
         agent = _make_agent(name="stream_agent", output_text="Streamed hello")
 
         adapter.connect(target=agent)
@@ -568,7 +568,7 @@ class TestEdgeCases:
             temp: int
 
         uploaded = capture_framework_trace(mock_client)
-        adapter = PydanticAIAdapter(mock_client)
+        adapter = PydanticAIAdapter(mock_client, capture_config=CaptureConfig.full())
         agent = Agent(
             model=TestModel(custom_output_args={"city": "NYC", "temp": 72}),
             output_type=CityInfo,
@@ -628,7 +628,7 @@ class TestEdgeCases:
             raise ValueError("boom from tool")
 
         uploaded = capture_framework_trace(mock_client)
-        adapter = PydanticAIAdapter(mock_client)
+        adapter = PydanticAIAdapter(mock_client, capture_config=CaptureConfig.full())
         agent = _make_agent(output_text="never", tools=[explode])
 
         adapter.connect(target=agent)

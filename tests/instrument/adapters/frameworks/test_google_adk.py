@@ -184,7 +184,7 @@ class TestLifecycle:
 class TestRunLifecycle:
     def test_before_run_creates_collector_and_emits_input(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = GoogleADKAdapter(mock_client)
+        adapter = GoogleADKAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         inv_ctx = _make_invocation_context(agent_name="root", user_content="Hello world")
@@ -240,7 +240,7 @@ class TestRunLifecycle:
 class TestAgentLifecycle:
     def test_before_agent_emits_input(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = GoogleADKAdapter(mock_client)
+        adapter = GoogleADKAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         inv_ctx = _make_invocation_context()
@@ -423,7 +423,7 @@ class TestModelCallbacks:
 
     def test_model_error_emits_error_event(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = GoogleADKAdapter(mock_client)
+        adapter = GoogleADKAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         inv_ctx = _make_invocation_context()
@@ -452,7 +452,7 @@ class TestModelCallbacks:
 class TestToolCallbacks:
     def test_tool_call_and_result(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = GoogleADKAdapter(mock_client)
+        adapter = GoogleADKAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         inv_ctx = _make_invocation_context()
@@ -504,7 +504,7 @@ class TestToolCallbacks:
 
     def test_tool_error_emits_error_event(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = GoogleADKAdapter(mock_client)
+        adapter = GoogleADKAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         inv_ctx = _make_invocation_context()

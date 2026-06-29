@@ -56,6 +56,11 @@ KNOWN_SKIP_TARGETS = {
     # protocol / integration extras
     "copilotkit",
     "ag_ui_langgraph",
+    # protocol SDKs the rewritten adapters test against (installed per-venv:
+    # mcp + a2a in the sk venv, ap2 pinned in the ap2 venv; absent on base by design)
+    "mcp",
+    "a2a",
+    "ap2",
 }
 
 

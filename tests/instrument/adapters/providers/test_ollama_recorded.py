@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import ollama
 
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.ollama import OllamaProvider
 
 from ...conftest import find_event
@@ -34,7 +35,7 @@ class TestOllamaRecorded:
         provider = OllamaProvider()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def agent():
             r = client.chat(
                 model="llama3:8b",

@@ -406,6 +406,7 @@ import pytest
 
 from layerlens.instrument import trace
 from tests.instrument.conftest import find_event as _find_event
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.ollama import OllamaProvider as _OLP
 from layerlens.instrument.adapters.providers.openai import OpenAIProvider as _OP
 from layerlens.instrument.adapters.providers.anthropic import AnthropicProvider as _AP
@@ -594,7 +595,7 @@ class TestPartialEventOnMidStreamError:
         provider = _OP()
         provider.connect(openai_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             try:
                 stream = openai_client.chat.completions.create(model="gpt-4o", messages=[], stream=True)
@@ -736,7 +737,7 @@ class TestAnthropicMidStreamError:
         provider = _AP()
         provider.connect(anthropic_client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             try:
                 with anthropic_client.messages.stream(model="claude-3-7-sonnet-20250219", messages=[]) as s:
@@ -854,7 +855,7 @@ class TestOllamaStreaming:
         provider = _OLP()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent():
             for _ in client.chat(model="llama3:8b", messages=[{"role": "user", "content": "hi"}], stream=True):
                 pass

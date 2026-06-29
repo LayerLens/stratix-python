@@ -242,22 +242,36 @@ def test_a2a_task_updated_strips_error() -> None:
 
 
 # ---------------------------------------------------------------------------
-# a2a.delegation — who delegates what to whom (L4; delegation is business-core)
+# a2a.delegation — delegation PROVENANCE (A15 / D3, user-approved 2026-06-25).
+# OVERTURN of the old lock: the delegation TOPOLOGY (from_agent/to_agent/
+# target_agent ids) + the keyed-HMAC fp must SURVIVE capture_content=False so
+# cross-agent provenance is auditable under privacy-on — mirroring
+# agent.handoff (above) which keeps from_agent/to_agent. Only the free-text
+# skill DESCRIPTION + target_url + context are content.
 # ---------------------------------------------------------------------------
 
 
-def test_a2a_delegation_strips_target_and_skill() -> None:
+def test_a2a_delegation_keeps_topology_strips_skill_description() -> None:
     payload = _emit(
         "a2a.delegation",
         {
             "task_id": "t1",
-            "target_agent": f"agent-{SENTINEL}",
-            "skill": f"skill-{SENTINEL}",
-            "from_agent": f"src-{SENTINEL}",
+            "target_agent": "billing-agent-7",
+            "to_agent": "billing-agent-7",
+            "from_agent": "orchestrator-1",
+            "delegation_fp": "sha256:abc123",
+            "skill_description": f"do {SENTINEL}",
+            "target_url": f"https://{SENTINEL}.example.com",
+            "context": {"note": SENTINEL},
         },
     )
-    assert SENTINEL not in _blob(payload), "a2a.delegation target/skill leaked"
+    assert SENTINEL not in _blob(payload), "a2a.delegation skill_description/target_url/context leaked"
+    # Topology + provenance metadata SURVIVE (A15).
     assert payload.get("task_id") == "t1", "delegation task id (metadata) over-stripped"
+    assert payload.get("from_agent") == "orchestrator-1", "delegator id stripped (A15 provenance loss)"
+    assert payload.get("to_agent") == "billing-agent-7", "delegatee id stripped (A15 provenance loss)"
+    assert payload.get("target_agent") == "billing-agent-7", "target_agent stripped (A15 provenance loss)"
+    assert payload.get("delegation_fp") == "sha256:abc123", "delegation_fp (provenance) over-stripped (A15)"
 
 
 # ---------------------------------------------------------------------------
@@ -367,3 +381,29 @@ def test_agent_code_strips_code_and_output() -> None:
     )
     assert SENTINEL not in _blob(payload), "agent.code code/prompt/exec content leaked"
     assert payload.get("language") == "python"
+
+
+# ---------------------------------------------------------------------------
+# Nested content (LAY-3572 / R1 / B17) — redaction must recurse, not strip only
+# top-level keys. Content nested under a non-content key (a `metadata`/`extra`
+# wrapper, a list element) historically survived capture_content=False because
+# `redact_payload` only filtered the top-level dict.
+# ---------------------------------------------------------------------------
+
+
+def test_nested_content_under_unlisted_key_is_stripped() -> None:
+    payload = _emit("agent.input", {"name": "agent-x", "metadata": {"messages": [{"content": SENTINEL}]}})
+    assert SENTINEL not in _blob(payload), "nested content leaked under capture_content=False (non-recursive redaction)"
+    assert payload.get("name") == "agent-x", "non-content sibling over-stripped"
+
+
+def test_nested_content_in_list_element_is_stripped() -> None:
+    payload = _emit("tool.call", {"tool_name": "search", "trace": [{"arguments": {"q": SENTINEL}}]})
+    assert SENTINEL not in _blob(payload), "content nested in a list element leaked under capture_content=False"
+    assert payload.get("tool_name") == "search", "tool_name metadata over-stripped"
+
+
+def test_deeply_nested_content_key_is_stripped() -> None:
+    payload = _emit("agent.output", {"status": "ok", "wrapper": {"inner": {"output": SENTINEL}}})
+    assert SENTINEL not in _blob(payload), "deeply nested content key 'output' leaked"
+    assert payload.get("status") == "ok", "status metadata over-stripped"

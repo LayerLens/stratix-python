@@ -15,6 +15,7 @@ import httpx
 
 from openai import AzureOpenAI
 from layerlens.instrument import trace
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.azure_openai import AzureOpenAIProvider
 
 from ...conftest import find_event
@@ -39,7 +40,7 @@ class TestAzureOpenAIRecorded:
         provider = AzureOpenAIProvider()
         provider.connect(client)
 
-        @trace(mock_client)
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def agent():
             r = client.chat.completions.create(
                 model="gpt-4o",

@@ -125,7 +125,7 @@ class TestLifecycle:
 class TestPipelineSpans:
     def test_input_and_output(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = _make_adapter(mock_client)
+        adapter = _make_adapter(mock_client, config=CaptureConfig(capture_content=True))
         _simulate_pipeline(adapter._tracer, input_data={"q": "hello"}, output_data={"a": "world"})
 
         inp = find_event(uploaded["events"], "agent.input")
@@ -148,14 +148,14 @@ class TestPipelineSpans:
 
     def test_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = _make_adapter(mock_client)
+        adapter = _make_adapter(mock_client, config=CaptureConfig(capture_content=True))
         _simulate_pipeline(adapter._tracer, error="Pipeline failed")
         assert find_event(uploaded["events"], "agent.output")["payload"]["error"] == "Pipeline failed"
         adapter.disconnect()
 
     def test_exception(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = _make_adapter(mock_client)
+        adapter = _make_adapter(mock_client, config=CaptureConfig(capture_content=True))
         with pytest.raises(ValueError):
             with adapter._tracer.trace("haystack.pipeline.run"):
                 raise ValueError("boom")
@@ -284,7 +284,7 @@ class TestGeneratorComponents:
 class TestToolComponents:
     def test_tool_call_and_result(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = _make_adapter(mock_client)
+        adapter = _make_adapter(mock_client, config=CaptureConfig(capture_content=True))
         _simulate_pipeline(
             adapter._tracer,
             components=[
@@ -327,7 +327,7 @@ class TestToolComponents:
 
     def test_component_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = _make_adapter(mock_client)
+        adapter = _make_adapter(mock_client, config=CaptureConfig(capture_content=True))
         _simulate_pipeline(
             adapter._tracer,
             components=[

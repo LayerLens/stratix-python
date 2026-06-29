@@ -198,7 +198,7 @@ class TestFunctionInvocation:
         kernel = Kernel()
         kernel.add_plugin(MathPlugin(), "MathPlugin")
 
-        adapter = SemanticKernelAdapter(mock_client)
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect(target=kernel)
 
         # semantic_kernel wraps function errors in KernelInvokeException starting
@@ -266,7 +266,7 @@ class TestFunctionInvocationFilter:
     def test_filter_propagates_exception(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         kernel = Kernel()
-        adapter = SemanticKernelAdapter(mock_client)
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect(target=kernel)
 
         ctx = MockContext()
@@ -386,7 +386,7 @@ class TestAutoFunctionInvocation:
     def test_auto_function_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         kernel = Kernel()
-        adapter = SemanticKernelAdapter(mock_client)
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect(target=kernel)
 
         ctx = MockContext(
@@ -644,7 +644,7 @@ class TestLLMCallWrapping:
         async def failing_inner(chat_history, settings):
             raise RuntimeError("API timeout")
 
-        adapter = SemanticKernelAdapter(mock_client)
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect(target=kernel)
 
         # The adapter wrapped the original, so replace the original call path

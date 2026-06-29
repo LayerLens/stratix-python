@@ -229,6 +229,19 @@ class TestCachedTokens:
         # All-cached: 1000 * 0.003/1000 * 0.10 = 0.0003
         assert cost == pytest.approx(0.0003)
 
+    def test_google_cached_tokens_discount(self) -> None:
+        # 75% off for Gemini (0.25 multiplier) — the _cached_token_discount
+        # gemini branch (pricing.py) had no test (LAY-3572 / B3).
+        # gemini-1.5-pro input rate = 0.00125; all-cached 1000 tokens:
+        # 1000 * 0.00125/1000 * 0.25 = 0.0003125
+        cost = calculate_cost("gemini-1.5-pro", _usage(prompt=1000, completion=0, cached=1000))
+        assert cost == pytest.approx(0.0003125)
+        # ...and distinctly cheaper than the 50%-off default would give.
+        default_rate = calculate_cost("gpt-4o-mini", _usage(prompt=1000, completion=0, cached=1000))
+        gemini_ratio = cost / calculate_cost("gemini-1.5-pro", _usage(prompt=1000, completion=0))
+        assert gemini_ratio == pytest.approx(0.25), "gemini cached discount is not 75% off"
+        assert default_rate is not None
+
 
 class TestPricingTableIsPubliclyAccessible:
     def test_pricing_dict_is_importable(self) -> None:
@@ -402,3 +415,66 @@ class TestPricingTableClass:
         # 800 non-cached at $0.0025/1k + 200 cached at 50% off = 200 * 0.00125/1k
         expected = (800 * 0.0025 / 1000) + (200 * (0.0025 * 0.5) / 1000)
         assert record.cost_usd == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# Service-tier pricing (A2 / LAY-3626) — OpenAI flex/batch (~0.5x) and priority
+# (~2x) change the per-token price. The response echoes service_tier; pricing
+# was model-keyed only, so flex was over-billed ~2x and priority UNDER-billed
+# (the dangerous direction — budgets/ceilings read cost_usd). Web-grounded:
+# OpenAI flex = batch rates (~50% off); priority ~2-2.5x standard.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.invariant
+class TestServiceTierPricing:
+    def test_tier_orders_flex_lt_standard_lt_priority(self) -> None:
+        u = _usage(prompt=1000, completion=1000)
+        flex = calculate_cost("gpt-4o", u, service_tier="flex")
+        std = calculate_cost("gpt-4o", u, service_tier="standard")
+        prio = calculate_cost("gpt-4o", u, service_tier="priority")
+        assert flex is not None and std is not None and prio is not None
+        assert flex < std < prio, f"service_tier not priced: flex={flex} std={std} prio={prio}"
+
+    def test_no_tier_equals_standard_backcompat(self) -> None:
+        u = _usage(prompt=1000, completion=1000)
+        assert calculate_cost("gpt-4o", u) == calculate_cost("gpt-4o", u, service_tier="standard")
+
+    def test_flex_is_half_standard(self) -> None:
+        u = _usage(prompt=1000, completion=1000)
+        assert calculate_cost("gpt-4o", u, service_tier="flex") == pytest.approx(calculate_cost("gpt-4o", u) * 0.5)
+
+    def test_priority_is_double_standard(self) -> None:
+        u = _usage(prompt=1000, completion=1000)
+        assert calculate_cost("gpt-4o", u, service_tier="priority") == pytest.approx(calculate_cost("gpt-4o", u) * 2.0)
+
+
+# ---------------------------------------------------------------------------
+# Cache-WRITE pricing (A3 / LAY-3626) — Anthropic cache_creation tokens cost
+# 1.25x base input (5-min TTL); the formula priced only non-cached + cache-READ
+# (0.1x) + completion, so every cache write was billed at $0 (systematic
+# under-bill on the canonical long-running-agent prompt-cache pattern).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.invariant
+class TestCacheCreationPricing:
+    def test_cache_write_tokens_are_priced(self) -> None:
+        base = NormalizedTokenUsage(prompt_tokens=1000, completion_tokens=100, total_tokens=1100)
+        with_write = NormalizedTokenUsage(
+            prompt_tokens=1000, completion_tokens=100, total_tokens=1100, cache_creation_tokens=1000
+        )
+        c_base = calculate_cost("claude-3-5-sonnet", base)
+        c_write = calculate_cost("claude-3-5-sonnet", with_write)
+        assert c_write > c_base, "cache_creation (write) tokens billed at $0"
+        input_rate = 0.003  # claude-3-5-sonnet input $/1k
+        expected_delta = 1000 * input_rate * 1.25 / 1000
+        assert c_write - c_base == pytest.approx(expected_delta), "cache write not priced at input_rate * 1.25"
+
+    def test_cache_write_costs_more_than_cache_read_for_same_tokens(self) -> None:
+        read = NormalizedTokenUsage(prompt_tokens=2000, completion_tokens=100, total_tokens=2100, cached_tokens=1000)
+        write = NormalizedTokenUsage(
+            prompt_tokens=1000, completion_tokens=100, total_tokens=1100, cache_creation_tokens=1000
+        )
+        # both have 1000 full-rate input; read adds 1000 @0.1x, write adds 1000 @1.25x
+        assert calculate_cost("claude-3-5-sonnet", write) > calculate_cost("claude-3-5-sonnet", read)

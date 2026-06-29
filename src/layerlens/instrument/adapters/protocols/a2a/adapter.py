@@ -1,22 +1,36 @@
-"""A2A (Agent-to-Agent) protocol adapter.
+"""A2A (Agent-to-Agent) protocol adapter — real a2a-sdk 1.1.0 surface.
 
 Instruments both sides of an A2A interaction:
 
-* Server side: wraps ``serve()`` to emit ``a2a.task.created`` / ``a2a.task.updated``
-  from inbound task lifecycle events.
-* Client side: wraps ``client()`` / ``get_agent_card()`` / ``send_task()`` to
-  emit ``a2a.agent.discovered`` and ``a2a.delegation`` events.
+* Server side: :class:`A2AServerWrapper` keys on the REAL JSON-RPC method
+  vocabulary (``message/send`` / ``message/stream`` / ``tasks/*`` — the v0.1
+  ``tasks/send``/``tasks/sendSubscribe`` strings are absent from a2a-sdk 1.1.0).
+* Client side: wraps ``send_message`` (the real a2a Client method) and the
+  legacy ``send_task``/``get_task``/``cancel_task`` duck-typed surface to emit
+  ``a2a.task.created`` / ``a2a.task.updated`` / ``a2a.delegation``.
+* Discovery: wraps ``get_agent_card`` to emit ``a2a.agent.discovered`` with the
+  card-signature PROVENANCE (presence + a keyed-HMAC fingerprint — never the raw
+  JWS).
 
-Works against any object exposing the standard a2a-sdk surface; missing
-methods are silently skipped so the adapter is compatible with partial
-implementations and test doubles.
+Delegation provenance (A15 / D3): ``a2a.delegation`` keeps the delegation
+TOPOLOGY (delegator ``from_agent`` + delegatee ``to_agent``/``target_agent`` +
+``task_id``) and a keyed-HMAC ``delegation_fp`` of (target+skill) as METADATA
+that SURVIVES ``capture_content=False`` (mirrors ``agent.handoff``); the
+free-text ``skill_description`` stays content. See ``_capture_config._CONTENT_KEYS``.
+
+Works against any object exposing the standard a2a-sdk surface; missing methods
+are silently skipped so the adapter is compatible with partial implementations
+and test doubles.
 """
 
 from __future__ import annotations
 
+import hmac
 import time
 import uuid
+import hashlib
 import logging
+import secrets
 from typing import Any, Dict, Callable
 
 from ...._events import (
@@ -25,12 +39,19 @@ from ...._events import (
     A2A_TASK_UPDATED,
     A2A_AGENT_DISCOVERED,
 )
-from .agent_card import parse_agent_card
+from .agent_card import parse_agent_card, summarize_signatures
 from .acp_normalizer import ACPNormalizer
 from .task_lifecycle import TaskState, TaskStateMachine
 from .._base_protocol import BaseProtocolAdapter
 
 log = logging.getLogger(__name__)
+
+# The real a2a Client method (base_client.py:50) + the legacy duck-typed names a
+# partial implementation / test double may expose. ``send_message`` is the
+# canonical 1.1.0 entry point; ``send_task`` is the v0.1 name we still wrap when
+# present so a caller using the older surface is observed too.
+_CLIENT_SEND_METHODS = ("send_message", "send_task")
+_CLIENT_OTHER_METHODS = ("get_task", "cancel_task")
 
 
 class A2AProtocolAdapter(BaseProtocolAdapter):
@@ -43,15 +64,21 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
         self._agent_cards: Dict[str, Any] = {}
         self._task_fsms: Dict[str, TaskStateMachine] = {}
         self._acp_normalizer = ACPNormalizer()
+        # Per-instance HMAC key (a2ui.py / ap2.py P3 pattern): the delegation +
+        # card-signature fingerprints are KEYED HMACs so a low-entropy
+        # (target+skill) pair or a JWS can't be brute-forced from the emitted
+        # fingerprint; the key is never emitted.
+        self._hash_key = secrets.token_bytes(32)
 
     def connect(self, target: Any = None, **kwargs: Any) -> Any:  # noqa: ARG002
         self._client = target
 
-        for method in ("send_task", "get_task", "cancel_task"):
+        for method in (*_CLIENT_SEND_METHODS, *_CLIENT_OTHER_METHODS):
             if hasattr(target, method):
                 orig = getattr(target, method)
                 self._originals[method] = orig
-                setattr(target, method, self._wrap_client_method(orig, method))
+                is_send = method in _CLIENT_SEND_METHODS
+                setattr(target, method, self._wrap_client_method(orig, method, is_send=is_send))
 
         if hasattr(target, "get_agent_card"):
             orig = target.get_agent_card
@@ -65,14 +92,24 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
 
         return target
 
-    def _wrap_client_method(self, original: Callable[..., Any], method: str) -> Callable[..., Any]:
+    # -- fingerprinting --
+
+    def _fingerprint(self, value: Any) -> str:
+        """Keyed-HMAC fingerprint (a2ui/ap2 P3). One-way without the per-instance
+        key, which is never emitted; the raw value is NEVER emitted."""
+        return "sha256:" + hmac.new(self._hash_key, str(value).encode(), hashlib.sha256).hexdigest()
+
+    # -- client wrap --
+
+    def _wrap_client_method(self, original: Callable[..., Any], method: str, *, is_send: bool) -> Callable[..., Any]:
         adapter = self
 
         def wrapped(*args: Any, **kwargs: Any) -> Any:
             task_id = kwargs.get("task_id") or (args[0] if args else None) or uuid.uuid4().hex[:16]
+            task_id = str(task_id)
             parent = uuid.uuid4().hex[:16]
             start = time.time()
-            if method == "send_task":
+            if is_send:
                 adapter._tasks[task_id] = start
                 adapter._task_fsms[task_id] = TaskStateMachine(task_id)
                 adapter.emit(
@@ -84,48 +121,66 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                     },
                     parent_span_id=parent,
                 )
-                adapter.emit(
-                    A2A_DELEGATION,
-                    {
-                        "task_id": task_id,
-                        "target_agent": kwargs.get("agent_id"),
-                        "skill": kwargs.get("skill"),
-                    },
-                    parent_span_id=parent,
-                )
-            # Enter WORKING state before invoking the handler so the FSM
-            # transitions submitted → working → completed / failed validly.
-            if method == "send_task":
+                adapter._emit_delegation(kwargs, task_id=task_id, parent=parent)
+                # Enter WORKING before invoking the handler so the FSM transitions
+                # submitted → working → completed/failed/rejected validly.
                 adapter._record_transition(task_id, TaskState.WORKING)
             try:
                 result = original(*args, **kwargs)
             except Exception as exc:
-                adapter._record_transition(task_id, TaskState.FAILED)
+                if is_send:
+                    adapter._record_transition(task_id, TaskState.FAILED)
+                    adapter.emit(
+                        A2A_TASK_UPDATED,
+                        {
+                            "task_id": task_id,
+                            "status": TaskState.FAILED.value,
+                            "error": str(exc),
+                            "latency_ms": (time.time() - start) * 1000,
+                        },
+                        parent_span_id=parent,
+                    )
+                raise
+            if is_send:
+                status = _task_status(result)
+                adapter._record_transition(task_id, status)
                 adapter.emit(
                     A2A_TASK_UPDATED,
                     {
                         "task_id": task_id,
-                        "status": "failed",
-                        "error": str(exc),
+                        "status": status,
                         "latency_ms": (time.time() - start) * 1000,
                     },
                     parent_span_id=parent,
                 )
-                raise
-            status = _task_status(result)
-            adapter._record_transition(task_id, status)
-            adapter.emit(
-                A2A_TASK_UPDATED,
-                {
-                    "task_id": task_id,
-                    "status": status,
-                    "latency_ms": (time.time() - start) * 1000,
-                },
-                parent_span_id=parent,
-            )
             return result
 
         return wrapped
+
+    def _emit_delegation(self, kwargs: Dict[str, Any], *, task_id: str, parent: str) -> None:
+        """Emit ``a2a.delegation`` IFF a delegatee is named. The TOPOLOGY ids +
+        a keyed-HMAC fp of (target+skill) survive no-content (A15); the free-text
+        skill description is content."""
+        target_agent = kwargs.get("to_agent") or kwargs.get("target_agent") or kwargs.get("agent_id")
+        if target_agent is None:
+            return
+        from_agent = kwargs.get("from_agent")
+        skill_desc = kwargs.get("skill_description") or kwargs.get("skill")
+        payload: Dict[str, Any] = {
+            "task_id": task_id,
+            "target_agent": str(target_agent),
+            "to_agent": str(target_agent),
+            # The fp binds the delegated skill to the target for server-anchored
+            # verification and SURVIVES redaction (the raw skill does not).
+            "delegation_fp": self._fingerprint(str(target_agent) + (str(skill_desc) if skill_desc else "")),
+        }
+        if from_agent is not None:
+            payload["from_agent"] = str(from_agent)
+        if kwargs.get("target_url") is not None:
+            payload["target_url"] = kwargs["target_url"]
+        if skill_desc is not None:
+            payload["skill_description"] = skill_desc
+        self.emit(A2A_DELEGATION, payload, parent_span_id=parent)
 
     def _record_transition(self, task_id: str, new_state: TaskState | str) -> None:
         """Advance the state machine; logs a warning on invalid transitions."""
@@ -136,6 +191,8 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
         if fsm.is_terminal:
             self._task_fsms.pop(task_id, None)
 
+    # -- discovery wrap (card-signature provenance, D2) --
+
     def _wrap_discovery(self, original: Callable[..., Any]) -> Callable[..., Any]:
         adapter = self
 
@@ -144,23 +201,22 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
             agent_id = _extract_agent_id(result)
             if agent_id is not None:
                 adapter._agent_cards[agent_id] = result
-            # If the result is a dict or JSON string, normalize via parse_agent_card.
             normalized: Dict[str, Any] | None = None
             if isinstance(result, (dict, str)):
                 try:
                     normalized = parse_agent_card(result)
                 except ValueError:
                     normalized = None
-            adapter.emit(
-                A2A_AGENT_DISCOVERED,
-                {
-                    "agent_id": agent_id,
-                    "name": (normalized or {}).get("name") or getattr(result, "name", None),
-                    "skills": (normalized or {}).get("skills") or _extract_skills(result),
-                    "authScheme": (normalized or {}).get("authScheme"),
-                    "protocolVersion": (normalized or {}).get("protocolVersion"),
-                },
-            )
+            sig = summarize_signatures(result, adapter._fingerprint)
+            payload: Dict[str, Any] = {
+                "agent_id": agent_id,
+                "name": (normalized or {}).get("name") or getattr(result, "name", None),
+                "skills": (normalized or {}).get("skills") or _extract_skills(result),
+                "authScheme": (normalized or {}).get("authScheme"),
+                "protocolVersion": (normalized or {}).get("protocolVersion"),
+            }
+            payload.update(sig)
+            adapter.emit(A2A_AGENT_DISCOVERED, payload)
             return result
 
         return wrapped
@@ -190,11 +246,9 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
             adapter._task_fsms[task_id] = TaskStateMachine(task_id)
             adapter.emit(
                 A2A_TASK_CREATED,
-                {"task_id": task_id, "source": "server", "skill": _skill_from(task)},
+                {"task_id": task_id, "source": "server", "skill_description": _skill_from(task)},
                 parent_span_id=parent,
             )
-            # Advance submitted → working before handler runs so the final
-            # completed / failed transition is valid.
             adapter._record_transition(task_id, TaskState.WORKING)
             try:
                 result = handler(task, *args, **kwargs)
@@ -204,7 +258,7 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                     A2A_TASK_UPDATED,
                     {
                         "task_id": task_id,
-                        "status": "failed",
+                        "status": TaskState.FAILED.value,
                         "error": str(exc),
                         "latency_ms": (time.time() - start) * 1000,
                     },
@@ -247,12 +301,23 @@ def _extract_skills(card: Any) -> list[str]:
 
 
 def _task_status(result: Any) -> str:
+    """Read the terminal status from a task/result. Defaults to UNKNOWN (NOT
+    completed) so a result with no parseable status is never mislabeled as a
+    successful completion (D5)."""
     status = getattr(result, "status", None)
     if status is None and isinstance(result, dict):
         status = result.get("status")
+    # a2a Task: status is a TaskStatus with a .state (an enum or a string).
+    state = getattr(status, "state", None)
+    if state is not None:
+        return getattr(state, "value", str(state))
     if isinstance(status, dict):
-        status = status.get("state")
-    return status or "completed"
+        state = status.get("state")
+        if state is not None:
+            return getattr(state, "value", str(state))
+    if isinstance(status, str):
+        return status
+    return TaskState.UNKNOWN.value
 
 
 def _task_id_from(task: Any) -> str:
@@ -263,7 +328,7 @@ def _task_id_from(task: Any) -> str:
             if isinstance(task.get("task"), dict)
             else task.get("id")
         )
-    return tid or uuid.uuid4().hex[:16]
+    return str(tid) if tid else uuid.uuid4().hex[:16]
 
 
 def _skill_from(task: Any) -> Any:
@@ -277,7 +342,7 @@ def _skill_from(task: Any) -> Any:
 
 def _summarize(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
-    for key in ("agent_id", "skill", "task_id", "priority"):
+    for key in ("skill", "skill_description", "task_id", "priority"):
         if key in kwargs:
             out[key] = kwargs[key]
     return out

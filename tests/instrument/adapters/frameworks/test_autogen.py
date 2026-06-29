@@ -115,7 +115,7 @@ class TestLifecycle:
 
 class TestLLMCall:
     def test_model_invoke_emitted(self, mock_client):
-        adapter, uploaded = _setup(mock_client)
+        adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
         _log_and_flush(
             adapter,
             LLMCallEvent(
@@ -227,7 +227,7 @@ class TestLLMCall:
 
 class TestToolCall:
     def test_tool_call_emitted(self, mock_client):
-        adapter, uploaded = _setup(mock_client)
+        adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
         _log_and_flush(
             adapter,
             ToolCallEvent(
@@ -291,7 +291,7 @@ class TestMessage:
         assert msg["payload"]["delivery_stage"] == "SEND"
 
     def test_respond_message_emits_agent_output(self, mock_client):
-        adapter, uploaded = _setup(mock_client)
+        adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
         _log_and_flush(
             adapter,
             MessageEvent(
@@ -337,7 +337,7 @@ class TestMessage:
         assert "receiver" not in msg["payload"]
 
     def test_large_message_truncated(self, mock_client):
-        adapter, uploaded = _setup(mock_client)
+        adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
         _log_and_flush(
             adapter,
             MessageEvent(
@@ -389,7 +389,7 @@ class TestErrors:
         assert err["payload"]["sender"] == "user/default"
 
     def test_handler_exception(self, mock_client):
-        adapter, uploaded = _setup(mock_client)
+        adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
         _log_and_flush(
             adapter,
             MessageHandlerExceptionEvent(
@@ -406,7 +406,7 @@ class TestErrors:
         assert err["payload"]["agent_id"] == "assistant/default"
 
     def test_construction_exception(self, mock_client):
-        adapter, uploaded = _setup(mock_client)
+        adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
         _log_and_flush(
             adapter,
             AgentConstructionExceptionEvent(
@@ -421,7 +421,7 @@ class TestErrors:
         assert err["payload"]["agent_id"] == "broken_agent/default"
 
     def test_string_exception_fallback(self, mock_client):
-        adapter, uploaded = _setup(mock_client)
+        adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
         _log_and_flush(
             adapter,
             MessageHandlerExceptionEvent(

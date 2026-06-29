@@ -62,7 +62,7 @@ class TestInheritedBehavior:
 
     def test_tool_events_inherited(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangGraphCallbackHandler(mock_client)
+        handler = LangGraphCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         tool_id = uuid4()
@@ -78,7 +78,7 @@ class TestInheritedBehavior:
 
     def test_error_handling_inherited(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangGraphCallbackHandler(mock_client)
+        handler = LangGraphCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         handler.on_chain_start({"name": "Graph"}, {}, run_id=chain_id)
@@ -385,7 +385,7 @@ class TestHandoffDetection:
 
     def test_context_is_scrubbed_and_hashed(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangGraphCallbackHandler(mock_client)
+        handler = LangGraphCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         root = self._enter_node(handler, "supervisor", inputs={"task": "summarize"})
         self._enter_node(
@@ -424,7 +424,7 @@ class TestMessageStateSerialization:
 
     def test_chain_io_with_message_objects_is_captured(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangGraphCallbackHandler(mock_client)
+        handler = LangGraphCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         # Pre-fix this raised TypeError (no langchain callback-manager to swallow it).
@@ -448,7 +448,7 @@ class TestMessageStateSerialization:
 
     def test_tool_calls_in_message_are_serialized(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangGraphCallbackHandler(mock_client)
+        handler = LangGraphCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         ai = AIMessage(
             content="",
@@ -463,7 +463,7 @@ class TestMessageStateSerialization:
 
     def test_handoff_context_with_message_objects_is_captured(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangGraphCallbackHandler(mock_client)
+        handler = LangGraphCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         state = {"messages": [HumanMessage(content="hi")]}
         root = uuid4()

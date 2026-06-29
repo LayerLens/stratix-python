@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import json
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -140,35 +141,206 @@ class TestReplayCommands:
 
 
 # ---------------------------------------------------------------------------
+# replay-fn / --target RCE guard (A5 / PAY-SEC-1) — POSITIVE security tests
+# ---------------------------------------------------------------------------
+#
+# The loader resolves a user ``module:attr`` string and the controller INVOKES
+# it — a remote-code-execution surface. The old guard was a 12-name stdlib
+# denylist; it failed OPEN for ``posix:system`` (== ``os.system``; ``posix`` not
+# listed) and for any import-with-side-effects module (``import_module`` ran the
+# target's top-level code BEFORE any attr check). There was ZERO positive test:
+# deleting the denylist kept the suite green. These tests drive the REAL Click
+# commands and assert a malicious target is BLOCKED. BITE: neuter the allowlist
+# check in src/layerlens/cli/_safe_loader.py (``_is_stdlib_root`` -> ``return
+# False``) and every case below goes from refused → loaded (RED).
+
+# Each entry exercises a distinct bypass class against the loader:
+#   posix:system            -> the headline bypass: posix.system IS os.system
+#   os:system               -> the obvious one the denylist did cover
+#   subprocess:run          -> process spawn
+#   builtins:eval           -> arbitrary-code primitive
+#   sys:exit / ctypes:CDLL  -> other denylisted roots, allowlist-confirmed
+#   platform:_syscmd_uname  -> a stdlib *submodule attr* shell-out the denylist missed
+#   antigravity:__name__    -> import-time side-effect module (opens a browser on import)
+#   pdb:run / webbrowser:open / this:s -> more import-side-effect / process modules
+_MALICIOUS_TARGETS = [
+    "posix:system",
+    "os:system",
+    "os.path:exists",
+    "subprocess:run",
+    "subprocess:Popen",
+    "builtins:eval",
+    "builtins:exec",
+    "sys:exit",
+    "ctypes:CDLL",
+    "shutil:rmtree",
+    "runpy:run_path",
+    "importlib:import_module",
+    "pickle:loads",
+    "socket:socket",
+    "platform:_syscmd_uname",
+    "antigravity:__name__",
+    "pdb:run",
+    "webbrowser:open",
+    "this:s",
+]
+
+
+class TestReplayFnRceGuard:
+    @pytest.mark.parametrize("target", _MALICIOUS_TARGETS)
+    def test_replay_fn_blocks_malicious_target(self, runner, target):
+        result = runner.invoke(
+            cli,
+            ["--quiet", "replay", "run", "--trace-id", "t1", "--replay-fn", target],
+        )
+        # Refused at parse time (BadParameter -> exit 2), NEVER loaded/invoked.
+        assert result.exit_code != 0, f"{target!r} was NOT refused (RCE bypass)"
+        assert "refusing to load" in result.output, f"{target!r} did not hit the allowlist guard"
+
+    @pytest.mark.parametrize("target", _MALICIOUS_TARGETS)
+    def test_evaluations_target_blocks_malicious(self, runner, tmp_path, target):
+        ds_path = tmp_path / "ds.json"
+        ds_path.write_text(json.dumps([{"id": "a", "input": 1, "expected_output": 1}]))
+        result = runner.invoke(
+            cli,
+            [
+                "--quiet",
+                "evaluations",
+                "run",
+                "--dataset-id",
+                "local",
+                "--dataset-file",
+                str(ds_path),
+                "--target",
+                target,
+            ],
+        )
+        assert result.exit_code != 0, f"--target {target!r} was NOT refused (RCE bypass)"
+        assert "refusing to load" in result.output, f"--target {target!r} did not hit the allowlist guard"
+
+    @pytest.mark.parametrize("target", _MALICIOUS_TARGETS)
+    def test_evaluations_scorer_blocks_malicious(self, runner, tmp_path, target_module, target):
+        ds_path = tmp_path / "ds.json"
+        ds_path.write_text(json.dumps([{"id": "a", "input": 1, "expected_output": 1}]))
+        result = runner.invoke(
+            cli,
+            [
+                "--quiet",
+                "evaluations",
+                "run",
+                "--dataset-id",
+                "local",
+                "--dataset-file",
+                str(ds_path),
+                "--target",
+                f"{target_module}:identity",
+                "--scorer",
+                f"evil={target}",
+            ],
+        )
+        assert result.exit_code != 0, f"--scorer {target!r} was NOT refused (RCE bypass)"
+        assert "refusing to load" in result.output, f"--scorer {target!r} did not hit the allowlist guard"
+
+    def test_import_module_never_called_for_blocked_target(self, monkeypatch):
+        """The allowlist check precedes import_module, so a blocked module's
+        TOP-LEVEL code (an import-time side effect — ``antigravity`` opens a
+        browser, a malicious package's ``__init__`` runs) NEVER executes: the
+        guard refuses the root before any import.
+
+        We spy on the loader's ``importlib.import_module`` and assert it is never
+        invoked for a blocked target. BITE: with the allowlist neutered the
+        denied target would fall through to ``import_module`` and this spy would
+        fire (and the real side effect would run).
+        """
+        from layerlens.cli import _safe_loader
+
+        calls = []
+        real_import = _safe_loader.importlib.import_module
+
+        def spy(name, *a, **k):
+            calls.append(name)
+            return real_import(name, *a, **k)
+
+        monkeypatch.setattr(_safe_loader.importlib, "import_module", spy)
+
+        for target in ("posix:system", "os:system", "antigravity:__name__", "this:s"):
+            with pytest.raises(click.BadParameter):
+                _safe_loader.load_callable(target, param_hint="--replay-fn")
+        assert calls == [], f"import_module was called for a blocked target: {calls}"
+
+    def test_real_application_target_is_allowed(self, runner, tmp_path, target_module):
+        """The allowlist must not over-block: a real on-disk application module
+        loads (this is the legitimate use). Drives the real evaluations command
+        end-to-end with a real --target + --scorer."""
+        ds_path = tmp_path / "ds.json"
+        ds_path.write_text(json.dumps([{"id": "a", "input": 1, "expected_output": 1}]))
+        result = runner.invoke(
+            cli,
+            [
+                "--quiet",
+                "evaluations",
+                "run",
+                "--dataset-id",
+                "local",
+                "--dataset-file",
+                str(ds_path),
+                "--target",
+                f"{target_module}:identity",
+                "--scorer",
+                f"exact={target_module}:scorer",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(_last_json_blob(result.output))
+        assert payload["status"] == "completed"
+
+
+# ---------------------------------------------------------------------------
 # evaluations
 # ---------------------------------------------------------------------------
 
 
 _TARGET_MODULE = "layerlens_test_target_module"
 
+# The safe loader (layerlens.cli._safe_loader) deliberately refuses any module
+# that does not resolve to a REAL on-disk source file outside the stdlib — an
+# in-memory ``types.ModuleType`` injected into ``sys.modules`` has no file spec
+# and is rejected (fail-closed against an attacker poisoning sys.modules). So the
+# test target must be a real importable module on disk, exactly as a production
+# ``--target mypkg.module:fn`` is. We write one into tmp and add it to sys.path.
+_TARGET_SOURCE = """\
+def identity(x):
+    return x
 
-def _register_test_target():
-    """Register an in-memory module so --target can resolve to a real callable."""
-    import types
 
-    module = types.ModuleType(_TARGET_MODULE)
+def scorer(actual, expected, _meta):
+    return 1.0 if actual == expected else 0.0
+"""
 
-    def identity(x):
-        return x
 
-    def scorer(actual, expected, _meta):
-        return 1.0 if actual == expected else 0.0
+@pytest.fixture
+def target_module(tmp_path, monkeypatch):
+    """Materialise a real on-disk ``layerlens_test_target_module`` and import it.
 
-    module.identity = identity
-    module.scorer = scorer
-    sys.modules[_TARGET_MODULE] = module
+    Yields the importable module name. Cleans the import caches afterward so the
+    module name does not leak across tests.
+    """
+    import importlib
+
+    mod_dir = tmp_path / "_targets"
+    mod_dir.mkdir()
+    (mod_dir / f"{_TARGET_MODULE}.py").write_text(_TARGET_SOURCE)
+    monkeypatch.syspath_prepend(str(mod_dir))
+    sys.modules.pop(_TARGET_MODULE, None)
+    importlib.invalidate_caches()
+    try:
+        yield _TARGET_MODULE
+    finally:
+        sys.modules.pop(_TARGET_MODULE, None)
 
 
 class TestEvaluationsCommands:
-    def setup_method(self):
-        _register_test_target()
-
-    def test_run_requires_dataset_file(self, runner):
+    def test_run_requires_dataset_file(self, runner, target_module):
         result = runner.invoke(
             cli,
             [
@@ -178,13 +350,13 @@ class TestEvaluationsCommands:
                 "--dataset-id",
                 "d1",
                 "--target",
-                f"{_TARGET_MODULE}:identity",
+                f"{target_module}:identity",
             ],
         )
         assert result.exit_code != 0
         assert "dataset-file" in result.output
 
-    def test_run_reads_dataset_file_and_emits_run(self, runner, tmp_path):
+    def test_run_reads_dataset_file_and_emits_run(self, runner, tmp_path, target_module):
         ds_path = tmp_path / "ds.json"
         ds_path.write_text(
             json.dumps(
@@ -205,9 +377,9 @@ class TestEvaluationsCommands:
                 "--dataset-file",
                 str(ds_path),
                 "--target",
-                f"{_TARGET_MODULE}:identity",
+                f"{target_module}:identity",
                 "--scorer",
-                f"exact={_TARGET_MODULE}:scorer",
+                f"exact={target_module}:scorer",
             ],
         )
         assert result.exit_code == 0

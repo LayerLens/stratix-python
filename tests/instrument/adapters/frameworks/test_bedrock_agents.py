@@ -15,7 +15,7 @@ from botocore.stub import Stubber  # noqa: E402
 
 import layerlens.instrument.adapters.frameworks.bedrock_agents as _mod  # noqa: E402
 from layerlens.instrument._context import _current_run, _current_collector  # noqa: E402
-from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402  # noqa: E402
 from layerlens.instrument.adapters.frameworks.bedrock_agents import BedrockAgentsAdapter  # noqa: E402
 
 from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
@@ -144,7 +144,7 @@ class TestErrorIsolation:
         """A transport error (after-call-error) must end the run + emit agent.error."""
         uploaded = capture_framework_trace(mock_client)
         boto = _make_boto_client()
-        adapter = BedrockAgentsAdapter(mock_client)
+        adapter = BedrockAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect(target=boto)
         adapter._before_invoke(params={"agentId": "a1", "inputText": "hi"})
         assert _current_run.get() is not None  # run is open

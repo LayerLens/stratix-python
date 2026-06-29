@@ -185,7 +185,8 @@ class TestLlamaIndexAdapterLifecycle:
 
 
 class TestLLMChatEvents:
-    def test_chat_end_emits_model_invoke(self, adapter, mock_client):
+    def test_chat_end_emits_model_invoke(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 
@@ -272,7 +273,8 @@ class TestLLMChatEvents:
         assert "latency_ms" in payload
         assert payload["latency_ms"] >= 5  # at least 5ms
 
-    def test_chat_with_messages_captured(self, adapter, mock_client):
+    def test_chat_with_messages_captured(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 
@@ -310,7 +312,8 @@ class TestLLMChatEvents:
 
 
 class TestLLMCompletionEvents:
-    def test_completion_end_emits_model_invoke(self, adapter, mock_client):
+    def test_completion_end_emits_model_invoke(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 
@@ -333,7 +336,8 @@ class TestLLMCompletionEvents:
 
 
 class TestToolCallEvents:
-    def test_tool_call_emits_event(self, adapter, mock_client):
+    def test_tool_call_emits_event(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 
@@ -369,7 +373,8 @@ class TestToolCallEvents:
 
 
 class TestRetrievalEvents:
-    def test_retrieval_start_emits_tool_call(self, adapter, mock_client):
+    def test_retrieval_start_emits_tool_call(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 
@@ -382,7 +387,8 @@ class TestRetrievalEvents:
         assert payload["tool_name"] == "retrieval"
         assert payload["input"] == "How does RAG work?"
 
-    def test_retrieval_end_emits_tool_result(self, adapter, mock_client):
+    def test_retrieval_end_emits_tool_result(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 
@@ -447,7 +453,8 @@ class TestEmbeddingEvents:
 
 
 class TestQueryEvents:
-    def test_query_start_emits_agent_input(self, adapter, mock_client):
+    def test_query_start_emits_agent_input(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 
@@ -459,7 +466,8 @@ class TestQueryEvents:
         payload = events[0]["payload"]
         assert payload["input"] == "What is the meaning of life?"
 
-    def test_query_end_emits_agent_output(self, adapter, mock_client):
+    def test_query_end_emits_agent_output(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 
@@ -553,7 +561,8 @@ class TestReRankEvents:
 
 
 class TestExceptionEvents:
-    def test_exception_emits_agent_error(self, adapter, mock_client):
+    def test_exception_emits_agent_error(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 
@@ -566,7 +575,8 @@ class TestExceptionEvents:
         assert "Something went wrong" in payload["error"]
         assert payload["error_type"] == "ValueError"
 
-    def test_runtime_error(self, adapter, mock_client):
+    def test_runtime_error(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
         root = _create_span(adapter)
 

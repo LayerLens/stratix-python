@@ -229,7 +229,7 @@ class TestLifecycle:
 class TestInvocationLifecycle:
     def test_invocation_emits_input_and_output(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = StrandsAdapter(mock_client)
+        adapter = StrandsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         agent = _make_agent(name="MyAgent", model_id="claude-sonnet")
@@ -322,7 +322,7 @@ class TestModelCalls:
 
     def test_model_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = StrandsAdapter(mock_client)
+        adapter = StrandsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         agent = _make_agent()
@@ -358,7 +358,7 @@ class TestModelCalls:
 class TestToolCalls:
     def test_tool_call_and_result(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = StrandsAdapter(mock_client)
+        adapter = StrandsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         agent = _make_agent()
@@ -393,7 +393,7 @@ class TestToolCalls:
 
     def test_tool_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = StrandsAdapter(mock_client)
+        adapter = StrandsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         agent = _make_agent()
@@ -497,7 +497,7 @@ class TestToolCalls:
 class TestAgentConfig:
     def test_config_emitted_on_invocation(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = StrandsAdapter(mock_client)
+        adapter = StrandsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         agent = _make_agent(

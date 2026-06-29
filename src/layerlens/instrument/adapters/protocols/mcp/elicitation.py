@@ -4,6 +4,13 @@
 their user responses, preserving latency and privacy-preserving hashes so
 the MCP adapter can emit ``mcp.elicitation`` events with per-request IDs
 instead of treating each call as a one-off.
+
+Consent fidelity (D1): the real ``mcp.types.ElicitResult.action`` is one of
+``accept`` / ``decline`` / ``cancel``. A refusal (decline/cancel) MUST be
+distinguishable from an accept downstream, and MUST NOT carry a content-derived
+hash of a payload the user never submitted (``ElicitResult.content`` is ``None``
+for decline/cancel and for URL mode). The tracker therefore only ever hashes the
+SUBMITTED form content of an ACCEPTED form-mode response.
 """
 
 from __future__ import annotations
@@ -16,6 +23,9 @@ import logging
 from typing import Any, Optional
 
 log = logging.getLogger(__name__)
+
+#: The real ElicitResult action vocabulary (mcp.types.ElicitResult.action).
+ELICIT_ACTIONS = frozenset({"accept", "decline", "cancel"})
 
 
 class ElicitationTracker:
@@ -38,7 +48,7 @@ class ElicitationTracker:
     def complete_response(
         self,
         elicitation_id: str,
-        action: str,  # noqa: ARG002 — accepted for downstream payload construction
+        action: str,  # noqa: ARG002 — the action is emitted by the caller, not here
         response: Any = None,  # noqa: ARG002
     ) -> Optional[float]:
         """Return elapsed ms from start_request, or None if the ID wasn't tracked."""
@@ -55,8 +65,29 @@ class ElicitationTracker:
         return len(self._active)
 
     @staticmethod
-    def hash_response(response: Any) -> str:
-        return "sha256:" + hashlib.sha256(str(response or "").encode()).hexdigest()
+    def normalize_action(action: Any) -> str:
+        """Coerce a result's action onto the real vocabulary, failing CLOSED.
+
+        An unknown / missing action is reported as ``"unknown"`` (NOT silently
+        mapped to accept) so a refusal is never mislabelled as consent. The old
+        code hardcoded ``"submit"`` — which is not even a real MCP action.
+        """
+        a = str(action).lower().strip() if action is not None else ""
+        return a if a in ELICIT_ACTIONS else "unknown"
+
+    @staticmethod
+    def hash_content(content: Any) -> Optional[str]:
+        """Hash the SUBMITTED form content (only for an accepted form-mode reply).
+
+        Returns ``None`` when there is no submitted content (decline/cancel, or
+        URL mode) — a refused/redirected elicitation hashes NOTHING. The hash is
+        itself content-derived, so the emitting adapter gates it under
+        ``capture_content=False``; this is a privacy-preserving stand-in only
+        when content capture is on.
+        """
+        if content is None:
+            return None
+        return "sha256:" + hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
 
     @staticmethod
     def hash_schema(schema: Optional[dict[str, Any]]) -> str:

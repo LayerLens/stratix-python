@@ -22,21 +22,19 @@ from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.providers.pricing import PRICING, calculate_cost
 from layerlens.instrument.adapters.providers.token_usage import NormalizedTokenUsage
 
-# Adapters #23 moved to per-run collector isolation (LAY-3576): their _fire no
-# longer reads ``self._collector``. crewai takes the run as an explicit arg;
-# google_adk/smolagents/strands resolve it from the ``_current_run`` ContextVar.
-# autogen/llamaindex still emit via the instance collector.
-_PER_RUN_EXPLICIT = {"crewai"}
+# Adapters moved to per-run collector isolation (LAY-3576): their _fire no longer
+# reads a scalar ``self._collector``. google_adk/smolagents/strands resolve the
+# collector from the ``_current_run`` ContextVar; crewai/autogen/llamaindex expose
+# ``_collector`` as a per-run property that falls back to the instance collector
+# set in the test (their handlers run through a fresh ``copy_context()``, so the
+# branch's crewai/autogen _fire resolves via _current_run + the _fallback slot).
 _PER_RUN_CONTEXTVAR = {"google_adk", "smolagents", "strands"}
 
 
 def _drive_fire(adapter: object, module_name: str, collector: TraceCollector, payload: dict) -> None:
     """Invoke the adapter's real ``_fire("cost.record", ...)`` so the emitted
     event lands in *collector*, honouring each adapter's collector mechanics."""
-    if module_name in _PER_RUN_EXPLICIT:
-        run = RunState(collector=collector, root_span_id="s1")
-        adapter._fire(run, "cost.record", payload, span_id="s1")  # type: ignore[attr-defined]
-    elif module_name in _PER_RUN_CONTEXTVAR:
+    if module_name in _PER_RUN_CONTEXTVAR:
         token = _current_run.set(RunState(collector=collector, root_span_id="s1"))
         try:
             adapter._fire("cost.record", payload, span_id="s1")  # type: ignore[attr-defined]

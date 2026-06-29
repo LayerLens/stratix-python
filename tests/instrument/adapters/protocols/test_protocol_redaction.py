@@ -54,6 +54,7 @@ def _all_payload_text(events: List[Dict[str, Any]]) -> str:
 
 
 _NO_CONTENT = CaptureConfig(capture_content=False)
+_CONTENT = CaptureConfig(capture_content=True)
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +110,7 @@ class TestMCPRedaction:
         return _run_collected(mock_client, go, collector_config)
 
     def test_content_present_by_default(self, mock_client: Any) -> None:
-        events = self._drive(mock_client, None, None)
+        events = self._drive(mock_client, _CONTENT, _CONTENT)
         text = _all_payload_text(events)
         assert SECRET_QUERY in text
         # Raw results never enter the payload — the adapter summarizes them
@@ -155,7 +156,7 @@ class TestMCPRedaction:
             with pytest.raises(ValueError):
                 target.call_tool(name="charge", arguments={"card": SECRET_QUERY})
 
-        return _run_collected(mock_client, go, None)
+        return _run_collected(mock_client, go, adapter_config)
 
     def test_error_path_no_content_strips_exception_string(self, mock_client: Any) -> None:
         events = self._drive_error(mock_client, _NO_CONTENT)
@@ -170,11 +171,11 @@ class TestMCPRedaction:
         )
 
     def test_error_path_default_captures_exception_string(self, mock_client: Any) -> None:
-        # Sanity: under the default config the exception string IS captured, so
-        # the no-content assertion above is meaningful (not vacuous).
-        events = self._drive_error(mock_client, None)
+        # Sanity: under a content-capturing config the exception string IS
+        # captured, so the no-content assertion above is meaningful (not vacuous).
+        events = self._drive_error(mock_client, _CONTENT)
         assert SECRET_QUERY in _all_payload_text(events), (
-            "error str(exc) not captured by default — test would be vacuous"
+            "error str(exc) not captured under capture_content=True — test would be vacuous"
         )
 
 
@@ -208,7 +209,7 @@ class TestAGUIRedaction:
         return _run_collected(mock_client, go, collector_config)
 
     def test_content_present_by_default(self, mock_client: Any) -> None:
-        text = _all_payload_text(self._drive(mock_client, None, None))
+        text = _all_payload_text(self._drive(mock_client, _CONTENT, _CONTENT))
         assert SECRET_TEXT in text and SECRET_QUERY in text
 
     def test_adapter_side_no_content_strips_text_and_args(self, mock_client: Any) -> None:
@@ -225,117 +226,12 @@ class TestAGUIRedaction:
 
 
 # ---------------------------------------------------------------------------
-# AP2 — payment amount / merchant (approved: financial details are CONTENT)
+# AP2 redaction — moved to test_ap2_payment.py (real ap2 pydantic fixtures,
+# LAY-3625). The adapter now operates on real IntentMandate/CartMandate/
+# PaymentMandate objects from the pinned ap2 SDK, so its redaction tests live
+# next to the real fixtures and importorskip("ap2"). The cross-adapter
+# capture_content=False sweep in test_no_content_sweep.py still covers ap2.
 # ---------------------------------------------------------------------------
-
-
-class TestAP2Redaction:
-    def _drive(
-        self, mock_client: Any, adapter_config: Optional[CaptureConfig], collector_config: Optional[CaptureConfig]
-    ) -> List[Dict[str, Any]]:
-        from layerlens.instrument.adapters.protocols.ap2 import AP2ProtocolAdapter
-
-        adapter = (
-            AP2ProtocolAdapter(capture_config=adapter_config) if adapter_config is not None else AP2ProtocolAdapter()
-        )
-        target = SimpleNamespace(
-            create_intent_mandate=lambda **kw: {"ok": True},
-            sign_payment_mandate=lambda **kw: {"ok": True},
-            issue_receipt=lambda **kw: {"ok": True},
-        )
-        adapter.connect(target=target)
-
-        def go() -> None:
-            target.issue_receipt(
-                mandate_id="m1",
-                amount=SECRET_AMOUNT,
-                merchant=SECRET_MERCHANT,
-            )
-
-        return _run_collected(mock_client, go, collector_config)
-
-    def test_content_present_by_default(self, mock_client: Any) -> None:
-        text = _all_payload_text(self._drive(mock_client, None, None))
-        assert SECRET_MERCHANT in text and str(SECRET_AMOUNT) in text
-
-    def test_adapter_side_no_content_strips_amount_and_merchant(self, mock_client: Any) -> None:
-        events = self._drive(mock_client, _NO_CONTENT, None)
-        text = _all_payload_text(events)
-        assert SECRET_MERCHANT not in text, "merchant leaked despite adapter capture_content=False (N7)"
-        assert str(SECRET_AMOUNT) not in text, "payment amount leaked despite adapter capture_content=False (N7)"
-        assert any(e["payload"].get("mandate_id") == "m1" for e in events), "metadata over-stripped"
-
-    def test_collector_side_no_content_strips_amount_and_merchant(self, mock_client: Any) -> None:
-        text = _all_payload_text(self._drive(mock_client, None, _NO_CONTENT))
-        assert SECRET_MERCHANT not in text, "collector backstop missing for payment merchant (N7)"
-        assert str(SECRET_AMOUNT) not in text, "collector backstop missing for payment amount (N7)"
-
-    # --- L1: the BLOCKED guardrail path (the riskier, previously-untested one) ---
-
-    def _drive_blocked(
-        self, mock_client: Any, adapter_config: Optional[CaptureConfig], guardrails: Any, **sign_kwargs: Any
-    ) -> List[Dict[str, Any]]:
-        """Drive a guardrail-BLOCKED sign through the REAL adapter."""
-        from layerlens.instrument.adapters.protocols.ap2 import AP2ProtocolAdapter
-
-        adapter = AP2ProtocolAdapter(guardrails=guardrails, capture_config=adapter_config)
-        target = SimpleNamespace(sign_payment_mandate=lambda **kw: {"ok": True})
-        adapter.connect(target=target)
-
-        def go() -> None:
-            with pytest.raises(PermissionError):
-                target.sign_payment_mandate(**sign_kwargs)
-
-        return _run_collected(mock_client, go, None)
-
-    def test_blocked_over_cap_default_captures_reason(self, mock_client: Any) -> None:
-        from layerlens.instrument.adapters.protocols.ap2 import AP2Guardrails
-
-        events = self._drive_blocked(
-            mock_client, None, AP2Guardrails(max_transaction=10.0), mandate_id="m1", amount=SECRET_AMOUNT, merchant="ok"
-        )
-        blocked = [e for e in events if e["payload"].get("status") == "blocked"]
-        assert blocked, "no blocked payment.mandate_signed event emitted"
-        # Default (content captured): the amount detail AND the reason_code are present.
-        assert str(SECRET_AMOUNT) in _all_payload_text(events), "default should still carry the reason detail"
-        assert blocked[0]["payload"].get("reason_code") == "MAX_TRANSACTION_EXCEEDED"
-
-    def test_blocked_over_cap_no_content_strips_amount_keeps_reason_code(self, mock_client: Any) -> None:
-        from layerlens.instrument.adapters.protocols.ap2 import AP2Guardrails
-
-        events = self._drive_blocked(
-            mock_client,
-            _NO_CONTENT,
-            AP2Guardrails(max_transaction=10.0),
-            mandate_id="m1",
-            amount=SECRET_AMOUNT,
-            merchant="ok",
-        )
-        text = _all_payload_text(events)
-        assert str(SECRET_AMOUNT) not in text, "blocked-payment reason leaked amount under capture_content=False (L1)"
-        blocked = [e for e in events if e["payload"].get("status") == "blocked"]
-        assert blocked, "blocked event suppressed entirely — over-stripped"
-        assert blocked[0]["payload"].get("reason_code") == "MAX_TRANSACTION_EXCEEDED", (
-            "reason_code (why blocked) over-stripped — observability blinded"
-        )
-
-    def test_blocked_off_whitelist_no_content_strips_merchant_keeps_reason_code(self, mock_client: Any) -> None:
-        from layerlens.instrument.adapters.protocols.ap2 import AP2Guardrails
-
-        events = self._drive_blocked(
-            mock_client,
-            _NO_CONTENT,
-            AP2Guardrails(merchant_whitelist=["ALLOWED-MERCHANT"]),
-            mandate_id="m1",
-            amount=5,
-            merchant=SECRET_MERCHANT,
-        )
-        text = _all_payload_text(events)
-        assert SECRET_MERCHANT not in text, "blocked-payment reason leaked merchant under capture_content=False (L1)"
-        blocked = [e for e in events if e["payload"].get("status") == "blocked"]
-        assert blocked and blocked[0]["payload"].get("reason_code") == "MERCHANT_NOT_WHITELISTED", (
-            "reason_code (why blocked) over-stripped — observability blinded"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +265,7 @@ class TestUCPRedaction:
         return _run_collected(mock_client, go, collector_config)
 
     def test_content_present_by_default(self, mock_client: Any) -> None:
-        text = _all_payload_text(self._drive(mock_client, None, None))
+        text = _all_payload_text(self._drive(mock_client, _CONTENT, _CONTENT))
         assert SECRET_QUERY in text and str(SECRET_AMOUNT) in text
 
     def test_adapter_side_no_content_strips_query_and_amount(self, mock_client: Any) -> None:
@@ -390,17 +286,21 @@ class TestUCPRedaction:
 # ---------------------------------------------------------------------------
 
 
-# A2A delegation: who delegates WHICH skill to WHOM is the core delegation
-# signal (business-sensitive). The SENTINELs go on ``agent_id``/``skill`` (the
-# fields the adapter actually emits as a2a.delegation target_agent/skill) — NOT
-# on ``message``, which _summarize drops BEFORE redaction runs (the old test
-# asserted ``message`` absent and so passed whether redaction worked or not —
-# vacuous; LAY-3578 / L4).
-SECRET_AGENT = "SENTINEL-billing-agent"
-SECRET_SKILL = "SENTINEL-process-refund"
+# A2A delegation provenance (A15 / D3, user-approved 2026-06-25). OVERTURN of the
+# old (mis-aimed) lock: the delegation TOPOLOGY — who delegated to whom — must
+# SURVIVE capture_content=False so cross-agent provenance is auditable under
+# privacy-on (mirrors agent.handoff keeping from_agent/to_agent). Only the
+# free-text skill DESCRIPTION (what the skill does) is content. So the SENTINEL
+# rides ``skill_description`` (must be stripped); the topology ids are OPAQUE
+# non-SENTINEL ids whose SURVIVAL is asserted positively. The old test put the
+# SENTINEL on the delegatee id and asserted it stripped — that locked in
+# provenance-loss-under-no-content, the exact A15 bug we are fixing.
+SECRET_SKILL = "SENTINEL-process-refunds-over-10k-no-approval"
+DELEGATOR_ID = "orchestrator-1"  # opaque id (metadata) — must SURVIVE
+DELEGATEE_ID = "billing-agent-7"  # opaque id (metadata) — must SURVIVE
 
 
-class TestA2ARedaction:
+class TestA2ADelegationProvenance:
     def _drive(
         self, mock_client: Any, adapter_config: Optional[CaptureConfig], collector_config: Optional[CaptureConfig]
     ) -> List[Dict[str, Any]]:
@@ -410,8 +310,8 @@ class TestA2ARedaction:
             A2AProtocolAdapter(capture_config=adapter_config) if adapter_config is not None else A2AProtocolAdapter()
         )
         target = SimpleNamespace(
-            send_task=lambda **kw: {"task_id": "t1"},
-            get_task=lambda **kw: {"task_id": "t1"},
+            send_task=lambda **kw: {"status": "completed"},
+            get_task=lambda **kw: {"status": "completed"},
             cancel_task=lambda **kw: None,
             get_agent_card=lambda **kw: {"name": "agent"},
             register_handler=lambda **kw: None,
@@ -419,33 +319,46 @@ class TestA2ARedaction:
         adapter.connect(target=target)
 
         def go() -> None:
-            target.send_task(agent_id=SECRET_AGENT, skill=SECRET_SKILL, message=SECRET_TEXT)
+            target.send_task(
+                task_id="t1",
+                from_agent=DELEGATOR_ID,
+                to_agent=DELEGATEE_ID,
+                skill_description=SECRET_SKILL,
+            )
 
         return _run_collected(mock_client, go, collector_config)
 
+    def _delegation(self, events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        deleg = [e["payload"] for e in events if e["event_type"] == "a2a.delegation"]
+        assert deleg, "no a2a.delegation event emitted"
+        return deleg[0]
+
     def test_content_present_by_default(self, mock_client: Any) -> None:
-        # Sanity: the delegation edge IS captured under the default config, so
-        # the redaction assertions below are meaningful (not vacuous).
-        events = self._drive(mock_client, None, None)
-        delegations = [e for e in events if e["event_type"] == "a2a.delegation"]
-        assert delegations, "no a2a.delegation event emitted — test would be vacuous"
-        text = _all_payload_text(delegations)
-        assert SECRET_AGENT in text and SECRET_SKILL in text
+        # Sanity: the free-text skill IS captured under content-on, so the
+        # no-content assertion below is meaningful (not vacuous).
+        events = self._drive(mock_client, _CONTENT, _CONTENT)
+        assert SECRET_SKILL in _all_payload_text([{"payload": self._delegation(events)}])
 
-    def test_adapter_side_no_content_strips_delegation_target_and_skill(self, mock_client: Any) -> None:
+    def test_adapter_side_topology_survives_skill_stripped(self, mock_client: Any) -> None:
         events = self._drive(mock_client, _NO_CONTENT, None)
+        d = self._delegation(events)
         text = _all_payload_text(events)
-        assert SECRET_AGENT not in text, "a2a.delegation target_agent leaked despite capture_content=False (L4)"
-        assert SECRET_SKILL not in text, "a2a.delegation skill leaked despite capture_content=False (L4)"
-        # metadata (task_id) must survive so the delegation edge is still visible
-        assert any(e["payload"].get("task_id") for e in events if e["event_type"] == "a2a.delegation"), (
-            "delegation task_id over-stripped"
-        )
+        # Free-text skill DESCRIPTION is content -> stripped.
+        assert SECRET_SKILL not in text, "a2a.delegation skill description leaked despite capture_content=False"
+        # Topology + fp are provenance metadata -> SURVIVE (A15 overturn).
+        assert d.get("from_agent") == DELEGATOR_ID, "delegator id stripped under no-content (A15 provenance loss)"
+        assert d.get("to_agent") == DELEGATEE_ID, "delegatee id stripped under no-content (A15 provenance loss)"
+        assert d.get("target_agent") == DELEGATEE_ID
+        assert str(d.get("delegation_fp", "")).startswith("sha256:"), "delegation fp stripped under no-content (A15)"
 
-    def test_collector_side_no_content_strips_delegation_target_and_skill(self, mock_client: Any) -> None:
-        text = _all_payload_text(self._drive(mock_client, None, _NO_CONTENT))
-        assert SECRET_AGENT not in text, "collector backstop missing for a2a.delegation target_agent (L4)"
-        assert SECRET_SKILL not in text, "collector backstop missing for a2a.delegation skill (L4)"
+    def test_collector_side_topology_survives_skill_stripped(self, mock_client: Any) -> None:
+        events = self._drive(mock_client, None, _NO_CONTENT)
+        d = self._delegation(events)
+        text = _all_payload_text(events)
+        assert SECRET_SKILL not in text, "collector backstop leaked a2a.delegation skill description"
+        assert d.get("from_agent") == DELEGATOR_ID, "collector backstop stripped the delegator id (A15)"
+        assert d.get("to_agent") == DELEGATEE_ID, "collector backstop stripped the delegatee id (A15)"
+        assert str(d.get("delegation_fp", "")).startswith("sha256:")
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +392,7 @@ class TestAGUIFallbackRedaction:
         return _run_collected(mock_client, go, collector_config)
 
     def test_content_present_by_default(self, mock_client: Any) -> None:
-        text = _all_payload_text(self._drive_stream(mock_client, None, None))
+        text = _all_payload_text(self._drive_stream(mock_client, _CONTENT, _CONTENT))
         assert SECRET_TEXT in text and SECRET_QUERY in text, "raw passthrough not captured — test would be vacuous"
 
     def test_adapter_side_no_content_strips_raw_event(self, mock_client: Any) -> None:
@@ -542,3 +455,34 @@ class TestA2UIHashing:
         h_a = self._emit_hash(mock_client, A2UIProtocolAdapter())
         h_b = self._emit_hash(mock_client, A2UIProtocolAdapter())
         assert h_a != h_b, "same value -> same digest across instances: not keyed, rainbow-reversible (P3)"
+
+    # --- the production connect()/on_user_action WRAP path (LAY-3572 / B14) ---
+    # commerce.ui.user_action has NO _CONTENT_KEYS entry, so the keyed hash is the
+    # SOLE privacy control on the action context. Only record_user_action (the
+    # explicit API) was tested; the wrapped client method (what a real app calls)
+    # was not. PAN/PII in the context must never reach the payload in cleartext.
+
+    def test_wrap_path_user_action_hashes_context_no_cleartext(self, mock_client: Any) -> None:
+        from layerlens.instrument.adapters.protocols.a2ui import A2UIProtocolAdapter
+
+        adapter = A2UIProtocolAdapter()
+        target = SimpleNamespace(
+            on_user_action=lambda **kw: {"ok": True},
+            on_surface_created=lambda **kw: {"ok": True},
+        )
+        adapter.connect(target=target)
+        pan = "4111111111111111-SENTINEL"
+
+        def go() -> None:
+            target.on_user_action(surface_id="cart-1", action_type="add_to_cart", context={"pan": pan})
+
+        events = _run_collected(mock_client, go)
+        actions = [e for e in events if e["event_type"] == "commerce.ui.user_action"]
+        assert actions, "wrap path emitted no commerce.ui.user_action"
+        payload = actions[0]["payload"]
+        blob = _all_payload_text(events)
+        assert pan not in blob, "cleartext action context (PAN) leaked through the wrap path"
+        assert payload["action_context_hash"].startswith("sha256:"), "context not hashed on the wrap path"
+        assert payload.get("action_type") == "add_to_cart", "action_type metadata over-stripped"
+        # the per-instance HMAC key must never be emitted
+        assert adapter._hash_key.hex() not in blob, "the HMAC key leaked into telemetry"

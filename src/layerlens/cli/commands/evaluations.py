@@ -4,51 +4,14 @@ from __future__ import annotations
 
 import sys
 import json
-import importlib
-from typing import Any, Dict, Callable, cast
+from typing import Any, Dict, cast
 
 import click
 
 from ...datasets import Dataset, DatasetVisibility, InMemoryDatasetStore
+from .._safe_loader import load_callable as _load_callable
 from ...evaluation_runs import RunComparer, EvaluationRunner
 from ...evaluation_runs.models import ScorerFn
-
-# Stdlib modules that expose process-control primitives. Naming any of these
-# as a ``--target`` or ``--scorer`` callable is almost certainly misuse or an
-# injection attempt, so we refuse up-front rather than executing them.
-_BLOCKED_MODULES = frozenset(
-    {
-        "os",
-        "sys",
-        "subprocess",
-        "shutil",
-        "builtins",
-        "importlib",
-        "runpy",
-        "ctypes",
-        "pty",
-        "pickle",
-        "marshal",
-        "socket",
-    }
-)
-
-
-def _load_callable(spec: str, *, param_hint: str = "--target") -> Callable[..., Any]:
-    if ":" not in spec:
-        raise click.BadParameter(f"expected 'module:attr' (got {spec!r})", param_hint=param_hint)
-    module_name, attr = spec.split(":", 1)
-    root = module_name.split(".", 1)[0]
-    if root in _BLOCKED_MODULES:
-        raise click.BadParameter(
-            f"refusing to load callable from stdlib module {root!r}",
-            param_hint=param_hint,
-        )
-    module = importlib.import_module(module_name)
-    fn = getattr(module, attr, None)
-    if fn is None or not callable(fn):
-        raise click.BadParameter(f"{spec!r} is not callable", param_hint=param_hint)
-    return cast(Callable[..., Any], fn)
 
 
 @click.group()

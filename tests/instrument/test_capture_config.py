@@ -30,7 +30,10 @@ class TestCaptureConfig:
         assert config.l6a_protocol_discovery is True
         assert config.l6b_protocol_streams is True
         assert config.l6c_protocol_lifecycle is True
-        assert config.capture_content is True
+        # Privacy-by-default (A10 / LAY-3628, user-approved 2026-06-25): the
+        # out-of-the-box config redacts content. Content is opt-in via full() or
+        # an explicit capture_content=True. Bite: revert the default to True -> RED.
+        assert config.capture_content is False
 
     def test_full_preset(self):
         config = CaptureConfig.full()
@@ -50,7 +53,23 @@ class TestCaptureConfig:
         assert config.l6a_protocol_discovery is True
         assert config.l6b_protocol_streams is False
         assert config.l6c_protocol_lifecycle is True
-        assert config.capture_content is True
+        # minimal() is the lightest production tier — privacy-by-default too.
+        assert config.capture_content is False
+
+    def test_default_config_redacts_content_behaviorally(self):
+        """A10/LAY-3628: a default collector (no explicit config) must STRIP
+        content under the new privacy-by-default posture — agent.input message
+        text does not reach the uploaded event. Bite: revert the default to True
+        and the message survives -> RED."""
+        import json as _json
+
+        from layerlens.instrument._collector import TraceCollector
+
+        collector = TraceCollector(object(), CaptureConfig())  # bare default
+        collector.emit("agent.input", {"input": "my SSN is 123-45-6789", "agent_name": "a"}, span_id="s1")
+        blob = _json.dumps(collector.events[0]["payload"], default=str)
+        assert "123-45-6789" not in blob, "default config leaked agent.input content (privacy-by-default broken)"
+        assert collector.events[0]["payload"].get("agent_name") == "a", "metadata over-stripped"
 
     def test_standard_preset(self):
         """standard() is the same as bare CaptureConfig()."""
@@ -71,7 +90,7 @@ class TestCaptureConfig:
         assert d["l1_agent_io"] is True
         assert d["l3_model_metadata"] is False
         assert d["l5a_tool_calls"] is False
-        assert d["capture_content"] is True
+        assert d["capture_content"] is False  # privacy-by-default (A10)
 
     def test_custom_config(self):
         config = CaptureConfig(l1_agent_io=True, l5a_tool_calls=False)
@@ -138,8 +157,9 @@ class TestCaptureConfigWithTrace:
         assert agent_input["payload"]["input"] == "hello"
         assert agent_output["payload"]["output"] == {"answer": 42}
 
-    def test_default_is_full(self, mock_client, capture_trace):
-        @trace(mock_client)
+    def test_full_captures_agent_io(self, mock_client, capture_trace):
+        # Content capture is opt-in (privacy-by-default, A10): full() keeps raw I/O.
+        @trace(mock_client, capture_config=CaptureConfig.full())
         def my_agent(query):
             return {"answer": 42}
 

@@ -37,24 +37,54 @@ NO_CONTENT = CaptureConfig(capture_content=False)
 
 
 def _build_ap2(cfg: CaptureConfig) -> Tuple[Any, Callable[[], None]]:
+    # Real ap2 pydantic fixtures (LAY-3625) — skips in the base py3.9 venv where
+    # the pinned ap2 SDK is absent; the other adapters in this parametrized sweep
+    # still run there.
+    pytest.importorskip("ap2")
+    from ap2.models.mandate import CartMandate, CartContents, IntentMandate
+    from ap2.models.payment_request import (
+        PaymentItem,
+        PaymentRequest,
+        PaymentMethodData,
+        PaymentDetailsInit,
+        PaymentCurrencyAmount,
+    )
+
     from layerlens.instrument.adapters.protocols.ap2 import AP2Guardrails, AP2ProtocolAdapter
 
     adapter = AP2ProtocolAdapter(guardrails=AP2Guardrails(merchant_whitelist=["ALLOWED"]), capture_config=cfg)
-    target = SimpleNamespace(
-        create_intent_mandate=lambda **kw: {"ok": True},
-        sign_payment_mandate=lambda **kw: {"ok": True},
-        issue_receipt=lambda **kw: {"ok": True},
+    adapter.connect(target=SimpleNamespace())  # no SDK to wrap; drive record_* directly
+
+    # The SENTINEL rides every cleartext content surface: intent text + merchant
+    # whitelist names, the cart merchant_name + binding total label, and the
+    # blocked-guardrail free-text reason.
+    item = PaymentItem(label=SENTINEL, amount=PaymentCurrencyAmount(currency="USD", value=49.99))
+    details = PaymentDetailsInit(id="pd1", display_items=[item], total=item)
+    pr = PaymentRequest(method_data=[PaymentMethodData(supported_methods="card")], details=details)
+    cart = CartMandate(
+        contents=CartContents(
+            id="cart1",
+            user_cart_confirmation_required=True,
+            payment_request=pr,
+            cart_expiry="2999-01-01T00:00:00Z",
+            merchant_name=SENTINEL,  # off-whitelist -> blocked, reason embeds SENTINEL
+        ),
+        merchant_authorization="eyJhbGc.SENTINEL-merchant-sig.xyz",
     )
-    adapter.connect(target=target)
+    intent = IntentMandate(
+        natural_language_description=SENTINEL,
+        intent_expiry="2999-01-01T00:00:00Z",
+        merchants=[SENTINEL],
+    )
 
     def go() -> None:
-        target.create_intent_mandate(mandate_id="m1", amount=49.99, merchant=SENTINEL)
-        # Blocked (merchant off-whitelist) -> reason free-text embeds SENTINEL.
+        adapter.record_intent_mandate(intent, mandate_id="m1")
+        # Off-whitelist merchant -> blocked; the policy.violation detail + the
+        # cart_mandate event must not leak the SENTINEL merchant/amount.
         try:
-            target.sign_payment_mandate(mandate_id="m1", amount=49.99, merchant=SENTINEL)
+            adapter.record_cart_mandate(cart, intent_mandate_id="m1")
         except PermissionError:
             pass
-        target.issue_receipt(receipt_id="r1", mandate_id="m1", amount=49.99, merchant=SENTINEL)
 
     return adapter, go
 
@@ -101,7 +131,15 @@ def _build_a2a(cfg: CaptureConfig) -> Tuple[Any, Callable[[], None]]:
 
     def go() -> None:
         target.get_agent_card("peer")
-        target.send_task(agent_id=SENTINEL, skill=SENTINEL, message=SENTINEL)
+        # Topology ids (from_agent/to_agent) are METADATA that SURVIVES
+        # no-content (A15) — so they must NOT carry the SENTINEL. The SENTINEL
+        # rides only genuine content: the free-text skill_description.
+        target.send_task(
+            task_id="t-deleg",
+            from_agent="orchestrator",
+            to_agent="billing-agent",
+            skill_description=SENTINEL,
+        )
         try:
             # task_id is an opaque identifier (metadata); the SENTINEL rides the
             # exception text -> a2a.task.updated error: str(exc).
@@ -186,17 +224,29 @@ _BUILDERS = {
 def _survives_metadata(name: str, events: List[dict]) -> str:
     payloads = [e["payload"] for e in events]
     if name == "ap2":
-        blocked = [p for p in payloads if p.get("status") == "blocked"]
-        if not (blocked and blocked[0].get("reason_code") == "MERCHANT_NOT_WHITELISTED"):
-            return "ap2: blocked reason_code did not survive"
+        # The blocked guardrail's reason_code survives on BOTH the policy.violation
+        # and the payment.cart_mandate(status=blocked) events (category, not content).
+        violations = [e for e in events if e["event_type"] == "policy.violation"]
+        if not any(v["payload"].get("reason_code") == "MERCHANT_NOT_WHITELISTED" for v in violations):
+            return "ap2: policy.violation reason_code did not survive"
+        if not any(
+            e["event_type"] == "payment.cart_mandate" and e["payload"].get("cart_id") == "cart1" for e in events
+        ):
+            return "ap2: cart_mandate cart_id metadata did not survive"
     elif name == "ucp":
         if not any(p.get("supplier_id") == "s1" for p in payloads):
             return "ucp: supplier_id metadata did not survive"
     elif name == "a2a":
         if not any(e["event_type"] == "a2a.task.updated" and e["payload"].get("status") for e in events):
             return "a2a: task.updated status did not survive"
-        if not any(e["event_type"] == "a2a.delegation" and e["payload"].get("task_id") for e in events):
+        delegations = [e["payload"] for e in events if e["event_type"] == "a2a.delegation"]
+        if not any(d.get("task_id") for d in delegations):
             return "a2a: delegation task_id did not survive"
+        # A15: the delegation TOPOLOGY + fp must survive no-content (provenance).
+        if not any(d.get("from_agent") == "orchestrator" and d.get("to_agent") == "billing-agent" for d in delegations):
+            return "a2a: delegation topology (from_agent/to_agent) did not survive (A15 provenance loss)"
+        if not any(str(d.get("delegation_fp", "")).startswith("sha256:") for d in delegations):
+            return "a2a: delegation_fp did not survive (A15)"
     elif name == "mcp":
         if not any(e["event_type"] == "mcp.tool.call" and e["payload"].get("tool_name") for e in events):
             return "mcp: tool.call tool_name did not survive"

@@ -31,6 +31,7 @@ class TestSendTask:
             [{"role": "user", "content": "hi"}],
             task_type="plan",
             agent_id="agent-42",
+            from_agent="orchestrator-1",
         )
         names = _emitted_event_names(adapter)
         assert A2A_TASK_CREATED in names
@@ -38,13 +39,19 @@ class TestSendTask:
         assert created["task_id"] == "t1"
         assert created["receiver_url"] == "https://peer"
         assert created["task_type"] == "plan"
-        assert created["submitter_agent_id"] == "agent-42"
+        # submitter is the DELEGATOR (from_agent), not the delegatee (A15).
+        assert created["submitter_agent_id"] == "orchestrator-1"
         assert created["message_count"] == 1
 
     def test_emits_delegation_when_agent_id_set(self):
         adapter = MagicMock()
         A2AClientWrapper(adapter, "https://peer").send_task("t1", [], agent_id="agent-42")
         assert A2A_DELEGATION in _emitted_event_names(adapter)
+        # Delegation carries the topology id + a keyed-HMAC fp (A15 / D3).
+        deleg = _last_payload_for(adapter, A2A_DELEGATION)
+        assert deleg["target_agent"] == "agent-42"
+        assert deleg["to_agent"] == "agent-42"
+        assert deleg["delegation_fp"].startswith("sha256:")
 
     def test_no_delegation_without_agent_id(self):
         adapter = MagicMock()
@@ -96,8 +103,10 @@ class TestDelegation:
         payload = _last_payload_for(adapter, A2A_DELEGATION)
         assert payload["from_agent"] == "sender"
         assert payload["target_agent"] == "receiver"
+        assert payload["to_agent"] == "receiver"
         assert payload["task_id"] == "t9"
         assert payload["context_keys"] == ["priority"]
+        assert payload["delegation_fp"].startswith("sha256:")
 
 
 class TestCancelTask:
@@ -108,4 +117,4 @@ class TestCancelTask:
         adapter.emit.reset_mock()
         wrapper.cancel_task("t1")
         payload = _last_payload_for(adapter, A2A_TASK_UPDATED)
-        assert payload["status"] == TaskState.CANCELLED.value
+        assert payload["status"] == TaskState.CANCELED.value

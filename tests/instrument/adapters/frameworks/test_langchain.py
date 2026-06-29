@@ -39,7 +39,7 @@ class TestBaseClass:
 class TestChainLifecycle:
     def test_chain_emits_input_and_output(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         handler.on_chain_start(
@@ -60,7 +60,7 @@ class TestChainLifecycle:
 
     def test_chain_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         handler.on_chain_start({"name": "FailChain"}, {"input": "x"}, run_id=chain_id)
@@ -98,7 +98,7 @@ def _make_llm_response(
 class TestLLMLifecycle:
     def test_single_model_invoke_with_merged_data(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         llm_id = uuid4()
@@ -177,7 +177,7 @@ class TestLLMLifecycle:
 
     def test_chat_model_start_serializes_messages(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         chat_id = uuid4()
@@ -206,7 +206,7 @@ class TestLLMLifecycle:
 
     def test_llm_error_emits_model_invoke_with_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         llm_id = uuid4()
@@ -307,7 +307,7 @@ class TestCaptureConfig:
 class TestToolsAndRetrievers:
     def test_tool_lifecycle(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         tool_id = uuid4()
@@ -332,7 +332,7 @@ class TestToolsAndRetrievers:
 
     def test_retriever_lifecycle(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         ret_id = uuid4()
@@ -378,7 +378,7 @@ class TestToolsAndRetrievers:
 
     def test_tool_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         tool_id = uuid4()
@@ -393,7 +393,7 @@ class TestToolsAndRetrievers:
 
     def test_retriever_error(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         ret_id = uuid4()
@@ -415,7 +415,7 @@ class TestToolsAndRetrievers:
 class TestAgentCallbacks:
     def test_agent_action_emits_input(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         agent_id = uuid4()
@@ -437,7 +437,7 @@ class TestAgentCallbacks:
 
     def test_agent_finish_emits_output(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        handler = LangChainCallbackHandler(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
 
         chain_id = uuid4()
         agent_id = uuid4()

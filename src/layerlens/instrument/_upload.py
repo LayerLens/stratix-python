@@ -90,7 +90,14 @@ class UploadChannel:
             client, payload = item
             if not self._allow():
                 continue
-            path = _write_trace_file(payload)
+            try:
+                path = _write_trace_file(payload)
+            except Exception:
+                # A serialize failure must not kill the daemon worker (every
+                # queued trace behind it would be lost) — count it and continue.
+                self._on_failure()
+                log.warning("layerlens: failed to serialize trace for upload", exc_info=True)
+                continue
             try:
                 client.traces.upload(path)
                 self._on_success()
@@ -138,7 +145,12 @@ class UploadChannel:
         """Synchronous upload (used in tests)."""
         if not self._allow():
             return
-        path = _write_trace_file(payload)
+        try:
+            path = _write_trace_file(payload)
+        except Exception:
+            self._on_failure()
+            log.warning("layerlens: failed to serialize trace for upload", exc_info=True)
+            return
         try:
             client.traces.upload(path)
             self._on_success()
@@ -252,8 +264,17 @@ atexit.register(shutdown_uploads)
 
 def _write_trace_file(payload: Dict[str, Any]) -> str:
     fd, path = tempfile.mkstemp(suffix=".json", prefix="layerlens_trace_")
-    with os.fdopen(fd, "w") as f:
-        json.dump([payload], f, default=str)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump([payload], f, default=str)
+    except Exception:
+        # A serialization failure (e.g. a circular reference) must not leave the
+        # mkstemp'd file orphaned on disk (LAY-3572 / B37).
+        try:
+            os.unlink(path)
+        except OSError:
+            log.debug("Failed to remove temp trace file after write failure: %s", path)
+        raise
     return path
 
 

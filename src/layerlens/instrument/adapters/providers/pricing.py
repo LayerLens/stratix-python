@@ -134,7 +134,7 @@ def _normalize_model_id(model: str) -> str:
 
 
 def _cached_token_discount(model: str) -> float:
-    """Cached-token rate as a fraction of the input price.
+    """Cached-token (cache-READ) rate as a fraction of the input price.
 
     - Anthropic: 90% off (10% of input)
     - Google: 75% off (25% of input)
@@ -146,6 +146,65 @@ def _cached_token_discount(model: str) -> float:
     if lower.startswith("gemini"):
         return 0.25
     return 0.5
+
+
+# Per-request service-tier multipliers (A2 / LAY-3626). OpenAI flex/batch are
+# priced at Batch rates (~50% off); priority buys ~2-2.5x for SLA latency. The
+# response echoes ``service_tier``; pricing was model-keyed only, so flex was
+# over-billed ~2x and priority UNDER-billed (the dangerous direction — budgets
+# and the per-run dollar ceiling read cost_usd). Unknown tiers => 1.0 (standard).
+# Web-grounded 2026-06-25: developers.openai.com/api/docs/pricing (priority
+# ~2-2.5x) + flex-processing guide (flex == Batch rates ~0.5x).
+TIER_MULTIPLIERS: dict[str, float] = {
+    "flex": 0.5,
+    "batch": 0.5,
+    "scale": 0.5,
+    "priority": 2.0,
+    "standard": 1.0,
+    "default": 1.0,
+    "auto": 1.0,
+    "on_demand": 1.0,
+}
+
+# Anthropic prompt-cache WRITE multiplier on base input (A3 / LAY-3626):
+# 5-minute TTL writes cost 1.25x base input (1-hour = 2x). The usage wire does
+# not carry the TTL, so we price the common 5-minute write. Cache READ uses
+# _cached_token_discount (0.1x). cache_creation tokens were priced at $0 before
+# this — a systematic under-bill on the canonical long-running-agent pattern.
+CACHE_WRITE_MULTIPLIER = 1.25
+
+
+def _tier_multiplier(service_tier: Optional[str]) -> float:
+    if not service_tier:
+        return 1.0
+    return TIER_MULTIPLIERS.get(str(service_tier).lower(), 1.0)
+
+
+def _cost_from_rates(
+    rates: dict[str, float],
+    model: str,
+    usage: NormalizedTokenUsage,
+    service_tier: Optional[str] = None,
+) -> float:
+    """The single cost formula: tier-scaled input/output + cache READ (discount)
+    + cache WRITE (1.25x) + completion. Shared by :func:`calculate_cost` and
+    :class:`PricingTable` so the math can never drift between the two paths."""
+    tier = _tier_multiplier(service_tier)
+    input_rate = rates.get("input", 0.0) * tier
+    output_rate = rates.get("output", 0.0) * tier
+
+    cached = usage.cached_tokens or 0
+    cache_creation = usage.cache_creation_tokens or 0
+    non_cached = max(usage.prompt_tokens - cached, 0)
+    cached_rate = input_rate * _cached_token_discount(model)
+
+    cost = (
+        (non_cached * input_rate / 1000)
+        + (cached * cached_rate / 1000)
+        + (cache_creation * input_rate * CACHE_WRITE_MULTIPLIER / 1000)
+        + (usage.completion_tokens * output_rate / 1000)
+    )
+    return round(cost, 8)
 
 
 _env_overrides_cache: Optional[dict[str, dict[str, float]]] = None
@@ -231,12 +290,19 @@ def calculate_cost(
     model: str,
     usage: NormalizedTokenUsage,
     pricing_table: dict[str, dict[str, float]] | None = None,
+    *,
+    service_tier: Optional[str] = None,
 ) -> float | None:
     """Return USD cost for a model invocation, or ``None`` if model is unpriced.
 
     Resolution precedence: env-loaded overrides > caller-supplied
     ``pricing_table`` > bundled ``PRICING``. Each layer supports the same
     fuzzy date-suffix and longest-prefix fallback (LAY-3330).
+
+    ``service_tier`` (flex/batch/priority/standard) scales the per-token rate
+    (A2 / LAY-3626); cache-write tokens (``usage.cache_creation_tokens``) are
+    priced at 1.25x input (A3). Both default to no-op so existing callers are
+    unaffected.
     """
     rates: dict[str, float] | None = None
     env_overrides = _load_env_overrides()
@@ -247,22 +313,88 @@ def calculate_cost(
         rates = _resolve_rates(model, table)
     if rates is None:
         return None
+    return _cost_from_rates(rates, model, usage, service_tier)
 
-    input_rate = rates.get("input", 0.0)
-    output_rate = rates.get("output", 0.0)
 
-    prompt_tokens = usage.prompt_tokens
-    cached = usage.cached_tokens or 0
+# Provider field -> override pricing table for the centralized chokepoint.
+# Azure and Bedrock have their own rates (azure gpt-4o != openai gpt-4o); other
+# providers (openai/anthropic/google/litellm/ollama/strands-on-non-bedrock) use
+# the bundled PRICING with fuzzy matching. strands runs Bedrock models.
+_PROVIDER_TABLES: dict[str, dict[str, dict[str, float]]] = {
+    "azure": AZURE_PRICING,
+    "azure_openai": AZURE_PRICING,
+    "bedrock": BEDROCK_PRICING,
+    "bedrock_agents": BEDROCK_PRICING,
+    "strands": BEDROCK_PRICING,
+}
 
-    non_cached = max(prompt_tokens - cached, 0)
-    cached_rate = input_rate * _cached_token_discount(model)
 
-    cost = (
-        (non_cached * input_rate / 1000)
-        + (cached * cached_rate / 1000)
-        + (usage.completion_tokens * output_rate / 1000)
+def _payload_int(payload: dict, *keys: str) -> int:
+    for k in keys:
+        v = payload.get(k)
+        if v is not None:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
+def _payload_opt_int(payload: dict, *keys: str) -> Optional[int]:
+    for k in keys:
+        v = payload.get(k)
+        if v is not None:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def is_priced(model: Optional[str], provider: Optional[str] = None) -> bool:
+    """True iff *model* resolves to a rate (env override / provider table /
+    bundled PRICING, with fuzzy matching). Used by the schema lock (A11) to
+    require a cost_usd on a priced cost.record — a priced model with no cost is
+    a dropped price (fail closed), not a genuinely-unpriced local/custom model."""
+    if not model or not isinstance(model, str):
+        return False
+    env = _load_env_overrides()
+    if env and _resolve_rates(model, env) is not None:
+        return True
+    table = _PROVIDER_TABLES.get(str(provider or "").lower(), PRICING)
+    return _resolve_rates(model, table) is not None
+
+
+def price_cost_record(payload: dict) -> Optional[float]:
+    """Centralized price-on-emit (A1 / LAY-3626): compute ``cost_usd`` for a
+    ``cost.record`` payload from its own fields.
+
+    This is the ONE place pricing happens at emit. Called from
+    ``TraceCollector.emit`` for every ``cost.record`` regardless of which adapter
+    emitted it, so a path that forgot to compute cost still ships a correct
+    ``cost_usd`` (A11 fail-closed) and tier (A2) / cache-write (A3) pricing
+    applies uniformly. Returns ``None`` for an unpriced model — the caller then
+    leaves the payload's ``cost_usd`` untouched (genuinely unpriced models stay
+    ``None``; we never fabricate a price).
+
+    Handles both the normalized field names (``cache_creation_tokens``) and the
+    raw provider-wire names (``cache_creation_input_tokens`` / ``input_tokens``).
+    """
+    model = payload.get("model")
+    if not model or not isinstance(model, str):
+        return None
+    usage = NormalizedTokenUsage(
+        # provider vocab (prompt_tokens/input_tokens) AND framework flat vocab
+        # (tokens_prompt/tokens_completion/tokens_total) — both reach this chokepoint.
+        prompt_tokens=_payload_int(payload, "prompt_tokens", "input_tokens", "tokens_prompt"),
+        completion_tokens=_payload_int(payload, "completion_tokens", "output_tokens", "tokens_completion"),
+        total_tokens=_payload_int(payload, "total_tokens", "tokens_total"),
+        cached_tokens=_payload_opt_int(payload, "cached_tokens", "cache_read_input_tokens"),
+        cache_creation_tokens=_payload_opt_int(payload, "cache_creation_tokens", "cache_creation_input_tokens"),
     )
-    return round(cost, 8)
+    provider = str(payload.get("provider") or "").lower()
+    table = _PROVIDER_TABLES.get(provider, PRICING)
+    return calculate_cost(model, usage, table, service_tier=payload.get("service_tier"))
 
 
 @dataclass
@@ -383,14 +515,4 @@ class PricingTable:
 
 def _compute_cost_from_rates(rates: dict[str, float], model: str, usage: NormalizedTokenUsage) -> float:
     """Bare cost formula, used by :class:`PricingTable` when bypassing env."""
-    input_rate = rates.get("input", 0.0)
-    output_rate = rates.get("output", 0.0)
-    cached = usage.cached_tokens or 0
-    non_cached = max(usage.prompt_tokens - cached, 0)
-    cached_rate = input_rate * _cached_token_discount(model)
-    cost = (
-        (non_cached * input_rate / 1000)
-        + (cached * cached_rate / 1000)
-        + (usage.completion_tokens * output_rate / 1000)
-    )
-    return round(cost, 8)
+    return _cost_from_rates(rates, model, usage)

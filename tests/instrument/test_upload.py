@@ -8,6 +8,7 @@ items, shutdown drain, and sync mode.
 
 from __future__ import annotations
 
+import os
 import time
 import logging
 from typing import Any, List
@@ -263,4 +264,54 @@ class TestWorkerResilience:
 
         assert len(calls) == 2  # second item still processed
         assert ch._worker is not None and ch._worker.is_alive()
+        ch.shutdown(timeout=2.0)
+
+
+# ---------------------------------------------------------------------------
+# Serialize-failure resilience (LAY-3572 / R3 / B37 / B38)
+#
+# `_write_trace_file` was called OUTSIDE the worker try/finally. A payload that
+# fails to serialize (e.g. a circular reference) (a) leaked its temp file and
+# (b) propagated out of the worker loop, killing the daemon thread so every
+# already-queued trace behind it was lost.
+# ---------------------------------------------------------------------------
+
+
+def _circular_payload() -> dict:
+    p: dict = {"trace_id": "bad"}
+    p["loop"] = p  # json.dump raises ValueError: Circular reference detected
+    return p
+
+
+class TestSerializeFailureResilience:
+    def test_sync_serialize_failure_leaves_no_temp_file(self, monkeypatch: Any) -> None:
+        created: List[str] = []
+        real_mkstemp = _upload.tempfile.mkstemp
+
+        def tracking_mkstemp(*a: Any, **k: Any):
+            fd, path = real_mkstemp(*a, **k)
+            created.append(path)
+            return fd, path
+
+        monkeypatch.setattr(_upload.tempfile, "mkstemp", tracking_mkstemp)
+        client = _make_client()
+        # autouse _sync_mode=True -> _upload_sync; must not raise, must not leak.
+        assert _upload.enqueue_upload(client, _circular_payload()) is True
+        leaked = [p for p in created if os.path.exists(p)]
+        assert created, "test bug: _write_trace_file was never reached"
+        assert not leaked, f"serialize failure leaked temp file(s): {leaked}"
+        client.traces.upload.assert_not_called()  # nothing valid to upload
+
+    def test_worker_survives_serialize_failure_and_processes_next(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr(_upload, "_sync_mode", False)
+        ch = UploadChannel()
+        client = _make_client()
+        # Queue a poison (un-serializable) trace AHEAD of a good one, then start
+        # ONE worker. The good trace must still be uploaded.
+        ch._queue.put_nowait((client, _circular_payload()))
+        ch._queue.put_nowait((client, {"trace_id": "good"}))
+        ch._ensure_worker()
+        _wait_until(lambda: client.traces.upload.call_count >= 1)
+        assert client.traces.upload.call_count == 1, "good trace behind a poison trace was lost (worker died)"
+        assert ch._worker is not None and ch._worker.is_alive(), "worker died on a serialize failure"
         ch.shutdown(timeout=2.0)

@@ -35,6 +35,7 @@ pytest.importorskip("smolagents")  # skips in the base venv (not installed there
 
 from smolagents import CodeAgent, OpenAIServerModel  # noqa: E402
 
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.frameworks.smolagents import SmolAgentsAdapter
 
 from .conftest import find_event, capture_framework_trace
@@ -57,7 +58,7 @@ class TestSmolAgentsRecorded:
         uploaded = capture_framework_trace(mock_client)
 
         agent = _agent(fixture)
-        adapter = SmolAgentsAdapter(mock_client)
+        adapter = SmolAgentsAdapter(mock_client, capture_config=CaptureConfig.full())
         agent = adapter.connect(target=agent)
         result = agent.run("Reply with exactly: pong")
         adapter.disconnect()
