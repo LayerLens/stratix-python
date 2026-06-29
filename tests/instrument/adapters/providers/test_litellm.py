@@ -97,6 +97,51 @@ class TestEmitsEvents:
 
 
 # ---------------------------------------------------------------------------
+# Streaming (LAY G8 — litellm inherited the base no-op aggregate_stream, so a
+# litellm.completion(stream=True) emitted ZERO model.invoke / cost telemetry)
+# ---------------------------------------------------------------------------
+
+
+class TestStreaming:
+    def setup_method(self):
+        self.mock_litellm = _install_mock_litellm()
+
+    def teardown_method(self):
+        _remove_mock_litellm()
+
+    def test_streaming_emits_model_invoke_and_cost(self, mock_client, capture_trace):
+        from .test_streaming import _openai_chunk
+
+        usage = types.SimpleNamespace(prompt_tokens=5, completion_tokens=3, total_tokens=8)
+
+        def fake_stream(**kwargs):
+            yield _openai_chunk(role="assistant", content="hi", model="gpt-4o", response_id="c1")
+            yield _openai_chunk(content=" there", usage=usage, finish_reason="stop")
+
+        self.mock_litellm.completion = Mock(side_effect=lambda **kw: fake_stream(**kw))
+        instrument_litellm()
+
+        @trace(mock_client)
+        def my_agent():
+            import litellm
+
+            stream = litellm.completion(model="gpt-4o", messages=[{"role": "user", "content": "Hi"}], stream=True)
+            for _ in stream:
+                pass
+            return "done"
+
+        my_agent()
+        events = capture_trace["events"]
+        model_invoke = find_event(events, "model.invoke")
+        assert model_invoke["payload"]["usage"]["total_tokens"] == 8, "streamed usage not aggregated"
+        assert model_invoke["payload"].get("output_message", {}).get("content") == "hi there", (
+            "streamed content chunks not concatenated"
+        )
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["total_tokens"] == 8
+
+
+# ---------------------------------------------------------------------------
 # Passthrough / no-op behavior
 # ---------------------------------------------------------------------------
 

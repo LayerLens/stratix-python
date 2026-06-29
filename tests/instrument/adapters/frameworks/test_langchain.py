@@ -149,6 +149,32 @@ class TestLLMLifecycle:
         assert cost["payload"]["tokens_total"] == 150
         assert cost["payload"]["model"] == "gpt-4"
 
+    def test_cost_record_includes_cost_usd_for_priced_model(self, mock_client):
+        """Framework cost.record must compute cost_usd when the model is priced
+        (was tokens-only; provider adapters already price the same model).
+        Priced centrally in BaseFrameworkAdapter._emit so every framework gets it.
+        """
+        from layerlens.instrument.adapters.providers.pricing import PRICING, calculate_cost
+        from layerlens.instrument.adapters.providers.token_usage import NormalizedTokenUsage
+
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangChainCallbackHandler(mock_client)
+        chain_id = uuid4()
+        llm_id = uuid4()
+        handler.on_chain_start({"name": "Chain"}, {}, run_id=chain_id)
+        handler.on_llm_start({"name": "LLM"}, ["p"], run_id=llm_id, parent_run_id=chain_id)
+        handler.on_llm_end(
+            _make_llm_response(model_name="gpt-4", prompt_tokens=100, completion_tokens=50), run_id=llm_id
+        )
+        handler.on_chain_end({}, run_id=chain_id)
+
+        cost = find_event(uploaded["events"], "cost.record")
+        expected = calculate_cost(
+            "gpt-4", NormalizedTokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150), PRICING
+        )
+        assert expected is not None and expected > 0, "gpt-4 must be priced for this test to be meaningful"
+        assert cost["payload"].get("cost_usd") == expected, "framework cost.record did not compute cost_usd"
+
     def test_chat_model_start_serializes_messages(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         handler = LangChainCallbackHandler(mock_client)

@@ -406,6 +406,12 @@ class LangfuseAdapter(FrameworkAdapter):
                     except (TypeError, ValueError):
                         pass
 
+            # Langfuse emits cost.record via a raw collector.emit (no _emit/_fire),
+            # so it bypasses the central pricing hook; price here when Langfuse
+            # didn't supply an upstream cost (only fills when cost_usd is absent —
+            # never overwrites Langfuse's own calculatedTotalCost).
+            if cost_payload.get("cost_usd") is None:
+                self._price_cost_record(cost_payload)
             collector.emit(
                 "cost.record",
                 cost_payload,

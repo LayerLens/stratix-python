@@ -124,6 +124,8 @@ class AutoGenAdapter(FrameworkAdapter):
         c = self._collector
         if c is None:
             return
+        if event_type == "cost.record" and payload.get("cost_usd") is None:
+            self._price_cost_record(payload)
         c.emit(
             event_type,
             payload,

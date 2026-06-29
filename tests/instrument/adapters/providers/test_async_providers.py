@@ -43,6 +43,38 @@ def _async_openai_client(
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
 
 
+def _install_async_litellm(response: Any = None, delay: float = 0.0, stream_factory: Any = None) -> Any:
+    """Inject a fake litellm module whose acompletion is a real coroutine."""
+    import sys
+    import types as _types
+    from unittest.mock import Mock
+
+    mod = _types.ModuleType("litellm")
+
+    async def acompletion(**kwargs: Any) -> Any:
+        if delay:
+            await asyncio.sleep(delay)
+        if kwargs.get("stream") is True and stream_factory is not None:
+            return stream_factory()
+        return response or make_openai_response()
+
+    mod.completion = Mock(return_value=make_openai_response())
+    mod.acompletion = acompletion
+    sys.modules["litellm"] = mod
+    return mod
+
+
+def _remove_litellm() -> None:
+    import sys
+
+    from layerlens.instrument.adapters.providers.litellm import uninstrument_litellm
+
+    uninstrument_litellm()
+    for key in list(sys.modules.keys()):
+        if key.startswith("litellm"):
+            del sys.modules[key]
+
+
 def _async_anthropic_client(response: Any = None, delay: float = 0.0) -> SimpleNamespace:
     async def create(**kwargs: Any) -> Any:
         if delay:
@@ -50,6 +82,68 @@ def _async_anthropic_client(response: Any = None, delay: float = 0.0) -> SimpleN
         return response
 
     return SimpleNamespace(messages=SimpleNamespace(create=create))
+
+
+# ---------------------------------------------------------------------------
+# LiteLLM async client — AWAIT the wrapped acompletion (LAY G8 follow-up).
+# Previously only wrap/restore was asserted; this drives the awaited coroutine
+# end-to-end so a regression in the async instrumentation path is caught.
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncLiteLLM:
+    def teardown_method(self) -> None:
+        _remove_litellm()
+
+    def test_awaited_acompletion_emits_real_usage_and_latency(self, mock_client, capture_trace) -> None:
+        from layerlens.instrument.adapters.providers.litellm import instrument_litellm
+
+        _install_async_litellm(make_openai_response(), delay=0.02)
+        instrument_litellm()
+
+        @trace(mock_client)
+        async def my_agent() -> str:
+            import litellm
+
+            r = await litellm.acompletion(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
+            return r.choices[0].message.content
+
+        result = asyncio.run(my_agent())
+        assert result == "Hello!"
+
+        payload = find_event(capture_trace["events"], "model.invoke")["payload"]
+        assert payload["name"] == "litellm.acompletion"
+        assert payload["model"] == "gpt-4"
+        assert payload["usage"]["total_tokens"] == 15
+        # A sync mis-wrap would await nothing and measure ~0 ms.
+        assert payload["latency_ms"] >= 15
+        cost = find_event(capture_trace["events"], "cost.record")
+        assert cost["payload"]["provider"] == "litellm"
+
+    def test_awaited_acompletion_streaming_aggregates(self, mock_client, capture_trace) -> None:
+        from layerlens.instrument.adapters.providers.litellm import instrument_litellm
+
+        usage = SimpleNamespace(prompt_tokens=5, completion_tokens=3, total_tokens=8)
+
+        async def gen() -> Any:
+            yield _openai_chunk(role="assistant", content="hi", model="gpt-4o", response_id="c1")
+            yield _openai_chunk(content=" there", usage=usage, finish_reason="stop")
+
+        _install_async_litellm(stream_factory=gen)
+        instrument_litellm()
+
+        @trace(mock_client)
+        async def my_agent() -> str:
+            import litellm
+
+            stream = await litellm.acompletion(model="gpt-4o", messages=[], stream=True)
+            async for _ in stream:
+                pass
+            return "done"
+
+        asyncio.run(my_agent())
+        payload = find_event(capture_trace["events"], "model.invoke")["payload"]
+        assert payload["usage"]["total_tokens"] == 8, "async streamed litellm usage not aggregated"
 
 
 # ---------------------------------------------------------------------------

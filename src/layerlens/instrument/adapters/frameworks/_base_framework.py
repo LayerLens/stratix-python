@@ -229,6 +229,42 @@ class FrameworkAdapter(BaseAdapter):
         if self._config.capture_content and value is not None:
             payload[key] = value
 
+    #: Per-adapter pricing table override; None -> the default provider PRICING.
+    pricing_table: Optional[Dict[str, Dict[str, float]]] = None
+
+    def _price_cost_record(self, payload: Dict[str, Any]) -> None:
+        """Compute ``cost_usd`` on a cost.record from model + token counts.
+
+        Framework emitters historically shipped tokens-only while the provider
+        path priced the same model, so framework traces had no cost. Done in the
+        shared emit path so EVERY framework gets it (bedrock_agents/langfuse that
+        already set cost_usd are skipped — only fills when absent). Accepts both
+        the framework flat-token vocabulary (tokens_prompt/...) and the
+        provider usage vocabulary (prompt_tokens/...).
+        """
+        model = payload.get("model")
+        if not model:
+            return
+        prompt = payload.get("tokens_prompt", payload.get("prompt_tokens"))
+        completion = payload.get("tokens_completion", payload.get("completion_tokens"))
+        total = payload.get("tokens_total", payload.get("total_tokens"))
+        if prompt is None and completion is None and total is None:
+            return
+        from ..providers.pricing import PRICING, calculate_cost
+        from ..providers.token_usage import NormalizedTokenUsage
+
+        usage = NormalizedTokenUsage(
+            prompt_tokens=int(prompt or 0),
+            completion_tokens=int(completion or 0),
+            total_tokens=int(total or 0),
+        )
+        # Adapter pricing_table AUGMENTS the default (e.g. strands -> Bedrock ids
+        # that aren't in the default PRICING), so both resolve.
+        table = PRICING if self.pricing_table is None else {**PRICING, **self.pricing_table}
+        cost = calculate_cost(str(model), usage, table)
+        if cost is not None:
+            payload["cost_usd"] = cost
+
     # ------------------------------------------------------------------
     # Event emission
     # ------------------------------------------------------------------
@@ -252,6 +288,9 @@ class FrameworkAdapter(BaseAdapter):
         collector = _current_collector.get()
         if collector is None:
             return
+
+        if event_type == "cost.record" and payload.get("cost_usd") is None:
+            self._price_cost_record(payload)
 
         run = _current_run.get()
 

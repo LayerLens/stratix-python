@@ -394,6 +394,8 @@ class CrewAIAdapter(FrameworkAdapter):
         span_name: Optional[str] = None,
     ) -> None:
         """Emit directly to the run's collector."""
+        if event_type == "cost.record" and payload.get("cost_usd") is None:
+            self._price_cost_record(payload)
         run.collector.emit(
             event_type,
             payload,

@@ -19,10 +19,13 @@ Canonical vocabulary
   from :data:`USAGE_KEYS` (``prompt_tokens``/``completion_tokens``/...).
   Framework-family events use flat ``tokens_prompt``/``tokens_completion``.
   Mixing vocabularies in one payload is drift and fails.
-* **cost.record** — must carry token counts; ``cost_usd`` remains optional
-  because 15 of 18 framework emitters don't compute it (documented §3.6 gap
-  and convergence-work item — locking it required would be a rename-scale
-  change).
+* **cost.record** — must carry token counts; ``cost_usd`` is now computed
+  centrally for priced models (BaseFrameworkAdapter._emit + each _fire), so the
+  old "15 of 18 emitters don't compute it" no longer holds. It stays *optional*
+  in the lock because ``calculate_cost`` legitimately returns ``None`` for
+  unpriced models (ollama/local/custom). FOLLOW-UP (LAY-3621): ratchet to
+  conditionally-required — when the model resolves in PRICING and tokens>0 —
+  after a green full-adapter-matrix run.
 
 The lock is enforced automatically: the ``capture_trace`` /
 ``capture_framework_trace`` fixtures validate every uploaded event, so every

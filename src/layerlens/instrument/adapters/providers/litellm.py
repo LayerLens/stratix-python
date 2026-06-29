@@ -30,6 +30,16 @@ class LiteLLMProvider(MonkeyPatchProvider):
     def extract_meta(response: Any) -> Dict[str, Any]:
         return OpenAIProvider.extract_meta(response)
 
+    @staticmethod
+    def aggregate_stream(chunks: list[Any]) -> Any:
+        # litellm normalizes every provider's stream to the OpenAI chunk shape
+        # (ModelResponse with .choices[].delta), so the OpenAI aggregator applies
+        # verbatim. Without this override LiteLLMProvider inherited the base no-op
+        # aggregate_stream (returns None) and a litellm.completion(stream=True)
+        # emitted ZERO model.invoke / cost.record telemetry (G8 class, same bug
+        # ollama hit — see test_litellm.TestStreaming).
+        return OpenAIProvider.aggregate_stream(chunks)
+
     def connect(self, target: Any = None, **kwargs: Any) -> Any:  # noqa: ARG002
         try:
             import litellm

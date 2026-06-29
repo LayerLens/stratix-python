@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 from ._utils import safe_serialize
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
+from ..providers.pricing import BEDROCK_PRICING
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,9 @@ class StrandsAdapter(FrameworkAdapter):
     """
 
     name = "strands"
+    #: Strands runs Bedrock models (e.g. amazon.nova-*, anthropic.claude-*) whose
+    #: ids aren't in the default PRICING — augment so cost.record gets cost_usd.
+    pricing_table = BEDROCK_PRICING
 
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)
@@ -140,6 +144,8 @@ class StrandsAdapter(FrameworkAdapter):
         run = self._get_run()
         if run is None:
             return
+        if event_type == "cost.record" and payload.get("cost_usd") is None:
+            self._price_cost_record(payload)
         run.collector.emit(
             event_type,
             payload,

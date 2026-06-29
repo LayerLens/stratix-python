@@ -126,6 +126,8 @@ class LlamaIndexAdapter(FrameworkAdapter):
         if parent is None and span_id:
             raw_parent = self._parent_of(span_id)
             parent = _trunc(raw_parent) if raw_parent else None
+        if event_type == "cost.record" and payload.get("cost_usd") is None:
+            self._price_cost_record(payload)
         collector.emit(event_type, payload, span_id=sid, parent_span_id=parent, span_name=span_name)
 
     def _collector_for(self, span_id: Optional[str]) -> Optional[TraceCollector]:

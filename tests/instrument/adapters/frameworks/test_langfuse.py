@@ -343,6 +343,30 @@ class TestImportObservations:
         cost = find_event(events, "cost.record")
         assert cost["payload"]["cost_usd"] == 0.005
 
+    def test_generation_without_upstream_cost_is_priced_locally(self, connected_adapter):
+        """When Langfuse omits calculatedTotalCost, the central pricing hook fills
+        cost_usd from model+tokens (langfuse emits via raw collector.emit and used
+        to bypass it). Bite: drop the langfuse _price_cost_record call -> None."""
+        from layerlens.instrument.adapters.providers.pricing import PRICING, calculate_cost
+        from layerlens.instrument.adapters.providers.token_usage import NormalizedTokenUsage
+
+        adapter, uploaded, mock_http = connected_adapter
+        gen = _make_generation()
+        gen.pop("calculatedTotalCost")  # no upstream cost
+        mock_http.get.side_effect = [
+            _make_response({"data": [{"id": "t1", "updatedAt": "2026-01-01T00:00:00Z"}]}),
+            _make_response(_make_langfuse_trace("t1", observations=[gen])),
+        ]
+
+        adapter.import_traces()
+        cost = find_event(uploaded["events"], "cost.record")
+        expected = calculate_cost(
+            "gpt-4", NormalizedTokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150), PRICING
+        )
+        assert expected and cost["payload"].get("cost_usd") == expected, (
+            "langfuse did not locally price a no-upstream-cost generation"
+        )
+
     def test_span_emits_tool_call(self, connected_adapter):
         adapter, uploaded, mock_http = connected_adapter
         span = _make_span(name="retriever")

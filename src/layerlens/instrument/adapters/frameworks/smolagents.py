@@ -155,6 +155,8 @@ class SmolAgentsAdapter(FrameworkAdapter):
         run = self._get_run()
         if run is None:
             return
+        if event_type == "cost.record" and payload.get("cost_usd") is None:
+            self._price_cost_record(payload)
         run.collector.emit(
             event_type,
             payload,
