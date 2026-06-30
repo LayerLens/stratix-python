@@ -200,23 +200,46 @@ class AutoGenAdapter(FrameworkAdapter):
         Concurrent conversations call this on their own task/thread, so the
         ContextVar copy keeps each run isolated. Subsequent events on the same
         context re-resolve the same run via ``_current_run``.
+
+        Collector resolution
+        --------------------
+        If a caller has already bound a :class:`TraceCollector` on
+        ``_current_collector`` (the canonical pattern used by ``instrument()``
+        and ``samples/adapters/_shared.capture_events``), the run reuses **that**
+        collector instead of minting a private one. Otherwise the adapter falls
+        back to a self-owned collector flushed at ``disconnect()``. Without this
+        the events landed in a private collector that the caller never read, so
+        the bound trace captured zero events even though the logging hook fired.
         """
         run = _current_run.get()
         if run is not None:
             return run
-        collector = TraceCollector(self._client, self._config)
+        bound = _current_collector.get()
+        owns_collector = bound is None
+        collector = bound if bound is not None else TraceCollector(self._client, self._config)
         root_span_id = self._new_span_id()
         run = RunState(collector=collector, root_span_id=root_span_id, data={"conversations": {}})
         token = f"autogen-run-{next(self._run_seq)}"
         run.data["token"] = token
+        # Only this adapter flushes collectors it owns; a caller-bound collector
+        # is flushed by its owner (``capture_events`` / ``instrument()``).
+        run.data["owns_collector"] = owns_collector
         with self._lock:
             self._runs[token] = run
-        run._col_token = _current_collector.set(collector)
+        # Re-set the collector ContextVar only when we created it, so the run's
+        # _col_token unbinds exactly what it bound (never the caller's binding).
+        if owns_collector:
+            run._col_token = _current_collector.set(collector)
         run._token = _current_run.set(run)
         return run
 
     def _flush_run(self, run: RunState) -> None:
-        """Emit per-run conversation summaries, then flush the run's collector."""
+        """Emit per-run conversation summaries, then flush owned collectors.
+
+        A caller-bound collector (``owns_collector`` False) is flushed by its
+        owner (``capture_events`` / ``instrument()``), so we only emit the
+        summaries onto it and leave the flush to the owner.
+        """
         collector = run.collector
         conversations = run.data.get("conversations", {})
         for conv_id, state in list(conversations.items()):
@@ -232,6 +255,8 @@ class AutoGenAdapter(FrameworkAdapter):
                 span_id=self._new_span_id(),
                 parent_span_id=run.root_span_id,
             )
+        if not run.data.get("owns_collector", True):
+            return
         try:
             collector.flush()
         except Exception:

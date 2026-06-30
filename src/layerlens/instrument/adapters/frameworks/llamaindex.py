@@ -5,6 +5,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from ._utils import safe_serialize
+from ..._context import _current_collector
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -117,8 +118,13 @@ class LlamaIndexAdapter(FrameworkAdapter):
         parent_span_id: Optional[str] = None,
         span_name: Optional[str] = None,
     ) -> None:
-        """Emit directly to the collector that owns this span."""
-        collector = self._collector_for(span_id)
+        """Emit to the caller-bound collector when present, else the span's own collector.
+
+        Adapters must honor a collector bound on ``_current_collector`` (e.g. by
+        ``instrument()`` / ``samples/adapters/_shared.capture_events``); only fall
+        back to the per-span collector for the standalone (no-bound) path.
+        """
+        collector = _current_collector.get() or self._collector_for(span_id)
         if collector is None:
             return
         sid = _trunc(span_id) if span_id else self._new_span_id()
