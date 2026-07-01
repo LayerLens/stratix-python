@@ -269,6 +269,9 @@ class CrewAIAdapter(FrameworkAdapter):
             self._event_parents.clear()
             self._event_root.clear()
         for run in runs:
+            if run.data.get("borrowed_collector"):
+                # Caller owns this collector; do not seal it on our disconnect.
+                continue
             try:
                 run.collector.flush()
             except Exception:
@@ -423,18 +426,34 @@ class CrewAIAdapter(FrameworkAdapter):
             _current_run.reset(run_token)
 
     def _begin_crew_run(self, event: Any, span_id: str) -> None:
-        """Open a fresh per-run collector keyed by this kickoff's root event_id.
+        """Open a per-run collector keyed by this kickoff's root event_id.
 
         Binds ``_current_run`` / ``_current_collector`` for the rest of THIS
         handler so the start event emits into the new run; subsequent events of
         the same kickoff re-resolve the run by lineage in ``_dispatch``.
+
+        If the caller already bound a collector (e.g. inside ``trace_context``
+        or a harness that set ``_current_collector`` before ``kickoff``), reuse
+        it instead of minting a fresh one — mirroring ``FrameworkAdapter._begin_run``.
+        CrewAI 1.x dispatches every handler inside a ``contextvars.copy_context()``
+        on a worker thread, and that copy carries the caller's ``_current_collector``
+        binding into the handler, so ``.get()`` here sees it. Without this reuse,
+        events land in an internal collector that the caller never sees (the
+        "captures 0 events" symptom). A borrowed collector is NOT flushed on
+        ``_end_trace`` — its owner controls its lifecycle.
         """
-        collector = TraceCollector(self._client, self._config)
+        existing = _current_collector.get()
+        if existing is not None:
+            collector = existing
+            borrowed = True
+        else:
+            collector = TraceCollector(self._client, self._config)
+            borrowed = False
         root_id = getattr(event, "event_id", None) or self._new_span_id()
         run = RunState(
             collector=collector,
             root_span_id=span_id,
-            data={"crew_span_id": span_id, "root_id": root_id},
+            data={"crew_span_id": span_id, "root_id": root_id, "borrowed_collector": borrowed},
         )
         with self._lock:
             self._runs[root_id] = run
@@ -498,7 +517,11 @@ class CrewAIAdapter(FrameworkAdapter):
             except ValueError:
                 _current_run.set(None)
             run._token = None
-        collector.flush()
+        # A borrowed collector belongs to the caller (trace_context / harness);
+        # flushing it here would seal it before the caller is done. Only flush
+        # collectors this run created.
+        if not run.data.get("borrowed_collector"):
+            collector.flush()
 
     # ------------------------------------------------------------------
     # Helpers
