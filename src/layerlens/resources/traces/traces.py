@@ -15,6 +15,7 @@ from ...models import (
 )
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
+from ..._exceptions import StratixError
 
 DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 100
@@ -102,8 +103,15 @@ class Traces(SyncAPIResource):
         self,
         id: str,
         *,
+        strict: bool = False,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[Trace]:
+        """Fetch a trace by id.
+
+        Returns ``None`` on an empty/unparseable response. Pass ``strict=True``
+        to raise ``StratixError`` on that contract drift instead of swallowing
+        it (a genuine 404 already raises ``NotFoundError`` from the client).
+        """
         resp = self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
@@ -113,13 +121,18 @@ class Traces(SyncAPIResource):
         if isinstance(data, dict):
             try:
                 return Trace(**data)
-            except Exception:
+            except Exception as err:
+                if strict:
+                    raise StratixError(f"trace '{id}' response did not match the expected schema: {err}") from err
                 return None
+        if strict:
+            raise StratixError(f"trace '{id}' returned an empty or non-object response")
         return None
 
     def get_many(
         self,
         *,
+        strict: bool = False,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         source: Optional[str] = None,
@@ -161,10 +174,14 @@ class Traces(SyncAPIResource):
             cast_to=dict,
         )
         if not resp or not isinstance(resp, dict):
+            if strict:
+                raise StratixError("traces.get_many returned an empty or non-object response")
             return None
 
         data = _unwrap(resp)
         if not isinstance(data, dict):
+            if strict:
+                raise StratixError("traces.get_many response payload was not an object")
             return None
 
         traces = [
@@ -175,7 +192,9 @@ class Traces(SyncAPIResource):
 
         try:
             return TracesResponse(traces=traces, count=count, total_count=total_count)
-        except Exception:
+        except Exception as err:
+            if strict:
+                raise StratixError(f"traces.get_many response did not match the expected schema: {err}") from err
             return None
 
     def delete(
@@ -279,8 +298,11 @@ class AsyncTraces(AsyncAPIResource):
         self,
         id: str,
         *,
+        strict: bool = False,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[Trace]:
+        """Async variant of :meth:`Traces.get`; ``strict=True`` raises
+        ``StratixError`` on contract drift instead of returning ``None``."""
         resp = await self._get(
             f"{self._base_url()}/{id}",
             timeout=timeout,
@@ -290,13 +312,18 @@ class AsyncTraces(AsyncAPIResource):
         if isinstance(data, dict):
             try:
                 return Trace(**data)
-            except Exception:
+            except Exception as err:
+                if strict:
+                    raise StratixError(f"trace '{id}' response did not match the expected schema: {err}") from err
                 return None
+        if strict:
+            raise StratixError(f"trace '{id}' returned an empty or non-object response")
         return None
 
     async def get_many(
         self,
         *,
+        strict: bool = False,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
         source: Optional[str] = None,
@@ -338,10 +365,14 @@ class AsyncTraces(AsyncAPIResource):
             cast_to=dict,
         )
         if not resp or not isinstance(resp, dict):
+            if strict:
+                raise StratixError("traces.get_many returned an empty or non-object response")
             return None
 
         data = _unwrap(resp)
         if not isinstance(data, dict):
+            if strict:
+                raise StratixError("traces.get_many response payload was not an object")
             return None
 
         traces = [
@@ -352,7 +383,9 @@ class AsyncTraces(AsyncAPIResource):
 
         try:
             return TracesResponse(traces=traces, count=count, total_count=total_count)
-        except Exception:
+        except Exception as err:
+            if strict:
+                raise StratixError(f"traces.get_many response did not match the expected schema: {err}") from err
             return None
 
     async def delete(
