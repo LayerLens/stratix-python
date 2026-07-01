@@ -40,6 +40,21 @@ def expected_integration_id() -> Optional[str]:
     return val.strip() if val and val.strip() else None
 
 
+def linkage_configured() -> bool:
+    """True when an expected integration id is configured for hard assertions."""
+    return expected_integration_id() is not None
+
+
+def linkage_skip_reason() -> Optional[str]:
+    """Reason string for an explicit ``pytest.skip`` when linkage cannot be
+    asserted, else ``None``. Callers should skip *visibly* with this rather than
+    let an unconfigured check report a silent green that proves no attribution.
+    """
+    if linkage_configured():
+        return None
+    return f"linkage assertion requires {INTEGRATION_ID_ENV} (an audit sdk_adapter integration id)"
+
+
 def trace_integration_id(client: Any, trace_id: str) -> Optional[str]:
     """The ``integration_id`` stamped on the trace, via the API read-back."""
     trace = client.traces.get(trace_id)
@@ -83,16 +98,35 @@ def poll_status_healthy(
     return last
 
 
-def verify_linkage(client: Any, trace_id: str, *, poll_status: bool = True) -> Dict[str, Any]:
+def verify_linkage(
+    client: Any,
+    trace_id: str,
+    *,
+    poll_status: bool = True,
+    require: bool = False,
+) -> Dict[str, Any]:
     """Verify inbound linkage for an uploaded trace.
 
-    Always records the stamped ``integration_id`` (from the API). When
-    ``LAYERLENS_LIVE_INTEGRATION_ID`` is set, asserts an exact match and — if
-    ``poll_status`` — that the integration reaches ``Healthy`` within the budget.
+    The **proof of linkage is the stamped ``integration_id``** read back from the
+    trace API. (Integration ``status == "Healthy"`` is NOT proof a given trace was
+    received — it only reflects the integration's active flag flipped by the ~30s
+    sweeper, so it is a soft, best-effort signal, never the attribution check.)
+
+    Behavior:
+
+    * ``LAYERLENS_LIVE_INTEGRATION_ID`` set → assert the stamp equals it and (if
+      ``poll_status``) poll the integration to ``Healthy`` within the budget.
+    * ``require=True`` (and the env unset) → assert the trace was stamped with
+      *some* integration_id (an API-key upload that should link must not silently
+      go unlinked). Use this instead of the default record-only behavior when the
+      test knows linkage must occur; callers lacking the env should ``pytest.skip``
+      with :func:`linkage_skip_reason` rather than rely on a silent pass.
+    * neither → record-only (no assertion); the caller is responsible for skipping
+      visibly if it intended to assert.
+
     Set ``LAYERLENS_LIVE_LINKAGE_POLL_STATUS=0`` to assert only the id match and
     skip the status poll (useful when the caller toggles connectors active/inactive
-    around each upload and can't wait for the sweeper).
-    Returns a result row for the report.
+    around each upload and can't wait for the sweeper). Returns a result row.
     """
     stamped = trace_integration_id(client, trace_id)
     result: Dict[str, Any] = {"integration_id": stamped, "linked": stamped is not None}
@@ -102,7 +136,14 @@ def verify_linkage(client: Any, trace_id: str, *, poll_status: bool = True) -> D
         if poll_status and os.environ.get("LAYERLENS_LIVE_LINKAGE_POLL_STATUS", "1") != "0":
             status = poll_status_healthy(client, expected)
             result["status"] = status
+            # Soft signal only — Healthy reflects the integration's active flag, not
+            # this trace's receipt; the integration_id stamp asserted above is the proof.
             assert status == "Healthy", (
                 f"linkage: integration {expected} status={status!r} (expected 'Healthy' within {_TIMEOUT:.0f}s)"
             )
+    elif require:
+        assert stamped is not None, (
+            f"linkage required: trace {trace_id} was not stamped with any integration_id "
+            f"(an API-key upload that should link to a registered sdk_adapter integration went unlinked)"
+        )
     return result
