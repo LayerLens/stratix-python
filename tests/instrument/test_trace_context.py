@@ -154,8 +154,11 @@ class TestSharedCollectorViaTrace:
 
         assert len(capture_trace) == 1
         events = capture_trace[0]["events"]
-        assert len(events) == 1
-        assert events[0]["event_type"] == "agent.lifecycle"
+        # The standalone lifecycle event is captured. The adapter's _begin_run
+        # root span carried no event of its own, so flush() also synthesizes a
+        # root marker on it (LAY-364x / trace-root) — hence 2 events, not 1.
+        standalone = [e for e in events if e["payload"].get("action") == "standalone"]
+        assert len(standalone) == 1 and standalone[0]["event_type"] == "agent.lifecycle"
 
 
 # ===================================================================
@@ -250,8 +253,13 @@ class TestTraceContext:
 
         assert len(capture_trace) == 1
         events = capture_trace[0]["events"]
-        assert len(events) == 2
-        assert events[0]["trace_id"] == events[1]["trace_id"]
+        # Both adapters' events share the one collector's trace_id. Their events
+        # hang off the trace_context ambient root (no event of its own), so
+        # flush() synthesizes a root marker too (trace-root fix) — filter to the
+        # two adapter events to assert the shared-collector property.
+        sourced = [e for e in events if e["payload"].get("source") in ("A", "B")]
+        assert len(sourced) == 2
+        assert sourced[0]["trace_id"] == sourced[1]["trace_id"]
 
     def test_flushes_on_exit(self, mock_client, capture_trace):
         with trace_context(mock_client):
@@ -421,7 +429,9 @@ class TestFlushSemantics:
 
         assert len(capture_trace) == 1
         events = capture_trace[0]["events"]
-        sources = [e["payload"]["source"] for e in events]
+        # The synthesized trace-root marker (trace-root fix) carries no "source",
+        # so read it defensively rather than indexing every event's payload.
+        sources = [e["payload"].get("source") for e in events]
         assert "A" in sources
         assert "B" in sources
 

@@ -7,6 +7,16 @@ from __future__ import annotations
 
 from typing import Final
 
+# Trace structure
+# Synthesized structural root marker (LAY-364x / trace-root). Emitted by the
+# collector at flush when a trace's leaf events all hang off a single ambient
+# span the SDK never emitted an event for (provider-only / trace_context /
+# framework _begin_run usage), so the trace always has a REAL captured root and
+# the frontend never has to synthesize one. It is NOT an agent lifecycle event —
+# it is a content-free structural marker, so it has its own type rather than
+# polluting the agent.lifecycle stream.
+TRACE_ROOT: Final[str] = "trace.root"
+
 # LLM provider events
 MODEL_INVOKE: Final[str] = "model.invoke"
 COST_RECORD: Final[str] = "cost.record"

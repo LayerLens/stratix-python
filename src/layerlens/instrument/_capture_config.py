@@ -93,6 +93,11 @@ _ALWAYS_ENABLED = frozenset(
         "protocol.task.submitted",
         "protocol.task.completed",
         "protocol.async_task",
+        # Synthesized structural trace root (LAY-364x / trace-root). Content-free,
+        # layer-independent by design: the span tree must ALWAYS have a captured
+        # root regardless of L1 / capture_content, so it is always-enabled rather
+        # than gated to any capture layer.
+        "trace.root",
     }
 )
 

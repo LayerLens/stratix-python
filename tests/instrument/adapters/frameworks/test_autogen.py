@@ -544,8 +544,11 @@ class TestTraceIntegrity:
             ToolCallEvent(tool_name="t", arguments={}, result="r"),
         )
         events = uploaded["events"]
-        parent_ids = {e.get("parent_span_id") for e in events}
-        assert len(parent_ids) == 1
+        # The synthesized ``trace.root`` marker IS the root span (parent_span_id
+        # is None); every OTHER event must be parented to that one root span.
+        root = next(e for e in events if e["event_type"] == "trace.root")
+        parent_ids = {e.get("parent_span_id") for e in events if e["event_type"] != "trace.root"}
+        assert parent_ids == {root["span_id"]}
 
     def test_unknown_event_type_ignored(self, mock_client):
         adapter, uploaded = _setup(mock_client)

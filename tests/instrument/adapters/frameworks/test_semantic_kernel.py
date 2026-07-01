@@ -731,10 +731,20 @@ class TestEventStructure:
             assert "sequence_id" in event
             assert "timestamp_ns" in event
             assert "payload" in event
+            # The synthesized structural root (``trace.root``) is content-free by
+            # design and carries no framework tag; its envelope is asserted above,
+            # but the per-framework payload check does not apply to it.
+            if event["event_type"] == "trace.root":
+                continue
             assert event["payload"]["framework"] == "semantic_kernel"
 
-        seq_ids = [e["sequence_id"] for e in events]
-        assert seq_ids == sorted(seq_ids)
+        # sequence_id is monotonic WITHIN a trace. capture_framework_trace
+        # concatenates several collectors' events (each numbering from 1, and each
+        # now closed by its own appended-last ``trace.root``), so the global list is
+        # not sorted — assert the real per-trace invariant instead.
+        for tid in {e["trace_id"] for e in events}:
+            seqs = [e["sequence_id"] for e in events if e["trace_id"] == tid]
+            assert seqs == sorted(seqs), f"sequence_ids not monotonic within trace {tid}: {seqs}"
 
 
 # ---------------------------------------------------------------------------

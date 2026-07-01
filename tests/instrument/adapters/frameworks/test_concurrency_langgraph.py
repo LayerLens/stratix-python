@@ -130,6 +130,7 @@ _EXPECTED_RUN_COUNTS = {
     "agent.state.change": 1,
     "model.invoke": 1,
     "cost.record": 1,
+    "trace.root": 1,  # the captured structural root span, emitted once per trace (trace-root)
 }
 
 

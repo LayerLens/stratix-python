@@ -41,6 +41,9 @@ pytestmark = pytest.mark.invariant
 # strip list" reverse guard. Adding a type here is a deliberate act.
 _CONTENT_FREE_TYPES = frozenset(
     {
+        # Synthesized structural trace root (LAY-364x) — {"synthesized": true}
+        # only, no content, no agent name.
+        "trace.root",
         "agent.identity",
         "agent.lifecycle",
         "cost.record",

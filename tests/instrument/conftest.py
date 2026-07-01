@@ -116,6 +116,29 @@ def capture_trace(mock_client):
     return uploaded
 
 
+@pytest.fixture
+def capture_trace_list(mock_client):
+    """Capture EVERY uploaded trace payload (multiple flushes) as a list.
+
+    Like :func:`capture_trace` but appends each upload instead of keeping only
+    the last, so a test that flushes several traces (or asserts a single flush
+    among possibly-zero) can inspect them all. Uploaded events are recorded for
+    the schema lock exactly like the single-payload helper.
+    """
+    uploads: List[Dict[str, Any]] = []
+
+    def _capture(path: str):
+        with open(path) as f:
+            data = json.load(f)
+        payload = data[0]
+        uploads.append(payload)
+        record_for_schema_lock(payload.get("events", []))
+        return CreateTracesResponse(trace_ids=[payload.get("trace_id") or "mock-trace-id"])
+
+    mock_client.traces.upload.side_effect = _capture
+    return uploads
+
+
 def find_events(events: List[Dict[str, Any]], event_type: str) -> List[Dict[str, Any]]:
     """Filter events by event_type."""
     return [e for e in events if e["event_type"] == event_type]

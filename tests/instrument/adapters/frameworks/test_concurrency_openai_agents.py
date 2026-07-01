@@ -190,6 +190,7 @@ _EXPECTED_RUN_COUNTS = {
     "cost.record": 1,
     "tool.call": 1,
     "tool.result": 1,
+    "trace.root": 1,  # the captured structural root span, emitted once per trace (trace-root)
 }
 
 

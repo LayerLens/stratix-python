@@ -43,6 +43,11 @@ from numbers import Number
 
 KNOWN_EVENT_TYPES = frozenset(
     {
+        # trace structure
+        # Synthesized structural root marker emitted by the collector at flush
+        # (LAY-364x / trace-root) so every trace has a real captured root and the
+        # FE never synthesizes one. Content-free; its own type (not agent.*).
+        "trace.root",
         # agent family
         "agent.input",
         "agent.output",

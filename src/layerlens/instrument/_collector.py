@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Callable, Optional
 
 from layerlens.attestation import HashChain
 
+from ._events import TRACE_ROOT
 from ._upload import enqueue_upload
 from ._secret_scrub import scrub_payload, scrub_secrets
 from ._capture_config import CaptureConfig
@@ -182,46 +183,63 @@ class TraceCollector:
             }
 
         with self._lock:
-            if self._sealed:
-                return
+            self._append_locked(event_type, payload, span_id, parent_span_id, span_name)
 
-            if len(self._events) >= self.MAX_EVENTS:
-                if not self._capped:
-                    self._capped = True
-                    log.warning(
-                        "layerlens: trace %s hit %d event limit, further events dropped",
-                        self._trace_id,
-                        self.MAX_EVENTS,
-                    )
-                return
+    def _append_locked(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        span_id: str,
+        parent_span_id: Optional[str],
+        span_name: Optional[str],
+    ) -> None:
+        """Append one already-gated/scrubbed event to the chain. Caller holds ``self._lock``.
 
-            self._sequence += 1
-            event: Dict[str, Any] = {
-                "event_type": event_type,
-                "trace_id": self._trace_id,
-                "span_id": span_id,
-                "parent_span_id": parent_span_id,
-                "span_name": span_name,
-                "sequence_id": self._sequence,
-                "timestamp_ns": time.time_ns(),
-                "payload": payload,
-            }
+        Split out of :meth:`emit` so the flush-time root synthesizer
+        (:meth:`_synthesize_root_if_needed`) reuses the identical sequence-bump +
+        attestation-hash + append path — one place builds the event dict, one
+        place hashes it, so a synthesized root is chained exactly like any other
+        event (attestation still verifies)."""
+        if self._sealed:
+            return
+
+        if len(self._events) >= self.MAX_EVENTS:
+            if not self._capped:
+                self._capped = True
+                log.warning(
+                    "layerlens: trace %s hit %d event limit, further events dropped",
+                    self._trace_id,
+                    self.MAX_EVENTS,
+                )
+            return
+
+        self._sequence += 1
+        event: Dict[str, Any] = {
+            "event_type": event_type,
+            "trace_id": self._trace_id,
+            "span_id": span_id,
+            "parent_span_id": parent_span_id,
+            "span_name": span_name,
+            "sequence_id": self._sequence,
+            "timestamp_ns": time.time_ns(),
+            "payload": payload,
+        }
+        try:
+            self._chain.add_event(event)
+        except Exception:
+            # F-L1-003: a non-JSON-native payload value (Decimal/bytes/...) must
+            # not raise out of the attestation hash and crash the host app.
+            # Coerce to JSON-safe (matching the upload path) and retry; if it is
+            # still unhashable, drop the single event (rolling back the sequence
+            # bump) with a warning rather than propagate.
+            event["payload"] = _json_safe(event["payload"])
             try:
                 self._chain.add_event(event)
             except Exception:
-                # F-L1-003: a non-JSON-native payload value (Decimal/bytes/...) must
-                # not raise out of the attestation hash and crash the host app.
-                # Coerce to JSON-safe (matching the upload path) and retry; if it is
-                # still unhashable, drop the single event (rolling back the sequence
-                # bump) with a warning rather than propagate.
-                event["payload"] = _json_safe(event["payload"])
-                try:
-                    self._chain.add_event(event)
-                except Exception:
-                    self._sequence -= 1
-                    log.warning("layerlens: dropping unhashable event %s", event_type, exc_info=True)
-                    return
-            self._events.append(event)
+                self._sequence -= 1
+                log.warning("layerlens: dropping unhashable event %s", event_type, exc_info=True)
+                return
+        self._events.append(event)
 
     @property
     def events(self) -> List[Dict[str, Any]]:
@@ -284,6 +302,71 @@ class TraceCollector:
             trace_payload["max_events"] = self.MAX_EVENTS
         return trace_payload
 
+    # The synthesized trace root is its OWN dedicated, registered event type
+    # (``trace.root``) — NOT an ``agent.lifecycle`` event: it is a content-free
+    # structural marker (no agent started), so reusing agent.lifecycle would be
+    # semantically misleading and would pollute the real agent.lifecycle stream on
+    # the ~55% of traces that need a synthesized root. See _events.TRACE_ROOT.
+    _ROOT_EVENT_TYPE = TRACE_ROOT
+
+    def _synthesize_root_if_needed(self) -> None:
+        """Ensure the trace has a REAL, captured root span (companion to atlas-app
+        PR #2042). Caller holds ``self._lock``; runs at flush before sealing.
+
+        A provider-only / bare-adapter / ``trace_context`` / framework
+        ``_begin_run`` trace emits its leaf events (``model.invoke`` etc.) parented
+        to an AMBIENT span the SDK never emitted an event for — a "dangling parent".
+        The frontend then has to synthesize a root. When the events reference
+        EXACTLY ONE such dangling parent and no captured root already exists, emit
+        ONE lightweight, content-free ``trace.root`` marker ON that dangling span
+        so every leaf's parent resolves to a captured span and the tree has a real
+        root.
+
+        Deliberately conservative — it does NOT fire when:
+          * there are no events (nothing to root);
+          * a captured root already exists (the ``@trace`` decorator emits
+            ``agent.input``/``agent.output`` on its root span — do not double-root
+            the ~36.5% of already-clean traces);
+          * there is more than one distinct dangling parent (genuine fragmentation,
+            ~7.4%) — inventing a single wrapper would misrepresent the topology, so
+            leave it for the FE's multi-root synthesis and ``fragmented`` flag.
+
+        The marker is emitted regardless of the L1 layer toggle / ``capture_content``
+        (it is structure, not content — the tree must always have a root) but
+        carries NO agent name and NO content, so it never fabricates an agent or
+        leaks PII. It is appended via :meth:`_append_locked`, so it flows through
+        the same attestation hash chain and verifies like any other event."""
+        if not self._events:
+            return
+
+        captured_span_ids = {e["span_id"] for e in self._events if e.get("span_id")}
+        dangling: set[str] = set()
+        for e in self._events:
+            parent = e.get("parent_span_id")
+            if parent is None or parent == e.get("span_id"):
+                continue  # null / self-parent == a real root marker already
+            if parent not in captured_span_ids:
+                dangling.add(parent)
+
+        # A captured root already exists (no orphaned leaf) -> nothing to do.
+        # More than one distinct missing parent == genuine fragmentation -> leave
+        # it to the FE's multi-root handling rather than inventing a false wrapper.
+        if len(dangling) != 1:
+            return
+
+        root_span_id = next(iter(dangling))
+        # Bypass is_layer_enabled + redact_payload (this is structural, content-free,
+        # and must exist regardless of L1/capture_content); append straight through
+        # the shared hashing path. Emitting the root LAST keeps sequence order
+        # monotonic and never reorders the observed leaf events.
+        self._append_locked(
+            self._ROOT_EVENT_TYPE,
+            {"synthesized": True},
+            span_id=root_span_id,
+            parent_span_id=None,
+            span_name="trace",
+        )
+
     def terminate(self, reason: str) -> None:
         """Permanently mark this trace non-attestable (a safety-stop / policy
         halt). The next flush() fails CLOSED: the chain can no longer be
@@ -297,6 +380,9 @@ class TraceCollector:
         with self._lock:
             if self._sealed or not self._events:
                 return
+            # Give the trace a real captured root BEFORE sealing (companion to
+            # atlas-app PR #2042) so the FE never has to synthesize one.
+            self._synthesize_root_if_needed()
             self._sealed = True
             payload = self._build_trace_payload()
         # Collector seam (A4): observe the FINAL payload at the real upload
