@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import mimetypes
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +32,22 @@ def _unwrap(resp: Any) -> Any:
     return resp
 
 
+_UNSAFE_FILENAME_CHARS = re.compile(r"[\x00-\x1f/\\]")
+
+
+def _validate_upload_filename(filename: str) -> str:
+    """Fail-fast guard on the upload filename sent to the presign request.
+
+    Rejects empty / ``.`` / ``..`` / path separators / control characters with a
+    clear ``ValueError`` before any network call (F-L12-004).
+    """
+    if not filename or filename in (".", ".."):
+        raise ValueError(f"invalid upload filename: {filename!r}")
+    if _UNSAFE_FILENAME_CHARS.search(filename):
+        raise ValueError(f"upload filename contains path separators or control characters: {filename!r}")
+    return filename
+
+
 class Traces(SyncAPIResource):
     def _base_url(self) -> str:
         return f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}/traces"
@@ -49,7 +66,7 @@ class Traces(SyncAPIResource):
         3. Create trace records from the uploaded file
         """
         file_path = os.path.abspath(file_path)
-        filename = os.path.basename(file_path)
+        filename = _validate_upload_filename(os.path.basename(file_path))
         file_size = os.path.getsize(file_path)
 
         if file_size > MAX_UPLOAD_SIZE:
@@ -243,7 +260,7 @@ class AsyncTraces(AsyncAPIResource):
         3. Create trace records from the uploaded file
         """
         file_path = os.path.abspath(file_path)
-        filename = os.path.basename(file_path)
+        filename = _validate_upload_filename(os.path.basename(file_path))
         file_size = os.path.getsize(file_path)
 
         if file_size > MAX_UPLOAD_SIZE:

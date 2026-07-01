@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
 import logging
@@ -88,6 +89,10 @@ class TraceCollector:
     """
 
     MAX_EVENTS = 10_000
+    # Per-event payload byte cap (F-L12-003). A single pathological event (e.g. a
+    # multi-MB string) must not bloat the in-memory trace or the upload unbounded;
+    # the count cap (MAX_EVENTS) alone doesn't bound size.
+    MAX_EVENT_BYTES = 256 * 1024
 
     def __init__(self, client: Any, config: CaptureConfig) -> None:
         self._client = client
@@ -154,6 +159,27 @@ class TraceCollector:
         # capture_content=False. Secrets are orthogonal to capture_content.
         if span_name:
             span_name = scrub_secrets(span_name)
+
+        # Per-event byte cap (F-L12-003): replace an oversized payload with a small
+        # marker so one pathological event can't bloat the trace/upload. Runs after
+        # redaction/scrub/pricing so a normal (small) event is untouched.
+        try:
+            payload_bytes = len(json.dumps(payload, default=str).encode("utf-8"))
+        except Exception:
+            payload_bytes = 0
+        if payload_bytes > self.MAX_EVENT_BYTES:
+            log.warning(
+                "layerlens: event %s payload %d bytes exceeds cap %d; truncated",
+                event_type,
+                payload_bytes,
+                self.MAX_EVENT_BYTES,
+            )
+            payload = {
+                "_truncated": True,
+                "_original_bytes": payload_bytes,
+                "_cap_bytes": self.MAX_EVENT_BYTES,
+                "_reason": "event payload exceeded MAX_EVENT_BYTES",
+            }
 
         with self._lock:
             if self._sealed:
