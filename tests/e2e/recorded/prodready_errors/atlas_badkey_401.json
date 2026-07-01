@@ -1,0 +1,10 @@
+{
+  "marker": "prodready-l3-20260626T232656Z",
+  "probe": "atlas_badkey_401",
+  "status": 401,
+  "body": {
+    "status": "error",
+    "error": "Unknown API key"
+  },
+  "raw": "{\"status\":\"error\",\"error\":\"Unknown API key\"}\n"
+}

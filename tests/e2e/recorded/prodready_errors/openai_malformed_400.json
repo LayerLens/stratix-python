@@ -1,0 +1,17 @@
+{
+  "marker": "prodready-l5-20260626T232437Z",
+  "probe": "openai_malformed_400",
+  "kind": "raw_http",
+  "result": {
+    "status": 400,
+    "body": {
+      "error": {
+        "message": "Missing required parameter: 'messages'.",
+        "type": "invalid_request_error",
+        "param": "messages",
+        "code": "missing_required_parameter"
+      }
+    },
+    "raw": "{\n  \"error\": {\n    \"message\": \"Missing required parameter: 'messages'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"messages\",\n    \"code\": \"missing_required_parameter\"\n  }\n}"
+  }
+}

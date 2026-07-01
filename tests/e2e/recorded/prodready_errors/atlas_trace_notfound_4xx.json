@@ -1,0 +1,10 @@
+{
+  "marker": "prodready-l3-20260626T232656Z",
+  "probe": "atlas_trace_notfound_4xx",
+  "status": 404,
+  "body": {
+    "status": "error",
+    "error": "trace with ID '3c483dadc67a4934accade04caad0b29' not found"
+  },
+  "raw": "{\"status\":\"error\",\"error\":\"trace with ID '3c483dadc67a4934accade04caad0b29' not found\"}\n"
+}

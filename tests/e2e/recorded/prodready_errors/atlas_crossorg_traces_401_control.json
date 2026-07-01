@@ -1,0 +1,11 @@
+{
+  "marker": "prodready-l3-20260626T232800Z",
+  "probe": "atlas_crossorg_traces_401_control",
+  "status": 401,
+  "body": {
+    "status": "error",
+    "error": "user is not the member of the organization"
+  },
+  "raw": "{\"status\":\"error\",\"error\":\"user is not the member of the organization\"}\n",
+  "note": "Contrast to BOLA: the traces route enforces org membership -> 401."
+}

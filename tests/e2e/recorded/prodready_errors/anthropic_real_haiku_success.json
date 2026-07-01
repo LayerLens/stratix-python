@@ -1,0 +1,42 @@
+{
+  "marker": "prodready-l5-20260626T232937Z",
+  "probe": "anthropic_real_haiku_success",
+  "kind": "live_provider_success",
+  "canary": "LL-CANARY-0e7836b3cb3b",
+  "event_types": {
+    "model.invoke": 1,
+    "cost.record": 1
+  },
+  "real_usage": {
+    "input_tokens": 32,
+    "output_tokens": 4
+  },
+  "model_invoke_payload_keys": [
+    "content_block_counts",
+    "has_thinking",
+    "latency_ms",
+    "model",
+    "name",
+    "otel_gen_ai",
+    "parameters",
+    "response_id",
+    "response_model",
+    "role",
+    "stop_reason",
+    "usage"
+  ],
+  "cost_record_payload": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "cost_usd": 4.16e-05,
+    "prompt_tokens": 32,
+    "completion_tokens": 4,
+    "input_tokens": 32,
+    "output_tokens": 4,
+    "cached_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "canary_in_local_payload": false,
+  "note": "capture_content=False default -> canary prompt must be absent from payload; cost.record must carry real cost_usd computed from real haiku token usage."
+}

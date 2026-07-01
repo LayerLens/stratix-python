@@ -1,0 +1,22 @@
+{
+  "marker": "prodready-l5-20260626T232437Z",
+  "probe": "anthropic_sdk_surface",
+  "kind": "sdk_surface",
+  "result": {
+    "label": "anthropic_sdk_badkey",
+    "raised_type": "AuthenticationError",
+    "raised_str_has_key": false,
+    "agent_error_captured": true,
+    "agent_error_payload": {
+      "name": "anthropic.messages.create",
+      "error_type": "AuthenticationError",
+      "latency_ms": 403.56993675231934
+    },
+    "error_field": null,
+    "error_type_field": "AuthenticationError",
+    "key_in_stored_dump": false,
+    "secret_patterns_in_dump": [],
+    "raw_str_exc": "Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CcSjY3EWDmoL1gdu7bt2U'}",
+    "safe_error_of_exc": "Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CcSjY3EWDmoL1gdu7bt2U'}"
+  }
+}

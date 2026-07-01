@@ -1,0 +1,17 @@
+{
+  "marker": "prodready-l5-20260626T232437Z",
+  "probe": "anthropic_malformed_400",
+  "kind": "raw_http",
+  "result": {
+    "status": 400,
+    "body": {
+      "type": "error",
+      "error": {
+        "type": "invalid_request_error",
+        "message": "max_tokens: Field required"
+      },
+      "request_id": "req_011CcSjXosaUQyjEzs7wasb6"
+    },
+    "raw": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"max_tokens: Field required\"},\"request_id\":\"req_011CcSjXosaUQyjEzs7wasb6\"}"
+  }
+}

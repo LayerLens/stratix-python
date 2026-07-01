@@ -1,0 +1,47 @@
+{
+  "marker": "prodready-l3-20260626T232800Z",
+  "probe": "atlas_crossorg_bola_200",
+  "status": 200,
+  "note": "BOLA F-L3-001 CONFIRM: Lean app key (org 691254ec\u2026, NOT a member of 683e6392\u2026) reads LayerLens integrations. Sensitive field VALUES redacted before recording; key NAMES + count retained to show the leak shape.",
+  "leak_shape": {
+    "container_key": "data",
+    "count": 1,
+    "record_keys": [
+      "active",
+      "created_at",
+      "created_by",
+      "environment",
+      "framework",
+      "host_url",
+      "id",
+      "latency_ms",
+      "name",
+      "organization_id",
+      "source_type",
+      "status",
+      "traces_per_hour",
+      "type"
+    ]
+  },
+  "body_redacted": {
+    "status": "success",
+    "data": [
+      {
+        "id": "69805b8a5da7170d2c0c4921",
+        "organization_id": "683e63925ef7e1c53c1f4b28",
+        "name": "[REDACTED-CROSS-ORG]",
+        "type": "langfuse",
+        "host_url": "[REDACTED-CROSS-ORG]",
+        "active": true,
+        "created_at": "2026-02-02T08:08:42.179Z",
+        "created_by": "[REDACTED-CROSS-ORG]",
+        "status": "",
+        "source_type": "",
+        "framework": "",
+        "environment": "",
+        "traces_per_hour": 0,
+        "latency_ms": 0
+      }
+    ]
+  }
+}

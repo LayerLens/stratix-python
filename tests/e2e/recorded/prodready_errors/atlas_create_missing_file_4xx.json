@@ -1,0 +1,10 @@
+{
+  "marker": "prodready-l3-20260626T232656Z",
+  "probe": "atlas_create_missing_file_4xx",
+  "status": 400,
+  "body": {
+    "status": "error",
+    "error": "failed to download file from S3: operation error S3: GetObject, https response error StatusCode: 404, RequestID: DSJKX3HDGBZ69SJJ, HostID: EerhMS5QrCxlhm4iEmlMbBTxlTobxGktsv5ARKU99PQdwl9PoqvFMK/WSG+1+iR9otXHrtVr9dmU+U5qzVL1o0PBc5NCS04R, NoSuchKey: "
+  },
+  "raw": "{\"status\":\"error\",\"error\":\"failed to download file from S3: operation error S3: GetObject, https response error StatusCode: 404, RequestID: DSJKX3HDGBZ69SJJ, HostID: EerhMS5QrCxlhm4iEmlMbBTxlTobxGktsv5ARKU99PQdwl9PoqvFMK/WSG+1+iR9otXHrtVr9dmU+U5qzVL1o0PBc5NCS04R, NoSuchKey: \"}\n"
+}

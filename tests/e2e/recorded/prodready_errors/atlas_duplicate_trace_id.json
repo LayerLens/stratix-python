@@ -1,0 +1,12 @@
+{
+  "marker": "prodready-l7-20260626T232832Z",
+  "probe": "atlas_duplicate_trace_id",
+  "trace_id": "37f7a086f63140938a8096c162647d8c",
+  "first_upload": [
+    "6a3f0b2490a64a5ae34bcdf4"
+  ],
+  "second_upload": [
+    "6a3f0b2690a64a5ae34bcdf5"
+  ],
+  "note": "Same trace_id uploaded twice; both responses recorded to show de-dup vs overwrite vs dup behavior."
+}
