@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from ..._ssrf import ensure_safe_upload_url
 from ...models import (
     Trace,
     TracesResponse,
@@ -66,6 +67,9 @@ class Traces(SyncAPIResource):
         if not isinstance(data, dict) or "url" not in data:
             return None
         upload_url: str = data["url"]
+
+        # SSRF guard: never PUT trace bytes to an untrusted/internal host.
+        ensure_safe_upload_url(upload_url, getattr(self._client, "trusted_upload_hosts", None))
 
         # Step 2: Upload file to S3
         with open(file_path, "rb") as f:
@@ -239,6 +243,9 @@ class AsyncTraces(AsyncAPIResource):
         if not isinstance(data, dict) or "url" not in data:
             return None
         upload_url: str = data["url"]
+
+        # SSRF guard: never PUT trace bytes to an untrusted/internal host.
+        ensure_safe_upload_url(upload_url, getattr(self._client, "trusted_upload_hosts", None))
 
         # Step 2: Upload file to S3
         async with httpx.AsyncClient() as upload_client:

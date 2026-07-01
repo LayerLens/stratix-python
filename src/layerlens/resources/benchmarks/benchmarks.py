@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 
+from ..._ssrf import ensure_safe_upload_url
 from ...models import (
     Benchmark,
     BenchmarkPrompt,
@@ -309,6 +310,9 @@ class Benchmarks(SyncAPIResource):
             resp = resp["data"]
         if not isinstance(resp, dict) or "url" not in resp:
             raise ValueError("Failed to get upload URL")
+
+        # SSRF guard: never PUT benchmark bytes to an untrusted/internal host.
+        ensure_safe_upload_url(resp["url"], getattr(self._client, "trusted_upload_hosts", None))
 
         with open(file_path, "rb") as f:
             put_resp = httpx.put(
@@ -683,6 +687,9 @@ class AsyncBenchmarks(AsyncAPIResource):
             resp = resp["data"]
         if not isinstance(resp, dict) or "url" not in resp:
             raise ValueError("Failed to get upload URL")
+
+        # SSRF guard: never PUT benchmark bytes to an untrusted/internal host.
+        ensure_safe_upload_url(resp["url"], getattr(self._client, "trusted_upload_hosts", None))
 
         async with httpx.AsyncClient() as http:
             with open(file_path, "rb") as f:

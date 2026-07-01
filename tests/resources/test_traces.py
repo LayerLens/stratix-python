@@ -6,6 +6,7 @@ import pytest
 
 from layerlens.models import Trace, TracesResponse, CreateTracesResponse
 from layerlens._constants import DEFAULT_TIMEOUT
+from layerlens._exceptions import StratixError
 from layerlens.resources.traces.traces import Traces
 
 
@@ -336,6 +337,22 @@ class TestTracesUpload:
             result = traces_resource.upload(tmp_path)
 
             assert result is None
+        finally:
+            os.unlink(tmp_path)
+
+    @pytest.mark.invariant
+    def test_upload_rejects_ssrf_presign(self, traces_resource):
+        """upload must refuse a presigned URL pointing at an internal host, and
+        must do so BEFORE PUTting the bytes (the guard is wired, not dead code)."""
+        with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
+            f.write('[{"events": []}]')
+            tmp_path = f.name
+        try:
+            traces_resource._post.side_effect = [{"url": "http://169.254.169.254/latest/meta-data/"}]
+            with patch("layerlens.resources.traces.traces.httpx.put") as mock_put:
+                with pytest.raises(StratixError):
+                    traces_resource.upload(tmp_path)
+                mock_put.assert_not_called()
         finally:
             os.unlink(tmp_path)
 

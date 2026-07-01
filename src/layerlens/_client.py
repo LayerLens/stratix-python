@@ -9,6 +9,7 @@ from typing_extensions import Self, override
 import httpx
 
 from . import _exceptions
+from ._ssrf import resolve_trusted_upload_hosts
 from ._utils import is_mapping
 from .models import Organization, OrganizationResponse, OrganizationsListResponse
 from ._constants import DEFAULT_TIMEOUT, DEFAULT_BASE_URL, DIRTY_ROUTER_PREFIX
@@ -50,11 +51,17 @@ class Stratix(BaseClient):
         timeout: Union[float, httpx.Timeout, None] = DEFAULT_TIMEOUT,
         max_retries: int = 2,
         use_bearer_auth: bool = False,
+        trusted_upload_hosts: list[str] | None = None,
     ) -> None:
         """Construct a new synchronous Stratix client instance.
 
         This automatically infers the following arguments from their corresponding environment variables if they are not provided:
         - `api_key` from `LAYERLENS_STRATIX_API_KEY`
+
+        ``trusted_upload_hosts`` (also read from ``LAYERLENS_TRUSTED_UPLOAD_HOSTS``,
+        comma-separated) allowlists hosts the SDK may PUT presigned uploads to in
+        addition to the default policy (public https only); list a self-hosted /
+        MinIO endpoint here to permit http + private-IP uploads.
         """
         if api_key is None:
             api_key = os.environ.get("LAYERLENS_STRATIX_API_KEY") or os.environ.get("LAYERLENS_ATLAS_API_KEY")
@@ -64,6 +71,7 @@ class Stratix(BaseClient):
             )
         self.api_key = api_key
         self._use_bearer_auth = use_bearer_auth
+        self.trusted_upload_hosts = resolve_trusted_upload_hosts(trusted_upload_hosts)
 
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_STRATIX_BASE_URL") or os.environ.get("LAYERLENS_ATLAS_BASE_URL")
@@ -277,11 +285,17 @@ class AsyncStratix(BaseAsyncClient):
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
         max_retries: int = 2,
         use_bearer_auth: bool = False,
+        trusted_upload_hosts: list[str] | None = None,
     ) -> None:
         """Construct a new asynchronous Stratix client instance.
 
         This automatically infers the following arguments from their corresponding environment variables if they are not provided:
         - `api_key` from `LAYERLENS_STRATIX_API_KEY`
+
+        ``trusted_upload_hosts`` (also read from ``LAYERLENS_TRUSTED_UPLOAD_HOSTS``,
+        comma-separated) allowlists presigned-upload hosts beyond the default
+        policy (public https only); list a self-hosted / MinIO endpoint to permit
+        http + private-IP uploads.
         """
         if api_key is None:
             api_key = os.environ.get("LAYERLENS_STRATIX_API_KEY") or os.environ.get("LAYERLENS_ATLAS_API_KEY")
@@ -292,6 +306,7 @@ class AsyncStratix(BaseAsyncClient):
             )
         self.api_key = api_key
         self._use_bearer_auth = use_bearer_auth
+        self.trusted_upload_hosts = resolve_trusted_upload_hosts(trusted_upload_hosts)
 
         if base_url is None:
             base_url = os.environ.get("LAYERLENS_STRATIX_BASE_URL") or os.environ.get("LAYERLENS_ATLAS_BASE_URL")

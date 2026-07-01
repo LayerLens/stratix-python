@@ -13,6 +13,7 @@ from layerlens.models import (
     CreateBenchmarkResponse,
 )
 from layerlens._constants import DEFAULT_TIMEOUT
+from layerlens._exceptions import StratixError
 from layerlens.resources.benchmarks.benchmarks import Benchmarks
 
 
@@ -936,6 +937,15 @@ class TestBenchmarksUploadFile:
         result = benchmarks_resource._upload_file(tmp_jsonl, "my-bench", DEFAULT_TIMEOUT)
 
         assert result == "data.jsonl"
+
+    @pytest.mark.invariant
+    @patch("layerlens.resources.benchmarks.benchmarks.httpx.put")
+    def test_upload_file_rejects_ssrf_presign(self, mock_put, benchmarks_resource, tmp_jsonl):
+        """_upload_file refuses an internal/untrusted presign host before PUT."""
+        benchmarks_resource._post.return_value = {"url": "http://10.0.0.1/steal"}
+        with pytest.raises(StratixError):
+            benchmarks_resource._upload_file(tmp_jsonl, "my-bench", DEFAULT_TIMEOUT)
+        mock_put.assert_not_called()
 
     def test_upload_file_raises_on_missing_url(self, benchmarks_resource, tmp_jsonl):
         """_upload_file() raises ValueError when URL is missing."""
