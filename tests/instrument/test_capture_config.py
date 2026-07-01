@@ -463,28 +463,26 @@ class TestRedactionBoundary:
     The collector-side backstop strips the per-event content keys in
     ``_CONTENT_KEYS`` — now UNIVERSAL (framework content events like
     agent.input/agent.output, tool.call, retrieval.query are included too;
-    LAY-3578/3567) — plus one level into ``parameters`` (the _CONTENT_PARAM_KEYS)
-    for model.invoke. It still does NOT recurse into arbitrary nested structures
-    (depth-1 only), so adapters must keep gating at emit time for anything buried
-    deeper. Documenting that boundary is the W5 minimum (vs. full recursion).
+    LAY-3578/3567). For ``model.invoke.parameters`` it is now DENY-BY-DEFAULT and
+    recursive (A16 / F-L12-002, LAY-3643): only the vetted metric allowlist
+    ``_SAFE_PARAM_KEYS`` survives at any depth, so an unknown/nested content param
+    cannot leak. Adapters should still gate content at emit time, but the
+    backstop no longer relies on enumerating every content key.
     """
 
-    def test_does_not_recurse_below_one_level_into_parameters(self):
-        # Content buried inside a NON-content-keyed parameters sub-dict survives:
-        # redact_payload filters parameters' direct content keys but does not
-        # walk arbitrary nested structures. (``response_format`` IS a content
-        # param key now, so we nest under a non-content key to probe recursion.)
+    def test_parameters_deny_by_default_strips_unknown_nested_content(self):
+        # A16 / F-L12-002: parameters redaction is now DENY-BY-DEFAULT + recursive.
+        # A non-allowlisted param (``extra_config``) — and any content buried in it
+        # — is dropped under capture_content=False, so an unknown/custom param can
+        # no longer leak content. Only vetted metric keys survive.
         config = CaptureConfig(capture_content=False)
         payload = {
             "name": "openai.chat.completions.create",
             "parameters": {"model": "gpt-4o", "extra_config": {"hidden_prompt": _SENTINEL}},
         }
         redacted = config.redact_payload("model.invoke", payload)
-        # extra_config is not a content param key, and redact_payload does not
-        # recurse into nested dicts, so its buried sentinel survives.
-        assert _SENTINEL in json.dumps(redacted), (
-            "boundary changed — redact_payload now recurses (update this doc-test)"
-        )
+        assert _SENTINEL not in json.dumps(redacted)
+        assert redacted["parameters"] == {"model": "gpt-4o"}  # only the safe metric survives
 
     def test_strips_framework_content_event_types(self):
         # The backstop is now UNIVERSAL (LAY-3578/3567): framework content events

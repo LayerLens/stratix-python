@@ -118,6 +118,79 @@ _CONTENT_PARAM_KEYS = frozenset(
     }
 )
 
+# Deny-by-default allowlist for ``model.invoke.parameters`` under
+# ``capture_content=False`` (A16 / F-L12-002). The old deny-list (above) only
+# stripped *known* content keys, so a param the SDK had never seen leaked. This
+# is the inverse: keep ONLY these vetted, non-content metric keys and drop
+# everything else, so an unknown/custom/provider-specific param cannot leak
+# content. The set is the union of every provider adapter's ``capture_params``
+# minus the content keys, plus common sampling/limit metrics. Nested metric
+# containers (``generation_config``/``options``) are recursed into with the same
+# allowlist, so their safe sub-keys survive while a content sub-key
+# (``response_schema``, a template, …) is still dropped. Stop sequences are
+# treated as metric (short caller-set delimiters), consistent with the adapters.
+_SAFE_PARAM_KEYS = frozenset(
+    {
+        # identity
+        "model",
+        "response_model",
+        # sampling
+        "temperature",
+        "top_p",
+        "top_k",
+        "min_p",
+        "typical_p",
+        "top_a",
+        # limits
+        "max_tokens",
+        "max_completion_tokens",
+        "max_output_tokens",
+        "num_predict",
+        "num_ctx",
+        "num_keep",
+        # penalties
+        "frequency_penalty",
+        "presence_penalty",
+        "repeat_penalty",
+        "repeat_last_n",
+        # stop markers
+        "stop",
+        "stop_sequences",
+        # determinism / count
+        "seed",
+        "n",
+        "candidate_count",
+        "best_of",
+        # streaming
+        "stream",
+        "stream_options",
+        "include_usage",
+        # tiers / reasoning budgets
+        "service_tier",
+        "reasoning_effort",
+        "thinking_budget_tokens",
+        "thinking_type",
+        # logprobs
+        "logprobs",
+        "top_logprobs",
+        # tool-call control (NOT the tool schemas, which are content)
+        "parallel_tool_calls",
+        # lifecycle
+        "keep_alive",
+        # mirostat (ollama)
+        "mirostat",
+        "mirostat_eta",
+        "mirostat_tau",
+        "tfs_z",
+        "penalize_newline",
+        # response-format INDICATOR only (a short mime type; the schema is content)
+        "response_mime_type",
+        # nested metric containers (recursed into; content sub-keys still dropped)
+        "generation_config",
+        "options",
+    }
+)
+
 # Per-event-type CONTENT keys (LAY-3578 / LAY-3567). This is the SINGLE source of
 # truth shared by adapter emit-time gating AND the collector-side backstop in
 # ``redact_payload`` — so ``capture_content=False`` holds even when an adapter
@@ -338,6 +411,66 @@ def _strip_content_keys(value: Any, content_keys: FrozenSet[str]) -> Any:
     return value
 
 
+# Adapters also DERIVE safe summaries from content params (messages ->
+# messages_count/message_roles, tools -> tools_count/tool_names, system ->
+# has_system/system_length, metadata -> metadata_user_id, …). Those are
+# cardinality / identity / category metadata, not content, and follow stable
+# suffix/prefix shapes that raw content keys (messages, system, tools, prompt,
+# response_format, …) never match. Allow them by shape so the allowlist need not
+# enumerate every adapter's derived key (and so a new derived summary is kept,
+# not silently dropped).
+_SAFE_PARAM_SUFFIXES = (
+    "_count",
+    "_counts",
+    "_length",
+    "_lengths",
+    "_name",
+    "_names",
+    "_type",
+    "_types",
+    "_role",
+    "_roles",
+    "_id",
+    "_ids",
+    "_distribution",
+)
+_SAFE_PARAM_PREFIXES = ("has_", "is_", "num_", "n_")
+
+
+def _is_safe_param_key(key: str) -> bool:
+    """True if a ``model.invoke.parameters`` key is safe to keep under
+    ``capture_content=False``: an explicit metric (:data:`_SAFE_PARAM_KEYS`) or a
+    derived-summary key by shape. Raw content keys match neither and are dropped."""
+    return key in _SAFE_PARAM_KEYS or key.endswith(_SAFE_PARAM_SUFFIXES) or key.startswith(_SAFE_PARAM_PREFIXES)
+
+
+# Param keys whose VALUE is a nested metric dict that itself may hide a content
+# sub-key (vertex generation_config can carry response_schema; ollama options is
+# sampling config). Only these are recursed into; every other safe value (a
+# count, a role distribution, a name list) is kept as-is so it isn't over-filtered.
+_RECURSE_PARAM_CONTAINERS = frozenset({"generation_config", "options"})
+
+
+def _keep_safe_params(value: Any) -> Any:
+    """Keep ONLY safe param keys from a ``parameters`` dict (deny-by-default).
+
+    The inverse of :func:`_strip_content_keys`: drops every key that is not an
+    explicit metric or a derived-summary key (see :func:`_is_safe_param_key`), so
+    a param the SDK has never seen cannot leak content under
+    ``capture_content=False`` (A16 / F-L12-002). Nested metric *containers*
+    (:data:`_RECURSE_PARAM_CONTAINERS`) are recursed into so a content sub-key is
+    still dropped; any other safe value is kept verbatim.
+    """
+    if not isinstance(value, dict):
+        return value
+    out: Dict[str, Any] = {}
+    for k, v in value.items():
+        if not _is_safe_param_key(k):
+            continue
+        out[k] = _keep_safe_params(v) if (k in _RECURSE_PARAM_CONTAINERS and isinstance(v, dict)) else v
+    return out
+
+
 @dataclass(frozen=True)
 class CaptureConfig:
     """Controls which telemetry layers are captured.
@@ -404,7 +537,10 @@ class CaptureConfig:
         if event_type == "model.invoke":
             parameters = payload.get("parameters")
             if isinstance(parameters, dict):
-                payload = {**payload, "parameters": _strip_content_keys(parameters, _CONTENT_PARAM_KEYS)}
+                # Deny-by-default (A16 / F-L12-002): keep only allowlisted metric
+                # params so an unknown content-bearing param can't leak. Replaces
+                # the old deny-list strip (which let non-listed keys through).
+                payload = {**payload, "parameters": _keep_safe_params(parameters)}
         return payload
 
     def is_layer_enabled(self, event_type: str) -> bool:
