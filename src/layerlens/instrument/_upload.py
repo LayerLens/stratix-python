@@ -21,7 +21,7 @@ import logging
 import weakref
 import tempfile
 import threading
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Tuple, Callable, Optional
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -35,6 +35,56 @@ def _upload_succeeded(result: Any) -> bool:
     breaker stays blind to persistent rejects and the trace is silently lost while
     counted as delivered."""
     return result is not None and bool(getattr(result, "trace_ids", None))
+
+
+# ---------------------------------------------------------------------------
+# Data-loss observability (opt-in callback + always-on per-reason counter)
+# ---------------------------------------------------------------------------
+# Upload is best-effort, so traces can be dropped (queue overflow, circuit
+# breaker, serialize/upload failure). Loss was previously only logged; this
+# gives the host app a programmatic signal — an OTel-style drop counter plus an
+# opt-in callback — WITHOUT changing the default best-effort behavior (F-L7-001).
+
+_LOSS_REASONS = ("queue_full", "circuit_open", "serialize_error", "rejected", "upload_error")
+
+_loss_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None
+_loss_counts: Dict[str, int] = {}
+_loss_lock = threading.Lock()
+
+
+def set_upload_loss_callback(cb: Optional[Callable[[str, Dict[str, Any]], None]]) -> None:
+    """Register a callback fired (best-effort) whenever a trace is dropped.
+
+    Called as ``cb(reason, payload)`` where ``reason`` is one of
+    :data:`_LOSS_REASONS`. Opt-in (default ``None``); a raising callback is
+    swallowed so it can never break the upload path. Pass ``None`` to clear.
+    """
+    global _loss_callback
+    _loss_callback = cb
+
+
+def get_upload_loss_stats() -> Dict[str, int]:
+    """Return a snapshot of cumulative dropped-trace counts keyed by reason."""
+    with _loss_lock:
+        return dict(_loss_counts)
+
+
+def reset_upload_loss_stats() -> None:
+    """Reset the drop counters (primarily for tests)."""
+    with _loss_lock:
+        _loss_counts.clear()
+
+
+def _record_loss(reason: str, payload: Dict[str, Any]) -> None:
+    """Count a dropped trace and notify the opt-in callback (crash-safe)."""
+    with _loss_lock:
+        _loss_counts[reason] = _loss_counts.get(reason, 0) + 1
+    cb = _loss_callback
+    if cb is not None:
+        try:
+            cb(reason, payload)
+        except Exception:
+            log.warning("layerlens: upload_loss_callback raised", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +150,7 @@ class UploadChannel:
                 break
             client, payload = item
             if not self._allow():
+                _record_loss("circuit_open", payload)
                 continue
             try:
                 path = _write_trace_file(payload)
@@ -107,6 +158,7 @@ class UploadChannel:
                 # A serialize failure must not kill the daemon worker (every
                 # queued trace behind it would be lost) — count it and continue.
                 self._on_failure()
+                _record_loss("serialize_error", payload)
                 log.warning("layerlens: failed to serialize trace for upload", exc_info=True)
                 continue
             try:
@@ -115,12 +167,14 @@ class UploadChannel:
                     self._on_success()
                 else:
                     self._on_failure()
+                    _record_loss("rejected", payload)
                     log.warning(
                         "layerlens: background trace upload rejected (no trace_ids) for trace %s",
                         payload.get("trace_id", "?"),
                     )
             except Exception:
                 self._on_failure()
+                _record_loss("upload_error", payload)
                 log.warning("layerlens: background trace upload failed", exc_info=True)
             finally:
                 try:
@@ -147,12 +201,14 @@ class UploadChannel:
             self._upload_sync(client, payload)
             return True
         if not self._allow():
+            _record_loss("circuit_open", payload)
             return False
         self._ensure_worker()
         try:
             self._queue.put_nowait((client, payload))
             return True
         except queue.Full:
+            _record_loss("queue_full", payload)
             log.warning(
                 "layerlens: upload queue full, dropping trace %s",
                 payload.get("trace_id", "?"),
@@ -162,11 +218,13 @@ class UploadChannel:
     def _upload_sync(self, client: Any, payload: Dict[str, Any]) -> None:
         """Synchronous upload (used in tests)."""
         if not self._allow():
+            _record_loss("circuit_open", payload)
             return
         try:
             path = _write_trace_file(payload)
         except Exception:
             self._on_failure()
+            _record_loss("serialize_error", payload)
             log.warning("layerlens: failed to serialize trace for upload", exc_info=True)
             return
         try:
@@ -175,12 +233,14 @@ class UploadChannel:
                 self._on_success()
             else:
                 self._on_failure()
+                _record_loss("rejected", payload)
                 log.warning(
                     "layerlens: trace upload rejected (no trace_ids) for trace %s",
                     payload.get("trace_id", "?"),
                 )
         except Exception:
             self._on_failure()
+            _record_loss("upload_error", payload)
             log.warning("layerlens: trace upload failed", exc_info=True)
         finally:
             try:

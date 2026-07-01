@@ -72,7 +72,13 @@ SECRET_PATTERNS: List[tuple[str, Pattern[str]]] = [
     # is a CANDIDATE — every match is Luhn-validated (see ``_LUHN_VALIDATED``)
     # before it is flagged/scrubbed, so a random 16-digit value or an order id
     # with letters is NOT over-scrubbed (only mod-10-valid card numbers are).
-    ("card_pan", re.compile(r"(?<![\d.-])(?:\d[ -]?){12,18}\d(?![\d.-])")),
+    # The boundaries exclude ``\w`` (letters/digits/underscore) as well as ``.``
+    # and ``-`` so a card-shaped digit run FUSED inside a larger alphanumeric
+    # token — e.g. a Luhn-passing run that lands, by chance, inside a random
+    # sha256 hexdigest (the keyed-HMAC ``action_context_hash``) — is NOT matched.
+    # A real PAN in a log is delimited by whitespace/punctuation, never welded to
+    # hex letters, so widening the boundary loses no genuine card.
+    ("card_pan", re.compile(r"(?<![\w.-])(?:\d[ -]?){12,18}\d(?![\w.-])")),
     # CVC / CVV — a bare 3-4 digit number is everywhere, so this matches ONLY in
     # a LABELED context (cvc: 123 / "cvv":"4321" / security_code=123). The label
     # makes it specific without a checksum.

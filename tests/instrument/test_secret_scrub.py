@@ -15,7 +15,7 @@ import pytest
 
 from layerlens.instrument._context import _current_collector
 from layerlens.instrument._collector import TraceCollector
-from layerlens.instrument._secret_scrub import REDACTION, safe_error, find_secrets, scrub_secrets
+from layerlens.instrument._secret_scrub import REDACTION, safe_error, find_secrets, scrub_payload, scrub_secrets
 from layerlens.instrument._capture_config import CaptureConfig
 
 from ._secret_scan import scan_for_secrets
@@ -298,6 +298,13 @@ _NOT_PANS = [
     "2026-06-26T12:00:00",  # timestamp
     "tracking 1Z999AA10123456784",  # alphanumeric tracking number
     "amount 1234.56 usd",  # money, not a card
+    # A Luhn-VALID card-shaped run FUSED inside a larger alphanumeric token (a
+    # hex hash, a base64 id) is NOT a standalone PAN: a real card number in a log
+    # is delimited by non-word chars, never welded to hex letters. The keyed-HMAC
+    # action_context_hash (a2ui/ap2/a2a) is a random sha256 hexdigest that
+    # intermittently contains such a run — it was corrupted by the PAN scrubber.
+    "sha256:aa4111111111111111ff",  # Luhn-valid Visa run between hex letters
+    "deadbeef4012888888881881cafe",  # Luhn-valid Visa run inside a hex digest
 ]
 
 
@@ -337,6 +344,26 @@ def test_chokepoint_scrubs_pan_in_commerce_field_under_default_config() -> None:
     blob = json.dumps(collector.events[0]["payload"], default=str)
     assert "4111 1111 1111 1111" not in blob, "card PAN leaked past the collector chokepoint under content-on"
     assert REDACTION in blob, "expected the PAN to be replaced with the redaction marker"
+
+
+def test_hash_digest_with_embedded_pan_shaped_run_not_over_scrubbed() -> None:
+    """Regression + the exact CI flake this reproduces: a keyed-HMAC digest
+    (a2ui/ap2/a2a ``action_context_hash`` = ``"sha256:"`` + a random hexdigest)
+    can, by chance, contain a 13-19 digit run that passes Luhn. The PAN scrubber
+    must NOT corrupt the digest — a real card number is a standalone token, never
+    fused to a digest's hex letters. ``scrub_payload`` runs on EVERY uploaded
+    event, so an over-match here silently mangles a linkage-critical hash.
+
+    Bite: revert the ``card_pan`` boundary to ``(?<![\\d.-])...(?![\\d.-])``
+    (letters not excluded) and the embedded run is redacted -> RED. This is the
+    intermittent ``test_a2ui_adapter::test_no_content_config_keeps_the_hash``
+    failure, made deterministic here."""
+    # 4111111111111111 is a Luhn-valid Visa test PAN, here welded between hex
+    # letters exactly as it appears inside a random sha256 hexdigest.
+    digest = "sha256:aabbcc4111111111111111ddeeff"
+    out = scrub_payload({"action_context_hash": digest})
+    assert out["action_context_hash"] == digest, "hash digest corrupted by PAN over-scrub"
+    assert "card_pan" not in find_secrets(digest), "PAN-shaped run fused in a hash mis-flagged as a card"
 
 
 def test_real_mcp_error_path_scrubbed_without_safe_error_call() -> None:
