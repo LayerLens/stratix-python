@@ -30,6 +30,10 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "AutoGenAdapter": ("autogen", "AutoGenAdapter"),
     "AgentforceAdapter": ("agentforce", "AgentforceAdapter"),
     "SemanticKernelAdapter": ("semantic_kernel", "SemanticKernelAdapter"),
+    "SnowflakeCortexAgentsAdapter": (
+        "snowflake_cortex_agents",
+        "SnowflakeCortexAgentsAdapter",
+    ),
 }
 
 
@@ -55,6 +59,9 @@ if TYPE_CHECKING:
     from .langgraph import LangGraphCallbackHandler as LangGraphCallbackHandler
     from .agentforce import AgentforceAdapter as AgentforceAdapter
     from .semantic_kernel import SemanticKernelAdapter as SemanticKernelAdapter
+    from .snowflake_cortex_agents import (
+        SnowflakeCortexAgentsAdapter as SnowflakeCortexAgentsAdapter,
+    )
 
 
 __all__ = list(_LAZY_EXPORTS.keys())

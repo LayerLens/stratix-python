@@ -83,6 +83,17 @@ def test_lazy_getattr_resolves_agentforce_without_pulling_other_sdks() -> None:
         assert sdk not in sys.modules, f"resolving AgentforceAdapter pulled {sdk!r}; lazy exports leaked"
 
 
+def test_lazy_getattr_resolves_snowflake_without_pulling_other_sdks() -> None:
+    """Snowflake Cortex Agents only needs httpx (always installed). Its lazy
+    export should resolve without pulling any heavy framework SDK."""
+    _purge_framework_sdks()
+    pkg = importlib.import_module("layerlens.instrument.adapters.frameworks")
+    adapter_cls = pkg.SnowflakeCortexAgentsAdapter  # triggers __getattr__
+    assert adapter_cls.__name__ == "SnowflakeCortexAgentsAdapter"
+    for sdk in ("langgraph", "crewai", "autogen", "semantic_kernel"):
+        assert sdk not in sys.modules, f"resolving SnowflakeCortexAgentsAdapter pulled {sdk!r}; lazy exports leaked"
+
+
 def test_lazy_dir_advertises_all_public_adapters() -> None:
     _purge_framework_sdks()
     pkg = importlib.import_module("layerlens.instrument.adapters.frameworks")
@@ -94,5 +105,6 @@ def test_lazy_dir_advertises_all_public_adapters() -> None:
         "AutoGenAdapter",
         "AgentforceAdapter",
         "SemanticKernelAdapter",
+        "SnowflakeCortexAgentsAdapter",
     ):
         assert expected in advertised, f"{expected!r} missing from frameworks.__dir__()"
