@@ -407,3 +407,62 @@ def test_deeply_nested_content_key_is_stripped() -> None:
     payload = _emit("agent.output", {"status": "ok", "wrapper": {"inner": {"output": SENTINEL}}})
     assert SENTINEL not in _blob(payload), "deeply nested content key 'output' leaked"
     assert payload.get("status") == "ok", "status metadata over-stripped"
+
+
+# ---------------------------------------------------------------------------
+# UNREGISTERED event types must fail CLOSED (F2 / live probe unregistered_type_bypass).
+# is_layer_enabled fail-opens for unknown types and redact_payload previously no-op'd
+# when _CONTENT_KEYS had no entry -> a custom/future event_type leaked its content
+# verbatim under capture_content=False (live-proven: sentinel survived to the server).
+# A union-of-known-content-keys backstop is INSUFFICIENT (an arbitrary field name like
+# 'secret_notes' is in no content-key set), so the type is DENY-BY-DEFAULT: keep only a
+# vetted safe-metadata allowlist and drop everything else, mirroring _keep_safe_params.
+# ---------------------------------------------------------------------------
+
+
+def test_unregistered_event_type_denies_arbitrary_content_keeps_metadata() -> None:
+    payload = _emit(
+        "custom.acme.reasoning",
+        {
+            "messages": [{"role": "user", "content": SENTINEL}],  # known content key
+            "secret_notes": SENTINEL,  # ARBITRARY key not in any content-key set
+            "model": "gpt-4o",  # safe metadata -> kept
+            "step": 3,  # safe metadata -> kept
+        },
+    )
+    assert SENTINEL not in _blob(payload), "unregistered event_type leaked content under capture_content=False"
+    assert payload.get("model") == "gpt-4o" and payload.get("step") == 3, "safe metadata over-stripped on unknown type"
+
+
+def test_unregistered_event_type_nested_arbitrary_content_is_stripped() -> None:
+    payload = _emit(
+        "vendor.telemetry.v2",
+        {"trace_id": "t1", "custom_blob": {"reasoning": SENTINEL, "scratch": {"x": SENTINEL}}},
+    )
+    assert SENTINEL not in _blob(payload), "nested arbitrary content on an unregistered type leaked"
+    assert payload.get("trace_id") == "t1", "id metadata over-stripped on unknown type"
+
+
+def test_unregistered_type_content_preserved_under_capture_content_true() -> None:
+    payload = _emit("custom.acme.reasoning", {"secret_notes": SENTINEL}, config=CaptureConfig.full())
+    assert SENTINEL in _blob(payload), "capture_content=True must not strip an unregistered type's content"
+
+
+def test_unregistered_type_source_body_and_bytes_blob_are_stripped() -> None:
+    # re-vet residual: 'source' (a document body) and any '*_bytes' (a content blob)
+    # must NOT be kept as "safe metadata" on an unregistered type. A byte COUNT is
+    # still allowed via '*_count'; a step counter stays.
+    payload = _emit(
+        "custom.multimodal.v1",
+        {"source": SENTINEL, "image_bytes": SENTINEL, "audio_bytes": SENTINEL, "step": 2, "frame_count": 9},
+    )
+    assert SENTINEL not in _blob(payload), "source/_bytes content leaked on an unregistered type"
+    assert payload.get("step") == 2 and payload.get("frame_count") == 9, "short metadata over-stripped"
+
+
+def test_registered_content_free_type_is_not_over_stripped() -> None:
+    # A REGISTERED type with no _CONTENT_KEYS entry (cost.record) keeps its curated
+    # (no deny-by-default) behavior — the backstop targets ONLY unregistered types.
+    payload = _emit("cost.record", {"model": "gpt-4o", "cost_usd": 0.01, "total_tokens": 42, "vendor_field": "x"})
+    assert payload.get("vendor_field") == "x", "registered content-free type wrongly deny-by-defaulted"
+    assert payload.get("cost_usd") == 0.01

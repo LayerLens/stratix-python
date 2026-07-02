@@ -367,10 +367,15 @@ class GoogleADKAdapter(FrameworkAdapter):
 
         payload = self._payload(agent_name=name, agent_type=type(agent).__name__)
 
+        # description + instruction are CONTENT (the agent's system prompt). Gate
+        # them on capture_content like every sibling adapter (strands system_prompt,
+        # ms_agent instructions, semantic_kernel rendered_prompt) — under the default
+        # capture_content=False they must NOT ship in the clear. (environment.config
+        # has no collector strip-set, so emit-time gating is the protection.)
         for attr in ("description", "instruction"):
             val = getattr(agent, attr, None)
             if val is not None:
-                payload[attr] = str(val)[:500]
+                self._set_if_capturing(payload, attr, str(val)[:500])
 
         model = getattr(agent, "model", None)
         if model is not None:

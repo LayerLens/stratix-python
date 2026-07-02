@@ -204,6 +204,63 @@ class TestTaskEvents:
         crew_span_id = agent_inputs[0]["span_id"]
         assert task_input[0]["parent_span_id"] == crew_span_id
 
+    def test_task_description_not_leaked_when_not_capturing(self, mock_client):
+        # F-CREWAI (MED, live-proven): an UNNAMED task's free-text description is
+        # CONTENT. It must not ride task_name or the span_name under the default
+        # capture_content=False (previously _get_task_name fell back to
+        # str(task.description) and shipped it in the clear).
+        from types import SimpleNamespace
+
+        uploaded = capture_framework_trace(mock_client)
+        adapter = CrewAIAdapter(mock_client)  # default = capture_content False
+        SENTINEL = "SENSITIVE-TASK-BRIEF-do-not-ship"
+        with crewai_event_bus.scoped_handlers():
+            adapter.connect()
+            adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
+            # Faithful to real crewai: an unnamed Task(description=...) surfaces the
+            # full description in event.task_name (live-verified). It must not ship.
+            ev = SimpleNamespace(
+                task_name=f"Name one ocean in a few words. {SENTINEL}",
+                agent_role="Researcher",
+                task=SimpleNamespace(description=f"Name one ocean in a few words. {SENTINEL}", name=None),
+            )
+            adapter._on_task_started(None, ev)
+            to = TaskOutput(description="d", raw="ok", agent="Researcher")
+            adapter._on_crew_completed(None, CrewKickoffCompletedEvent(crew_name="C", output=to))
+        adapter.disconnect()
+
+        blob = str(uploaded["events"])
+        assert SENTINEL not in blob, "task description must not ship (payload or span_name) under capture_content=False"
+        task_inputs = [e for e in find_events(uploaded["events"], "agent.input") if "task_name" in e["payload"]]
+        assert task_inputs == [], "an unnamed task must not surface a task_name derived from its description"
+
+    def test_task_label_present_when_capturing(self, mock_client):
+        # Under capture_content=True the task label (which crewai may populate with
+        # the free-text description) IS exposed — as the content-gated task_name.
+        from types import SimpleNamespace
+
+        from layerlens.instrument._capture_config import CaptureConfig
+
+        uploaded = capture_framework_trace(mock_client)
+        adapter = CrewAIAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        with crewai_event_bus.scoped_handlers():
+            adapter.connect()
+            adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
+            # crewai puts the description in event.task_name for an unnamed task
+            ev = SimpleNamespace(
+                task_name="Summarize the ocean report",
+                agent_role="Researcher",
+                task=SimpleNamespace(description="Summarize the ocean report", name=None),
+            )
+            adapter._on_task_started(None, ev)
+            to = TaskOutput(description="d", raw="ok", agent="Researcher")
+            adapter._on_crew_completed(None, CrewKickoffCompletedEvent(crew_name="C", output=to))
+        adapter.disconnect()
+
+        task_inputs = [e for e in find_events(uploaded["events"], "agent.input") if e["payload"].get("task_name")]
+        assert len(task_inputs) == 1
+        assert task_inputs[0]["payload"]["task_name"] == "Summarize the ocean report"
+
     def test_task_failed(self, adapter_and_trace):
         adapter, uploaded = adapter_and_trace
         adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))

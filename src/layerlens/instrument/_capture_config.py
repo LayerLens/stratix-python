@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, FrozenSet
+from typing import Any, Dict, FrozenSet, cast
 from dataclasses import dataclass
 
 # Maps event type strings to CaptureConfig field names. EVERY content-bearing
@@ -282,6 +282,11 @@ _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     ),
     "agent.interaction": frozenset({"content", "input", "output", "messages"}),
     "conversation.message": frozenset({"content", "message"}),
+    # ``instruction``/``description``: an agent's system prompt + description
+    # (google_adk emits these on environment.config). Content — a collector-tier
+    # backstop so they are stripped under capture_content=False even if an emit
+    # site forgets to gate them (environment.config otherwise has no strip-set).
+    "environment.config": frozenset({"instruction", "description"}),
     # ``error``: strands/langchain attach str(exc) onto model.invoke/tool.result.
     "model.invoke": frozenset({"messages", "output_message", "error"}),
     "embedding.create": frozenset({"input", "messages", "texts", "contents"}),
@@ -476,6 +481,100 @@ def _keep_safe_params(value: Any) -> Any:
     return out
 
 
+# Deny-by-default allowlist for an UNREGISTERED event type's payload under
+# ``capture_content=False`` (F2). An unknown type has no curated ``_CONTENT_KEYS``
+# entry, so we cannot know which fields are content — keep ONLY vetted, non-content
+# metadata (ids, counts, statuses, costs, latencies, model/provider/framework
+# identifiers) and drop everything else. Deliberately conservative: unknown types
+# are rare (custom user ``emit`` / a future adapter shipped before registration),
+# and under capture_content=False erring toward stripping is the privacy-first call.
+_SAFE_METADATA_KEYS = frozenset(
+    {
+        "model",
+        "response_model",
+        "provider",
+        "framework",
+        "event_type",
+        "protocol",
+        # NB: "source" was removed (re-vet) — it commonly carries a source-document
+        # BODY, not a short label, so it must NOT be kept as safe metadata. "decision"/
+        # "policy"/"status"/"reason_code" are retained as short enum/category fields by
+        # strong convention; a custom type that puts free text there should register a
+        # _CONTENT_KEYS entry (key-name allowlisting cannot inspect the value).
+        "status",
+        "decision",
+        "reason_code",
+        "policy",
+        "error_type",
+        "error_code",
+        "currency",
+        "service_tier",
+        "finish_reason",
+        "step",
+        "index",
+        "attempt",
+        "count",
+        "stream",
+        "synthesized",
+        "truncated",
+        "verified",
+        "sequence_id",
+        "trace_id",
+        "span_id",
+        "parent_span_id",
+        "timestamp",
+        "timestamp_ns",
+        "created_at",
+        "started_at",
+        "ended_at",
+        "cost_usd",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "cached_tokens",
+        "latency_ms",
+        "duration_ms",
+        "ttft_ms",
+    }
+)
+# Suffix rules for derived-metric / identifier keys the SDK has never seen by name
+# (``*_id``, ``*_ms``, ``*_tokens`` …). Kept alongside the explicit allowlist above.
+_SAFE_METADATA_SUFFIXES = (
+    "_id",
+    "_ms",
+    "_ns",
+    "_tokens",
+    "_count",
+    "_hash",
+    "_at",
+    "_usd",
+    # NB: "_bytes" was removed (re-vet) — it matched content blobs (image_bytes /
+    # audio_bytes) as well as size metrics. A byte COUNT is already covered by
+    # "_count"; a raw ``*_bytes`` blob must be stripped under capture_content=False.
+    "_index",
+    "_seconds",
+)
+
+
+def _is_safe_metadata_key(key: str) -> bool:
+    """True if an unregistered event's payload key is safe to keep under
+    ``capture_content=False``: an explicit metadata key or a derived-metric /
+    identifier key by suffix. Content keys (arbitrary names) match neither."""
+    return key in _SAFE_METADATA_KEYS or key.endswith(_SAFE_METADATA_SUFFIXES)
+
+
+def _keep_safe_metadata(value: Any) -> Any:
+    """Deny-by-default for an UNREGISTERED event type (F2): recursively keep ONLY
+    :func:`_is_safe_metadata_key` keys at every level, dropping every other field
+    (and the sub-tree beneath it). Mirrors :func:`_keep_safe_params` but for the
+    whole payload of a type with no curated content-key set."""
+    if isinstance(value, dict):
+        return {k: _keep_safe_metadata(v) for k, v in value.items() if _is_safe_metadata_key(k)}
+    if isinstance(value, list):
+        return [_keep_safe_metadata(x) for x in value]
+    return value
+
+
 @dataclass(frozen=True)
 class CaptureConfig:
     """Controls which telemetry layers are captured.
@@ -537,6 +636,16 @@ class CaptureConfig:
         if self.capture_content:
             return payload
         content_keys = _CONTENT_KEYS.get(event_type)
+        if content_keys is None and event_type not in _EVENT_TYPE_MAP and event_type not in _ALWAYS_ENABLED:
+            # UNREGISTERED event type (F2). is_layer_enabled fail-opens for it and no
+            # curated content-key set exists, so a novel/custom event would leak its
+            # content verbatim — and a union-of-known-content-keys backstop is
+            # INSUFFICIENT (proven live: an arbitrary key like ``secret_notes`` is in
+            # no set). Fail CLOSED with deny-by-default: keep only vetted, non-content
+            # metadata and drop everything else, mirroring ``_keep_safe_params``. A
+            # future adapter shipped before its keys are registered — or a user's own
+            # ``emit`` — thus cannot bypass ``capture_content=False``.
+            return cast(Dict[str, Any], _keep_safe_metadata(payload))
         if content_keys:
             payload = _strip_content_keys(payload, content_keys)
         if event_type == "model.invoke":

@@ -310,7 +310,7 @@ class TestAgentLifecycle:
 
     def test_agent_config_captures_attributes(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
-        adapter = GoogleADKAdapter(mock_client)
+        adapter = GoogleADKAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
         adapter.connect()
 
         inv_ctx = _make_invocation_context()
@@ -341,6 +341,39 @@ class TestAgentLifecycle:
         assert p["tools"] == ["search", "calculator"]
         assert p["sub_agents"] == ["sub_agent"]
         assert p["session_id"] == "sess-abc"
+
+        adapter.disconnect()
+
+    def test_agent_config_redacts_system_prompt_when_not_capturing(self, mock_client):
+        # F-ADK (HIGH, live-proven): under the default capture_content=False the
+        # agent's instruction (system prompt) + description are CONTENT and must
+        # NOT ship — while the structural fields (agent_name, model, tools) stay.
+        uploaded = capture_framework_trace(mock_client)
+        adapter = GoogleADKAdapter(mock_client)  # default = capture_content False
+        adapter.connect()
+
+        inv_ctx = _make_invocation_context()
+        adapter._on_before_run(inv_ctx)
+        agent = _make_agent(
+            name="smart",
+            description="A confidential agent brief",
+            instruction="SECRET SYSTEM PROMPT with proprietary steps",
+            model="gemini-2.0-flash",
+            tools=[_make_tool("search")],
+        )
+        adapter._on_before_agent(agent, _make_callback_context("smart", session_id="s1"))
+        adapter._on_after_run(inv_ctx)
+
+        config = find_event(uploaded["events"], "environment.config")
+        p = config["payload"]
+        assert "instruction" not in p, "system prompt must not ship under capture_content=False"
+        assert "description" not in p, "agent description must not ship under capture_content=False"
+        blob = str(uploaded["events"])
+        assert "SECRET SYSTEM PROMPT" not in blob and "confidential agent brief" not in blob
+        # structural, non-content fields still present
+        assert p["agent_name"] == "smart"
+        assert p["model"] == "gemini-2.0-flash"
+        assert p["tools"] == ["search"]
 
         adapter.disconnect()
 

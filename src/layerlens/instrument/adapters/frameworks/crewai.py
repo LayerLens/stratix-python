@@ -533,6 +533,13 @@ class CrewAIAdapter(FrameworkAdapter):
 
     @staticmethod
     def _get_task_name(event: Any) -> str:
+        """The task label. crewai does NOT guarantee this is a short name — for an
+        unnamed ``Task(description=...)`` it populates ``event.task_name`` with the
+        full free-text DESCRIPTION. So this is CONTENT, not a safe identifier: use
+        it as the internal correlation key (never uploaded raw) and only surface it
+        on the wire when ``capture_content`` is on (see :meth:`_fill_task_fields` /
+        :meth:`_span_label`). F-CREWAI: it previously shipped in the clear under the
+        privacy default. crewai identity comes from ``crew_name``, not this label."""
         name = getattr(event, "task_name", None)
         if name:
             return str(name)
@@ -610,6 +617,21 @@ class CrewAIAdapter(FrameworkAdapter):
     # Task lifecycle
     # ------------------------------------------------------------------
 
+    def _fill_task_fields(self, payload: Dict[str, Any], event: Any) -> None:
+        """Attach the task label as content-gated ``task_name`` — withheld under
+        capture_content=False (F-CREWAI: crewai puts the free-text description in
+        this field for unnamed tasks, so it is content, not a safe identifier)."""
+        self._set_if_capturing(payload, "task_name", self._get_task_name(event) or None)
+
+    def _span_label(self, event: Any) -> str:
+        """Task span label. The task name/description is content, so only surface
+        it when capturing; otherwise a neutral ``task`` (never leak the description
+        via the span_name envelope, which redaction does not strip)."""
+        if self._config.capture_content:
+            name = self._get_task_name(event)
+            return f"task:{name[:60]}" if name else "task"
+        return "task"
+
     def _on_task_started(self, source: Any, event: Any) -> None:
         task_name = self._get_task_name(event)
         span_id = self._new_span_id()
@@ -617,7 +639,8 @@ class CrewAIAdapter(FrameworkAdapter):
         self._current_task_span_id = span_id
         parent = self._crew_span_id
         agent_role = getattr(event, "agent_role", None)
-        payload = self._payload(task_name=task_name)
+        payload = self._payload()
+        self._fill_task_fields(payload, event)
         if agent_role:
             payload["agent_role"] = agent_role
         if self._config.capture_content:
@@ -629,37 +652,40 @@ class CrewAIAdapter(FrameworkAdapter):
             payload,
             span_id=span_id,
             parent_span_id=parent,
-            span_name=f"task:{task_name[:60]}",
+            span_name=self._span_label(event),
         )
 
     def _on_task_completed(self, source: Any, event: Any) -> None:
         task_name = self._get_task_name(event)
         span_id = self._task_span_ids.pop(task_name, self._current_task_span_id or self._new_span_id())
         parent = self._crew_span_id
-        payload = self._payload(task_name=task_name)
+        payload = self._payload()
+        self._fill_task_fields(payload, event)
         self._set_if_capturing(payload, "output", safe_serialize(getattr(event, "output", None)))
         self._fire(
             "agent.output",
             payload,
             span_id=span_id,
             parent_span_id=parent,
-            span_name=f"task:{task_name[:60]}",
+            span_name=self._span_label(event),
         )
 
     def _on_task_failed(self, source: Any, event: Any) -> None:
         task_name = self._get_task_name(event)
         span_id = self._task_span_ids.pop(task_name, self._current_task_span_id or self._new_span_id())
         parent = self._crew_span_id
+        payload = self._payload(
+            error=str(getattr(event, "error", "unknown error")),
+            error_type="task_error",
+            status="error",
+        )
+        self._fill_task_fields(payload, event)
         self._fire(
             "agent.error",
-            self._payload(
-                task_name=task_name,
-                error=str(getattr(event, "error", "unknown error")),
-                error_type="task_error",
-                status="error",
-            ),
+            payload,
             span_id=span_id,
             parent_span_id=parent,
+            span_name=self._span_label(event),
         )
 
     # ------------------------------------------------------------------
