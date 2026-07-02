@@ -57,8 +57,10 @@ class TestTraceAttestation:
 
         att = uploaded["data"][0]["attestation"]
         chain_events = att["chain"]["events"]
-        # agent.input + tool.call + model.invoke + agent.output = 4 events
-        assert len(chain_events) == 4
+        # agent.input + tool.call + model.invoke + agent.output = 4 events, plus
+        # the canonical agent.identity marker synthesized at flush from the @trace
+        # name ("my_agent") = 5. It flows through the same attestation chain.
+        assert len(chain_events) == 5
 
     def test_chain_events_are_linked(self):
         """Verify the chain in the uploaded payload is valid."""

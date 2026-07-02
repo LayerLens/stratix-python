@@ -168,6 +168,7 @@ def _end_crew(marker: str, root_id: str) -> None:
 _EXPECTED_RUN_COUNTS = {
     "agent.input": 2,
     "agent.output": 2,
+    "agent.identity": 1,  # canonical declared-identity marker, once per trace (from the crew_name)
 }
 
 

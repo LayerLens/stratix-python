@@ -197,7 +197,9 @@ class PydanticAIAdapter(FrameworkAdapter):
         model_name = self._model_display_name(agent)
         prompt = args[0] if args else kwargs.get("user_prompt")
 
-        payload = self._payload(agent_name=agent_name)
+        payload = self._payload()
+        if agent_name:
+            payload["agent_name"] = agent_name
         if model_name:
             payload["model"] = model_name
         self._set_if_capturing(payload, "input", safe_serialize(prompt))
@@ -227,7 +229,7 @@ class PydanticAIAdapter(FrameworkAdapter):
             payload,
             span_id=root,
             parent_span_id=None,
-            span_name=f"pydantic_ai:{agent_name}",
+            span_name=f"pydantic_ai:{self._span_label(agent)}",
         )
         self._start_timer("run")
 
@@ -240,7 +242,9 @@ class PydanticAIAdapter(FrameworkAdapter):
         output = self._extract_output(result)
         usage = self._extract_usage(result)
 
-        payload = self._payload(agent_name=agent_name, status="ok")
+        payload = self._payload(status="ok")
+        if agent_name:
+            payload["agent_name"] = agent_name
         if streaming:
             payload["streaming"] = True
         if model_name:
@@ -254,7 +258,7 @@ class PydanticAIAdapter(FrameworkAdapter):
             payload,
             span_id=root,
             parent_span_id=None,
-            span_name=f"pydantic_ai:{agent_name}",
+            span_name=f"pydantic_ai:{self._span_label(self._target)}",
         )
 
         if usage:
@@ -272,10 +276,11 @@ class PydanticAIAdapter(FrameworkAdapter):
         agent_name = self._agent_display_name(self._target)
 
         payload = self._payload(
-            agent_name=agent_name,
             error=str(error),
             error_type=type(error).__name__,
         )
+        if agent_name:
+            payload["agent_name"] = agent_name
         if latency_ms is not None:
             payload["latency_ms"] = latency_ms
         self._emit(
@@ -283,7 +288,7 @@ class PydanticAIAdapter(FrameworkAdapter):
             payload,
             span_id=root,
             parent_span_id=None,
-            span_name=f"pydantic_ai:{agent_name}",
+            span_name=f"pydantic_ai:{self._span_label(self._target)}",
         )
 
         self._end_run()
@@ -345,11 +350,20 @@ class PydanticAIAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _agent_display_name(agent: Any) -> str:
+    def _agent_display_name(agent: Any) -> Optional[str]:
+        """The agent's DECLARED name, or None. Never the model — an unnamed
+        pydantic Agent has no honest agent identity, and returning the model name
+        here would surface model-as-agent in the Agent column (fabrication). The
+        model is captured separately (payload.model); the span label falls back to
+        it for display, but ``agent_name`` stays absent when there is no name."""
         name = getattr(agent, "name", None)
-        if name:
-            return str(name)
-        return PydanticAIAdapter._model_display_name(agent) or "pydantic_ai_agent"
+        return str(name) if name else None
+
+    @staticmethod
+    def _span_label(agent: Any) -> str:
+        """A cosmetic span label (NOT an agent identity): the declared name, else
+        the model, else a generic marker."""
+        return PydanticAIAdapter._agent_display_name(agent) or PydanticAIAdapter._model_display_name(agent) or "agent"
 
     @staticmethod
     def _model_display_name(agent: Any) -> Optional[str]:

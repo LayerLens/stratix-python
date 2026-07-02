@@ -739,7 +739,13 @@ class TestTraceIntegrity:
         adapter, uploaded, _ = _setup(mock_client, **_one_turn_session())
         adapter.import_sessions()
         assert uploaded["events"]
+        # Collector-synthesized trace-level structural markers (agent.identity,
+        # trace.root) are content-free and trace-scoped, not per-session events —
+        # the session_id migration contract applies to the adapter's own events.
+        structural = {"agent.identity", "trace.root"}
         for e in uploaded["events"]:
+            if e["event_type"] in structural:
+                continue
             assert e["payload"].get("session_id") == SESSION_UUID
 
     def test_monotonic_sequence_ids(self, mock_client):

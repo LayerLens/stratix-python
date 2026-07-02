@@ -147,6 +147,28 @@ class TestRunSync:
         inp = find_event(uploaded["events"], "agent.input")
         assert inp["payload"]["agent_name"] == "my_agent"
 
+    def test_unnamed_agent_does_not_emit_model_as_agent(self, mock_client):
+        """An unnamed pydantic Agent must NOT surface the MODEL as its
+        agent_name (model-as-agent is the fabrication the Agent column forbids).
+        With no declared name, agent_name is omitted — honest "—", not the model."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client)
+        agent = _make_agent(name=None, output_text="ok")  # no declared name
+
+        adapter.connect(target=agent)
+        agent.run_sync("test")
+        adapter.disconnect()
+
+        inp = find_event(uploaded["events"], "agent.input")
+        model = inp["payload"].get("model")
+        an = inp["payload"].get("agent_name")
+        # agent_name must not be the model; ideally absent when there is no name.
+        assert an != model, f"agent_name {an!r} is the model — model-as-agent"
+        assert not an, f"unnamed agent should omit agent_name, got {an!r}"
+        # And no honest agent identity is synthesized from a model.
+        idents = find_events(uploaded["events"], "agent.identity")
+        assert idents == [], "an unnamed, model-only agent must not get a fabricated identity"
+
 
 # ---------------------------------------------------------------------------
 # async run

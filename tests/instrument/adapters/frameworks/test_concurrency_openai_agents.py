@@ -191,6 +191,7 @@ _EXPECTED_RUN_COUNTS = {
     "tool.call": 1,
     "tool.result": 1,
     "trace.root": 1,  # the captured structural root span, emitted once per trace (trace-root)
+    "agent.identity": 1,  # canonical declared-identity marker, once per trace (from the agent span name)
 }
 
 

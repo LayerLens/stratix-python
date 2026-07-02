@@ -9,8 +9,9 @@ from typing import Any, Dict, List, Callable, Optional
 
 from layerlens.attestation import HashChain
 
-from ._events import TRACE_ROOT
+from ._events import TRACE_ROOT, AGENT_IDENTITY
 from ._upload import enqueue_upload
+from ._identity import honest_agent_identity
 from ._secret_scrub import scrub_payload, scrub_secrets
 from ._capture_config import CaptureConfig
 
@@ -367,6 +368,44 @@ class TraceCollector:
             span_name="trace",
         )
 
+    def _synthesize_identity_if_needed(self) -> None:
+        """Ensure a trace with a producer-DECLARED agent name carries ONE
+        canonical ``agent.identity`` event. Caller holds ``self._lock``; runs at
+        flush before sealing.
+
+        The honest name a producer already declared (a @stratix.trace name, a
+        crew/agent name, a langgraph node) lives scattered across per-adapter
+        payload keys the server never reads. :func:`honest_agent_identity`
+        resolves the ONE honest name (or None), and this appends a single
+        structural marker so the server + FE surface the Agent column from one
+        place. It REFUSES to synthesize from a model name, an API-method label, a
+        span_name, or a class default — an honest "—" beats a fabricated name.
+
+        Deliberately conservative — it does NOT fire when:
+          * there is no honestly-declared name (provider-only / bare traces stay
+            "—" — the identity is genuinely absent, not hidden);
+          * an ``agent.identity`` event already exists (an adapter emitted it
+            explicitly — do not double).
+
+        The marker is co-located on the source event's span (never a new tree
+        node) and, being content-free structural metadata (the name is a
+        declared identifier, like ``from_agent``/``to_agent`` topology), is
+        emitted regardless of the L1 layer / ``capture_content`` and flows
+        through the same attestation hash chain (verifies like any other event)."""
+        ident = honest_agent_identity(self._events)
+        if ident is None:
+            return
+        payload: Dict[str, Any] = {"agent_name": ident["agent_name"], "source": ident["source"]}
+        if ident.get("framework"):
+            payload["framework"] = ident["framework"]
+        self._append_locked(
+            AGENT_IDENTITY,
+            payload,
+            span_id=ident["span_id"],  # always set (copied from the source event)
+            parent_span_id=ident.get("parent_span_id"),
+            span_name=None,
+        )
+
     def terminate(self, reason: str) -> None:
         """Permanently mark this trace non-attestable (a safety-stop / policy
         halt). The next flush() fails CLOSED: the chain can no longer be
@@ -380,6 +419,10 @@ class TraceCollector:
         with self._lock:
             if self._sealed or not self._events:
                 return
+            # Surface the producer-declared agent identity (if any) into ONE
+            # canonical event so the Agent column fills honestly — BEFORE the
+            # root synthesis / seal so it flows through the attestation chain.
+            self._synthesize_identity_if_needed()
             # Give the trace a real captured root BEFORE sealing (companion to
             # atlas-app PR #2042) so the FE never has to synthesize one.
             self._synthesize_root_if_needed()

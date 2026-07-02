@@ -26,6 +26,14 @@ AGENT_ERROR: Final[str] = "agent.error"
 # Framework events
 AGENT_HANDOFF: Final[str] = "agent.handoff"
 
+# Canonical, producer-DECLARED agent identity. Synthesized once per trace at
+# flush from the honest name a producer already declared (a @stratix.trace name,
+# a crew/agent name, a langgraph node), so the server + FE surface the Agent
+# column from ONE place instead of chasing per-adapter keys — and NEVER from a
+# model name, an API method name, a span_name, or a class default. Structural
+# metadata (like the trace.root marker): attestation-covered, content-free.
+AGENT_IDENTITY: Final[str] = "agent.identity"
+
 # MCP protocol events
 MCP_TOOL_CALL: Final[str] = "mcp.tool.call"
 MCP_ELICITATION: Final[str] = "mcp.elicitation"

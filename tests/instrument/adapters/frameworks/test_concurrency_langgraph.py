@@ -131,6 +131,7 @@ _EXPECTED_RUN_COUNTS = {
     "model.invoke": 1,
     "cost.record": 1,
     "trace.root": 1,  # the captured structural root span, emitted once per trace (trace-root)
+    "agent.identity": 1,  # canonical declared-identity marker, once per trace (from the langgraph node)
 }
 
 

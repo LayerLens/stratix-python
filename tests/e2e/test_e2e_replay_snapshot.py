@@ -81,8 +81,11 @@ def test_dump_then_emit_more_then_flush_preserves_history(client_and_uploads, tm
 
     # Snapshot captured only the events that existed at dump time
     assert len(snap_1["events"]) == 1
-    # Final upload has every event including those after the snapshot
-    assert len(final_upload["events"]) == 3
+    # Final upload has every event including those after the snapshot (3), plus
+    # the canonical agent.identity marker synthesized at flush from the declared
+    # name ("first") = 4.
+    assert len(final_upload["events"]) == 4
+    assert any(e["event_type"] == "agent.identity" for e in final_upload["events"])
 
 
 def test_serialize_adapter_bundles_info_and_trace(client_and_uploads, tmp_path: Path):

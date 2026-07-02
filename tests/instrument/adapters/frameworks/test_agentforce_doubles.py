@@ -434,7 +434,12 @@ class TestImportSessions:
         assert summary["next_cursor"] == _SESSION_B["ssot__StartTimestamp__c"]
 
         events = uploaded["events"]
-        assert summary["events_emitted"] == len(events)
+        # events_emitted is the adapter's own tally; the collector also
+        # synthesizes trace-level structural markers (agent.identity per trace),
+        # which are not part of that tally — exclude them from the comparison.
+        structural = {"agent.identity", "trace.root"}
+        adapter_events = [e for e in events if e["event_type"] not in structural]
+        assert summary["events_emitted"] == len(adapter_events)
 
         # Each session is a separate trace.
         assert len({e["trace_id"] for e in events}) == 2
@@ -494,8 +499,9 @@ class TestImportSessions:
         assert outputs[0]["payload"]["outcome"] == "Completed"
         assert outputs[1]["payload"]["outcome"] == "Escalated"
 
-        # Migration contract: session id recoverable from every event.
-        assert all(e["payload"].get("session_id") in {_SESSION_A_ID, _SESSION_B_ID} for e in events)
+        # Migration contract: session id recoverable from every adapter-emitted
+        # event (the trace-level structural markers are excluded above).
+        assert all(e["payload"].get("session_id") in {_SESSION_A_ID, _SESSION_B_ID} for e in adapter_events)
 
         # The fictional schema must be entirely gone from the wire.
         all_soql = " ".join(r.url.params.get("q", "") for r in api.requests if "/query" in r.url.path)
