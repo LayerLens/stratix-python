@@ -81,9 +81,7 @@ def test_known_generic_lanes_diverge_with_blanked_column() -> None:
         assert o["shipped_column"] and o["shipped_column"] in o["shipped_nodes"], (
             f"{lane}: shipped column {o['shipped_column']!r} not backed by a node"
         )
-        assert o["guarded_column"] == "", (
-            f"{lane}: guard should blank the column, got {o['guarded_column']!r}"
-        )
+        assert o["guarded_column"] == "", f"{lane}: guard should blank the column, got {o['guarded_column']!r}"
         for node in div:
             assert sdk_would_reject(node), f"{lane}: divergent node {node!r} is not SDK-generic"
 
@@ -96,7 +94,6 @@ def test_real_multi_agent_lanes_are_guard_invariant() -> None:
         # A lane whose shipped nodes are all SDK-honest must be guard-invariant.
         if all(not sdk_would_reject(n) for n in o["shipped_nodes"]) and o["shipped_nodes"]:
             assert o["guarded_nodes"] == o["shipped_nodes"], (
-                f"{lane}: honest lane changed under the guard "
-                f"({o['shipped_nodes']} -> {o['guarded_nodes']})"
+                f"{lane}: honest lane changed under the guard ({o['shipped_nodes']} -> {o['guarded_nodes']})"
             )
             assert o["guarded_column"] == o["shipped_column"], f"{lane}: honest column changed under guard"
