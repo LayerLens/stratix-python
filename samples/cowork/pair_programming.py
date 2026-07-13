@@ -23,7 +23,21 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import (
+    create_judge,
+    poll_evaluation_results,
+    recorded_trace_path,
+    upload_recorded_trace,
+)
+
+# This sample uploads RECORDED REAL traces: each was captured from a genuine
+# instrumented ``pair-programming-agent`` run over the test cases below (see
+# ``samples/data/_generate_fixtures.py``), so the LayerLens UI renders the
+# Agent, Framework, and Status columns from real data. Each refinement round
+# re-uploads the fixture to evaluate its own fresh trace instances. The test
+# cases remain here as documentation and to label the evaluation output.
+SAMPLE = "pair_programming"
+FIXTURE = recorded_trace_path("cowork", "pair_programming.jsonl")
 
 # ---------------------------------------------------------------------------
 # Test cases: pairs of prompts and responses with expected quality
@@ -82,19 +96,14 @@ def run_test_suite(
     """
     results: list[dict[str, Any]] = []
 
-    for case in TEST_CASES:
-        trace_result = upload_trace_dict(
-            client,
-            input_text=case["input"],
-            output_text=case["output"],
-            metadata={
-                "test_label": case["label"],
-                "round": round_num,
-                "channel": "co-work-pair-programming",
-            },
-        )
-        tid = trace_result.trace_ids[0] if trace_result.trace_ids else "unknown"
+    # Upload a fresh set of recorded real traces for this round. Each round
+    # re-uploads the fixture so it evaluates its own trace instances.
+    trace_ids = upload_recorded_trace(client, FIXTURE)
+    if not trace_ids:
+        print("[RubricTester] ERROR: no traces uploaded (fixture missing or rejected).")
+        return results
 
+    for case, tid in zip(TEST_CASES, trace_ids):
         evaluation = client.trace_evaluations.create(
             trace_id=tid,
             judge_id=judge_id,
@@ -157,6 +166,7 @@ def main() -> None:
         client,
         name="PairProg-ResponseQuality",
         evaluation_goal=initial_goal,
+        namespace=SAMPLE,
     )
     judge_id = judge.id
     print(f"[RubricWriter] Judge created: {judge_id}")

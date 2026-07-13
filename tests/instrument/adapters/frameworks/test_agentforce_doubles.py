@@ -473,6 +473,8 @@ class TestImportSessions:
         assert mi["generation_id"] == "gen-A1-7c2"
         assert mi["gateway_request_id"] == "req-A1-7c2"
         assert mi["gateway_response_id"] == "resp-A1-7c2"
+        # G3: response_id fills from the AI generation id (the honest response id).
+        assert mi["response_id"] == "gen-A1-7c2"
         assert mi["messages"].startswith("Guest asks:")
         assert mi["output_message"].startswith("Late checkout")
         assert "tokens_prompt" not in mi and "tokens_total" not in mi
@@ -487,6 +489,11 @@ class TestImportSessions:
         handoff = find_event(events, "agent.handoff")
         assert handoff["payload"]["step_name"] == "Escalate to billing"
         assert handoff["payload"]["reason"].startswith("Disputed minibar charge")
+        # S17/F10: the handoff carries the honest session agent as its origin so
+        # the graph edge has an endpoint; the STDM step has no target-agent field,
+        # so to_agent stays honestly absent (never guessed from step_name).
+        assert handoff["payload"]["from_agent"] == "Resort_Concierge"
+        assert "to_agent" not in handoff["payload"]
 
         # Messages -> agent.interaction turns (user + agent).
         interactions = find_events(events, "agent.interaction")

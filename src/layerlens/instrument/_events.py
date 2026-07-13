@@ -36,6 +36,7 @@ AGENT_IDENTITY: Final[str] = "agent.identity"
 
 # MCP protocol events
 MCP_TOOL_CALL: Final[str] = "mcp.tool.call"
+MCP_TOOLS_LISTED: Final[str] = "mcp.tools.listed"
 MCP_ELICITATION: Final[str] = "mcp.elicitation"
 MCP_STRUCTURED_OUTPUT: Final[str] = "mcp.structured_output"
 MCP_ASYNC_TASK: Final[str] = "mcp.async_task"
@@ -44,6 +45,10 @@ MCP_ASYNC_TASK: Final[str] = "mcp.async_task"
 # the MCP transport, not through any provider adapter. Emitted alongside a
 # cost.record so the agentic money-burning path is not invisible (D3 / LAY-3626).
 MCP_SAMPLING: Final[str] = "mcp.sampling"
+# Server identity captured at the initialize() handshake: the negotiated
+# protocol version + the server's declared name/version (serverInfo). A server
+# is NOT an agent — this is protocol-discovery metadata, never an agent identity.
+MCP_SERVER_CONNECTED: Final[str] = "mcp.server.connected"
 
 # A2A protocol events
 A2A_AGENT_DISCOVERED: Final[str] = "a2a.agent.discovered"
@@ -64,6 +69,8 @@ PROTOCOL_STREAM_EVENT: Final[str] = "protocol.stream.event"
 COMMERCE_UI_SURFACE_CREATED: Final[str] = "commerce.ui.surface_created"
 COMMERCE_UI_USER_ACTION: Final[str] = "commerce.ui.user_action"
 COMMERCE_SUPPLIER_DISCOVERED: Final[str] = "commerce.supplier_discovered"
+COMMERCE_CATALOG_BROWSED: Final[str] = "commerce.catalog.browsed"
+COMMERCE_CHECKOUT_STARTED: Final[str] = "commerce.checkout.started"
 COMMERCE_CHECKOUT_COMPLETED: Final[str] = "commerce.checkout_completed"
 COMMERCE_REFUND_ISSUED: Final[str] = "commerce.refund_issued"
 PAYMENT_INTENT_MANDATE: Final[str] = "payment.intent_mandate"

@@ -481,7 +481,7 @@ class AgentforceAdapter(FrameworkAdapter):
             emitted += self._emit_lifecycle_start(session_id, identity, root)
             emitted += self._emit_agent_input(session, session_id, identity, first_input, root)
             for inter, steps, messages in turns:
-                emitted += self._process_interaction(session_id, inter, steps, messages)
+                emitted += self._process_interaction(session_id, inter, steps, messages, identity)
             emitted += self._emit_agent_output(session, session_id, last_output)
         finally:
             self._end_run()
@@ -593,10 +593,11 @@ class AgentforceAdapter(FrameworkAdapter):
         inter: Dict[str, Any],
         steps: List[Dict[str, Any]],
         messages: List[Dict[str, Any]],
+        identity: Dict[str, Optional[str]],
     ) -> int:
         emitted = 0
         for step in steps:
-            emitted += self._process_step(session_id, inter, step)
+            emitted += self._process_step(session_id, inter, step, identity)
         for msg in messages:
             emitted += self._emit_message(session_id, inter, msg)
         return emitted
@@ -609,7 +610,9 @@ class AgentforceAdapter(FrameworkAdapter):
             **extra,
         )
 
-    def _process_step(self, session_id: str, inter: Dict[str, Any], step: Dict[str, Any]) -> int:
+    def _process_step(
+        self, session_id: str, inter: Dict[str, Any], step: Dict[str, Any], identity: Dict[str, Optional[str]]
+    ) -> int:
         # An errored step is reported as agent.error regardless of its kind.
         if _clean(step.get(_STDM.ST_ERROR)):
             return self._emit_step_error(session_id, inter, step)
@@ -618,7 +621,7 @@ class AgentforceAdapter(FrameworkAdapter):
         if kind == "tool":
             return self._emit_tool(session_id, inter, step)
         if kind == "handoff":
-            return self._emit_handoff(session_id, inter, step)
+            return self._emit_handoff(session_id, inter, step, identity)
         if kind == "model":
             return self._emit_model_invoke(session_id, inter, step)
         return self._emit_unknown_step(session_id, inter, step)
@@ -635,6 +638,11 @@ class AgentforceAdapter(FrameworkAdapter):
             value = _clean(step.get(field))
             if value:
                 payload[key] = value
+        # Fill the response_id column from the honest response identifier — the AI
+        # generation's id, else the gateway response id (G3).
+        resp_id = _clean(step.get(_STDM.ST_GENERATION_ID)) or _clean(step.get(_STDM.ST_GW_RESPONSE_ID))
+        if resp_id:
+            payload["response_id"] = resp_id
         self._set_if_capturing(payload, "messages", truncate(_clean(step.get(_STDM.ST_INPUT)), 4000))
         self._set_if_capturing(payload, "output_message", truncate(_clean(step.get(_STDM.ST_OUTPUT)), 4000))
         self._emit(
@@ -658,13 +666,22 @@ class AgentforceAdapter(FrameworkAdapter):
         self._emit("tool.call", payload, span_id=self._new_span_id(), span_name=tool_name)
         return 1
 
-    def _emit_handoff(self, session_id: str, inter: Dict[str, Any], step: Dict[str, Any]) -> int:
+    def _emit_handoff(
+        self, session_id: str, inter: Dict[str, Any], step: Dict[str, Any], identity: Dict[str, Optional[str]]
+    ) -> int:
         payload = self._interaction_meta(
             session_id,
             inter,
             step_name=_clean(step.get(_STDM.ST_NAME)),
             step_type=_clean(step.get(_STDM.ST_TYPE)),
         )
+        # Stamp the honest session agent as the handoff origin so the graph edge
+        # has an endpoint (S17/F10). The STDM step schema carries no target-agent
+        # field for handoff-classified steps, so to_agent stays honestly absent —
+        # never guessed from step_name.
+        from_agent = identity.get("agent_name")
+        if from_agent:
+            payload["from_agent"] = from_agent
         self._set_if_capturing(payload, "reason", truncate(_clean(step.get(_STDM.ST_INPUT)), 4000))
         self._emit("agent.handoff", payload, span_id=self._new_span_id(), span_name="handoff")
         return 1

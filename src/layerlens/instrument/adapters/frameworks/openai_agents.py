@@ -358,6 +358,10 @@ class OpenAIAgentsAdapter(*_Bases):
         if model:
             payload["model"] = model
 
+        rid = getattr(response, "id", None)
+        if rid:
+            payload["response_id"] = str(rid)
+
         usage = getattr(response, "usage", None)
         tokens = self._normalize_tokens(usage)
         # OpenAI-specific detailed token breakdowns

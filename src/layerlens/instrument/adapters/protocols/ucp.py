@@ -15,6 +15,8 @@ from typing import Any, Dict
 from ..._events import (
     POLICY_VIOLATION,
     COMMERCE_REFUND_ISSUED,
+    COMMERCE_CATALOG_BROWSED,
+    COMMERCE_CHECKOUT_STARTED,
     COMMERCE_CHECKOUT_COMPLETED,
     COMMERCE_SUPPLIER_DISCOVERED,
 )
@@ -92,7 +94,7 @@ class UCPProtocolAdapter(BaseProtocolAdapter):
             result = original(*args, **kwargs)
             items = result if isinstance(result, list) else getattr(result, "items", None) or []
             adapter.emit(
-                "commerce.catalog.browsed",
+                COMMERCE_CATALOG_BROWSED,
                 {
                     "supplier_id": kwargs.get("supplier_id"),
                     "query": kwargs.get("query"),
@@ -111,7 +113,7 @@ class UCPProtocolAdapter(BaseProtocolAdapter):
             adapter._sessions[session_id] = time.time()
             kwargs.setdefault("session_id", session_id)
             adapter.emit(
-                "commerce.checkout.started",
+                COMMERCE_CHECKOUT_STARTED,
                 {"session_id": session_id, "supplier_id": kwargs.get("supplier_id")},
             )
             return original(*args, **kwargs)

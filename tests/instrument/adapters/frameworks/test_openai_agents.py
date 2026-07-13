@@ -27,6 +27,7 @@ from agents.tracing.span_data import (  # noqa: E402
     AgentSpanData,
     HandoffSpanData,
     FunctionSpanData,
+    ResponseSpanData,
     GuardrailSpanData,
     GenerationSpanData,
 )
@@ -386,6 +387,38 @@ class TestGenerationSpans:
         gens = find_events(events, "model.invoke")
         assert len(gens) == 2
         assert gens[0]["span_id"] != gens[1]["span_id"]
+
+
+class TestResponseSpans:
+    """Test the low-level 'response' span type (raw Responses API), a
+    separate code path from GenerationSpanData."""
+
+    def test_response_span_emits_response_id(self, adapter_and_trace):
+        adapter, uploaded = adapter_and_trace
+
+        trace = _make_trace(trace_id="t_resp")
+        adapter.on_trace_start(trace)
+
+        response = MagicMock()
+        response.id = "resp_abc123"
+        response.model = "gpt-4o"
+        response.usage = None
+
+        span = _make_span(
+            adapter,
+            "t_resp",
+            "s_resp",
+            ResponseSpanData(response=response, input=[{"role": "user", "content": "hi"}]),
+        )
+        span.start()
+        span.finish()
+        adapter.on_span_end(span)
+        adapter.on_trace_end(trace)
+
+        events = uploaded["events"]
+        me = find_event(events, "model.invoke")
+        assert me["payload"]["model"] == "gpt-4o"
+        assert me["payload"]["response_id"] == "resp_abc123"
 
 
 class TestFunctionSpans:

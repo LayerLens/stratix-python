@@ -129,6 +129,9 @@ class TestEmitsEvents:
         assert model_invoke["payload"]["output_message"]["content"] == "Hello!"
         assert model_invoke["payload"]["usage"]["total_tokens"] == 15
         assert "latency_ms" in model_invoke["payload"]
+        # S19/F12: the framework stamp is the integration ('litellm'), NOT the
+        # routed underlying provider ('openai' here) that priced the call.
+        assert model_invoke["payload"]["framework"] == "litellm"
 
         # Exactly ONE cost.record per priced provider call (no double-count
         # across the model.invoke/_emit_cost fork) — LAY-3572 / B2.
@@ -144,6 +147,30 @@ class TestEmitsEvents:
         expected = _expected_cost("gpt-4", model_invoke["payload"]["usage"])
         assert expected is not None and expected > 0, "gpt-4 must price to a positive cost"
         assert cost["payload"]["cost_usd"] == expected, "cost_usd missing or miscomputed on the provider cost.record"
+
+    def test_framework_is_litellm_even_for_routed_provider(self, mock_client, capture_trace):
+        # The audit's headline litellm case: a gemini model routes to the
+        # 'google' underlying provider, but the framework column must read
+        # 'litellm' (the integration), not 'google' (S19/F12).
+        self.mock_litellm.completion = Mock(return_value=make_openai_response(model="gemini-2.5-flash"))
+        instrument_litellm()
+
+        @trace(mock_client, capture_config=CaptureConfig.full())
+        def my_agent():
+            import litellm
+
+            litellm.completion(model="gemini-2.5-flash", messages=[{"role": "user", "content": "Hi"}])
+
+        my_agent()
+        events = capture_trace["events"]
+        # Sanity: the router really does classify gemini -> google.
+        assert _route_provider("gemini-2.5-flash") == "google"
+        mi = find_event(events, "model.invoke")["payload"]
+        assert mi["framework"] == "litellm"
+        cost = find_event(events, "cost.record")["payload"]
+        assert cost["framework"] == "litellm"
+        # The honest underlying provider is preserved on cost.record.
+        assert cost["provider"] == "google"
 
     def test_error_emits_agent_error(self, mock_client, capture_trace):
         self.mock_litellm.completion = Mock(side_effect=RuntimeError("rate limited"))

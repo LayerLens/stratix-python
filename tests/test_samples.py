@@ -332,3 +332,127 @@ class TestHelpers:
 
         assert result == mock_response
         mock_client.traces.upload.assert_called_once()
+
+    def test_recorded_trace_path_resolves_under_data_traces(self):
+        """recorded_trace_path points at a fixture under samples/data/traces/."""
+        sys.path.insert(0, SAMPLES_DIR)
+        try:
+            from _helpers import recorded_trace_path
+        finally:
+            sys.path.pop(0)
+
+        path = recorded_trace_path("industry", "financial_fraud.jsonl")
+        assert os.path.isabs(path)
+        norm = path.replace("\\", "/")
+        assert norm.endswith("samples/data/traces/industry/financial_fraud.jsonl")
+
+    def test_upload_recorded_trace_returns_trace_ids_in_order(self):
+        """upload_recorded_trace reads every fixture line and uploads them as a
+        single JSON array (so the backend creates one trace per record), then
+        returns the created IDs in file order."""
+        import json
+        import tempfile
+
+        sys.path.insert(0, SAMPLES_DIR)
+        try:
+            from _helpers import upload_recorded_trace
+        finally:
+            sys.path.pop(0)
+
+        fd, fixture = tempfile.mkstemp(suffix=".jsonl")
+        try:
+            with os.fdopen(fd, "w") as f:
+                for i in range(3):
+                    f.write(json.dumps({"trace_id": f"t{i}", "events": []}) + "\n")
+
+            mock_client = Mock()
+            mock_response = Mock()
+            mock_response.trace_ids = ["trc-1", "trc-2", "trc-3"]
+            mock_client.traces.upload.return_value = mock_response
+
+            result = upload_recorded_trace(mock_client, fixture)
+        finally:
+            os.unlink(fixture)
+
+        assert result == ["trc-1", "trc-2", "trc-3"]
+        mock_client.traces.upload.assert_called_once()
+        # It uploads a temp JSON array (one trace per fixture line), not the
+        # raw .jsonl, and cleans the temp file up.
+        uploaded_path = mock_client.traces.upload.call_args[0][0]
+        assert uploaded_path.endswith(".json")
+        assert not os.path.exists(uploaded_path)
+
+    def test_upload_recorded_trace_returns_empty_on_rejection(self):
+        """A rejected upload (no trace_ids, no raise) yields an empty list, not a crash."""
+        import json
+        import tempfile
+
+        sys.path.insert(0, SAMPLES_DIR)
+        try:
+            from _helpers import upload_recorded_trace
+        finally:
+            sys.path.pop(0)
+
+        fd, fixture = tempfile.mkstemp(suffix=".jsonl")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(json.dumps({"trace_id": "t0", "events": []}) + "\n")
+
+            mock_client = Mock()
+            rejected = Mock()
+            rejected.trace_ids = None
+            mock_client.traces.upload.return_value = rejected
+
+            assert upload_recorded_trace(mock_client, fixture) == []
+        finally:
+            os.unlink(fixture)
+
+    def test_upload_recorded_trace_empty_fixture_returns_empty(self):
+        """An empty fixture uploads nothing and returns an empty list."""
+        import tempfile
+
+        sys.path.insert(0, SAMPLES_DIR)
+        try:
+            from _helpers import upload_recorded_trace
+        finally:
+            sys.path.pop(0)
+
+        fd, fixture = tempfile.mkstemp(suffix=".jsonl")
+        os.close(fd)
+        try:
+            mock_client = Mock()
+            assert upload_recorded_trace(mock_client, fixture) == []
+            mock_client.traces.upload.assert_not_called()
+        finally:
+            os.unlink(fixture)
+
+    def test_create_judge_namespace_disambiguates_name(self):
+        """A namespace is appended to the judge name so identically-named judges
+        across samples never collide."""
+        sys.path.insert(0, SAMPLES_DIR)
+        try:
+            from _helpers import create_judge
+        finally:
+            sys.path.pop(0)
+
+        mock_client = Mock()
+        mock_client.judges.create.return_value = Mock(id="judge-1")
+
+        create_judge(
+            mock_client,
+            name="Relevance Judge",
+            evaluation_goal="Evaluate whether the response is relevant.",
+            model_id="model-x",
+            namespace="retail_recommender",
+        )
+
+        kwargs = mock_client.judges.create.call_args.kwargs
+        assert kwargs["name"] == "Relevance Judge (retail_recommender)"
+        # Without a namespace the name is untouched (backward compatible).
+        create_judge(
+            mock_client,
+            name="Relevance Judge",
+            evaluation_goal="Evaluate whether the response is relevant.",
+            model_id="model-x",
+        )
+        assert mock_client.judges.create.call_args.kwargs["name"] == "Relevance Judge"

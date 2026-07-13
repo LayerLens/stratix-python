@@ -93,6 +93,7 @@ KNOWN_EVENT_TYPES = frozenset(
         "mcp.elicitation",
         "mcp.sampling",
         "mcp.structured_output",
+        "mcp.server.connected",
         "a2a.task.created",
         "a2a.task.updated",
         "a2a.task.completed",

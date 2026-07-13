@@ -537,6 +537,7 @@ class _TracedMessageStream:
                 extra_params=AnthropicProvider.derive_params(self._kwargs),
                 ttft_ms=ttft_ms,
                 streaming_duration_ms=latency_ms,
+                framework=self._provider.name,
             )
         except Exception:
             log.debug("Error emitting Anthropic stream events", exc_info=True)

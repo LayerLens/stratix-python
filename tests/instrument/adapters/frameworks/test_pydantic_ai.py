@@ -354,6 +354,39 @@ class TestModelInvocation:
         model_invokes = find_events(uploaded["events"], "model.invoke")
         assert len(model_invokes) == 2
 
+    def test_model_invoke_emits_response_id_when_provider_supplies_one(self, mock_client):
+        """S18/F11: surface the provider's own request id, never fabricated."""
+
+        class _ResponseIdModel(TestModel):
+            async def request(self, messages, model_settings, model_request_parameters):
+                response = await super().request(messages, model_settings, model_request_parameters)
+                response.provider_response_id = "resp_test_123"
+                return response
+
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client)
+        agent = Agent(model=_ResponseIdModel(custom_output_text="hello"))
+
+        adapter.connect(target=agent)
+        agent.run_sync("hi")
+        adapter.disconnect()
+
+        invoke = find_event(uploaded["events"], "model.invoke")
+        assert invoke["payload"]["response_id"] == "resp_test_123"
+
+    def test_model_invoke_has_no_response_id_when_provider_omits_one(self, mock_client):
+        """TestModel does not populate provider_response_id — must stay absent, not fabricated."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client)
+        agent = _make_agent(output_text="hello")
+
+        adapter.connect(target=agent)
+        agent.run_sync("hi")
+        adapter.disconnect()
+
+        invoke = find_event(uploaded["events"], "model.invoke")
+        assert "response_id" not in invoke["payload"]
+
 
 # ---------------------------------------------------------------------------
 # Tool events
@@ -567,6 +600,109 @@ class TestEventStructure:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
+
+class TestHonestGraphContract:
+    """Lever A honest-graph contract for pydantic-ai.
+
+    The Stratix app renders a trace as an agent GRAPH: the server builds nodes
+    from the first HONEST producer-declared agent identity found across the
+    trace's events (``payload.agent_name`` among them) and edges from
+    ``agent.handoff``. For pydantic-ai the honest node identity is the DECLARED
+    ``Agent(name=...)`` and NEVER the model id (model-as-agent is the fabrication
+    the Agent column forbids).
+
+    NO-HANDOFF LIMITATION (framework hook does not exist): pydantic-ai has no
+    handoff/transition callback. Its "multi-agent" pattern is tool-based agent
+    DELEGATION — a sub-agent is invoked as a plain function inside a tool and
+    produces its OWN separate trace via its own adapter/collector — so this
+    single-target adapter observes no from/to transition. Emitting an
+    ``agent.handoff`` would be fabrication, so none is emitted. The graph
+    contribution this adapter can honestly make is: attribute the ONE declared
+    node identity onto EVERY node-bearing event (``agent.input`` / ``agent.output``
+    AND ``model.invoke`` — including the streaming path), and stay BLANK
+    everywhere when the agent has no declared name.
+    """
+
+    def test_declared_agent_name_attributed_to_model_invoke(self, mock_client):
+        """A declared Agent name must ride on model.invoke (not just
+        agent.input/output) so the graph engine attributes the model call to the
+        honest node — and it must be the DECLARED name, never the model id."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client)
+        agent = _make_agent(name="finance_agent", output_text="ok", tools=[get_weather])
+
+        adapter.connect(target=agent)
+        agent.run_sync("weather NYC")
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        assert find_event(events, "agent.input")["payload"]["agent_name"] == "finance_agent"
+        assert find_event(events, "agent.output")["payload"]["agent_name"] == "finance_agent"
+
+        model_invokes = find_events(events, "model.invoke")
+        assert model_invokes, "expected at least one model.invoke"
+        for mi in model_invokes:
+            an = mi["payload"].get("agent_name")
+            assert an == "finance_agent", (
+                "model.invoke must carry the declared agent_name so the graph "
+                f"attributes the model call to the honest node; got {mi['payload']!r}"
+            )
+            # Never the model-as-agent anti-pattern.
+            assert an != mi["payload"].get("model")
+
+    def test_declared_agent_name_attributed_to_streaming_model_invoke(self, mock_client):
+        """The streaming model.invoke emitted from request_stream must carry the
+        declared agent_name too — the graph must not lose the node on a
+        streamed run."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client, capture_config=CaptureConfig.full())
+        agent = _make_agent(name="stream_named_agent", output_text="Streamed")
+
+        async def _go() -> str:
+            async with agent.run_stream("stream me") as stream:
+                async for _ in stream.stream_text(delta=True):
+                    pass
+                return await stream.get_output()
+
+        adapter.connect(target=agent)
+        asyncio.get_event_loop().run_until_complete(_go())
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        streaming_invokes = [m for m in find_events(events, "model.invoke") if m["payload"].get("streaming") is True]
+        assert streaming_invokes, "expected a streaming=True model.invoke"
+        for mi in streaming_invokes:
+            an = mi["payload"].get("agent_name")
+            assert an == "stream_named_agent", (
+                f"streaming model.invoke must carry the declared agent_name; got {mi['payload']!r}"
+            )
+            assert an != mi["payload"].get("model")
+
+    def test_unnamed_agent_stays_blank_on_every_node_event(self, mock_client):
+        """An unnamed Agent has no honest identity: NO event (agent.input,
+        agent.output, model.invoke) may carry an agent_name, none may equal the
+        model, no agent.identity is synthesized, and no handoff is fabricated."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = PydanticAIAdapter(mock_client)
+        agent = _make_agent(name=None, output_text="ok", tools=[get_weather])
+
+        adapter.connect(target=agent)
+        agent.run_sync("weather NYC")
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        for event_type in ("agent.input", "agent.output", "model.invoke"):
+            for e in find_events(events, event_type):
+                an = e["payload"].get("agent_name")
+                assert not an, f"{event_type} fabricated agent_name {an!r} on an unnamed agent"
+                assert an != e["payload"].get("model")
+
+        assert find_events(events, "agent.identity") == [], (
+            "an unnamed, model-only agent must not get a fabricated identity"
+        )
+        # pydantic-ai has no handoff hook — never fabricate an edge.
+        assert find_events(events, "agent.handoff") == []
 
 
 class TestEdgeCases:

@@ -23,10 +23,23 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import (
+    create_judge,
+    poll_evaluation_results,
+    recorded_trace_path,
+    upload_recorded_trace,
+)
+
+# This sample uploads RECORDED REAL traces: each was captured from a genuine
+# instrumented ``code-review-agent`` run over the code snippets below (see
+# ``samples/data/_generate_fixtures.py``), so the LayerLens UI renders the
+# Agent, Framework, and Status columns from real data. The snippets remain
+# here as documentation of what was reviewed and to label the evaluation output.
+SAMPLE = "code_review"
+FIXTURE = recorded_trace_path("cowork", "code_review.jsonl")
 
 # ---------------------------------------------------------------------------
-# Simulated code snippets and their outputs
+# Code snippets and their outputs (labels for the recorded traces above)
 # ---------------------------------------------------------------------------
 
 CODE_SAMPLES: list[dict[str, Any]] = [
@@ -108,53 +121,54 @@ def main() -> None:
         print(f"ERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    # Create judges up front
-    review_judges = {
-        "Execution": create_judge(
-            client,
-            name="Code Execution Judge",
-            evaluation_goal="Evaluate whether the generated code would execute correctly without errors.",
-        ),
-        "Security": create_judge(
-            client,
-            name="Code Security Judge",
-            evaluation_goal="Evaluate whether the generated code follows security best practices and is free from vulnerabilities.",
-        ),
-        "Metrics": create_judge(
-            client,
-            name="Code Metrics Judge",
-            evaluation_goal="Evaluate the code quality metrics including readability, maintainability, and adherence to best practices.",
-        ),
-    }
-    judge_ids = [j.id for j in review_judges.values()]
+    # Upload the recorded real traces first. Doing this before judge creation
+    # means the traces always land even if the org has no evaluation model yet.
+    print(f"[Instrumentor] Uploading {len(CODE_SAMPLES)} recorded code traces...\n")
+    trace_ids = upload_recorded_trace(client, FIXTURE)
+    if not trace_ids:
+        print("ERROR: no traces uploaded (fixture missing or rejected).")
+        sys.exit(1)
 
+    # Create judges. If the org has no models available, judge creation raises
+    # RuntimeError -- we skip the evaluations (the traces are already uploaded)
+    # rather than crash.
+    judge_ids: list[str] = []
     try:
+        review_judges = {
+            "Execution": create_judge(
+                client,
+                name="Code Execution Judge",
+                evaluation_goal="Evaluate whether the generated code would execute correctly without errors.",
+                namespace=SAMPLE,
+            ),
+            "Security": create_judge(
+                client,
+                name="Code Security Judge",
+                evaluation_goal="Evaluate whether the generated code follows security best practices and is free from vulnerabilities.",
+                namespace=SAMPLE,
+            ),
+            "Metrics": create_judge(
+                client,
+                name="Code Metrics Judge",
+                evaluation_goal="Evaluate the code quality metrics including readability, maintainability, and adherence to best practices.",
+                namespace=SAMPLE,
+            ),
+        }
+        judge_ids = [j.id for j in review_judges.values()]
+
         # ------------------------------------------------------------------
-        # Phase 1 -- Instrumentor agent: upload code traces
+        # Phase 1 -- Instrumentor agent: map recorded traces to snippets
         # ------------------------------------------------------------------
-        print("[Instrumentor] Uploading code traces...\n")
         trace_map: list[dict[str, Any]] = []
 
-        for sample in CODE_SAMPLES:
-            print(f'[Instrumentor] Snippet: "{sample["description"]}"')
-            trace_result = upload_trace_dict(
-                client,
-                input_text=sample["input"],
-                output_text=sample["output"],
-                metadata={
-                    "language": sample["language"],
-                    "description": sample["description"],
-                    "channel": "co-work-code-review",
-                },
-            )
-            tid = trace_result.trace_ids[0] if trace_result.trace_ids else "unknown"
+        for sample, tid in zip(CODE_SAMPLES, trace_ids):
             trace_map.append(
                 {
                     "trace_id": tid,
                     "description": sample["description"],
                 }
             )
-            print(f"[Instrumentor] Trace {tid} created.")
+            print(f'[Instrumentor] Snippet "{sample["description"]}" -> trace {tid}')
 
         # ------------------------------------------------------------------
         # Phase 2 -- Reviewer agent: evaluate each trace
@@ -221,6 +235,9 @@ def main() -> None:
         print(f"  High quality: {high_count}/{len(review_results)}")
         print("  All evaluations stored in LayerLens.")
 
+    except RuntimeError as exc:
+        print(f"\nNOTE: evaluations skipped -- {exc}")
+        print("  Traces are uploaded; add a project/public model to enable judges.")
     finally:
         for jid in judge_ids:
             try:

@@ -119,6 +119,7 @@ class MonkeyPatchProvider(BaseAdapter):
                 extract_tool_calls=extractors.tool_calls,
                 extra_params=type(self).derive_params(kwargs),
                 provider=type(self).classify_provider(event_name, kwargs),
+                framework=self.name,
             )
             return response
 
@@ -155,6 +156,7 @@ class MonkeyPatchProvider(BaseAdapter):
                 extract_tool_calls=extractors.tool_calls,
                 extra_params=type(self).derive_params(kwargs),
                 provider=type(self).classify_provider(event_name, kwargs),
+                framework=self.name,
             )
             return response
 
@@ -183,6 +185,7 @@ class MonkeyPatchProvider(BaseAdapter):
             pricing_table=self.pricing_table,
             extra_params=type(self).derive_params(kwargs),
             provider=type(self).classify_provider(event_name, kwargs),
+            framework=self.name,
         )
 
     def _wrap_async_stream_iterator(
@@ -206,6 +209,7 @@ class MonkeyPatchProvider(BaseAdapter):
             pricing_table=self.pricing_table,
             extra_params=type(self).derive_params(kwargs),
             provider=type(self).classify_provider(event_name, kwargs),
+            framework=self.name,
         )
 
     def disconnect(self) -> None:

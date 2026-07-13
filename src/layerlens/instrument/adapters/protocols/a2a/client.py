@@ -16,7 +16,9 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, cast
 
+from .adapter import _maybe_emit_task_error
 from ...._events import A2A_DELEGATION, A2A_TASK_CREATED, A2A_TASK_UPDATED
+from ...._context import _current_span_id
 from .task_lifecycle import TaskState
 
 
@@ -48,7 +50,7 @@ class A2AClientWrapper:
         from_agent: Optional[str] = None,
         skill_description: Optional[str] = None,
     ) -> str:
-        parent = uuid.uuid4().hex[:16]
+        parent = _current_span_id.get() or uuid.uuid4().hex[:16]
         self._task_starts[task_id] = time.time()
         self._adapter.emit(
             A2A_TASK_CREATED,
@@ -99,6 +101,9 @@ class A2AClientWrapper:
         if error_message is not None:
             payload["error"] = error_message
         self._adapter.emit(A2A_TASK_UPDATED, payload)
+        # Terminal failure (failed/rejected) -> agent.error; a caller-chosen
+        # 'completed'/'canceled' status is not an error (S12/F4).
+        _maybe_emit_task_error(self._adapter, task_id, status, error=error_message, error_type=error_code)
 
     def delegate_task(
         self,

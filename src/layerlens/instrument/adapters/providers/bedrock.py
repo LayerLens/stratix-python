@@ -24,7 +24,7 @@ from .pricing import BEDROCK_PRICING
 from ..._events import AGENT_ERROR, MODEL_INVOKE
 from ..._context import _current_span_id, _current_collector
 from .token_usage import NormalizedTokenUsage
-from ._emit_helpers import _emit_cost  # type: ignore[attr-defined]
+from ._emit_helpers import _emit_cost, _flat_token_fields  # type: ignore[attr-defined]
 from ..._secret_scrub import safe_error
 
 log = logging.getLogger(__name__)
@@ -433,9 +433,16 @@ def _emit_invoke(
         "parameters": parameters,
         "messages": messages,
         "output_message": output,
+        # Integration-name stamp so the framework column shows the integration,
+        # not the OTel underlying provider — bedrock's emit path is bespoke (S19/F12).
+        "framework": "aws_bedrock",
     }
     if usage is not None:
         payload["usage"] = usage.as_event_dict()
+        # Flat token keys beside the nested usage block so the atlas extractor
+        # (which reads top-level token keys, never usage.*) fills the tokens
+        # column — bedrock's emit path is bespoke, not via emit_llm_events (S11/F2).
+        payload.update(_flat_token_fields(usage))
     payload.update(extra)
     # OTel GenAI semantic-convention attributes (TEL-029 / LAY-2883). Bedrock's
     # emit path is bespoke (no _base_provider wrap), so we plumb gen_ai_attributes

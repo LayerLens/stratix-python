@@ -246,6 +246,10 @@ class GoogleADKAdapter(FrameworkAdapter):
             payload["model"] = str(model)
             payload["provider"] = "google"
 
+        fr = getattr(llm_response, "finish_reason", None)
+        if fr is not None:
+            payload["finish_reason"] = getattr(fr, "value", str(fr))
+
         # Tokens from usage_metadata
         usage = getattr(llm_response, "usage_metadata", None)
         tokens = {}
@@ -344,12 +348,19 @@ class GoogleADKAdapter(FrameworkAdapter):
             return
         transfer_to = getattr(actions, "transfer_to_agent", None)
         if transfer_to:
-            author = getattr(event, "author", None) or "unknown"
+            # to_agent is always the real transfer target; from_agent is honest
+            # only when the event names an author — omit rather than fabricate
+            # "unknown" (F9). The span name drops the missing endpoint too.
+            author = getattr(event, "author", None)
+            payload = self._payload(to_agent=str(transfer_to))
+            if author:
+                payload["from_agent"] = str(author)
+            span_name = f"handoff:{author}->{transfer_to}" if author else f"handoff:->{transfer_to}"
             self._fire(
                 "agent.handoff",
-                self._payload(from_agent=author, to_agent=str(transfer_to)),
+                payload,
                 parent_span_id=run.root_span_id,
-                span_name=f"handoff:{author}->{transfer_to}",
+                span_name=span_name,
             )
 
     # ------------------------------------------------------------------

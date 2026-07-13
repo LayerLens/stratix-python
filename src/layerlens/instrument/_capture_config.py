@@ -52,6 +52,7 @@ _EVENT_TYPE_MAP: Dict[str, str] = {
     "tool.environment": "l5c_tool_environment",
     # L6a: Protocol discovery
     "protocol.agent_card": "l6a_protocol_discovery",
+    "mcp.server.connected": "l6a_protocol_discovery",
     "a2a.agent.discovered": "l6a_protocol_discovery",
     "a2a.agent.card": "l6a_protocol_discovery",
     "a2a.agent.card.served": "l6a_protocol_discovery",

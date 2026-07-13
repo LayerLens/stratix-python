@@ -806,9 +806,19 @@ class CrewAIAdapter(FrameworkAdapter):
         from the tool args.
         """
         tool_args = self._extract_delegation_args(getattr(event, "tool_args", None))
-        to_agent = str(tool_args.get("coworker") or "unknown")
-        from_agent = self._current_agent_role or "unknown"
-        seq = self._next_delegation_seq(from_agent, to_agent)
+        coworker = tool_args.get("coworker")
+        # The coworker is the delegation TARGET; without it there is no real
+        # handoff to draw — omit rather than fabricate "unknown" (F9).
+        to_agent = str(coworker) if coworker else None
+        if to_agent is None:
+            return
+        # _current_agent_role is the honest tracked role; its
+        # _on_agent_execution_started fallback is the literal "unknown", which is
+        # not a real endpoint — treat it as absent (honest blank).
+        from_agent = self._current_agent_role
+        if not from_agent or from_agent == "unknown":
+            from_agent = None
+        seq = self._next_delegation_seq(from_agent or "", to_agent)
 
         summary = scrub_context(
             {
@@ -817,12 +827,13 @@ class CrewAIAdapter(FrameworkAdapter):
             }
         )
         payload = self._payload(
-            from_agent=from_agent,
             to_agent=to_agent,
             reason="delegation",
             delegation_seq=seq,
             tool_name=tool_name,
         )
+        if from_agent is not None:
+            payload["from_agent"] = from_agent
         if summary:
             try:
                 payload["handoff_context_hash"] = compute_hash(summary)
@@ -837,32 +848,38 @@ class CrewAIAdapter(FrameworkAdapter):
             getattr(event, "from_agent", None)
             or getattr(event, "manager_role", None)
             or getattr(event, "source_agent", None)
-            or "manager"
         )
         to_role = (
             getattr(event, "to_agent", None)
             or getattr(event, "delegate_role", None)
             or getattr(event, "target_agent", None)
-            or "worker"
         )
-        seq = self._next_delegation_seq(str(from_role), str(to_role))
+        # No honest endpoint on either side -> an edge with no ends is not drawn:
+        # omit rather than fabricate "manager"/"worker" (F9).
+        if from_role is None and to_role is None:
+            return
+        seq = self._next_delegation_seq(str(from_role or ""), str(to_role or ""))
         task_name = self._get_task_name(event) or getattr(event, "description", "") or ""
-        payload = self._payload(
-            from_agent=str(from_role),
-            to_agent=str(to_role),
-            phase="start",
-            reason="delegation",
-            delegation_seq=seq,
-        )
+        payload = self._payload(phase="start", reason="delegation", delegation_seq=seq)
+        if from_role is not None:
+            payload["from_agent"] = str(from_role)
+        if to_role is not None:
+            payload["to_agent"] = str(to_role)
         if task_name:
             payload["task"] = str(task_name)[:200]
         self._set_if_capturing(payload, "context", safe_serialize(getattr(event, "context", None)))
         self._fire("agent.handoff", payload, parent_span_id=self._leaf_parent())
 
     def _on_delegation_completed(self, source: Any, event: Any) -> None:
-        from_role = getattr(event, "from_agent", None) or getattr(event, "manager_role", None) or "manager"
-        to_role = getattr(event, "to_agent", None) or getattr(event, "delegate_role", None) or "worker"
-        payload = self._payload(from_agent=str(from_role), to_agent=str(to_role), phase="complete")
+        from_role = getattr(event, "from_agent", None) or getattr(event, "manager_role", None)
+        to_role = getattr(event, "to_agent", None) or getattr(event, "delegate_role", None)
+        if from_role is None and to_role is None:
+            return
+        payload = self._payload(phase="complete")
+        if from_role is not None:
+            payload["from_agent"] = str(from_role)
+        if to_role is not None:
+            payload["to_agent"] = str(to_role)
         self._set_if_capturing(payload, "result", safe_serialize(getattr(event, "result", None)))
         self._fire("agent.handoff", payload, parent_span_id=self._leaf_parent())
 

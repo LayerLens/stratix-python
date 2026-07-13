@@ -16,6 +16,7 @@ import pytest
 
 pytest.importorskip("google.adk")
 
+from google.genai import types as genai_types  # noqa: E402
 from google.adk.plugins import BasePlugin  # noqa: E402
 from google.adk.plugins.plugin_manager import PluginManager  # noqa: E402
 
@@ -97,6 +98,11 @@ def _make_llm_response(
 ) -> Mock:
     resp = Mock()
     resp.model_version = model_version
+    # Default to a realistic "no finish reason" response. Without this, Mock
+    # auto-attributes make resp.finish_reason a truthy child Mock, which the
+    # adapter serializes as "<Mock ... id='140...'>" — the numeric id trips the
+    # card_pan secret scanner. Tests needing a reason set it explicitly.
+    resp.finish_reason = None
     if prompt_tokens or completion_tokens:
         usage = Mock()
         usage.prompt_token_count = prompt_tokens
@@ -412,6 +418,30 @@ class TestModelCallbacks:
 
         adapter.disconnect()
 
+    def test_model_invoke_emits_finish_reason(self, mock_client):
+        """S18/F11: surface the real FinishReason.value ("STOP"), not str(enum)."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = GoogleADKAdapter(mock_client)
+        adapter.connect()
+
+        inv_ctx = _make_invocation_context()
+        adapter._on_before_run(inv_ctx)
+
+        cb_ctx = _make_callback_context("agent1")
+        llm_req = _make_llm_request(model="gemini-2.0-flash")
+        llm_resp = _make_llm_response(model_version="gemini-2.0-flash", prompt_tokens=10, completion_tokens=5)
+        llm_resp.finish_reason = genai_types.FinishReason.STOP
+
+        adapter._on_before_model(cb_ctx, llm_req)
+        adapter._on_after_model(cb_ctx, llm_resp)
+        adapter._on_after_run(inv_ctx)
+
+        events = uploaded["events"]
+        model_evt = find_event(events, "model.invoke")
+        assert model_evt["payload"]["finish_reason"] == "STOP"
+
+        adapter.disconnect()
+
     def test_model_invoke_emits_cost_record(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = GoogleADKAdapter(mock_client)
@@ -581,6 +611,24 @@ class TestHandoffDetection:
         assert handoff["payload"]["from_agent"] == "router"
         assert handoff["payload"]["to_agent"] == "billing_agent"
         assert handoff["span_name"] == "handoff:router->billing_agent"
+
+    def test_handoff_omits_from_agent_when_author_absent(self, mock_client):
+        """S16/F9: the transfer target (to_agent) is always real, but with no
+        event author the from_agent is omitted, not fabricated as "unknown"."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = GoogleADKAdapter(mock_client)
+        adapter.connect()
+        inv_ctx = _make_invocation_context()
+        adapter._on_before_run(inv_ctx)
+
+        event = _make_event(author=None, transfer_to_agent="billing_agent")
+        adapter._on_event(inv_ctx, event)
+        adapter._on_after_run(inv_ctx)
+
+        handoff = find_event(uploaded["events"], "agent.handoff")
+        assert handoff["payload"]["to_agent"] == "billing_agent"
+        assert "from_agent" not in handoff["payload"], "fabricated 'unknown' from_agent"
+        assert handoff["span_name"] == "handoff:->billing_agent"
 
         adapter.disconnect()
 

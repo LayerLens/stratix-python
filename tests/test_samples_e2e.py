@@ -65,6 +65,9 @@ INDUSTRY_SAMPLES = [
     "legal_research",
     "retail_recommender",
     "retail_support",
+    "underwriting_team",
+    "support_triage_team",
+    "clinical_consult_team",
 ]
 
 COWORK_SAMPLES = [
@@ -73,6 +76,9 @@ COWORK_SAMPLES = [
     "multi_agent_eval",
     "pair_programming",
     "rag_assessment",
+    "code_review_team",
+    "research_report_team",
+    "content_pipeline_team",
 ]
 
 MODALITY_SAMPLES = [
@@ -169,8 +175,15 @@ ALL_SAMPLE_PATHS = (
 _ASYNC_CORE_SAMPLES = {"async_results", "async_workflow"}
 
 # Samples that require external provider SDKs (openai, langchain, etc.)
-# with no simulated fallback -- cannot run in fully mocked mode.
-_EXTERNAL_SDK_SAMPLES = {"langchain_instrumented", "openai_instrumented"}
+# with no simulated fallback -- cannot run in fully mocked mode. The *_traced
+# integration samples genuinely instrument a real provider call (no fake
+# fallback), so they exit without a real key and belong here too.
+_EXTERNAL_SDK_SAMPLES = {
+    "langchain_instrumented",
+    "openai_instrumented",
+    "openai_traced",
+    "anthropic_traced",
+}
 
 # Samples that need special argv or patches
 _SPECIAL_ARGV: dict[tuple[str, str], list[str]] = {
@@ -214,7 +227,10 @@ def mock_stratix():
 
     # --- traces ---
     trace_resp = MagicMock()
-    trace_resp.trace_ids = ["trace-test-001"]
+    # Return several IDs so samples that upload a multi-record fixture (via
+    # upload_recorded_trace, which uploads all records in one call) get one
+    # trace_id per record to zip their scenarios against.
+    trace_resp.trace_ids = [f"trace-test-{i:03d}" for i in range(1, 6)]
     client.traces.upload.return_value = trace_resp
 
     traces_list = MagicMock()
@@ -1032,7 +1048,7 @@ def _verify_sample_behavior(
 
     if name == "incident_response":
         assert mock_client.judges.create.called, "incident_response never created judges"
-        assert mock_client.traces.get_many.called, "incident_response never fetched recent traces"
+        assert mock_client.traces.upload.called, "incident_response never uploaded its own demo set"
         assert mock_client.trace_evaluations.create.called, "incident_response never created trace evaluations"
         assert mock_client.judges.delete.called, "incident_response never cleaned up judges"
 
@@ -1967,37 +1983,35 @@ class TestWithoutAPIKey:
 class TestMissingDependencies:
     """Verify samples handle missing optional dependencies gracefully."""
 
-    def test_openai_traced_without_openai(self, mock_stratix, capsys):
-        """openai_traced.py should fall back to simulated data when openai is not importable."""
-        original = sys.modules.get("openai")
-        sys.modules["openai"] = None  # type: ignore[assignment]
-        try:
-            with patch.dict(
-                "os.environ",
-                {"LAYERLENS_STRATIX_API_KEY": "test-key", "OPENAI_API_KEY": ""},
-            ):
-                _import_and_run_sync("integrations/openai_traced.py", mock_stratix)
-        finally:
-            if original is not None:
-                sys.modules["openai"] = original
-            else:
-                sys.modules.pop("openai", None)
+    def _assert_exits_without_fake_work(self, module_path, mock_stratix, env):
+        """A traced integration sample must exit(1) -- not fabricate data -- when
+        its required provider key is missing, and must not do any judge/trace work."""
+        with patch.dict("os.environ", env):
+            with pytest.raises(SystemExit) as exc:
+                _import_and_run_sync(module_path, mock_stratix)
+        assert exc.value.code == 1, f"{module_path} should exit 1 when the provider key is missing"
+        assert not mock_stratix.judges.create.called, (
+            f"{module_path} must not create judges when the provider key is missing (no fake work)"
+        )
+        assert not mock_stratix.traces.upload.called, (
+            f"{module_path} must not upload a fabricated trace when the provider key is missing"
+        )
 
-    def test_anthropic_traced_without_anthropic(self, mock_stratix, capsys):
-        """anthropic_traced.py should fall back to simulated data when anthropic is not importable."""
-        original = sys.modules.get("anthropic")
-        sys.modules["anthropic"] = None  # type: ignore[assignment]
-        try:
-            with patch.dict(
-                "os.environ",
-                {"LAYERLENS_STRATIX_API_KEY": "test-key", "ANTHROPIC_API_KEY": ""},
-            ):
-                _import_and_run_sync("integrations/anthropic_traced.py", mock_stratix)
-        finally:
-            if original is not None:
-                sys.modules["anthropic"] = original
-            else:
-                sys.modules.pop("anthropic", None)
+    def test_openai_traced_without_openai_key(self, mock_stratix):
+        """openai_traced exits honestly (no simulated fallback) when OPENAI_API_KEY is missing."""
+        self._assert_exits_without_fake_work(
+            "integrations/openai_traced.py",
+            mock_stratix,
+            {"LAYERLENS_STRATIX_API_KEY": "test-key", "OPENAI_API_KEY": ""},
+        )
+
+    def test_anthropic_traced_without_anthropic_key(self, mock_stratix):
+        """anthropic_traced exits honestly (no simulated fallback) when ANTHROPIC_API_KEY is missing."""
+        self._assert_exits_without_fake_work(
+            "integrations/anthropic_traced.py",
+            mock_stratix,
+            {"LAYERLENS_STRATIX_API_KEY": "test-key", "ANTHROPIC_API_KEY": ""},
+        )
 
     def test_openclaw_demos_without_openclaw(self):
         """OpenClaw DemoRunner demos should work without the openclaw package installed."""
@@ -2006,22 +2020,6 @@ class TestMissingDependencies:
             assert result.returncode == 0, (
                 f"OpenClaw demo {demo} should work without openclaw package.\nstderr: {result.stderr[:500]}"
             )
-
-    def test_integration_with_missing_openai_env(self, mock_stratix):
-        """Verify openai_traced handles missing OPENAI_API_KEY gracefully."""
-        with patch.dict(
-            "os.environ",
-            {"LAYERLENS_STRATIX_API_KEY": "test-key", "OPENAI_API_KEY": ""},
-        ):
-            _import_and_run_sync("integrations/openai_traced.py", mock_stratix)
-
-    def test_integration_with_missing_anthropic_env(self, mock_stratix):
-        """Verify anthropic_traced handles missing ANTHROPIC_API_KEY gracefully."""
-        with patch.dict(
-            "os.environ",
-            {"LAYERLENS_STRATIX_API_KEY": "test-key", "ANTHROPIC_API_KEY": ""},
-        ):
-            _import_and_run_sync("integrations/anthropic_traced.py", mock_stratix)
 
     @pytest.mark.parametrize("name", COPILOTKIT_SAMPLES)
     def test_copilotkit_without_langchain(self, name, mock_stratix):
@@ -2236,9 +2234,9 @@ class TestSampleCompleteness:
         assert os.path.isfile(script), f"Missing: {script}"
 
     def test_all_54_samples_covered(self):
-        """Verify ALL_SAMPLE_PATHS contains exactly 60 entries."""
-        assert len(ALL_SAMPLE_PATHS) == 60, (
-            f"Expected 60 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
+        """Verify ALL_SAMPLE_PATHS contains exactly 66 entries."""
+        assert len(ALL_SAMPLE_PATHS) == 66, (
+            f"Expected 66 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
         )
 
     def test_all_sample_paths_exist(self):
@@ -2251,7 +2249,7 @@ class TestSampleCompleteness:
         assert not missing, f"Sample files not found: {missing}"
 
     def test_mocked_samples_cover_all(self):
-        """ALL_MOCKED_SAMPLES should produce exactly 60 entries."""
-        assert len(ALL_MOCKED_SAMPLES) == 60, (
-            f"Expected 60 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
+        """ALL_MOCKED_SAMPLES should produce exactly 66 entries."""
+        assert len(ALL_MOCKED_SAMPLES) == 66, (
+            f"Expected 66 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
         )

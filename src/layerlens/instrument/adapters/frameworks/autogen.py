@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import re
 import logging
-import itertools
+import threading
 from typing import Any, Dict, Optional
 
 from ._utils import truncate, safe_serialize
-from ..._context import RunState, _current_run, _current_collector
+from ..._context import RunState, _current_collector
+from ..._identity import honest_agent_type
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -55,27 +57,55 @@ def _enum_name(value: Any) -> str:
     return s
 
 
+# AgentChat teams name each participant's runtime agent ``<agent-name>_<team-uuid>``
+# and stringify an AgentId as ``<type>/<key>``. Strip that trailing per-team UUID
+# so the graph node is the real agent name (``writer``), not ``writer_<uuid>``.
+_TEAM_UUID_SUFFIX = re.compile(r"_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _autogen_agent_name(agent_id: Any) -> Optional[str]:
+    """Clean, honest graph-node name from an autogen AgentId (or its string).
+
+    ``AgentId`` stringifies as ``<type>/<key>``; a team runtime sets the type to
+    ``<agent-name>_<team-uuid>``. Take the type, strip the team-uuid suffix, drop
+    the runtime plumbing that is not a real agent (the group-chat manager and the
+    ``group_topic``/``output_topic`` routing topics), then apply the shared
+    honesty guard (rejects model/class/generic names). Returns None when there is
+    no honest agent — so plumbing never becomes a graph node.
+    """
+    if agent_id is None:
+        return None
+    typ = str(agent_id).split("/", 1)[0]
+    typ = _TEAM_UUID_SUFFIX.sub("", typ)
+    low = typ.lower()
+    if "groupchatmanager" in low or low.endswith("_topic"):
+        return None
+    return honest_agent_type(typ)
+
+
 class AutoGenAdapter(FrameworkAdapter):
     """AutoGen adapter using the structured event logging API (autogen-core >= 0.4).
 
-    Concurrency model (LAY-3576 / A6 fix)
-    -------------------------------------
+    Concurrency model (LAY-3576 / A6 fix; run-grouping fix)
+    -------------------------------------------------------
     AutoGen has no per-run callback: it logs ``LLMCallEvent`` / ``MessageEvent``
     through the **module-global** ``EVENT_LOGGER_NAME`` logger, and those events
     carry no run/topic/session id (``LLMCallEvent`` has only ``agent_id``;
     ``MessageEvent`` only sender/receiver). The old adapter funnelled every run
-    into one lazily-created ``self._collector`` shared across all conversations —
-    two concurrent ``team.run()`` calls merged into a single trace.
+    into one shared ``self._collector`` — two concurrent ``team.run()`` calls
+    merged into one trace.
 
-    But each AgentChat team owns its own ``SingleThreadedAgentRuntime`` whose
-    message loop drains on its own asyncio task / thread, and the logging handler
-    runs **inline on the emitting task/thread** (no context-copy). So a
-    ``RunState`` opened lazily on the first event and bound to ``_current_run``
-    is isolated per concurrent run by the task/thread ContextVar copy (verified
-    live for two interleaved runtimes — distinct runs even for the sender-less
-    ``LLMCallEvent``). The adapter keeps one ``RunState`` per run in
-    ``self._runs`` and flushes each as its own trace on ``disconnect()``. This
-    mirrors ``openai_agents.py`` (keyed map + per-callback ``_current_collector``).
+    The grouping key is the **thread**. Each AgentChat team owns its own
+    ``SingleThreadedAgentRuntime`` whose message loop drains on a single thread,
+    and the logging handler runs inline on the emitting thread. A single
+    ``team.run()`` fans out across many asyncio *tasks* on that one thread, so a
+    per-``ContextVar`` run (copied per task) fragments one run into many partial
+    traces — the bug this fixes. Keying the ``RunState`` by ``thread ident``
+    keeps every task of one run together (one coherent trace) while two runs on
+    separate threads stay isolated (the interleaved-run guard). The adapter keeps
+    one ``RunState`` per thread in ``self._runs_by_thread`` and flushes each as
+    its own trace on ``disconnect()``. A caller-bound ``_current_collector``
+    (``instrument()`` / ``capture_events``) is still honoured and reused.
 
     Usage::
 
@@ -101,21 +131,32 @@ class AutoGenAdapter(FrameworkAdapter):
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)
         self._handler: Optional[_LayerLensHandler] = None
-        # token -> RunState (one per concurrent conversation/run).
-        self._runs: Dict[str, RunState] = {}
-        self._run_seq = itertools.count()
+        # thread ident -> RunState. One run per thread: a single team.run's
+        # asyncio tasks share the thread (one coherent trace); concurrent runs
+        # use separate threads (isolated traces).
+        self._runs_by_thread: Dict[int, RunState] = {}
         # Fallback slots for callers that drive ``_fire`` outside a run (the
         # cost-pricing invariant test instantiates via ``__new__``).
         self._fallback_collector: Optional[TraceCollector] = None
         self._fallback_root_span_id: Optional[str] = None
 
     # ------------------------------------------------------------------
-    # Per-run state access (resolved through the active _current_run)
+    # Per-run state access (resolved by the current thread's run)
     # ------------------------------------------------------------------
+
+    def _run_for_thread(self) -> Optional[RunState]:
+        # getattr guard: the cost-pricing invariant test drives _fire on an
+        # adapter built via ``__new__`` (no ``__init__``), so ``_runs_by_thread``
+        # may be absent. Fall through to the fallback slots instead of crashing,
+        # mirroring how the old ``_current_run.get()`` path returned None there.
+        runs = getattr(self, "_runs_by_thread", None)
+        if not runs:
+            return None
+        return runs.get(threading.get_ident())
 
     @property
     def _collector(self) -> Optional[TraceCollector]:
-        run = _current_run.get()
+        run = self._run_for_thread()
         if run is not None:
             return run.collector
         return self._fallback_collector
@@ -126,7 +167,7 @@ class AutoGenAdapter(FrameworkAdapter):
 
     @property
     def _root_span_id(self) -> Optional[str]:
-        run = _current_run.get()
+        run = self._run_for_thread()
         if run is not None:
             return run.root_span_id
         return self._fallback_root_span_id
@@ -137,7 +178,7 @@ class AutoGenAdapter(FrameworkAdapter):
 
     @property
     def _conversations(self) -> Dict[str, Dict[str, Any]]:
-        run = _current_run.get()
+        run = self._run_for_thread()
         if run is None:
             return {}
         return run.data.setdefault("conversations", {})
@@ -162,44 +203,24 @@ class AutoGenAdapter(FrameworkAdapter):
         # Flush every open run as its own trace (autogen gives no per-run end
         # signal, so completion is at disconnect).
         with self._lock:
-            runs = list(self._runs.values())
-            self._runs.clear()
-        # Unbind the run bound to THIS context first, so a stale RunState never
-        # leaks into the next adapter on the same thread.
-        active = _current_run.get()
+            runs = list(self._runs_by_thread.values())
+            self._runs_by_thread.clear()
         for run in runs:
             self._flush_run(run)
-        if active is not None and active in runs:
-            self._unbind(active)
         self._fallback_collector = None
         self._fallback_root_span_id = None
-
-    @staticmethod
-    def _unbind(run: RunState) -> None:
-        """Reset the ContextVars this run set when it opened."""
-        if run._col_token is not None:
-            try:
-                _current_collector.reset(run._col_token)
-            except ValueError:
-                _current_collector.set(None)
-            run._col_token = None
-        if run._token is not None:
-            try:
-                _current_run.reset(run._token)
-            except ValueError:
-                _current_run.set(None)
-            run._token = None
 
     # ------------------------------------------------------------------
     # Collector + run-state management
     # ------------------------------------------------------------------
 
     def _ensure_run(self) -> RunState:
-        """Lazily open a run on the current context and bind it.
+        """Resolve (or lazily open) the run for the CURRENT THREAD.
 
-        Concurrent conversations call this on their own task/thread, so the
-        ContextVar copy keeps each run isolated. Subsequent events on the same
-        context re-resolve the same run via ``_current_run``.
+        A single ``team.run()`` drains on one thread across many asyncio tasks,
+        so keying by thread ident keeps all of its events in one run (one
+        coherent trace). Concurrent ``team.run()`` calls execute on separate
+        threads and therefore get separate runs (the interleaved-run guard).
 
         Collector resolution
         --------------------
@@ -207,30 +228,21 @@ class AutoGenAdapter(FrameworkAdapter):
         ``_current_collector`` (the canonical pattern used by ``instrument()``
         and ``samples/adapters/_shared.capture_events``), the run reuses **that**
         collector instead of minting a private one. Otherwise the adapter falls
-        back to a self-owned collector flushed at ``disconnect()``. Without this
-        the events landed in a private collector that the caller never read, so
-        the bound trace captured zero events even though the logging hook fired.
+        back to a self-owned collector flushed at ``disconnect()``.
         """
-        run = _current_run.get()
+        tid = threading.get_ident()
+        run = self._runs_by_thread.get(tid)
         if run is not None:
             return run
         bound = _current_collector.get()
         owns_collector = bound is None
         collector = bound if bound is not None else TraceCollector(self._client, self._config)
-        root_span_id = self._new_span_id()
-        run = RunState(collector=collector, root_span_id=root_span_id, data={"conversations": {}})
-        token = f"autogen-run-{next(self._run_seq)}"
-        run.data["token"] = token
+        run = RunState(collector=collector, root_span_id=self._new_span_id(), data={"conversations": {}})
         # Only this adapter flushes collectors it owns; a caller-bound collector
         # is flushed by its owner (``capture_events`` / ``instrument()``).
         run.data["owns_collector"] = owns_collector
         with self._lock:
-            self._runs[token] = run
-        # Re-set the collector ContextVar only when we created it, so the run's
-        # _col_token unbinds exactly what it bound (never the caller's binding).
-        if owns_collector:
-            run._col_token = _current_collector.set(collector)
-        run._token = _current_run.set(run)
+            self._runs_by_thread[tid] = run
         return run
 
     def _flush_run(self, run: RunState) -> None:
@@ -320,8 +332,13 @@ class AutoGenAdapter(FrameworkAdapter):
             payload["tokens_completion"] = completion_tokens
         if prompt_tokens or completion_tokens:
             payload["tokens_total"] = prompt_tokens + completion_tokens
-        if agent_id is not None:
-            payload["agent_id"] = str(agent_id)
+        name = _autogen_agent_name(agent_id)
+        if name:
+            # Honest graph-node identity: the calling agent's real name (team
+            # runtime uuid stripped, plumbing dropped) so the graph engine
+            # attributes this model call to a clean agent node.
+            payload["agent_id"] = name
+            payload["agent_name"] = name
 
         self._set_if_capturing(payload, "messages", safe_serialize(_get_field(event, "messages")))
         self._set_if_capturing(payload, "output_message", safe_serialize(_get_field(event, "response")))
@@ -351,8 +368,28 @@ class AutoGenAdapter(FrameworkAdapter):
         kind = _get_field(event, "kind")
         stage = _get_field(event, "delivery_stage")
 
-        # Conversation tracking: group messages by topic/session ID so downstream
-        # analysis can reason about multi-agent turn-taking.
+        # autogen logs each message at both the SEND and DELIVER stages; the
+        # ateam autogen contract translates only SEND so a single message is
+        # not double-counted (a group chat logs ~2x MessageEvents otherwise).
+        stage_str = _enum_name(stage) if stage is not None else ""
+        if stage_str and "SEND" not in stage_str.upper():
+            return
+
+        kind_str = _enum_name(kind) if kind is not None else ""
+        is_respond = "RESPOND" in kind_str
+        # Honest graph-node identity: the acting agent's real name — the
+        # responder on RESPOND, else the receiver processing the input. Runtime
+        # plumbing (group-chat manager, group_topic/output_topic broadcast
+        # targets) resolves to None. Such a message is pub/sub plumbing, not an
+        # agent turn, so it is skipped rather than emitted as an unattributed
+        # event — this is what keeps a RoundRobinGroupChat trace to its real
+        # per-agent turns instead of the runtime's dozens of broadcast deliveries.
+        acting_name = _autogen_agent_name(sender if is_respond else receiver)
+        if acting_name is None:
+            return
+
+        # Conversation tracking (real-agent turns only), grouped by topic/session
+        # so downstream analysis can reason about multi-agent turn-taking.
         topic_id = _get_field(event, "topic_id") or _get_field(event, "session_id")
         conv_id = str(topic_id) if topic_id is not None else f"{sender}->{receiver}"
         conversations = self._conversations
@@ -362,19 +399,19 @@ class AutoGenAdapter(FrameworkAdapter):
                 "participants": set(),
                 "turn_count": 0,
                 "message_count": 0,
-                "last_sender": None,
+                "last_actor": None,
             },
         )
-        if sender is not None:
-            state["participants"].add(str(sender))
-        if receiver is not None:
-            state["participants"].add(str(receiver))
+        # Participants are recorded by honest name (plumbing endpoints dropped).
+        for who in (sender, receiver):
+            honest = _autogen_agent_name(who)
+            if honest:
+                state["participants"].add(honest)
         state["message_count"] += 1
-        last = state["last_sender"]
-        if sender is not None and last is not None and str(sender) != last:
+        last = state["last_actor"]
+        if last is not None and acting_name != last:
             state["turn_count"] += 1
-        if sender is not None:
-            state["last_sender"] = str(sender)
+        state["last_actor"] = acting_name
 
         payload = self._payload()
         payload["conversation_id"] = conv_id
@@ -394,11 +431,27 @@ class AutoGenAdapter(FrameworkAdapter):
             truncate(str(_get_field(event, "payload", "")), 2000),
         )
 
-        kind_str = _enum_name(kind) if kind is not None else ""
-        if "RESPOND" in kind_str:
+        payload["agent_name"] = acting_name
+        if is_respond:
             self._fire("agent.output", payload)
         else:
             self._fire("agent.input", payload)
+
+        # Topology edge: a message between two DIFFERENT honest agents is a
+        # handoff the graph engine renders. Emitted once per (conversation,
+        # from->to); self-loops and generic containers are skipped. This restores
+        # the multi-agent topology the ateam autogen adapter emitted (which the
+        # SDK rewrite had dropped), so the trace no longer renders blank.
+        from_t = _autogen_agent_name(sender)
+        to_t = _autogen_agent_name(receiver)
+        if from_t and to_t and from_t != to_t:
+            seen = state.setdefault("handoffs", set())
+            if (from_t, to_t) not in seen:
+                seen.add((from_t, to_t))
+                self._fire(
+                    "agent.handoff",
+                    self._payload(from_agent=from_t, to_agent=to_t, conversation_id=conv_id),
+                )
 
     def _on_message_dropped(self, event: Any) -> None:
         sender = _get_field(event, "sender")
@@ -422,9 +475,13 @@ class AutoGenAdapter(FrameworkAdapter):
         payload = self._payload(
             error=str(exc) if exc else "unknown error",
             error_type=(type(exc).__name__ if isinstance(exc, BaseException) else "Exception"),
+            status="error",  # uniform agent.error shape across all 3 paths (S20e)
         )
         if agent_id is not None:
             payload["agent_id"] = str(agent_id)
+            at = _autogen_agent_name(agent_id)
+            if at:
+                payload["agent_name"] = at
         self._fire("agent.error", payload)
 
     def _on_construction_exception(self, event: Any) -> None:
@@ -433,9 +490,13 @@ class AutoGenAdapter(FrameworkAdapter):
         payload = self._payload(
             error=str(exc) if exc else "construction failed",
             error_type=(type(exc).__name__ if isinstance(exc, BaseException) else "Exception"),
+            status="error",  # uniform agent.error shape across all 3 paths (S20e)
         )
         if agent_id is not None:
             payload["agent_id"] = str(agent_id)
+            at = _autogen_agent_name(agent_id)
+            if at:
+                payload["agent_name"] = at
         self._fire("agent.error", payload)
 
 

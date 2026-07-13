@@ -4,9 +4,17 @@ import logging
 from typing import Any, Dict, Optional
 
 from ._utils import safe_serialize
+from ..._identity import _API_METHOD_RE, _s, _is_generic
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 from ..providers.pricing import BEDROCK_PRICING
+
+#: The strands built-in swarm handoff tool. When a developer's agent calls
+#: ``handoff_to_agent(agent_name, message)`` (see
+#: ``strands.multiagent.swarm.Swarm._create_handoff_tool``) it is a
+#: producer-DECLARED transition to another named agent — the honest signal for
+#: an ``agent.handoff`` graph edge.
+_HANDOFF_TOOL = "handoff_to_agent"
 
 log = logging.getLogger(__name__)
 
@@ -179,7 +187,8 @@ class StrandsAdapter(FrameworkAdapter):
             # Re-emit config if we haven't seen this agent yet
             self._emit_agent_config(name, agent)
 
-            payload = self._payload(agent_name=name)
+            payload = self._payload()
+            self._set_honest_agent_name(payload, agent)
             model_id = _model_id(agent)
             if model_id:
                 payload["model"] = model_id
@@ -200,7 +209,8 @@ class StrandsAdapter(FrameworkAdapter):
             latency_ms = self._stop_timer("run")
             span_id = self._get_root_span()
 
-            payload = self._payload(agent_name=name)
+            payload = self._payload()
+            self._set_honest_agent_name(payload, agent)
             if latency_ms is not None:
                 payload["duration_ns"] = int(latency_ms * 1_000_000)
 
@@ -260,6 +270,7 @@ class StrandsAdapter(FrameworkAdapter):
 
             model_id = _model_id(agent)
             payload = self._payload()
+            self._set_honest_agent_name(payload, agent)
             if model_id:
                 payload["model"] = model_id
 
@@ -352,6 +363,14 @@ class StrandsAdapter(FrameworkAdapter):
                 parent_span_id=parent,
                 span_name=f"tool:{tool_name}",
             )
+
+            # A strands swarm handoff is the developer calling the built-in
+            # ``handoff_to_agent(agent_name, message)`` tool — a producer-declared
+            # transition to another named agent. Surface it as an honest
+            # ``agent.handoff`` graph edge (only when BOTH endpoints resolve to a
+            # real, non-generic name — never fabricate a node).
+            if tool_name == _HANDOFF_TOOL:
+                self._emit_handoff(getattr(event, "agent", None), tool_input, parent)
         except Exception:
             log.warning("layerlens: error in Strands after_tool", exc_info=True)
 
@@ -359,13 +378,46 @@ class StrandsAdapter(FrameworkAdapter):
     # Helpers
     # ------------------------------------------------------------------
 
+    def _set_honest_agent_name(self, payload: Dict[str, Any], agent: Any) -> None:
+        """Stamp ``payload['agent_name']`` ONLY when the developer set a real,
+        distinctive agent name — never the generic framework default
+        ``"Strands Agents"`` (or a class-name/API-method fallback). When no
+        honest name exists the payload stays blank (an honest ``—`` node)."""
+        # ateam parity (#3): prefer the honest, distinctive name; fall back to the
+        # raw framework/class name VERBATIM (sanitized) so an unnamed agent still
+        # renders its (generic) identity like ateam, instead of a blank column.
+        # Handoff endpoints (_emit_handoff) stay on the honest helper.
+        name = _honest_agent_name(agent) or _s(_agent_name(agent))
+        if name:
+            payload["agent_name"] = name
+
+    def _emit_handoff(self, agent: Any, tool_input: Any, parent_span_id: Optional[str]) -> None:
+        """Emit ``agent.handoff{from_agent,to_agent}`` for a swarm handoff.
+
+        Both endpoints must be honest, producer-declared names: ``from_agent``
+        is the current agent's declared name, ``to_agent`` is the target passed
+        to ``handoff_to_agent(agent_name=...)``. If either is missing/generic we
+        emit nothing rather than fabricate a graph node/edge."""
+        from_agent = _honest_agent_name(agent)
+        raw_to = tool_input.get("agent_name") if isinstance(tool_input, dict) else None
+        to_agent = _honest_name(raw_to)
+        if not from_agent or not to_agent:
+            return
+        self._fire(
+            "agent.handoff",
+            self._payload(from_agent=from_agent, to_agent=to_agent),
+            parent_span_id=parent_span_id,
+            span_name=f"handoff:{from_agent}->{to_agent}",
+        )
+
     def _emit_agent_config(self, name: str, agent: Any) -> None:
         with self._lock:
             if name in self._seen_agents:
                 return
             self._seen_agents.add(name)
 
-        payload = self._payload(agent_name=name, agent_type=type(agent).__name__)
+        payload = self._payload(agent_type=type(agent).__name__)
+        self._set_honest_agent_name(payload, agent)
 
         mid = _model_id(agent)
         if mid:
@@ -469,9 +521,34 @@ def _get_cycles(agent: Any) -> list:
 
 
 def _agent_name(agent: Any) -> str:
+    """A non-empty LABEL for internal use only (span_name / timer keys /
+    config dedup) — may be a generic default. NEVER surfaced as the honest
+    ``agent_name`` payload identity; use :func:`_honest_agent_name` for that."""
     if agent is None:
         return "unknown"
     return getattr(agent, "name", None) or type(agent).__name__
+
+
+def _honest_name(raw: Any) -> Optional[str]:
+    """A producer-declared, distinctive agent name — or None.
+
+    Rejects the generic framework default ``"Strands Agents"`` and any other
+    class-name/placeholder on the shared identity denylist, plus dotted
+    API-method labels. Reuses the single honest-identity guard so the adapter
+    never fabricates a graph node."""
+    if not isinstance(raw, str):
+        return None
+    name = raw.strip()
+    if not name or _is_generic(name) or _API_METHOD_RE.match(name.lower()):
+        return None
+    return name
+
+
+def _honest_agent_name(agent: Any) -> Optional[str]:
+    """The developer-declared name of *agent*, honest-guarded — or None."""
+    if agent is None:
+        return None
+    return _honest_name(getattr(agent, "name", None))
 
 
 def _model_id(agent: Any) -> Optional[str]:

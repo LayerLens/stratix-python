@@ -23,8 +23,10 @@ import logging
 from typing import Any, Dict, Optional
 from collections.abc import Callable
 
+from .adapter import _maybe_emit_task_error
 from ...._events import A2A_TASK_CREATED, A2A_TASK_UPDATED, A2A_AGENT_CARD_SERVED
 from .agent_card import summarize_signatures
+from ...._context import _current_span_id
 from .task_lifecycle import TaskState, TaskStateMachine
 
 log = logging.getLogger(__name__)
@@ -76,7 +78,7 @@ class A2AServerWrapper:
             message = {}
 
         task_id: Optional[str] = None
-        parent = uuid.uuid4().hex[:16]
+        parent = _current_span_id.get() or uuid.uuid4().hex[:16]
         start = time.time()
         is_send = method in _TASK_SEND_METHODS
 
@@ -179,6 +181,9 @@ class A2AServerWrapper:
         if error is not None:
             payload["error"] = error
         self._adapter.emit(A2A_TASK_UPDATED, payload, parent_span_id=parent)
+        # Terminal failure -> agent.error so the run's derived status is error,
+        # not completed (S12/F4). Non-failure states are ignored by the helper.
+        _maybe_emit_task_error(self._adapter, task_id, status, parent=parent, error=error)
 
 
 def _result_dict(response: Any) -> Optional[Dict[str, Any]]:

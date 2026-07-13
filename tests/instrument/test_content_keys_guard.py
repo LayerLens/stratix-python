@@ -55,6 +55,9 @@ _CONTENT_FREE_TYPES = frozenset(
         "tool.environment",
         "policy.violation",  # bedrock emits structural metadata only (verified)
         "protocol.agent_card",
+        # server identity: name/version/protocol_version are identifiers, not
+        # free-text content — surfaced as protocol-discovery metadata (S14/F7).
+        "mcp.server.connected",
         "protocol.lifecycle",
         "protocol.task.submitted",
         "protocol.task.completed",

@@ -187,16 +187,19 @@ class EmbeddingAdapter(FrameworkAdapter):
 
             dimensions = _extract_dimensions_st(result)
 
-            adapter._emit(
-                "embedding.create",
-                adapter._payload(
-                    provider="sentence_transformers",
-                    model="local",
-                    batch_size=batch_size,
-                    dimensions=dimensions,
-                    latency_ms=round(latency_ms, 2),
-                ),
+            payload = adapter._payload(
+                provider="sentence_transformers",
+                batch_size=batch_size,
+                dimensions=dimensions,
+                latency_ms=round(latency_ms, 2),
             )
+            # The real loaded model id, read from the bound instance — not the
+            # hardcoded "local" placeholder (S20d). Omitted honestly if the
+            # instance exposes no name.
+            model_id = _st_model_id(getattr(original, "__self__", None))
+            if model_id:
+                payload["model"] = model_id
+            adapter._emit("embedding.create", payload)
             return result
 
         return wrapper
@@ -236,6 +239,30 @@ def _extract_dimensions_st(result: Any) -> Optional[int]:
     # Fallback: list of lists
     if isinstance(result, list) and result and isinstance(result[0], (list, tuple)):
         return len(result[0])
+    return None
+
+
+def _st_model_id(model: Any) -> Optional[str]:
+    """The honest loaded model id of a SentenceTransformer instance, or None.
+
+    Prefers the model card's declared id/name, then the underlying transformer
+    config's ``_name_or_path`` (the load name/path). Best-effort and never
+    raises; returns None when the instance exposes no name (S20d).
+    """
+    if model is None:
+        return None
+    mcd = getattr(model, "model_card_data", None)
+    for attr in ("model_id", "model_name", "base_model"):
+        val = getattr(mcd, attr, None)
+        if val:
+            return str(val)
+    try:
+        cfg = model._first_module().auto_model.config  # type: ignore[attr-defined]
+        name = getattr(cfg, "_name_or_path", None)
+        if name:
+            return str(name)
+    except Exception:  # noqa: BLE001 — best-effort id read, never fatal
+        pass
     return None
 
 

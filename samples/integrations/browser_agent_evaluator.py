@@ -375,25 +375,24 @@ def _load_recorded_traces() -> dict[str, dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def _ensure_judges(client: Stratix) -> dict[str, str]:
-    """Create or find all judges. Returns {judge_name: judge_id}."""
-    existing_resp = client.judges.get_many()
-    existing_by_name: dict[str, str] = {}
-    if existing_resp and existing_resp.judges:
-        for j in existing_resp.judges:
-            existing_by_name[j.name.lower()] = j.id
+# Namespace this sample's judges so its "Browser *" judges never collide with
+# another sample's judges of the same name.
+SAMPLE = "browser_agent_evaluator"
 
+
+def _ensure_judges(client: Stratix) -> dict[str, str]:
+    """Create the sample's judges. Returns {judge_name: judge_id}.
+
+    Judges are namespaced per sample (via ``create_judge(namespace=...)``);
+    ``create_judge`` reuses an existing judge of the same name on a 409.
+    """
     judge_map: dict[str, str] = {}
     for name, goal in JUDGE_DEFINITIONS:
-        existing_id = existing_by_name.get(name.lower())
-        if existing_id:
-            judge_map[name] = existing_id
+        judge = create_judge(client, name=name, evaluation_goal=goal, namespace=SAMPLE)
+        if judge:
+            judge_map[name] = judge.id
         else:
-            judge = create_judge(client, name=name, evaluation_goal=goal)
-            if judge:
-                judge_map[name] = judge.id
-            else:
-                logger.warning("Failed to create judge: %s", name)
+            logger.warning("Failed to create judge: %s", name)
     return judge_map
 
 
@@ -825,16 +824,22 @@ def main() -> None:
             print("Or use --mode simulated for demo purposes.")
             sys.exit(1)
 
-    # Create judges
-    print(f"\n{_CYAN}Setting up {len(JUDGE_DEFINITIONS)} evaluation judges...{_RESET}")
-    judge_map = _ensure_judges(client)
-    print(f"  Judges ready: {len(judge_map)}/{len(JUDGE_DEFINITIONS)}")
-
-    # Track which judges were created for cleanup
+    # Capture which judges already exist BEFORE creating ours, so cleanup only
+    # deletes the judges this run created (never the customer's own judges).
     existing_resp = client.judges.get_many()
     pre_existing_ids: set[str] = set()
     if existing_resp and existing_resp.judges:
         pre_existing_ids = {j.id for j in existing_resp.judges}
+
+    # Create judges
+    print(f"\n{_CYAN}Setting up {len(JUDGE_DEFINITIONS)} evaluation judges...{_RESET}")
+    try:
+        judge_map = _ensure_judges(client)
+    except RuntimeError as exc:
+        print(f"\n{_RED}ERROR: cannot create evaluation judges -- {exc}{_RESET}")
+        print("Add a project/public model to your org, then re-run.")
+        sys.exit(1)
+    print(f"  Judges ready: {len(judge_map)}/{len(JUDGE_DEFINITIONS)}")
 
     created_judge_ids = [
         jid for jid in judge_map.values() if jid not in pre_existing_ids

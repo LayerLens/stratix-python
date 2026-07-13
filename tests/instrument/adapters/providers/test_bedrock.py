@@ -215,6 +215,14 @@ class TestInvokeModel:
         assert "body" not in mi["payload"]["parameters"]
         assert "otel_gen_ai" in mi["payload"]
 
+        # Flat token keys beside nested usage so the atlas extractor fills the
+        # tokens column — bedrock's emit path is bespoke (S11/F2).
+        assert mi["payload"]["prompt_tokens"] == 12
+        assert mi["payload"]["completion_tokens"] == 8
+        assert mi["payload"]["total_tokens"] == 20
+        # Framework stamp = integration name (S19/F12).
+        assert mi["payload"]["framework"] == "aws_bedrock"
+
         cost = find_event(events, "cost.record")
         assert cost["payload"]["provider"] == "aws_bedrock"
         assert cost["payload"]["model"] == _MODEL_ID

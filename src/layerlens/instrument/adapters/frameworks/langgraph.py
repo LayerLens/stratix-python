@@ -60,7 +60,7 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
         self._state_include_keys = frozenset(state_include_keys) if state_include_keys is not None else None
         self._state_exclude_keys = frozenset(state_exclude_keys) if state_exclude_keys is not None else None
         self._detect_handoffs = detect_handoffs
-        self._handoff_detector = HandoffDetector() if detect_handoffs else None
+        self._handoff_detector = HandoffDetector(framework=self.name) if detect_handoffs else None
 
     # ------------------------------------------------------------------
     # Chain callbacks — enrich with node-level detection

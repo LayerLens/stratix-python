@@ -71,7 +71,7 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
         self._originals: Dict[int, Dict[str, Any]] = {}
         self._wrapped_chats: List[Any] = []
         self._seen_chats: set[int] = set()
-        self._handoff_detector = HandoffDetector()
+        self._handoff_detector = HandoffDetector(framework=self.name)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -233,14 +233,21 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
 
     def _emit_model_metadata(self, metadata: Dict[str, Any]) -> None:
         model = metadata.get("model") or metadata.get("model_id")
-        if model:
-            self._emit(
-                "model.invoke",
-                self._payload(model=str(model), provider=_detect_provider(str(model))),
-            )
+        tokens = self._normalize_tokens(metadata.get("usage"))
+        # Emit model.invoke whenever there is a real model call to report — a model
+        # id OR measured token usage. Both ateam and atlas read tokens_total from
+        # model.invoke only, so usage stranded on cost.record alone leaves the
+        # column blank (G5). model/provider are omitted honestly when the framework
+        # doesn't surface a model id.
+        if model or tokens:
+            payload = self._payload()
+            if model:
+                payload["model"] = str(model)
+                payload["provider"] = _detect_provider(str(model))
+            payload.update(tokens)
+            self._emit("model.invoke", payload)
         usage = metadata.get("usage")
         if usage is not None:
-            tokens = self._normalize_tokens(usage)
             if tokens:
                 payload = self._payload(model=str(model) if model else None)
                 payload.update(tokens)

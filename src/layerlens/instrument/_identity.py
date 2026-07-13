@@ -81,12 +81,36 @@ _GENERIC_IDENTITY_VALUES = frozenset(
         "userproxyagent",
         "conversableagent",
         "roundrobingroupchat",
+        # autogen-core internal orchestration container — the group-chat manager
+        # is plumbing that routes turns, not a producer-declared agent.
+        "group_chat_manager",
     }
 )
 
 
 def _is_generic(name: str) -> bool:
     return name.strip().lower() in _GENERIC_IDENTITY_VALUES
+
+
+def honest_agent_type(agent_id: Any) -> Optional[str]:
+    """The producer-declared *type* of an agent, honest-guarded — or None.
+
+    Framework adapters (e.g. autogen) identify an agent by an ``AgentId`` whose
+    ``.type`` is the developer-chosen role (``router``, ``fulfillment``) and whose
+    ``.key`` is an instance discriminator (``default``). Given an ``AgentId`` (any
+    object exposing ``.type``) or a ``"type/key"`` string, return the honest type
+    for use as a graph-node identity / handoff endpoint, or None when it is a
+    generic orchestration container (``group_chat_manager``) or a dotted
+    API-method label. Reuses the same denylist + api-method guard as
+    :func:`honest_agent_identity` so adapters never fabricate a node identity.
+    """
+    t = getattr(agent_id, "type", None)
+    if t is None and isinstance(agent_id, str):
+        t = agent_id.split("/", 1)[0]
+    name = _s(t)
+    if name is None or _is_generic(name) or _API_METHOD_RE.match(name.lower()):
+        return None
+    return name
 
 
 # Unicode codepoints that must never reach the Agent column: C0/C1 control

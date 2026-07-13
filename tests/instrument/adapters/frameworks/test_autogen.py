@@ -320,7 +320,11 @@ class TestMessage:
         msg = find_event(uploaded["events"], "agent.input")
         assert msg["payload"]["message_kind"] == "PUBLISH"
 
-    def test_none_sender_receiver(self, mock_client):
+    def test_message_without_honest_agent_is_skipped(self, mock_client):
+        # A message with no honest acting agent (None sender/receiver, or a
+        # group-chat manager / broadcast topic target) is pub/sub plumbing, not
+        # an agent turn. It must NOT emit an agent.input/output — otherwise a
+        # RoundRobinGroupChat's dozens of broadcast deliveries drown the trace.
         adapter, uploaded = _setup(mock_client)
         _log_and_flush(
             adapter,
@@ -332,9 +336,24 @@ class TestMessage:
                 delivery_stage=DeliveryStage.SEND,
             ),
         )
-        msg = find_event(uploaded["events"], "agent.input")
-        assert "sender" not in msg["payload"]
-        assert "receiver" not in msg["payload"]
+        assert find_events(uploaded["events"], "agent.input") == []
+        assert find_events(uploaded["events"], "agent.output") == []
+
+    def test_deliver_stage_skipped(self, mock_client):
+        # autogen logs each message at SEND and DELIVER stages; only SEND is
+        # translated (ateam autogen contract) so a message is not double-counted.
+        adapter, uploaded = _setup(mock_client)
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="dup",
+                sender=AgentId("user_proxy", "default"),
+                receiver=AgentId("assistant", "default"),
+                kind=MessageKind.DIRECT,
+                delivery_stage=DeliveryStage.DELIVER,
+            ),
+        )
+        assert find_events(uploaded["events"], "agent.input") == []
 
     def test_large_message_truncated(self, mock_client):
         adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
@@ -342,8 +361,8 @@ class TestMessage:
             adapter,
             MessageEvent(
                 payload="x" * 5000,
-                sender=None,
-                receiver=None,
+                sender=AgentId("user_proxy", "default"),
+                receiver=AgentId("assistant", "default"),
                 kind=MessageKind.DIRECT,
                 delivery_stage=DeliveryStage.SEND,
             ),
@@ -357,8 +376,8 @@ class TestMessage:
             adapter,
             MessageEvent(
                 payload="secret message",
-                sender=None,
-                receiver=None,
+                sender=AgentId("user_proxy", "default"),
+                receiver=AgentId("assistant", "default"),
                 kind=MessageKind.DIRECT,
                 delivery_stage=DeliveryStage.SEND,
             ),
@@ -404,6 +423,8 @@ class TestErrors:
         # adapter sees a plain string and falls back to "Exception".
         assert err["payload"]["error_type"] == "Exception"
         assert err["payload"]["agent_id"] == "assistant/default"
+        # Uniform agent.error shape across all 3 autogen error paths (S20e).
+        assert err["payload"]["status"] == "error"
 
     def test_construction_exception(self, mock_client):
         adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
@@ -419,6 +440,8 @@ class TestErrors:
         # Same as above: exception is stringified in kwargs.
         assert err["payload"]["error_type"] == "Exception"
         assert err["payload"]["agent_id"] == "broken_agent/default"
+        # Uniform agent.error shape across all 3 autogen error paths (S20e).
+        assert err["payload"]["status"] == "error"
 
     def test_string_exception_fallback(self, mock_client):
         adapter, uploaded = _setup(mock_client, config=CaptureConfig(capture_content=True))
@@ -751,3 +774,114 @@ class TestDisconnectLeaveNoTrace:
 
         # Second disconnect cleaned up again.
         assert "_LayerLensHandler" not in [type(h).__name__ for h in logger.handlers]
+
+
+# ---------------------------------------------------------------------------
+# Honest graph contract (Lever A) — emit a producer-honest agent_name + a real
+# agent.handoff so the server graph engine renders the multi-agent topology.
+# Autogen previously emitted only agent_id/sender/receiver (no agent_name, no
+# handoff) and rendered BLANK.
+# ---------------------------------------------------------------------------
+
+
+class TestHonestGraphContract:
+    def test_agent_input_carries_honest_agent_name_from_receiver(self, mock_client):
+        adapter, uploaded = _setup(mock_client)
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="route this",
+                sender=AgentId("router", "default"),
+                receiver=AgentId("fulfillment", "default"),
+                kind=MessageKind.DIRECT,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
+        inp = find_event(uploaded["events"], "agent.input")
+        # The RECEIVER acts on the input; its honest AgentId.type is the node id.
+        assert inp["payload"]["agent_name"] == "fulfillment"
+        # Raw sender/receiver are preserved for analysis.
+        assert inp["payload"]["sender"] == "router/default"
+        assert inp["payload"]["receiver"] == "fulfillment/default"
+
+    def test_agent_output_carries_honest_agent_name_from_sender(self, mock_client):
+        adapter, uploaded = _setup(mock_client)
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="done",
+                sender=AgentId("fulfillment", "default"),
+                receiver=AgentId("router", "default"),
+                kind=MessageKind.RESPOND,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
+        out = find_event(uploaded["events"], "agent.output")
+        # The SENDER produced the response.
+        assert out["payload"]["agent_name"] == "fulfillment"
+
+    def test_handoff_emitted_on_distinct_honest_transition(self, mock_client):
+        adapter, uploaded = _setup(mock_client)
+        _log_and_flush(
+            adapter,
+            MessageEvent(
+                payload="route",
+                sender=AgentId("router", "default"),
+                receiver=AgentId("fulfillment", "default"),
+                kind=MessageKind.DIRECT,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
+        ho = find_event(uploaded["events"], "agent.handoff")
+        assert ho["payload"]["from_agent"] == "router"
+        assert ho["payload"]["to_agent"] == "fulfillment"
+
+    def test_handoff_deduped_per_conversation(self, mock_client):
+        adapter, uploaded = _setup(mock_client)
+        # Same router->fulfillment edge twice in one conversation.
+        msg = lambda: MessageEvent(
+            payload="x",
+            sender=AgentId("router", "default"),
+            receiver=AgentId("fulfillment", "default"),
+            kind=MessageKind.DIRECT,
+            delivery_stage=DeliveryStage.SEND,
+        )
+        _log_and_flush(adapter, msg(), msg())
+        assert len(find_events(uploaded["events"], "agent.handoff")) == 1
+
+    def test_no_handoff_or_name_for_generic_orchestrator(self, mock_client):
+        adapter, uploaded = _setup(mock_client)
+        _log_and_flush(
+            adapter,
+            # group_chat_manager is a generic autogen orchestration container,
+            # not a producer-declared agent — must NOT surface as a node/edge.
+            MessageEvent(
+                payload="tick",
+                sender=AgentId("group_chat_manager", "default"),
+                receiver=AgentId("group_chat_manager", "default"),
+                kind=MessageKind.DIRECT,
+                delivery_stage=DeliveryStage.SEND,
+            ),
+        )
+        # A message with no honest agent on the acting side is runtime plumbing,
+        # not an agent turn: no handoff AND no agent.input/output at all.
+        assert find_events(uploaded["events"], "agent.handoff") == []
+        assert find_events(uploaded["events"], "agent.input") == []
+        assert find_events(uploaded["events"], "agent.output") == []
+
+    def test_agent_error_carries_honest_agent_name(self, mock_client):
+        # agent.error must carry the SAME honest identity (AgentId.type) as the
+        # agent's other events — else the raw agent_id "fulfillment/default"
+        # would resolve to a SEPARATE graph node from the clean "fulfillment".
+        adapter, uploaded = _setup(mock_client)
+        _log_and_flush(
+            adapter,
+            MessageHandlerExceptionEvent(
+                payload="boom",
+                handling_agent=AgentId("fulfillment", "default"),
+                exception=RuntimeError("inventory"),
+            ),
+        )
+        err = find_event(uploaded["events"], "agent.error")
+        assert err["payload"]["agent_name"] == "fulfillment"
+        assert err["payload"]["agent_id"] == "fulfillment/default"

@@ -34,12 +34,14 @@ import secrets
 from typing import Any, Dict, Callable
 
 from ...._events import (
+    AGENT_ERROR,
     A2A_DELEGATION,
     A2A_TASK_CREATED,
     A2A_TASK_UPDATED,
     A2A_AGENT_DISCOVERED,
 )
 from .agent_card import parse_agent_card, summarize_signatures
+from ...._context import _current_span_id
 from .acp_normalizer import ACPNormalizer
 from .task_lifecycle import TaskState, TaskStateMachine
 from .._base_protocol import BaseProtocolAdapter
@@ -52,6 +54,41 @@ log = logging.getLogger(__name__)
 # present so a caller using the older surface is observed too.
 _CLIENT_SEND_METHODS = ("send_message", "send_task")
 _CLIENT_OTHER_METHODS = ("get_task", "cancel_task")
+
+# a2a terminal states that are real failures. A normal completion, a still-running
+# state, or a caller-initiated cancel is NOT an error and must not route here.
+_A2A_ERROR_STATES = frozenset({TaskState.FAILED.value, TaskState.REJECTED.value})
+
+
+def _maybe_emit_task_error(
+    adapter: Any,
+    task_id: str,
+    status: str,
+    *,
+    parent: str | None = None,
+    error: Any = None,
+    error_type: str | None = None,
+) -> None:
+    """Emit ``agent.error`` for a terminal a2a FAILURE (failed/rejected) so the
+    trace's derived status is ``error``, not ``completed`` (S12/F4).
+
+    The task-lifecycle status the a2a spec defines is read by no downstream
+    engine, so a failed/rejected run would otherwise be mislabelled completed by
+    the atlas default. No invented detail: ``error``/``error_type`` are only what
+    the failure actually carried; when the terminal status arrived without an
+    exception the honest ``error_type`` is the state itself (``a2a_task_<status>``).
+    Shared by the client-wrap, server, and client-helper paths.
+    """
+    if status not in _A2A_ERROR_STATES:
+        return
+    payload: Dict[str, Any] = {
+        "task_id": task_id,
+        "source": "a2a",
+        "error_type": error_type or f"a2a_task_{status}",
+    }
+    if error is not None:
+        payload["error"] = str(error)
+    adapter.emit(AGENT_ERROR, payload, parent_span_id=parent)
 
 
 class A2AProtocolAdapter(BaseProtocolAdapter):
@@ -107,20 +144,23 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
         def wrapped(*args: Any, **kwargs: Any) -> Any:
             task_id = kwargs.get("task_id") or (args[0] if args else None) or uuid.uuid4().hex[:16]
             task_id = str(task_id)
-            parent = uuid.uuid4().hex[:16]
+            parent = _current_span_id.get() or uuid.uuid4().hex[:16]
             start = time.time()
             if is_send:
                 adapter._tasks[task_id] = start
                 adapter._task_fsms[task_id] = TaskStateMachine(task_id)
-                adapter.emit(
-                    A2A_TASK_CREATED,
-                    {
-                        "task_id": task_id,
-                        "method": method,
-                        "request": _summarize(kwargs),
-                    },
-                    parent_span_id=parent,
-                )
+                created_payload: Dict[str, Any] = {
+                    "task_id": task_id,
+                    "method": method,
+                    "request": _summarize(kwargs),
+                }
+                # Node-identity parity with A2AClientWrapper.send_task (client.py):
+                # stamp the submitter when the caller declared one (S13/F6). It is
+                # topology, not content — omitted honestly when absent.
+                from_agent = kwargs.get("from_agent")
+                if from_agent is not None:
+                    created_payload["submitter_agent_id"] = str(from_agent)
+                adapter.emit(A2A_TASK_CREATED, created_payload, parent_span_id=parent)
                 adapter._emit_delegation(kwargs, task_id=task_id, parent=parent)
                 # Enter WORKING before invoking the handler so the FSM transitions
                 # submitted → working → completed/failed/rejected validly.
@@ -140,6 +180,14 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                         },
                         parent_span_id=parent,
                     )
+                    _maybe_emit_task_error(
+                        adapter,
+                        task_id,
+                        TaskState.FAILED.value,
+                        parent=parent,
+                        error=str(exc),
+                        error_type=type(exc).__name__,
+                    )
                 raise
             if is_send:
                 status = _task_status(result)
@@ -153,6 +201,7 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                     },
                     parent_span_id=parent,
                 )
+                _maybe_emit_task_error(adapter, task_id, status, parent=parent)
             return result
 
         return wrapped
@@ -241,7 +290,7 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                     log.debug("A2A adapter normalized ACP-origin payload")
 
             task_id = _task_id_from(task)
-            parent = uuid.uuid4().hex[:16]
+            parent = _current_span_id.get() or uuid.uuid4().hex[:16]
             start = time.time()
             adapter._task_fsms[task_id] = TaskStateMachine(task_id)
             adapter.emit(
@@ -264,6 +313,14 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                     },
                     parent_span_id=parent,
                 )
+                _maybe_emit_task_error(
+                    adapter,
+                    task_id,
+                    TaskState.FAILED.value,
+                    parent=parent,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
                 raise
             status = _task_status(result)
             adapter._record_transition(task_id, status)
@@ -276,6 +333,7 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                 },
                 parent_span_id=parent,
             )
+            _maybe_emit_task_error(adapter, task_id, status, parent=parent)
             return result
 
         return on_task

@@ -825,3 +825,107 @@ class TestDisconnectLeaveNoTrace:
         for cbs in agent.hooks._registered_callbacks.values():
             for cb in cbs:
                 assert getattr(cb, "__self__", None) is not adapter
+
+
+# ---------------------------------------------------------------------------
+# Honest graph contract (Lever A) — LAY agent-graph
+# ---------------------------------------------------------------------------
+
+
+class TestHonestGraphContract:
+    """The Stratix app builds the trace's agent GRAPH from producer-DECLARED
+    honest identity (``payload.agent_name``) and ``agent.handoff`` edges.
+
+    Strands stamps every unnamed agent with the framework default
+    ``"Strands Agents"`` (``strands.agent.agent._DEFAULT_AGENT_NAME``) — a
+    generic literal on the identity denylist. Surfacing it as ``agent_name``
+    is a fabricated node. This adapter must emit ``agent_name`` ONLY when the
+    developer set a real, distinctive name; otherwise the payload stays blank
+    (an honest ``—`` in the Agent column). A Strands *swarm* handoff is the
+    developer calling the built-in ``handoff_to_agent(agent_name, message)``
+    tool — an honest, producer-declared transition the adapter must surface as
+    an ``agent.handoff`` edge.
+    """
+
+    def test_named_agent_carries_honest_name_on_input_output_and_model(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = StrandsAdapter(mock_client)
+        adapter.connect()
+
+        agent = _make_agent(name="ResearchAgent", model_id="claude-sonnet")
+        _simulate_invocation(adapter, agent, model_tokens={"input": 10, "output": 5})
+
+        events = uploaded["events"]
+        assert find_event(events, "agent.input")["payload"]["agent_name"] == "ResearchAgent"
+        assert find_event(events, "agent.output")["payload"]["agent_name"] == "ResearchAgent"
+        # model.invoke must ALSO carry the honest node identity so the graph
+        # engine can attribute the model call to the right agent node.
+        assert find_event(events, "model.invoke")["payload"]["agent_name"] == "ResearchAgent"
+
+        adapter.disconnect()
+
+    def test_swarm_handoff_tool_emits_agent_handoff_edge(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = StrandsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect()
+
+        # A real Strands swarm handoff: the "router" agent calls the built-in
+        # handoff_to_agent tool to pass control to the "billing" agent.
+        agent = _make_agent(name="router")
+        _simulate_invocation(
+            adapter,
+            agent,
+            tool_calls=[
+                {
+                    "name": "handoff_to_agent",
+                    "id": "h-1",
+                    "input": {"agent_name": "billing", "message": "handle the refund"},
+                }
+            ],
+        )
+
+        ho = find_event(uploaded["events"], "agent.handoff")
+        assert ho["payload"]["from_agent"] == "router"
+        assert ho["payload"]["to_agent"] == "billing"
+
+        adapter.disconnect()
+
+    def test_default_framework_name_renders_verbatim_ateam_parity(self, mock_client):
+        """ateam parity (#3): an unnamed Strands agent carries the framework default
+        ``"Strands Agents"``, which is now surfaced VERBATIM as agent_name so the
+        trace renders like ateam, instead of a blank column. (Handoff endpoints stay
+        on the honest helper — see _emit_handoff.)"""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = StrandsAdapter(mock_client)
+        adapter.connect()
+
+        agent = _make_agent(name="Strands Agents", model_id="claude-sonnet")
+        _simulate_invocation(adapter, agent, model_tokens={"input": 10, "output": 5})
+
+        events = uploaded["events"]
+        assert find_event(events, "agent.input")["payload"].get("agent_name") == "Strands Agents"
+        assert find_event(events, "agent.output")["payload"].get("agent_name") == "Strands Agents"
+
+    def test_no_handoff_for_unnamed_source_agent(self, mock_client):
+        """A handoff whose source agent has no honest name must NOT fabricate a
+        ``from_agent`` — an honest edge needs both honest endpoints."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = StrandsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect()
+
+        agent = _make_agent(name="Strands Agents")  # framework default → generic
+        _simulate_invocation(
+            adapter,
+            agent,
+            tool_calls=[
+                {
+                    "name": "handoff_to_agent",
+                    "id": "h-2",
+                    "input": {"agent_name": "billing", "message": "go"},
+                }
+            ],
+        )
+
+        assert find_events(uploaded["events"], "agent.handoff") == []
+
+        adapter.disconnect()

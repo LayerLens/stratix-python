@@ -44,6 +44,7 @@ def emit_llm_events(
     ttft_ms: Optional[float] = None,
     streaming_duration_ms: Optional[float] = None,
     provider: Optional[str] = None,
+    framework: Optional[str] = None,
 ) -> None:
     """Emit ``model.invoke`` + optional ``tool.call`` + ``cost.record`` events.
 
@@ -53,6 +54,13 @@ def emit_llm_events(
     ``provider`` overrides the default ``name.split(".")[0]`` derivation so
     routing layers (LiteLLM) can attribute the call to the underlying provider
     that actually served the request (LAY-3455).
+
+    ``framework`` is the integration name (openai/anthropic/litellm/
+    azure_openai/…). It is stamped on every emitted event so the framework
+    column reflects the integration rather than the routed/underlying provider
+    (litellm shows 'litellm' not the routed provider; azure_openai shows
+    'azure_openai' not 'openai') — S19/F12. ``cost.record.provider`` stays the
+    honest underlying provider, unchanged.
     """
     collector = _current_collector.get()
     if collector is None:
@@ -69,6 +77,8 @@ def emit_llm_events(
         parameters.update(extra_params)
 
     resolved = provider or name.split(".")[0]
+    # Integration-name stamp (S19/F12); omitted (honest blank) if not supplied.
+    fw = {"framework": framework} if framework else {}
     otel_attrs = gen_ai_attributes(
         provider=resolved,
         operation=_derive_operation(name),
@@ -93,8 +103,14 @@ def emit_llm_events(
             "messages": _extract_messages(kwargs),
             "output_message": extract_output(response),
             "otel_gen_ai": otel_attrs,
+            **fw,
             **streaming_timing,
             **response_meta,
+            # Flat token counts beside the nested `usage` block, so the atlas
+            # extractor (which reads top-level prompt/completion/total_tokens,
+            # never usage.*) fills the tokens column (S11/F2). Spread last so the
+            # normalized values win; empty {} when no usage was declared.
+            **_flat_token_fields(response_meta.get("usage")),
         },
         span_id=span_id,
         parent_span_id=parent_span_id,
@@ -111,6 +127,7 @@ def emit_llm_events(
                 {
                     "provider": resolved,
                     "model": model_name,
+                    **fw,
                     **tc,
                 },
                 span_id=uuid.uuid4().hex[:16],
@@ -128,6 +145,7 @@ def emit_llm_events(
             span_id=span_id,
             parent_span_id=parent_span_id,
             service_tier=response_meta.get("service_tier"),
+            framework=framework,
         )
 
 
@@ -209,6 +227,7 @@ def _emit_cost(
     span_id: str,
     parent_span_id: Optional[str],
     service_tier: Optional[str] = None,
+    framework: Optional[str] = None,
 ) -> None:
     """Emit cost.record. Accepts either a dict usage or NormalizedTokenUsage.
 
@@ -244,6 +263,10 @@ def _emit_cost(
         "cost_usd": cost_usd,
         **usage_payload,
     }
+    # Integration name (S19/F12) — distinct from `provider`, the honest
+    # underlying provider that priced the call (unchanged).
+    if framework:
+        cost_payload["framework"] = framework
     if service_tier is not None:
         cost_payload["service_tier"] = service_tier
 
@@ -253,6 +276,36 @@ def _emit_cost(
         span_id=span_id,
         parent_span_id=parent_span_id,
     )
+
+
+def _flat_token_fields(usage: Any) -> Dict[str, int]:
+    """Flatten declared token counts to top-level model.invoke keys beside the
+    nested ``usage`` block (S11/F2).
+
+    The atlas extractor reads flat ``prompt_tokens``/``completion_tokens``/
+    ``total_tokens`` (and the ``tokens_*`` spellings), never ``usage.*`` — so the
+    tokens column stayed blank for every provider lane. This never fabricates:
+    it returns ``{}`` when the producer declared no usable counts, and mirrors
+    ``_emit_cost``'s normalization (prompt<-prompt_tokens|input_tokens, etc.).
+    ``total_tokens`` is the honest sum when the provider omits it (Anthropic).
+    """
+    if isinstance(usage, NormalizedTokenUsage):
+        normalized = usage
+    elif isinstance(usage, dict):
+        normalized = NormalizedTokenUsage(
+            prompt_tokens=int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0),
+            completion_tokens=int(usage.get("completion_tokens") or usage.get("output_tokens") or 0),
+            total_tokens=int(usage.get("total_tokens") or 0),
+        )
+    else:
+        return {}
+    if not (normalized.prompt_tokens or normalized.completion_tokens or normalized.total_tokens):
+        return {}
+    return {
+        "prompt_tokens": normalized.prompt_tokens,
+        "completion_tokens": normalized.completion_tokens,
+        "total_tokens": normalized.total_tokens,
+    }
 
 
 def _opt_int(val: Any) -> Optional[int]:

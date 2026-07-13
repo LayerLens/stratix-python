@@ -52,6 +52,19 @@ from llama_index.core.instrumentation.events.retrieval import (
 from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.frameworks.llamaindex import LlamaIndexAdapter
 
+# AgentWorkflow event classes (the multi-agent path). Guard the import: older
+# llama-index-core releases predate the ``agent.workflow`` package.
+try:
+    from llama_index.core.agent.workflow import (
+        ToolCall as _WFToolCall,
+        AgentInput as _WFAgentInput,
+        AgentOutput as _WFAgentOutput,
+    )
+
+    _HAS_AGENT_WORKFLOW = True
+except ImportError:  # pragma: no cover - depends on llama-index version
+    _HAS_AGENT_WORKFLOW = False
+
 # -- Fixtures --
 
 
@@ -211,6 +224,46 @@ class TestLLMChatEvents:
         assert payload["tokens_completion"] == 10
         assert payload["tokens_total"] == 25
         assert "output_message" in payload
+
+    def test_chat_end_emits_response_id_when_raw_has_id(self, mock_client):
+        """S18/F11: surface the provider's own response id, never fabricated."""
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect()
+        root = _create_span(adapter)
+
+        msg = ChatMessage(role=MessageRole.USER, content="What is Python?")
+        response = ChatResponse(
+            message=ChatMessage(role=MessageRole.ASSISTANT, content="Python is a programming language."),
+            raw={
+                "id": "chatcmpl-abc123",
+                "model": "gpt-4",
+                "usage": {"prompt_tokens": 15, "completion_tokens": 10},
+            },
+        )
+
+        event = LLMChatEndEvent(messages=[msg], response=response, span_id=root)
+        _emit_event_via_dispatcher(event, span_id=root)
+
+        events = _find_events(adapter, "model.invoke")
+        assert events[0]["payload"]["response_id"] == "chatcmpl-abc123"
+
+    def test_chat_end_no_response_id_when_raw_lacks_id(self, mock_client):
+        """No 'id' on raw must stay honestly blank, not fabricated."""
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect()
+        root = _create_span(adapter)
+
+        msg = ChatMessage(role=MessageRole.USER, content="hi")
+        response = ChatResponse(
+            message=ChatMessage(role=MessageRole.ASSISTANT, content="hello"),
+            raw={"model": "gpt-4"},
+        )
+
+        event = LLMChatEndEvent(messages=[msg], response=response, span_id=root)
+        _emit_event_via_dispatcher(event, span_id=root)
+
+        events = _find_events(adapter, "model.invoke")
+        assert "response_id" not in events[0]["payload"]
 
     def test_chat_end_emits_cost_record(self, adapter, mock_client):
         adapter.connect()
@@ -1134,3 +1187,257 @@ class TestDispatcherHandlerHygiene:
         assert self._ours(dispatcher.event_handlers) == []
         assert dispatcher.span_handlers == foreign_spans
         assert dispatcher.event_handlers == foreign_events
+
+
+# ---------------------------------------------------------------------------
+# Honest graph contract (Lever A)
+# ---------------------------------------------------------------------------
+# AgentWorkflow / FunctionAgent multi-agent runs carry the developer-declared
+# agent name only inside the *workflow event stream* — the structured
+# ``AgentInput``/``AgentOutput`` (``current_agent_name``) and the built-in
+# ``handoff`` ``ToolCall`` (``to_agent``). Those events reach the adapter as the
+# ``ev`` argument of each workflow step span (``bound_args.arguments["ev"]``),
+# NOT as instrumentation events. The adapter must surface a producer-honest
+# ``agent_name`` on agent.input/agent.output/model.invoke and emit a real
+# ``agent.handoff{from_agent,to_agent}`` so the server graph engine renders the
+# multi-agent topology. A pure RAG query (no named agent) must stay blank, and
+# the framework's own unnamed default ("Agent") must never be fabricated into a
+# node.
+
+
+def _bound_ev(ev: Any) -> Any:
+    """Build a real ``inspect.BoundArguments`` binding the workflow step's
+    ``ev`` parameter — exactly what LlamaIndex's dispatcher hands the span
+    handler for an ``AgentWorkflow`` step (``def step(self, ctx, ev): ...``)."""
+    import inspect
+
+    return inspect.signature(lambda ev: None).bind(ev=ev)
+
+
+def _workflow_step(adapter: LlamaIndexAdapter, ev: Any, parent_span_id: str, span_id: Optional[str] = None) -> str:
+    """Drive a single AgentWorkflow step span carrying a real workflow ``ev``."""
+    span_id = span_id or f"AgentWorkflow.step-{uuid.uuid4().hex}"
+    adapter._span_handler.span_enter(
+        id_=span_id,
+        bound_args=_bound_ev(ev),
+        instance=None,
+        parent_id=parent_span_id,
+    )
+    return span_id
+
+
+@pytest.mark.skipif(not _HAS_AGENT_WORKFLOW, reason="llama-index AgentWorkflow events unavailable")
+class TestHonestGraphContract:
+    def _run_span(self, adapter: LlamaIndexAdapter) -> str:
+        """The AgentWorkflow.run root span that owns the trace collector."""
+        return _create_span(adapter)
+
+    def test_agent_input_carries_honest_agent_name(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client)
+        adapter.connect()
+        root = self._run_span(adapter)
+
+        _workflow_step(
+            adapter,
+            _WFAgentInput(
+                input=[ChatMessage(role=MessageRole.USER, content="route this")],
+                current_agent_name="router",
+            ),
+            parent_span_id=root,
+        )
+
+        inp = _find_events(adapter, "agent.input")
+        assert len(inp) >= 1
+        assert inp[0]["payload"]["agent_name"] == "router"
+
+    def test_agent_output_carries_honest_agent_name(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client)
+        adapter.connect()
+        root = self._run_span(adapter)
+
+        _workflow_step(
+            adapter,
+            _WFAgentOutput(
+                response=ChatMessage(role=MessageRole.ASSISTANT, content="done"),
+                tool_calls=[],
+                raw=None,
+                current_agent_name="fulfillment",
+            ),
+            parent_span_id=root,
+        )
+
+        out = _find_events(adapter, "agent.output")
+        assert len(out) >= 1
+        assert out[0]["payload"]["agent_name"] == "fulfillment"
+
+    def test_model_invoke_stamped_with_current_agent(self, mock_client):
+        """The LLM call happens under the agent's turn — model.invoke must carry
+        the same honest agent_name so its graph node isn't orphaned."""
+        adapter = LlamaIndexAdapter(mock_client)
+        adapter.connect()
+        root = self._run_span(adapter)
+
+        # Router turn begins (sets the current agent for the run)...
+        _workflow_step(
+            adapter,
+            _WFAgentInput(
+                input=[ChatMessage(role=MessageRole.USER, content="hi")],
+                current_agent_name="router",
+            ),
+            parent_span_id=root,
+        )
+        # ...then the LLM is invoked within that turn.
+        response = ChatResponse(
+            message=ChatMessage(role=MessageRole.ASSISTANT, content="ok"),
+            raw={"model": "gpt-4o", "usage": {"prompt_tokens": 5, "completion_tokens": 3}},
+        )
+        _emit_event_via_dispatcher(
+            LLMChatEndEvent(
+                messages=[ChatMessage(role=MessageRole.USER, content="hi")], response=response, span_id=root
+            ),
+            span_id=root,
+        )
+
+        mi = _find_events(adapter, "model.invoke")
+        assert len(mi) >= 1
+        assert mi[0]["payload"]["agent_name"] == "router"
+
+    def test_handoff_emitted_on_transfer(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client)
+        adapter.connect()
+        root = self._run_span(adapter)
+
+        # router is active, then calls the built-in handoff tool -> fulfillment.
+        _workflow_step(
+            adapter,
+            _WFAgentInput(
+                input=[ChatMessage(role=MessageRole.USER, content="route")],
+                current_agent_name="router",
+            ),
+            parent_span_id=root,
+        )
+        _workflow_step(
+            adapter,
+            _WFToolCall(tool_name="handoff", tool_kwargs={"to_agent": "fulfillment", "reason": "x"}, tool_id="c1"),
+            parent_span_id=root,
+        )
+
+        ho = _find_events(adapter, "agent.handoff")
+        assert len(ho) == 1
+        assert ho[0]["payload"]["from_agent"] == "router"
+        assert ho[0]["payload"]["to_agent"] == "fulfillment"
+
+    def test_handoff_deduped_per_run(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client)
+        adapter.connect()
+        root = self._run_span(adapter)
+
+        _workflow_step(
+            adapter,
+            _WFAgentInput(
+                input=[ChatMessage(role=MessageRole.USER, content="route")],
+                current_agent_name="router",
+            ),
+            parent_span_id=root,
+        )
+        # The same router->fulfillment handoff edge appearing twice in one run
+        # (e.g. a retried step) must still yield exactly one honest edge. The
+        # companion ``ToolCallResult`` span for the same tool is ignored by the
+        # adapter (only the ``ToolCall`` transfer is an edge), so it cannot
+        # double-count either.
+        _workflow_step(
+            adapter,
+            _WFToolCall(tool_name="handoff", tool_kwargs={"to_agent": "fulfillment"}, tool_id="c1"),
+            parent_span_id=root,
+        )
+        _workflow_step(
+            adapter,
+            _WFToolCall(tool_name="handoff", tool_kwargs={"to_agent": "fulfillment"}, tool_id="c2"),
+            parent_span_id=root,
+        )
+
+        assert len(_find_events(adapter, "agent.handoff")) == 1
+
+    def test_full_two_agent_handoff_flow(self, mock_client):
+        adapter = LlamaIndexAdapter(mock_client)
+        adapter.connect()
+        root = self._run_span(adapter)
+
+        for ev in (
+            _WFAgentInput(input=[ChatMessage(role=MessageRole.USER, content="q")], current_agent_name="router"),
+            _WFToolCall(tool_name="handoff", tool_kwargs={"to_agent": "fulfillment"}, tool_id="c1"),
+            _WFAgentOutput(
+                response=ChatMessage(role=MessageRole.ASSISTANT, content=""),
+                tool_calls=[],
+                raw=None,
+                current_agent_name="router",
+            ),
+            _WFAgentInput(input=[ChatMessage(role=MessageRole.USER, content="q")], current_agent_name="fulfillment"),
+            _WFAgentOutput(
+                response=ChatMessage(role=MessageRole.ASSISTANT, content="answer"),
+                tool_calls=[],
+                raw=None,
+                current_agent_name="fulfillment",
+            ),
+        ):
+            _workflow_step(adapter, ev, parent_span_id=root)
+
+        names_in = {e["payload"].get("agent_name") for e in _find_events(adapter, "agent.input")}
+        names_out = {e["payload"].get("agent_name") for e in _find_events(adapter, "agent.output")}
+        assert names_in == {"router", "fulfillment"}
+        assert names_out == {"router", "fulfillment"}
+
+        ho = _find_events(adapter, "agent.handoff")
+        assert len(ho) == 1
+        assert (ho[0]["payload"]["from_agent"], ho[0]["payload"]["to_agent"]) == ("router", "fulfillment")
+
+    def test_generic_default_agent_renders_verbatim_ateam_parity(self, mock_client):
+        """An unnamed FunctionAgent gets llama-index's DEFAULT_AGENT_NAME
+        ("Agent") — a generic class-default, never a producer identity. It must
+        NOT be fabricated into a node, and no handoff to/from it is emitted."""
+        adapter = LlamaIndexAdapter(mock_client)
+        adapter.connect()
+        root = self._run_span(adapter)
+
+        _workflow_step(
+            adapter,
+            _WFAgentInput(
+                input=[ChatMessage(role=MessageRole.USER, content="hi")],
+                current_agent_name="Agent",
+            ),
+            parent_span_id=root,
+        )
+        _workflow_step(
+            adapter,
+            _WFAgentOutput(
+                response=ChatMessage(role=MessageRole.ASSISTANT, content="done"),
+                tool_calls=[],
+                raw=None,
+                current_agent_name="Agent",
+            ),
+            parent_span_id=root,
+        )
+
+        # ateam parity (#3): the generic default "Agent" is now surfaced VERBATIM
+        # as agent_name so the workflow trace renders like ateam, instead of blank.
+        for ev in _find_events(adapter, "agent.input") + _find_events(adapter, "agent.output"):
+            assert ev["payload"].get("agent_name") == "Agent"
+        # Handoff endpoints stay honest — no fabricated edge for a generic agent.
+        assert _find_events(adapter, "agent.handoff") == []
+
+    def test_rag_query_path_stays_blank(self, mock_client):
+        """The pure RAG query-engine path has no named agent — agent.input/output
+        from QueryStart/End must not carry a fabricated agent_name."""
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect()
+        root = _create_span(adapter)
+
+        _emit_event_via_dispatcher(QueryStartEvent(query="what is RAG?", span_id=root), span_id=root)
+        _emit_event_via_dispatcher(
+            QueryEndEvent(query="what is RAG?", response=LlamaResponse(response="..."), span_id=root),
+            span_id=root,
+        )
+
+        for ev in _find_events(adapter, "agent.input") + _find_events(adapter, "agent.output"):
+            assert "agent_name" not in ev["payload"]
+        assert _find_events(adapter, "agent.handoff") == []

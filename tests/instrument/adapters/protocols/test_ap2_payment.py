@@ -242,6 +242,22 @@ class TestCartBindingAmount:
         assert signed and signed[0]["amount"] == 300.0, "charged the payment-mandate total, not the binding cart total"
         assert _spend_ledger.current_spend("USD") == 300.0
 
+    def test_merchant_agent_is_emitted_and_survives_redaction(self) -> None:
+        """S15/F8: PaymentMandateContents.merchant_agent (the merchant the payment
+        is bound to) is emitted on payment.mandate_signed as an identifier that
+        survives capture_content=False — mirrors task_id, not free-text content.
+        BITE: drop the merchant_agent stamp -> RED."""
+        adapter = _adapter(guardrails=AP2Guardrails(max_transaction=500.0), capture_config=_NO_CONTENT)
+        adapter.record_intent_mandate(make_intent(merchants=["ACME"]), mandate_id="m1")
+        adapter.record_cart_mandate(make_cart(value=100.0), intent_mandate_id="m1")
+
+        events = _collect(
+            lambda: adapter.record_payment_mandate(make_payment(value=100.0), cart_id="cart1"), _NO_CONTENT
+        )
+        signed = [p for p in _by_type(events, "payment.mandate_signed") if p.get("status") == "signed"]
+        assert signed, "no signed payment.mandate_signed event"
+        assert signed[0].get("merchant_agent") == "ACME", "merchant_agent missing or stripped under no-content"
+
 
 # ===========================================================================
 # INVARIANT 2 — IDEMPOTENCY: the same mandate signed/charged twice accrues ONCE.

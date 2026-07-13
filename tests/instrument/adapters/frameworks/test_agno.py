@@ -15,6 +15,7 @@ import pytest
 agno = pytest.importorskip("agno")
 
 from agno.metrics import RunMetrics, ModelMetrics, ToolCallMetrics  # noqa: E402
+from agno.team.team import Team  # noqa: E402
 from agno.agent.agent import Agent  # noqa: E402
 from agno.models.base import Model  # noqa: E402
 from agno.models.response import ModelResponse, ToolExecution  # noqa: E402
@@ -274,12 +275,18 @@ class TestSyncAgentIO:
         assert find_event(events, "agent.output") is not None
         assert len(find_events(events, "model.invoke")) == 0
 
-    def test_fallback_agent_name(self, mock_client):
+    def test_unnamed_agent_stays_blank(self, mock_client):
+        """An unnamed agent must NOT be stamped with a fabricated identity.
+
+        The honest-graph contract (Lever A) forbids surfacing the ``agno_agent``
+        placeholder as an agent name — a blank Agent column is the correct,
+        honest outcome when the developer declared no name.
+        """
         agent = _make_agent()
         agent.name = None
         uploaded = _connect_and_run(mock_client, agent=agent)
         out = find_event(uploaded["events"], "agent.output")
-        assert out["payload"]["agent_name"] == "agno_agent"
+        assert "agent_name" not in out["payload"]
 
     def test_not_connected_passthrough(self, mock_client):
         agent = _make_agent()
@@ -728,3 +735,119 @@ class TestDisconnectLeaveNoTrace:
 
         # Both connected periods produced full traces
         assert len(find_events(uploaded["events"], "agent.input")) == 2
+
+
+# ---------------------------------------------------------------------------
+# Honest graph contract (Lever A) — declared identity + config roster + handoff
+# ---------------------------------------------------------------------------
+
+
+def _run_team_with_transfer(
+    mock_client: Any,
+    *,
+    team: Team,
+    tool_args: Any,
+    tool_name: str = "transfer_task_to_member",
+    config: Optional[CaptureConfig] = None,
+) -> dict:
+    """Instrument a real agno Team, inject a run result carrying a real
+    transfer/forward ToolExecution, drive run(), and return uploaded events.
+
+    The injected-result pattern (used throughout this suite) exercises the
+    adapter against REAL agno objects (Team, ToolExecution, RunMetrics) without
+    a live model producing the delegation."""
+    uploaded = capture_framework_trace(mock_client)
+    adapter = AgnoAdapter(mock_client, capture_config=config or CaptureConfig(capture_content=True))
+    adapter.connect(target=team)
+    # Swap the (already-wrapped) run for one returning a real transfer tool-call.
+    adapter._unwrap_agent(team)
+    adapter._originals.pop(id(team), None)
+
+    transfer = ToolExecution(tool_name=tool_name, tool_args=tool_args, result="delegated")
+
+    class _Result:
+        content = "final answer"
+        metrics = RunMetrics(input_tokens=10, output_tokens=5, total_tokens=15)
+        tools = [transfer]
+
+    team.run = lambda *a, **kw: _Result()
+    adapter._instrument_agent(team)
+    team.run("do research")
+    return uploaded
+
+
+class TestHonestGraphContract:
+    def _team(self) -> Team:
+        return Team(
+            members=[_make_agent(name="researcher"), _make_agent(name="writer")],
+            name="research_team",
+            model=_TestModel(),
+        )
+
+    def test_declared_agent_name_on_io_and_model(self, mock_client):
+        uploaded = _run_team_with_transfer(mock_client, team=self._team(), tool_args={"member_id": "researcher"})
+        events = uploaded["events"]
+        assert find_event(events, "agent.input")["payload"]["agent_name"] == "research_team"
+        assert find_event(events, "agent.output")["payload"]["agent_name"] == "research_team"
+        assert find_event(events, "model.invoke")["payload"]["agent_name"] == "research_team"
+
+    def test_environment_config_carries_team_members(self, mock_client):
+        uploaded = _run_team_with_transfer(mock_client, team=self._team(), tool_args={"member_id": "researcher"})
+        cfg = find_event(uploaded["events"], "environment.config")
+        assert cfg is not None
+        assert cfg["payload"]["config"]["team_members"] == ["researcher", "writer"]
+
+    def test_transfer_tool_becomes_handoff_not_tool_call(self, mock_client):
+        uploaded = _run_team_with_transfer(mock_client, team=self._team(), tool_args={"member_id": "researcher"})
+        events = uploaded["events"]
+        ho = find_event(events, "agent.handoff")
+        assert ho["payload"]["from_agent"] == "research_team"
+        assert ho["payload"]["to_agent"] == "researcher"
+        # The transfer must NOT be buried as an ordinary tool.call.
+        assert find_events(events, "tool.call") == []
+        assert find_events(events, "tool.result") == []
+
+    def test_forward_tool_variant_also_handoff(self, mock_client):
+        uploaded = _run_team_with_transfer(
+            mock_client,
+            team=self._team(),
+            tool_name="forward_task_to_member",
+            tool_args={"agent_name": "writer"},
+        )
+        ho = find_event(uploaded["events"], "agent.handoff")
+        assert ho["payload"]["to_agent"] == "writer"
+
+    def test_unnamed_agent_emits_no_fabricated_identity(self, mock_client):
+        """A run with no developer-declared name stays blank everywhere."""
+        agent = _make_agent()
+        agent.name = None
+        uploaded = _connect_and_run(mock_client, agent=agent)
+        events = uploaded["events"]
+        assert "agent_name" not in find_event(events, "agent.input")["payload"]
+        assert "agent_name" not in find_event(events, "agent.output")["payload"]
+        # Never the placeholder anywhere in the trace.
+        for e in events:
+            assert e["payload"].get("agent_name") != "agno_agent"
+
+    def test_generic_name_renders_verbatim_ateam_parity(self, mock_client):
+        """ateam parity (#3): a GENERIC placeholder name (the ``agno_agent`` default)
+        is now surfaced VERBATIM as agent_name so the trace renders like ateam
+        (which reads the name verbatim). A truly-unnamed agent (name=None) still
+        stays honestly blank — see test_unnamed_agent_stays_blank above."""
+        agent = _make_agent()
+        agent.name = "agno_agent"
+        uploaded = _connect_and_run(mock_client, agent=agent)
+        out = find_event(uploaded["events"], "agent.output")
+        assert out["payload"].get("agent_name") == "agno_agent"
+
+    def test_ordinary_tool_still_emitted_as_tool_call(self, mock_client):
+        """A non-transfer tool must remain a normal tool.call (regression guard)."""
+        uploaded = _run_team_with_transfer(
+            mock_client,
+            team=self._team(),
+            tool_name="web_search",
+            tool_args={"query": "AI"},
+        )
+        events = uploaded["events"]
+        assert find_events(events, "agent.handoff") == []
+        assert find_event(events, "tool.call")["payload"]["tool_name"] == "web_search"

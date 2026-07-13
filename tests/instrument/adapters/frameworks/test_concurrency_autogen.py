@@ -10,12 +10,13 @@ module-global ``EVENT_LOGGER_NAME`` and its events carry no run/topic/session
 id). Two interleaved conversations merged into one trace.
 
 THE FIX: each AgentChat team owns its own ``SingleThreadedAgentRuntime`` whose
-message loop drains on its own asyncio task / thread, and the logging handler
-runs inline on the emitting task/thread. So the adapter opens a ``RunState``
-lazily on the first event and binds it to ``_current_run``; the task/thread
-ContextVar copy keeps each concurrent run isolated even for the sender-less
-``LLMCallEvent`` (``autogen.py`` — ``_runs`` / ``_ensure_run`` / ``_dispatch``).
-Each run flushes as its own trace on ``disconnect()``.
+message loop drains on ONE thread, and the logging handler runs inline on the
+emitting thread. So the adapter keys a ``RunState`` by THREAD ident
+(``autogen.py`` — ``_runs_by_thread`` / ``_ensure_run`` / ``_dispatch``): all of
+one run's asyncio tasks share the thread (one coherent trace — see
+``test_single_run_across_asyncio_tasks_is_one_trace``), while two concurrent runs
+on separate threads stay isolated even for the sender-less ``LLMCallEvent``. Each
+run flushes as its own trace on ``disconnect()``.
 
 DRIVING: faithful concurrency — each conversation runs on its OWN worker thread
 through the REAL ``autogen_core`` event logger, with a barrier forcing the two
@@ -57,7 +58,25 @@ from autogen_core.logging import (  # noqa: E402
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.autogen import (
     AutoGenAdapter,
+    _autogen_agent_name,
 )  # noqa: E402
+
+
+def test_autogen_agent_name_cleans_and_filters():
+    """A team runtime names participants '<agent>_<team-uuid>' and stringifies
+    an AgentId as '<type>/<key>'. The node name must be the clean agent
+    (uuid stripped); plumbing (group-chat manager, routing topics) must be None."""
+    u = "e2bdcfef-0da1-4d13-8fb8-11ba78956b18"
+    assert _autogen_agent_name(f"writer_{u}/{u}") == "writer"
+    assert _autogen_agent_name(f"critic_{u}/{u}") == "critic"
+    assert _autogen_agent_name(f"RoundRobinGroupChatManager_{u}/{u}") is None
+    assert _autogen_agent_name(f"SelectorGroupChatManager_{u}/{u}") is None
+    assert _autogen_agent_name(f"group_topic_{u}/{u}") is None
+    assert _autogen_agent_name(f"output_topic_{u}/{u}") is None
+    # A plain, non-team-runtime name passes through unchanged.
+    assert _autogen_agent_name("planner") == "planner"
+    assert _autogen_agent_name(None) is None
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -145,6 +164,52 @@ def _assert_two_isolated_traces(traces: List[Dict[str, Any]]) -> None:
         (other_ask,) = [a for a in markers if a != ask]
         for marker in (other_ask, *markers[other_ask]):
             assert marker not in text, f"Trace for {ask!r} contaminated by other run's marker {marker!r}"
+
+
+def test_single_run_across_asyncio_tasks_is_one_trace(mock_client):
+    """The COUNTERPART invariant: a single ``team.run()`` spans many asyncio
+    tasks on ONE thread (autogen's SingleThreadedAgentRuntime), and every event
+    of that run must land in ONE trace.
+
+    THE BUG: the adapter opened a RunState per ``_current_run`` ContextVar, which
+    is COPIED per asyncio task — so the events of one run scatter across many
+    tasks' contexts and fragment into many one/few-event traces (a real
+    ``team.run`` fragmented into 13). The fix keys the run by THREAD, so all of
+    one run's asyncio tasks share it while separate threads (the concurrency test
+    above) stay isolated.
+    """
+    import asyncio
+
+    traces = _collect_traces(mock_client)
+    adapter = AutoGenAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+    adapter.connect()
+    logger = logging.getLogger(EVENT_LOGGER_NAME)
+
+    async def drive() -> None:
+        # Each event fires from its OWN asyncio task (context-copied at creation),
+        # exactly like autogen's runtime drains messages across tasks.
+        async def ask() -> None:
+            logger.info(_ask("ask-solo", "planner", "writer"))
+
+        async def llm() -> None:
+            logger.info(_llm_call("ask-solo", model="model-solo"))
+
+        async def answer() -> None:
+            logger.info(_answer("answer-solo", "planner", "writer"))
+
+        await asyncio.gather(ask(), llm(), answer())
+
+    asyncio.run(drive())
+    adapter.disconnect()
+
+    assert len(traces) == 1, (
+        f"one run's events (across asyncio tasks) must be ONE trace, got {len(traces)}: "
+        f"{[[e['event_type'] for e in t['events']] for t in traces]}"
+    )
+    types = {e["event_type"] for e in traces[0]["events"]}
+    assert {"agent.input", "model.invoke", "agent.handoff", "agent.output"} <= types, (
+        f"the single trace must hold the whole run's events, got {sorted(types)}"
+    )
 
 
 def test_concurrent_conversations_produce_two_isolated_traces(mock_client):

@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import threading
 
+from layerlens.instrument._context import _current_collector
+from layerlens.instrument._collector import TraceCollector
+from layerlens.instrument._capture_config import CaptureConfig
 from layerlens.instrument.adapters.protocols.a2ui import A2UIProtocolAdapter
 from layerlens.instrument.adapters.protocols._base_protocol import BaseProtocolAdapter
 
@@ -16,6 +19,36 @@ class _DummyProtocolAdapter(BaseProtocolAdapter):
     def connect(self, target=None, **kwargs):
         self._client = target
         return target
+
+
+class TestEmitStampsFramework:
+    """Every protocol event must carry a ``framework`` tag (= PROTOCOL) so the
+    traces Framework column/filter populate for protocol adapters (a2a, mcp, ucp,
+    …), matching every framework/provider adapter. Regression for the dev
+    finding that protocol traces left Framework blank."""
+
+    def test_emit_stamps_framework_equal_to_protocol(self):
+        adapter = _DummyProtocolAdapter()
+        collector = TraceCollector(object(), CaptureConfig())
+        token = _current_collector.set(collector)
+        try:
+            adapter.emit("dummy.event", {"foo": "bar"})
+        finally:
+            _current_collector.reset(token)
+        assert len(collector.events) == 1
+        p = collector.events[0]["payload"]
+        assert p["framework"] == "dummy"
+        assert p["protocol"] == "dummy"
+
+    def test_explicit_payload_framework_wins(self):
+        adapter = _DummyProtocolAdapter()
+        collector = TraceCollector(object(), CaptureConfig())
+        token = _current_collector.set(collector)
+        try:
+            adapter.emit("dummy.event", {"framework": "custom"})
+        finally:
+            _current_collector.reset(token)
+        assert collector.events[0]["payload"]["framework"] == "custom"
 
 
 class TestConstructionWithoutEventLoop:

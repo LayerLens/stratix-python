@@ -21,7 +21,20 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import (
+    create_judge,
+    poll_evaluation_results,
+    recorded_trace_path,
+    upload_recorded_trace,
+)
+
+# This sample uploads RECORDED REAL traces: each was captured from a genuine
+# instrumented ``legal-research-assistant`` run over the queries below (see
+# ``samples/data/_generate_fixtures.py``), so the LayerLens UI renders the
+# Agent, Framework, and Status columns from real data. The queries remain
+# here as documentation of what was analyzed and to label the evaluation output.
+SAMPLE = "legal_research"
+FIXTURE = recorded_trace_path("industry", "legal_research.jsonl")
 
 RESEARCH_QUERIES: list[dict[str, Any]] = [
     {
@@ -58,43 +71,47 @@ def main() -> None:
         print(f"ERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    # Create judges up front
-    judges = {
-        "citation_accuracy": create_judge(
-            client,
-            name="Citation Accuracy Judge",
-            evaluation_goal="Evaluate whether the legal citations are accurate, properly formatted, and support the stated legal conclusions.",
-        ),
-        "jurisdictional_correctness": create_judge(
-            client,
-            name="Jurisdictional Correctness Judge",
-            evaluation_goal="Evaluate whether the legal analysis correctly identifies and applies the relevant jurisdiction's laws and precedents.",
-        ),
-        "reasoning_quality": create_judge(
-            client,
-            name="Reasoning Quality Judge",
-            evaluation_goal="Evaluate whether the legal reasoning is logically sound, well-structured, and correctly applies legal principles.",
-        ),
-    }
-    judge_labels = {
-        "citation_accuracy": "Citations",
-        "jurisdictional_correctness": "Jurisdiction",
-        "reasoning_quality": "Reasoning",
-    }
-    judge_ids = [j.id for j in judges.values()]
+    # Upload the recorded real traces first. Doing this before judge creation
+    # means the traces always land even if the org has no evaluation model yet.
+    print(f"Uploading {len(RESEARCH_QUERIES)} recorded legal-research-assistant traces...\n")
+    trace_ids = upload_recorded_trace(client, FIXTURE)
+    if not trace_ids:
+        print("ERROR: no traces uploaded (fixture missing or rejected).")
+        sys.exit(1)
 
+    # Create judges. If the org has no models available, judge creation raises
+    # RuntimeError -- we skip the evaluations (the traces are already uploaded)
+    # rather than crash.
+    judge_ids: list[str] = []
     try:
-        for query in RESEARCH_QUERIES:
-            trace_result = upload_trace_dict(
+        judges = {
+            "citation_accuracy": create_judge(
                 client,
-                input_text=query["query"],
-                output_text=query["response"],
-                metadata={"citations": query["citations"]},
-            )
-            trace_id = (
-                trace_result.trace_ids[0] if trace_result.trace_ids else query["id"]
-            )
+                name="Citation Accuracy Judge",
+                evaluation_goal="Evaluate whether the legal citations are accurate, properly formatted, and support the stated legal conclusions.",
+                namespace=SAMPLE,
+            ),
+            "jurisdictional_correctness": create_judge(
+                client,
+                name="Jurisdictional Correctness Judge",
+                evaluation_goal="Evaluate whether the legal analysis correctly identifies and applies the relevant jurisdiction's laws and precedents.",
+                namespace=SAMPLE,
+            ),
+            "reasoning_quality": create_judge(
+                client,
+                name="Reasoning Quality Judge",
+                evaluation_goal="Evaluate whether the legal reasoning is logically sound, well-structured, and correctly applies legal principles.",
+                namespace=SAMPLE,
+            ),
+        }
+        judge_labels = {
+            "citation_accuracy": "Citations",
+            "jurisdictional_correctness": "Jurisdiction",
+            "reasoning_quality": "Reasoning",
+        }
+        judge_ids = [j.id for j in judges.values()]
 
+        for query, trace_id in zip(RESEARCH_QUERIES, trace_ids):
             print(f"Query: {query['query'][:60]}...")
             print(f"  Citations: {len(query['citations'])} referenced")
 
@@ -119,6 +136,9 @@ def main() -> None:
                 )
             print()
 
+    except RuntimeError as exc:
+        print(f"\nNOTE: evaluations skipped -- {exc}")
+        print("  Traces are uploaded; add a project/public model to enable judges.")
     finally:
         for jid in judge_ids:
             try:

@@ -5,6 +5,7 @@ import functools
 from uuid import UUID
 from typing import Any, Dict, List, Optional, Sequence
 
+from ..._identity import _API_METHOD_RE, _is_generic
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 from ._langchain_memory import TracedMemory, MemoryMutationTracker, wrap_memory
@@ -92,6 +93,59 @@ def _to_jsonable(obj: Any, _depth: int = 0) -> Any:
         return str(obj)
 
 
+# LangChain composition primitives + legacy chain/agent classes. When a runnable
+# is invoked WITHOUT a developer-declared ``run_name``, LangChain passes the
+# runnable's ``get_name()`` (a class default like ``RunnableSequence`` or
+# ``AgentExecutor``) as the ``name`` kwarg to ``on_chain_start``. That is plumbing,
+# never a producer-declared agent identity — surfacing it in the Agent column is a
+# fabrication, so it must stay honestly blank. All of LangChain's composition
+# wrappers live under the ``Runnable*`` prefix (handled separately); this is the
+# precise denylist of the remaining legacy chain/agent class defaults.
+_LANGCHAIN_CLASS_DEFAULTS = frozenset(
+    {
+        "agentexecutor",
+        "llmchain",
+        "conversationchain",
+        "conversationalretrievalchain",
+        "retrievalqa",
+        "retrievalqawithsourceschain",
+        "stuffdocumentschain",
+        "mapreducedocumentschain",
+        "refinedocumentschain",
+        "sequentialchain",
+        "simplesequentialchain",
+        "transformchain",
+    }
+)
+
+
+def _honest_run_name(raw: Any) -> Optional[str]:
+    """Return a developer-DECLARED LCEL run name honest for the Agent column, else None.
+
+    LangChain surfaces the ``run_name`` a developer set via
+    ``.with_config(run_name=...)`` as the ``name`` kwarg on ``on_chain_start``.
+    When no run_name was declared, the same kwarg carries the runnable's
+    ``get_name()`` class default (``RunnableSequence``, ``RunnableParallel<a,b>``,
+    ``AgentExecutor``, ...). We surface ONLY a genuine, distinctive developer name
+    and reject every class default / generic placeholder / dotted API-method label,
+    reusing the shared identity guard so this adapter never fabricates a node.
+    A run genuinely without a declared name stays honestly blank.
+    """
+    if not isinstance(raw, str):
+        return None
+    name = raw.strip()
+    if not name:
+        return None
+    # ``RunnableParallel<first,second>`` -> ``RunnableParallel`` before matching.
+    base = name.split("<", 1)[0].strip()
+    low = base.lower()
+    if low.startswith("runnable") or low in _LANGCHAIN_CLASS_DEFAULTS:
+        return None
+    if _is_generic(name) or _API_METHOD_RE.match(name.lower()):
+        return None
+    return name
+
+
 class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     name = "langchain"
 
@@ -100,6 +154,11 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         FrameworkAdapter.__init__(self, client, capture_config=capture_config)
         # Pending LLM runs: run_id -> {name, messages, parent_run_id, tokens_accum, first_token_at_ns}
         self._pending_llm: Dict[str, Dict[str, Any]] = {}
+        # run_id -> producer-declared honest agent_name for a chain run. Populated
+        # from the LCEL run_name in on_chain_start and inherited by sub-chains /
+        # child model+tool runs so they attribute to the same honest node. Cleared
+        # in on_chain_end / on_chain_error.
+        self._chain_agent_names: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Chain callbacks
@@ -120,6 +179,15 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         serialized = serialized or {}
         name = serialized.get("name") or serialized.get("id", ["unknown"])[-1]
         payload = self._payload(name=name)
+        # Honest node identity: a developer-declared LCEL run_name (the ``name``
+        # kwarg) — never a class default. Inherit the enclosing named chain's
+        # identity for sub-chains so nested runs attribute to the same node.
+        agent_name = _honest_run_name(kwargs.get("name"))
+        if agent_name is None and parent_run_id is not None:
+            agent_name = self._chain_agent_names.get(str(parent_run_id))
+        if agent_name is not None:
+            self._chain_agent_names[str(run_id)] = agent_name
+            payload["agent_name"] = agent_name
         self._set_if_capturing(payload, "input", _to_jsonable(inputs))
         self._emit("agent.input", payload, run_id=run_id, parent_run_id=parent_run_id)
 
@@ -133,6 +201,9 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         **kwargs: Any,
     ) -> None:
         payload = self._payload(status="ok")
+        agent_name = self._chain_agent_names.pop(str(run_id), None)
+        if agent_name is not None:
+            payload["agent_name"] = agent_name
         self._set_if_capturing(payload, "output", _to_jsonable(outputs))
         self._emit("agent.output", payload, run_id=run_id, parent_run_id=parent_run_id)
 
@@ -145,9 +216,13 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
+        payload = self._payload(error=str(error), status="error")
+        agent_name = self._chain_agent_names.pop(str(run_id), None)
+        if agent_name is not None:
+            payload["agent_name"] = agent_name
         self._emit(
             "agent.error",
-            self._payload(error=str(error), status="error"),
+            payload,
             run_id=run_id,
             parent_run_id=parent_run_id,
         )
@@ -171,6 +246,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         pending: Dict[str, Any] = {
             "name": name,
             "parent_run_id": parent_run_id,
+            "agent_name": self._chain_agent_names.get(str(parent_run_id)) if parent_run_id else None,
+            "start_ns": time.time_ns(),
         }
         self._set_if_capturing(pending, "messages", prompts)
         self._pending_llm[str(run_id)] = pending
@@ -190,6 +267,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         pending: Dict[str, Any] = {
             "name": name,
             "parent_run_id": parent_run_id,
+            "agent_name": self._chain_agent_names.get(str(parent_run_id)) if parent_run_id else None,
+            "start_ns": time.time_ns(),
         }
         self._set_if_capturing(
             pending,
@@ -278,6 +357,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         payload = self._payload()
         if pending.get("name"):
             payload["name"] = pending["name"]
+        if pending.get("agent_name"):
+            payload["agent_name"] = pending["agent_name"]
         if model_name:
             payload["model"] = model_name
         self._set_if_capturing(payload, "messages", pending.get("messages"))
@@ -293,6 +374,9 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         if first_tok is not None:
             payload["streaming"] = True
             payload["streamed_chunks"] = pending.get("tokens_accum", 0)
+            start_ns = pending.get("start_ns")
+            if first_tok and start_ns:
+                payload["ttft_ms"] = (first_tok - start_ns) / 1e6
 
         if finish_reason is not None:
             payload["finish_reason"] = finish_reason
@@ -348,6 +432,8 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         payload = self._payload(error=str(error))
         if pending.get("name"):
             payload["name"] = pending["name"]
+        if pending.get("agent_name"):
+            payload["agent_name"] = pending["agent_name"]
         latency_ms = self._stop_timer(str(run_id))
         if latency_ms is not None:
             payload["latency_ms"] = latency_ms

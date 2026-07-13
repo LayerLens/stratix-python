@@ -63,8 +63,11 @@ class HandoffDetector:
     event is silently dropped.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, framework: Optional[str] = None) -> None:
         self._current_agent: Optional[str] = None
+        # The owning adapter's integration name, stamped on emitted handoffs so
+        # they carry payload.framework like every other framework event (S20c).
+        self._framework = framework
 
     @property
     def current_agent(self) -> Optional[str]:
@@ -103,6 +106,7 @@ class HandoffDetector:
             context=context,
             reason=reason,
             parent_span_id=parent_span_id,
+            framework=self._framework,
         )
         return True
 
@@ -119,6 +123,7 @@ def _emit_handoff(
     context: Any = None,
     reason: Optional[str] = None,
     parent_span_id: Optional[str] = None,
+    framework: Optional[str] = None,
 ) -> None:
     """Emit an ``agent.handoff`` event into the active collector.
 
@@ -140,6 +145,8 @@ def _emit_handoff(
         "to_agent": to_agent,
         "timestamp_ns": time.time_ns(),
     }
+    if framework:
+        payload["framework"] = framework
     if reason:
         payload["reason"] = reason
     if context is not None:

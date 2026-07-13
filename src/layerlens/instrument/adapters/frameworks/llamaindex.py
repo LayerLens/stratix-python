@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from ._utils import safe_serialize
 from ..._context import _current_collector
+from ..._identity import _s, honest_agent_type
 from ..._collector import TraceCollector
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -80,6 +81,15 @@ class LlamaIndexAdapter(FrameworkAdapter):
         self._open_spans: Dict[str, Any] = {}  # span_id → BaseSpan
         self._timestamps: Dict[str, float] = {}
         self._llm_start_times: Dict[str, float] = {}
+        # Honest-graph state (AgentWorkflow multi-agent path), keyed by the
+        # root span id that owns the trace collector:
+        #   _current_agent  — the developer-declared name of the agent whose
+        #                     turn is active, stamped onto model.invoke so its
+        #                     graph node is not orphaned.
+        #   _handoffs_seen  — deduped (from_agent, to_agent) edges already
+        #                     emitted for the run.
+        self._current_agent: Dict[str, str] = {}
+        self._handoffs_seen: Dict[str, set] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -159,6 +169,121 @@ class LlamaIndexAdapter(FrameworkAdapter):
             span = self._open_spans.get(span_id)
             return span.parent_id if span is not None else None
 
+    def _root_span_of(self, span_id: Optional[str]) -> Optional[str]:
+        """The collector-owning (root) span id above ``span_id``, or None."""
+        if span_id is None:
+            return None
+        with self._lock:
+            current: Optional[str] = span_id
+            while current is not None:
+                if current in self._collectors:
+                    return current
+                span = self._open_spans.get(current)
+                current = span.parent_id if span is not None else None
+        return None
+
+    # ------------------------------------------------------------------
+    # Honest graph contract — AgentWorkflow (multi-agent) path
+    # ------------------------------------------------------------------
+    # AgentWorkflow carries the developer-declared agent name only inside its
+    # workflow event stream: the structured ``AgentInput``/``AgentOutput``
+    # (``current_agent_name``) and the built-in ``handoff`` ``ToolCall``
+    # (``tool_kwargs["to_agent"]``). None of these are instrumentation events —
+    # they reach the adapter as the step function's ``ev`` argument on each
+    # workflow-step span. We read them off ``bound_args`` to emit a
+    # producer-honest agent_name + a real agent.handoff, guarded by the shared
+    # honesty filter so the framework's unnamed default ("Agent") never becomes
+    # a fabricated node.
+
+    def _stamp_current_agent(self, payload: Dict[str, Any], span_id: Optional[str]) -> None:
+        """Stamp the run's active AgentWorkflow agent onto a payload (e.g. an
+        in-turn model.invoke) so its graph node links to the acting agent. A
+        no-op for the pure RAG path, where no agent turn is ever active."""
+        root = self._root_span_of(span_id)
+        if root is None:
+            return
+        with self._lock:
+            name = self._current_agent.get(root)
+        if name:
+            payload["agent_name"] = name
+
+    def _handle_workflow_step(self, span_id: str, bound_args: Any) -> None:
+        """Surface honest agent identity / handoff from an AgentWorkflow step."""
+        if bound_args is None:
+            return
+        args = getattr(bound_args, "arguments", None)
+        if not isinstance(args, dict):
+            return
+        ev = args.get("ev")
+        if ev is None:
+            return
+        ev_type = type(ev).__name__
+        if ev_type == "AgentInput":
+            self._on_workflow_agent_turn(ev, span_id, "agent.input")
+        elif ev_type == "AgentOutput":
+            self._on_workflow_agent_turn(ev, span_id, "agent.output")
+        elif ev_type == "ToolCall":
+            self._on_workflow_handoff(ev, span_id)
+
+    def _on_workflow_agent_turn(self, ev: Any, span_id: str, event_type: str) -> None:
+        """Emit agent.input/agent.output for a workflow agent turn, stamping the
+        honest ``current_agent_name`` (and tracking it as the run's active agent
+        so an in-turn model.invoke inherits it). Emits the event even when the
+        name is a generic default, but WITHOUT a fabricated agent_name."""
+        # ateam parity (#3): prefer the honest type; fall back to the raw
+        # current_agent_name VERBATIM (sanitized) so an AgentWorkflow whose agent
+        # uses the generic default ("Agent") still renders like ateam. Handoff
+        # endpoints below stay on honest_agent_type.
+        name = honest_agent_type(getattr(ev, "current_agent_name", None)) or _s(getattr(ev, "current_agent_name", None))
+        payload = self._payload()
+        if name:
+            payload["agent_name"] = name
+            root = self._root_span_of(span_id)
+            if root is not None:
+                with self._lock:
+                    self._current_agent[root] = name
+        if self._config.capture_content:
+            if event_type == "agent.input":
+                messages = getattr(ev, "input", None)
+                if messages:
+                    payload["input"] = safe_serialize(_serialize_messages(messages))
+            else:
+                response = getattr(ev, "response", None)
+                content = getattr(response, "content", None) if response is not None else None
+                if content:
+                    payload["output"] = str(content)
+        self._fire(event_type, payload, span_id=span_id)
+
+    def _on_workflow_handoff(self, ev: Any, span_id: str) -> None:
+        """Emit a deduped agent.handoff for the built-in AgentWorkflow handoff
+        tool. ``from_agent`` is the run's active agent; ``to_agent`` is the
+        transfer target. Both endpoints must be producer-honest."""
+        if getattr(ev, "tool_name", None) != "handoff":
+            return
+        kwargs = getattr(ev, "tool_kwargs", None)
+        if not isinstance(kwargs, dict):
+            return
+        to_agent = honest_agent_type(kwargs.get("to_agent"))
+        if not to_agent:
+            return
+        root = self._root_span_of(span_id)
+        with self._lock:
+            from_agent = self._current_agent.get(root) if root is not None else None
+        if not from_agent:
+            return
+        edge = (from_agent, to_agent)
+        if root is not None:
+            with self._lock:
+                seen = self._handoffs_seen.setdefault(root, set())
+                if edge in seen:
+                    return
+                seen.add(edge)
+        self._fire(
+            "agent.handoff",
+            self._payload(from_agent=from_agent, to_agent=to_agent),
+            span_id=span_id,
+        )
+
     def _flush_all(self) -> None:
         with self._lock:
             collectors = list(self._collectors.values())
@@ -166,6 +291,8 @@ class LlamaIndexAdapter(FrameworkAdapter):
             self._open_spans.clear()
             self._timestamps.clear()
             self._llm_start_times.clear()
+            self._current_agent.clear()
+            self._handoffs_seen.clear()
         for c in collectors:
             try:
                 c.flush()
@@ -176,20 +303,27 @@ class LlamaIndexAdapter(FrameworkAdapter):
     # Span lifecycle (called by the thin span handler)
     # ------------------------------------------------------------------
 
-    def _on_span_enter(self, id_: str, parent_span_id: Optional[str]) -> Any:
+    def _on_span_enter(self, id_: str, parent_span_id: Optional[str], bound_args: Any = None) -> Any:
         with self._lock:
             span = _BaseSpan(id_=id_, parent_id=parent_span_id)
             self._open_spans[id_] = span
             self._timestamps[id_] = time.time()
             if parent_span_id is None or parent_span_id not in self._open_spans:
                 self._collectors[id_] = TraceCollector(self._client, self._config)
-            return span
+        # Inspect the AgentWorkflow step event (if any) for honest agent
+        # identity + handoffs. Done AFTER releasing the lock and registering the
+        # span so ``_fire``/``_collector_for`` can resolve the owning collector.
+        self._handle_workflow_step(id_, bound_args)
+        return span
 
     def _on_span_exit(self, id_: str) -> Any:
         with self._lock:
             span = self._open_spans.get(id_)
             self._timestamps.pop(id_, None)
             collector = self._collectors.pop(id_, None)
+            if collector is not None:
+                self._current_agent.pop(id_, None)
+                self._handoffs_seen.pop(id_, None)
         if collector is not None:
             collector.flush()
         return span
@@ -227,12 +361,18 @@ class LlamaIndexAdapter(FrameworkAdapter):
         if model:
             payload["model"] = model
 
+        resp_id = _response_id_from_response(response)
+        if resp_id:
+            payload["response_id"] = resp_id
+
         tokens = self._normalize_tokens(_usage_from_response(response))
         payload.update(tokens)
 
         start = self._llm_start_times.pop(span_id, None) if span_id else None
         if start is not None:
             payload["latency_ms"] = (time.time() - start) * 1000
+
+        self._stamp_current_agent(payload, span_id)
 
         if self._config.capture_content:
             messages = getattr(event, "messages", None)
@@ -276,6 +416,8 @@ class LlamaIndexAdapter(FrameworkAdapter):
         start = self._llm_start_times.pop(span_id, None) if span_id else None
         if start is not None:
             payload["latency_ms"] = (time.time() - start) * 1000
+
+        self._stamp_current_agent(payload, span_id)
 
         if self._config.capture_content:
             prompt = getattr(event, "prompt", None)
@@ -492,7 +634,7 @@ def _make_span_handler(adapter: LlamaIndexAdapter) -> Any:
             tags: Any = None,
             **kw: Any,
         ) -> Any:
-            return adapter._on_span_enter(id_, parent_span_id)
+            return adapter._on_span_enter(id_, parent_span_id, bound_args=bound_args)
 
         def prepare_to_exit_span(
             self,
@@ -566,6 +708,22 @@ def _model_from_response(response: Any) -> str | None:
         model = getattr(raw, "model", None)
         if model:
             return str(model)
+    return None
+
+
+def _response_id_from_response(response: Any) -> str | None:
+    """Extract the provider's response id from ChatResponse / CompletionResponse."""
+    if response is None:
+        return None
+    raw = getattr(response, "raw", None)
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        resp_id = raw.get("id")
+    else:
+        resp_id = getattr(raw, "id", None)
+    if resp_id:
+        return str(resp_id)
     return None
 
 

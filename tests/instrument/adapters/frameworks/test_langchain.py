@@ -224,6 +224,41 @@ class TestLLMLifecycle:
         error = find_event(events, "agent.error")
         assert error["payload"]["error"] == "timeout"
 
+    def test_streaming_run_emits_ttft_ms(self, mock_client):
+        """A run that streams tokens has a genuine time-to-first-token; S18/F11."""
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangChainCallbackHandler(mock_client)
+
+        chain_id = uuid4()
+        llm_id = uuid4()
+
+        handler.on_chain_start({"name": "Chain"}, {}, run_id=chain_id)
+        handler.on_llm_start({"name": "LLM"}, ["p"], run_id=llm_id, parent_run_id=chain_id)
+        handler.on_llm_new_token("Hi", run_id=llm_id)
+        handler.on_llm_end(_make_llm_response(), run_id=llm_id)
+        handler.on_chain_end({}, run_id=chain_id)
+
+        invoke = find_event(uploaded["events"], "model.invoke")
+        assert invoke["payload"]["streaming"] is True
+        assert "ttft_ms" in invoke["payload"]
+        assert invoke["payload"]["ttft_ms"] >= 0
+
+    def test_non_streaming_run_has_no_ttft_ms(self, mock_client):
+        """A run with no first-token timestamp must not fabricate a ttft_ms."""
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangChainCallbackHandler(mock_client)
+
+        chain_id = uuid4()
+        llm_id = uuid4()
+
+        handler.on_chain_start({"name": "Chain"}, {}, run_id=chain_id)
+        handler.on_llm_start({"name": "LLM"}, ["p"], run_id=llm_id, parent_run_id=chain_id)
+        handler.on_llm_end(_make_llm_response(), run_id=llm_id)
+        handler.on_chain_end({}, run_id=chain_id)
+
+        invoke = find_event(uploaded["events"], "model.invoke")
+        assert "ttft_ms" not in invoke["payload"]
+
 
 # ---------------------------------------------------------------------------
 # CaptureConfig content gating
@@ -571,3 +606,80 @@ class TestEdgeCases:
         # Should still emit model.invoke from the response data
         invoke = find_event(uploaded["events"], "model.invoke")
         assert invoke["payload"]["model"] == "gpt-4"
+
+
+# ---------------------------------------------------------------------------
+# Honest graph contract (Lever A) — promote a developer-DECLARED LCEL run_name
+# into a producer-honest ``agent_name`` so the server graph engine can build a
+# node from it. A class-default composition name (RunnableSequence / a lambda
+# wrapper) is NOT an agent identity and must stay honestly blank.
+#
+# Multi-agent LangChain is really LangGraph (honest via ``node``), so this
+# adapter does NOT synthesize handoffs — that would fabricate topology the
+# framework never declared.
+# ---------------------------------------------------------------------------
+
+
+class TestHonestGraphContract:
+    def _run(self, mock_client, runnable, value, *, run_name=None):
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig(capture_content=True))
+        r = runnable.with_config(run_name=run_name) if run_name else runnable
+        r.invoke(value, config={"callbacks": [handler]})
+        return uploaded
+
+    def test_declared_run_name_becomes_honest_agent_name(self, mock_client):
+        from langchain_core.runnables import RunnableLambda
+
+        uploaded = self._run(
+            mock_client,
+            RunnableLambda(lambda x: {"answer": 42}),
+            {"q": "hi"},
+            run_name="researcher",
+        )
+        inp = find_event(uploaded["events"], "agent.input")
+        assert inp["payload"]["agent_name"] == "researcher"
+        out = find_event(uploaded["events"], "agent.output")
+        assert out["payload"]["agent_name"] == "researcher"
+
+    def test_model_invoke_inherits_enclosing_agent_name(self, mock_client):
+        from langchain_core.runnables import RunnableLambda
+        from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+        model = FakeListChatModel(responses=["ok"])
+        chain = RunnableLambda(lambda x: x) | model
+        uploaded = self._run(mock_client, chain, "hello", run_name="researcher")
+        mi = find_event(uploaded["events"], "model.invoke")
+        # The LLM call runs *inside* the developer-named chain; attribute it to
+        # that honest agent, never to a class default.
+        assert mi["payload"]["agent_name"] == "researcher"
+
+    def test_generic_composition_stays_blank(self, mock_client):
+        from langchain_core.runnables import RunnableLambda
+
+        a = RunnableLambda(lambda x: x + 1)
+        b = RunnableLambda(lambda x: x * 2)
+        # No run_name: the top runnable's name is the class default
+        # "RunnableSequence" and every child is a "RunnableLambda" wrapper —
+        # none is a producer-declared agent, so the Agent column stays blank.
+        uploaded = self._run(mock_client, a | b, 1)
+        assert uploaded["events"], "expected a captured trace"
+        for e in uploaded["events"]:
+            payload = e.get("payload") or {}
+            assert "agent_name" not in payload, (
+                f"fabricated agent_name in {e['event_type']}: {payload.get('agent_name')!r}"
+            )
+
+    def test_class_default_run_name_is_not_promoted(self, mock_client):
+        from langchain_core.runnables import RunnableLambda
+
+        # Even if a class-default name reaches the ``name`` kwarg, it must never
+        # surface as an agent identity.
+        uploaded = self._run(
+            mock_client,
+            RunnableLambda(lambda x: x),
+            {"q": "hi"},
+            run_name="AgentExecutor",
+        )
+        inp = find_event(uploaded["events"], "agent.input")
+        assert "agent_name" not in inp["payload"]

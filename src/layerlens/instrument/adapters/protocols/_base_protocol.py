@@ -13,6 +13,7 @@ import abc
 import uuid
 import asyncio
 import logging
+import contextvars
 from typing import Any, Dict, List, Callable, Optional, Awaitable
 from dataclasses import dataclass
 
@@ -129,7 +130,10 @@ class BaseProtocolAdapter(BaseAdapter, abc.ABC):
         payload = self._config.redact_payload(event_name, payload)
         collector.emit(
             event_name,
-            {"protocol": self.PROTOCOL, **payload},
+            # Stamp framework=PROTOCOL (a2a/mcp/ucp/…) so the traces Framework
+            # column/filter populate for protocol adapters like every framework/
+            # provider adapter does. An explicit payload.framework still wins.
+            {"protocol": self.PROTOCOL, "framework": self.PROTOCOL, **payload},
             span_id=uuid.uuid4().hex[:16],
             parent_span_id=parent_span_id or _current_span_id.get(),
         )
@@ -141,7 +145,17 @@ class BaseProtocolAdapter(BaseAdapter, abc.ABC):
         *,
         parent_span_id: Optional[str] = None,
     ) -> None:
-        await asyncio.get_running_loop().run_in_executor(None, self.emit, event_name, payload, parent_span_id)
+        # run_in_executor does NOT propagate the caller's contextvars into the
+        # worker thread, so self.emit's _current_collector/_current_span_id reads
+        # would see the (empty) worker context and silently drop the event.
+        # Snapshot the current context and run emit inside it (S20a). Using a
+        # closure also fixes the prior positional-arg call (emit's parent_span_id
+        # is keyword-only).
+        ctx = contextvars.copy_context()
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: ctx.run(self.emit, event_name, payload, parent_span_id=parent_span_id),
+        )
 
     # --- Retry helper ---
 

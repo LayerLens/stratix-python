@@ -17,6 +17,13 @@ sk = pytest.importorskip("semantic_kernel")
 from semantic_kernel import Kernel  # noqa: E402
 from semantic_kernel.functions import kernel_function  # noqa: E402
 
+# The multi-agent (AgentGroupChat) honest-graph path needs the SK agents module.
+_sk_agents = pytest.importorskip("semantic_kernel.agents")
+ChatCompletionAgent = _sk_agents.ChatCompletionAgent
+AgentGroupChat = _sk_agents.AgentGroupChat
+from semantic_kernel.contents.utils.author_role import AuthorRole  # noqa: E402
+from semantic_kernel.contents.chat_message_content import ChatMessageContent  # noqa: E402
+
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.semantic_kernel import (  # noqa: E402
     SemanticKernelAdapter,
@@ -903,3 +910,153 @@ class TestDisconnectLeaveNoTrace:
         assert len(kernel.auto_function_invocation_filters) == 0
         # Both connected periods produced tool events
         assert len(find_events(uploaded["events"], "tool.call")) == 2
+
+
+# ---------------------------------------------------------------------------
+# Honest graph contract (Lever A) — an AgentGroupChat multi-agent run must emit
+# a producer-DECLARED ChatCompletionAgent.name on agent.input/agent.output/
+# model.invoke and a real agent.handoff{from_agent,to_agent} on turn
+# transitions, so the server graph engine renders the multi-agent topology.
+# A single unnamed kernel run (and SK's auto-generated ``agent_<random>``
+# default name) must stay honestly BLANK — never fabricate an agent, and never
+# promote a plugin/tool name as the agent identity.
+# ---------------------------------------------------------------------------
+
+
+def _sk_msg(name: str, content: str, model: str = "gpt-4o", usage: Any = None) -> ChatMessageContent:
+    """A real SK ChatMessageContent as an agent turn yields it (``name`` is the
+    agent's own name; ``ai_model_id``/``metadata.usage`` are the model provenance
+    SK attaches to a ChatCompletionAgent's assistant message)."""
+    return ChatMessageContent(
+        role=AuthorRole.ASSISTANT,
+        content=content,
+        name=name,
+        ai_model_id=model,
+        metadata={"usage": usage} if usage else {},
+    )
+
+
+def _stub_group_invoke(messages: list):
+    """A stand-in for AgentGroupChat.invoke that yields real ChatMessageContent
+    turns without an LLM — the adapter wraps THIS at connect() and iterates it,
+    exactly as it would the real turn stream."""
+
+    async def _invoke(*args: Any, **kwargs: Any):
+        for m in messages:
+            yield m
+
+    return _invoke
+
+
+def _build_group_chat(names: list) -> tuple:
+    agents = [ChatCompletionAgent(name=n) if n else ChatCompletionAgent() for n in names]
+    chat = AgentGroupChat(agents=agents)
+    return chat, agents
+
+
+def _drive_group_chat(mock_client, chat, config: Optional[CaptureConfig] = None) -> dict:
+    uploaded = capture_framework_trace(mock_client)
+    adapter = SemanticKernelAdapter(mock_client, capture_config=config)
+    adapter.connect(target=chat)
+
+    async def _consume():
+        async for _ in chat.invoke():
+            pass
+
+    _run(_consume())
+    adapter.disconnect()
+    return uploaded
+
+
+class TestHonestGraphContract:
+    def test_multi_agent_emits_honest_name_handoff_and_model(self, mock_client):
+        chat, _ = _build_group_chat(["researcher", "writer"])
+        object.__setattr__(
+            chat,
+            "invoke",
+            _stub_group_invoke(
+                [
+                    _sk_msg("researcher", "found data", usage={"prompt_tokens": 10, "completion_tokens": 4}),
+                    _sk_msg("writer", "final report", usage={"prompt_tokens": 8, "completion_tokens": 6}),
+                ]
+            ),
+        )
+        uploaded = _drive_group_chat(mock_client, chat, CaptureConfig(capture_content=True))
+        events = uploaded["events"]
+
+        # agent.output — the producing agent's honest name.
+        out_names = {e["payload"].get("agent_name") for e in find_events(events, "agent.output")}
+        assert {"researcher", "writer"} <= out_names
+
+        # agent.input — every agent-turn input carries the honest agent_name.
+        inputs = find_events(events, "agent.input")
+        assert inputs, "expected per-turn agent.input events"
+        assert all(e["payload"].get("agent_name") for e in inputs)
+
+        # model.invoke — the model call is attributed to the honest agent.
+        mi_names = {e["payload"].get("agent_name") for e in find_events(events, "model.invoke")}
+        assert {"researcher", "writer"} <= mi_names
+
+        # agent.handoff — the real turn transition.
+        ho = find_event(events, "agent.handoff")
+        assert ho["payload"]["from_agent"] == "researcher"
+        assert ho["payload"]["to_agent"] == "writer"
+
+    def test_handoff_deduped_within_conversation(self, mock_client):
+        chat, _ = _build_group_chat(["researcher", "writer"])
+        object.__setattr__(
+            chat,
+            "invoke",
+            _stub_group_invoke(
+                [
+                    _sk_msg("researcher", "a"),
+                    _sk_msg("writer", "b"),
+                    _sk_msg("researcher", "c"),
+                    _sk_msg("writer", "d"),
+                ]
+            ),
+        )
+        uploaded = _drive_group_chat(mock_client, chat)
+        hos = find_events(uploaded["events"], "agent.handoff")
+        edges = {(h["payload"]["from_agent"], h["payload"]["to_agent"]) for h in hos}
+        # Distinct edges only — the repeated researcher->writer edge is deduped.
+        assert edges == {("researcher", "writer"), ("writer", "researcher")}
+        assert len(hos) == 2
+
+    def test_unnamed_agents_stay_blank(self, mock_client):
+        # SK gives an unnamed ChatCompletionAgent a generated ``agent_<random>``
+        # name — a framework placeholder, NOT a developer-declared identity.
+        chat, agents = _build_group_chat([None, None])
+        n0, n1 = agents[0].name, agents[1].name
+        assert n0.startswith("agent_") and n1.startswith("agent_")
+        object.__setattr__(
+            chat,
+            "invoke",
+            _stub_group_invoke([_sk_msg(n0, "x"), _sk_msg(n1, "y")]),
+        )
+        uploaded = _drive_group_chat(mock_client, chat)
+        events = uploaded["events"]
+
+        for e in find_events(events, "agent.output"):
+            assert "agent_name" not in e["payload"]
+        for e in find_events(events, "model.invoke"):
+            assert "agent_name" not in e["payload"]
+        for e in find_events(events, "agent.input"):
+            assert "agent_name" not in e["payload"]
+        # No honest identities => no fabricated topology.
+        assert find_events(events, "agent.handoff") == []
+
+    def test_plugins_are_not_promoted_as_agents(self, mock_client):
+        # A single-kernel function-calling run has NO declared agent — it must
+        # stay blank, and a plugin/tool name must never become an agent_name.
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=1, b=2))
+        adapter.disconnect()
+
+        for e in uploaded["events"]:
+            assert "agent_name" not in e["payload"], e["event_type"]

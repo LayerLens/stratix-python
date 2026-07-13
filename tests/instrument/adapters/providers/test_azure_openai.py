@@ -171,6 +171,9 @@ class TestEmitsEvents:
         # The Azure adapter reuses the OpenAI patch surface, so the event name
         # (and the provider derived from it) is the openai one.
         assert mi["payload"]["name"] == "openai.chat.completions.create"
+        # S19/F12: even though the event name derives 'openai', the framework
+        # stamp is the true integration 'azure_openai' (fixes the Azure mislabel).
+        assert mi["payload"]["framework"] == "azure_openai"
         # Response model (underlying model) wins over the deployment name.
         assert mi["payload"]["model"] == "gpt-4o-2024-05-13"
         assert mi["payload"]["response_model"] == "gpt-4o-2024-05-13"

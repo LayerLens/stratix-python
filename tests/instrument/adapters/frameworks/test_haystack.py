@@ -214,6 +214,28 @@ class TestGeneratorComponents:
         assert invoke["span_name"] == "component:llm"
         adapter.disconnect()
 
+    def test_model_invoke_emits_finish_reason(self, mock_client):
+        """S18/F11: surface the generator's own finish_reason, never fabricated."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = _make_adapter(mock_client)
+        component = self._gen_component()
+        component["output"]["meta"][0]["finish_reason"] = "stop"
+        _simulate_pipeline(adapter._tracer, components=[component])
+
+        invoke = find_event(uploaded["events"], "model.invoke")
+        assert invoke["payload"]["finish_reason"] == "stop"
+        adapter.disconnect()
+
+    def test_model_invoke_no_finish_reason_when_absent(self, mock_client):
+        """No finish_reason in meta must stay honestly blank, not fabricated."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = _make_adapter(mock_client)
+        _simulate_pipeline(adapter._tracer, components=[self._gen_component()])
+
+        invoke = find_event(uploaded["events"], "model.invoke")
+        assert "finish_reason" not in invoke["payload"]
+        adapter.disconnect()
+
     def test_cost_record(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = _make_adapter(mock_client)
@@ -610,3 +632,109 @@ class TestDisconnectLeaveNoTrace:
 
         # Both connected periods produced full traces
         assert len(find_events(uploaded["events"], "agent.input")) == 2
+
+
+# ---------------------------------------------------------------------------
+# Honest graph contract (Lever A) — the server graph engine builds a haystack
+# node from the producer-declared ``payload.component_name``. Each named
+# component must carry it (+ ``component_class``) so a >1-component pipeline
+# renders >1 node, and an unnamed/generic component must stay BLANK (never a
+# fabricated node identity).
+# ---------------------------------------------------------------------------
+
+
+class TestHonestGraphContract:
+    def test_named_components_carry_honest_component_name(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = _make_adapter(mock_client)
+        _simulate_pipeline(
+            adapter._tracer,
+            input_data={"query": "q"},
+            output_data={"answer": "a"},
+            components=[
+                {"name": "retriever", "type": "BM25Retriever"},
+                {"name": "prompt_builder", "type": "PromptBuilder"},
+                {
+                    "name": "llm",
+                    "type": "OpenAIChatGenerator",
+                    "model": "gpt-4o",
+                    "output": {
+                        "replies": ["a"],
+                        "meta": [{"model": "gpt-4o", "usage": {"prompt_tokens": 5, "completion_tokens": 3}}],
+                    },
+                },
+            ],
+        )
+        events = uploaded["events"]
+
+        # The generator's model.invoke carries the declared node id + class.
+        invoke = find_event(events, "model.invoke")
+        assert invoke["payload"]["component_name"] == "llm"
+        assert invoke["payload"]["component_class"] == "OpenAIChatGenerator"
+
+        # Non-generator components carry their declared names on tool.call too.
+        calls = find_events(events, "tool.call")
+        assert {c["payload"]["component_name"] for c in calls} == {"retriever", "prompt_builder"}
+        for c in calls:
+            assert c["payload"]["component_class"]
+
+        # A pipeline of >1 named component yields >1 distinct honest node.
+        node_names = {
+            e["payload"]["component_name"]
+            for e in events
+            if isinstance(e.get("payload"), dict) and "component_name" in e["payload"]
+        }
+        assert node_names == {"retriever", "prompt_builder", "llm"}
+        adapter.disconnect()
+
+    def test_tool_result_also_carries_component_name(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = _make_adapter(mock_client)
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[{"name": "retriever", "type": "BM25Retriever"}],
+        )
+        result = find_event(uploaded["events"], "tool.result")
+        assert result["payload"]["component_name"] == "retriever"
+        adapter.disconnect()
+
+    def test_environment_config_lists_pipeline_components(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = _make_adapter(mock_client)
+        _simulate_pipeline(
+            adapter._tracer,
+            components=[
+                {"name": "retriever", "type": "BM25Retriever"},
+                {
+                    "name": "llm",
+                    "type": "ChatGenerator",
+                    "output": {
+                        "replies": ["ok"],
+                        "meta": [{"model": "gpt-4o", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}],
+                    },
+                },
+            ],
+        )
+        cfg = find_event(uploaded["events"], "environment.config")
+        comps = cfg["payload"]["components"]
+        names = {c["name"] if isinstance(c, dict) else c for c in comps}
+        assert {"retriever", "llm"} <= names
+        adapter.disconnect()
+
+    def test_unnamed_component_stays_blank(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = _make_adapter(mock_client)
+        # No haystack.component.name tag -> the adapter defaults it to "unknown";
+        # a generic placeholder must NEVER surface as a fabricated node identity.
+        with adapter._tracer.trace("haystack.pipeline.run"):
+            with adapter._tracer.trace("haystack.component.run") as cs:
+                cs.set_tag("haystack.component.type", "BM25Retriever")
+        call = find_event(uploaded["events"], "tool.call")
+        assert "component_name" not in call["payload"]
+        # And no fabricated node leaks into environment.config either.
+        cfgs = find_events(uploaded["events"], "environment.config")
+        for cfg in cfgs:
+            for c in cfg["payload"].get("components", []):
+                name = c["name"] if isinstance(c, dict) else c
+                assert name != "unknown"
+        adapter.disconnect()

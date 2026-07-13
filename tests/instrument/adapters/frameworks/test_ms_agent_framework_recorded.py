@@ -105,8 +105,15 @@ class TestMSAgentFrameworkRecorded:
         assert cost["payload"]["tokens_completion"] == 1
         assert cost["payload"]["tokens_total"] == 13
 
-        # Real SK metadata carries no model key, so on a real run cost.record's
-        # model is None and no metadata-driven model.invoke fires. (The synthetic
-        # doubles injected metadata={"model": ...} and masked this.)
+        # Real SK metadata carries no model key, so cost.record's model is None.
+        # (The synthetic doubles injected metadata={"model": ...} and masked this.)
         assert cost["payload"]["model"] is None
-        assert find_events(events, "model.invoke") == []
+        # S22/G5: token telemetry is preserved even when the provider omits a
+        # model id — a model.invoke still fires carrying the real token counts
+        # (model None), so tokens are not silently dropped on such providers.
+        invokes = find_events(events, "model.invoke")
+        assert len(invokes) == 1
+        assert invokes[0]["payload"].get("model") is None
+        assert invokes[0]["payload"]["tokens_prompt"] == 12
+        assert invokes[0]["payload"]["tokens_completion"] == 1
+        assert invokes[0]["payload"]["tokens_total"] == 13

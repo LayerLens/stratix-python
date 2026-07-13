@@ -707,6 +707,11 @@ class TestModelInvocation:
         assert mi["payload"]["tokens_prompt"] == 642
         assert mi["payload"]["tokens_completion"] == 118
         assert mi["payload"]["tokens_total"] == 760
+        # G3: response_id fills from the model call's client_request_id, else the
+        # InvokeAgent AWS RequestId — both honest per-response identifiers.
+        rid = mi["payload"].get("response_id")
+        assert rid, "response_id should fill on the bedrock model.invoke (G3)"
+        assert rid == mi["payload"].get("client_request_id") or rid == mi["payload"].get("aws_request_id")
 
     def test_cost_record_is_priced(self, mock_client):
         adapter, uploaded, boto, _ = _setup(mock_client, _FakeEventStream(_full_stream()))
@@ -818,6 +823,35 @@ class TestCollaboratorHandoff:
         handoff = find_event(uploaded["events"], "agent.handoff")
         assert handoff["payload"]["from_agent"] == _AGENT_ID
         assert handoff["payload"]["to_agent"] == "RebookingSpecialist"
+
+    def test_handoff_omits_to_agent_when_collaborator_unnamed(self, mock_client):
+        """S16/F9: from_agent is the honest supervisor id, but when AWS names no
+        collaborator the to_agent is omitted, not fabricated as "collaborator"."""
+        inp = _trace_event(
+            {
+                "invocationInput": {
+                    "invocationType": "AGENT_COLLABORATOR",
+                    "traceId": "trace-collab-noname",
+                    "agentCollaboratorInvocationInput": {"input": {"text": "do it", "type": "TEXT"}},
+                }
+            }
+        )
+        obs = _trace_event(
+            {
+                "observation": {
+                    "type": "AGENT_COLLABORATOR",
+                    "traceId": "trace-collab-noname",
+                    "agentCollaboratorInvocationOutput": {"output": {"text": "done", "type": "TEXT"}},
+                }
+            }
+        )
+        adapter, uploaded, boto, _ = _setup(mock_client, _FakeEventStream([inp, obs]))
+        _drain(_invoke(boto))
+        adapter.disconnect()
+
+        handoff = find_event(uploaded["events"], "agent.handoff")
+        assert handoff["payload"]["from_agent"] == _AGENT_ID
+        assert "to_agent" not in handoff["payload"], "fabricated 'collaborator' to_agent"
 
 
 class TestFailureTrace:

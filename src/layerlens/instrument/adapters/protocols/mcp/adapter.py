@@ -40,13 +40,17 @@ import logging
 from typing import Any, Dict, Callable, Optional
 
 from ...._events import (
+    AGENT_ERROR,
     COST_RECORD,
     MCP_SAMPLING,
     MCP_TOOL_CALL,
     MCP_ASYNC_TASK,
     MCP_ELICITATION,
+    MCP_TOOLS_LISTED,
+    MCP_SERVER_CONNECTED,
     MCP_STRUCTURED_OUTPUT,
 )
+from ...._context import _current_span_id
 from .elicitation import ElicitationTracker
 from .._base_protocol import BaseProtocolAdapter
 from .structured_output import (
@@ -78,6 +82,9 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
         super().__init__(capture_config=capture_config)
         self._async_tasks = AsyncTaskTracker()
         self._elicitations = ElicitationTracker()
+        # The server's declared name, captured at the initialize() handshake and
+        # fed to the ElicitationTracker (S14/F7). None until a handshake is seen.
+        self._server_name: str | None = None
 
     def connect(self, target: Any = None, **kwargs: Any) -> Any:  # noqa: ARG002
         """Attach to a real MCP surface.
@@ -99,6 +106,12 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
             orig = target.list_tools
             self._originals["list_tools"] = orig
             target.list_tools = self._wrap_list_tools(orig)
+
+        # Capture the server identity at the initialize() handshake (S14/F7).
+        if hasattr(target, "initialize"):
+            orig = target.initialize
+            self._originals["initialize"] = orig
+            target.initialize = self._wrap_initialize(orig)
 
         # Real ClientSession server-initiated callbacks (the live surface, D5).
         if hasattr(target, "_elicitation_callback"):
@@ -123,7 +136,7 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
 
     def _wrap_call_tool(self, original: Callable[..., Any]) -> Callable[..., Any]:
         def _before(name: str, _arguments: Any) -> tuple[str, float]:
-            parent = uuid.uuid4().hex[:16]
+            parent = _current_span_id.get() or uuid.uuid4().hex[:16]
             start = time.time()
             self._emit_async_task_start(name, parent)
             return parent, start
@@ -138,6 +151,19 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
                     "error_type": type(exc).__name__,
                     "status": "error",
                     "latency_ms": (time.time() - start) * 1000,
+                },
+                parent_span_id=parent,
+            )
+            # Terminal tool failure -> agent.error so the trace's derived status
+            # is error, not completed — the mcp.tool.call status is read by no
+            # engine (S12/F4).
+            self.emit(
+                AGENT_ERROR,
+                {
+                    "tool_name": name,
+                    "source": "mcp",
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
                 },
                 parent_span_id=parent,
             )
@@ -234,7 +260,7 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
         def _emit(result: Any) -> None:
             tools = getattr(result, "tools", None) or (result if isinstance(result, list) else [])
             self.emit(
-                "mcp.tools.listed",
+                MCP_TOOLS_LISTED,
                 {
                     "tool_count": len(tools),
                     "tool_names": [getattr(t, "name", t) for t in tools[:50]],
@@ -256,6 +282,50 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
             return result
 
         return wrapped_sync
+
+    # ── server handshake ──────────────────────────────────────────────────────
+
+    def _wrap_initialize(self, original: Callable[..., Any]) -> Callable[..., Any]:
+        """Wrap ``ClientSession.initialize`` to capture the server identity from
+        the negotiated ``InitializeResult`` (S14/F7)."""
+        if _is_awaitable(original):
+
+            async def wrapped_async(*args: Any, **kwargs: Any) -> Any:
+                result = await original(*args, **kwargs)
+                self._emit_server_connected(result)
+                return result
+
+            return wrapped_async
+
+        def wrapped_sync(*args: Any, **kwargs: Any) -> Any:
+            result = original(*args, **kwargs)
+            self._emit_server_connected(result)
+            return result
+
+        return wrapped_sync
+
+    def _emit_server_connected(self, result: Any) -> None:
+        """Emit ``mcp.server.connected`` from an ``InitializeResult``. Reads only
+        what the server actually declared (serverInfo.name/version +
+        protocolVersion); emits nothing when none are present (honest blank). The
+        server name also feeds the ElicitationTracker — a server is not an agent,
+        so it is never promoted to agent identity."""
+        info = _attr(result, "serverInfo")
+        server_name = _attr(info, "name")
+        server_version = _attr(info, "version")
+        protocol_version = _attr(result, "protocolVersion")
+        if server_name:
+            self._server_name = str(server_name)
+        payload: Dict[str, Any] = {}
+        if server_name:
+            payload["server_name"] = str(server_name)
+        if server_version:
+            payload["server_version"] = str(server_version)
+        if protocol_version:
+            payload["protocol_version"] = str(protocol_version)
+        if not payload:
+            return
+        self.emit(MCP_SERVER_CONNECTED, payload)
 
     # ── elicitation: real ClientSession callback surface (D5) ─────────────────
 
@@ -325,11 +395,14 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
         message = _attr(params, "message")
         schema = _request_schema(params)
         mode = _elicit_mode(params)
-        parent = uuid.uuid4().hex[:16]
-        eid = _attr(params, "elicitationId") or self._elicitations.start_request(self.PROTOCOL, schema, message)
+        parent = _current_span_id.get() or uuid.uuid4().hex[:16]
+        # Feed the real server name captured at initialize() when known; fall back
+        # to the protocol label only if the handshake wasn't observed (S14/F7).
+        server_name = self._server_name or self.PROTOCOL
+        eid = _attr(params, "elicitationId") or self._elicitations.start_request(server_name, schema, message)
         # an elicitationId from URL params is the server's opaque id; still track latency
         if not self._elicitations.is_active(eid):
-            self._elicitations.start_request(self.PROTOCOL, schema, message, elicitation_id=eid)
+            self._elicitations.start_request(server_name, schema, message, elicitation_id=eid)
         self.emit(
             MCP_ELICITATION,
             {
@@ -393,7 +466,7 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
         """
 
         async def wrapped(context: Any, params: Any, *args: Any, **kwargs: Any) -> Any:
-            parent = uuid.uuid4().hex[:16]
+            parent = _current_span_id.get() or uuid.uuid4().hex[:16]
             start = time.time()
             try:
                 result = await original(context, params, *args, **kwargs)

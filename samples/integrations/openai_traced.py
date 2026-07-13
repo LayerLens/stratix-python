@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """OpenAI Traced -- LayerLens Python SDK Sample.
 
-Demonstrates tracing OpenAI API calls with LayerLens and running
-post-completion evaluation using AI judges.
+Demonstrates LIVE tracing of a real OpenAI API call with LayerLens and running
+post-completion evaluation using AI judges. The OpenAI call is instrumented, so
+the uploaded trace carries genuine model/token/cost events and renders the
+Agent, Framework, and Status columns from real data.
 
 Prerequisites:
     pip install layerlens --index-url https://sdk.layerlens.ai/package openai
     export LAYERLENS_STRATIX_API_KEY=your-api-key
+    export OPENAI_API_KEY=your-openai-key
 
 Usage:
     python openai_traced.py
@@ -16,34 +19,15 @@ from __future__ import annotations
 
 import os
 import sys
-import time
-from typing import Any
 
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import create_judge, poll_evaluation_results, trace_call
 
-# ---------------------------------------------------------------------------
-# Simulated OpenAI completion (used when OPENAI_API_KEY is not set)
-# ---------------------------------------------------------------------------
-
-SIMULATED_COMPLETION: dict[str, Any] = {
-    "model": "gpt-5.3",
-    "prompt": "Explain the CAP theorem in distributed systems",
-    "response": (
-        "The CAP theorem, formulated by Eric Brewer in 2000, states that a "
-        "distributed data system can provide at most two of these three guarantees "
-        "simultaneously:\n\n"
-        "1. **Consistency (C)**: Every read receives the most recent write.\n"
-        "2. **Availability (A)**: Every request receives a non-error response.\n"
-        "3. **Partition Tolerance (P)**: The system operates despite network partitions.\n\n"
-        "In practice, since network partitions are inevitable, the real choice is "
-        "between CP systems (like ZooKeeper) and AP systems (like Cassandra)."
-    ),
-    "tokens_used": 395,
-    "latency_ms": 1100,
-}
+SAMPLE = "openai_traced"
+MODEL = os.environ.get("SAMPLE_OPENAI_MODEL", "gpt-4o-mini")
+PROMPT = "Explain the CAP theorem in distributed systems."
 
 _VERDICT_COLORS = {"pass": "\033[92m", "fail": "\033[91m", "uncertain": "\033[93m"}
 _RESET = "\033[0m"
@@ -62,112 +46,82 @@ JUDGE_DEFINITIONS = [
 ]
 
 
-def _get_openai_completion() -> dict[str, Any]:
-    """Call the real OpenAI API if OPENAI_API_KEY is set, otherwise return simulated data."""
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("(OPENAI_API_KEY not set -- using simulated completion data)\n")
-        return SIMULATED_COMPLETION
-
-    try:
-        from openai import OpenAI  # type: ignore[import-untyped]
-
-        print("(Calling real OpenAI API...)\n")
-        openai_client = OpenAI(api_key=api_key)
-        prompt = SIMULATED_COMPLETION["prompt"]
-        start = time.monotonic()
-        completion = openai_client.chat.completions.create(
-            model="gpt-5.3",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        latency_ms = (time.monotonic() - start) * 1000
-        response_text = completion.choices[0].message.content or ""
-        tokens_used = completion.usage.total_tokens if completion.usage else 0
-        return {
-            "model": "gpt-5.3",
-            "prompt": prompt,
-            "response": response_text,
-            "tokens_used": tokens_used,
-            "latency_ms": round(latency_ms),
-        }
-    except ImportError:
-        print("(openai package not installed -- using simulated completion data)\n")
-        return SIMULATED_COMPLETION
-    except Exception as exc:
-        print(f"(OpenAI API call failed: {exc} -- using simulated completion data)\n")
-        return SIMULATED_COMPLETION
-
-
 def _ensure_judges(client: Stratix) -> list[tuple[str, str]]:
-    """Ensure judges exist and return a list of (judge_id, display_label) tuples.
+    """Create the sample's judges and return (judge_id, display_label) tuples.
 
-    First checks for existing judges; creates any that are missing.
+    Judges are namespaced per sample (via ``create_judge(namespace=...)``) so
+    identically-named judges in other samples never collide; ``create_judge``
+    also reuses an existing judge of the same name on a 409.
     """
     judge_pairs: list[tuple[str, str]] = []
-
-    # Check existing judges
-    existing_resp = client.judges.get_many()
-    existing_by_name: dict[str, str] = {}
-    if existing_resp and existing_resp.judges:
-        for j in existing_resp.judges:
-            existing_by_name[j.name.lower()] = j.id
-
     for name, goal in JUDGE_DEFINITIONS:
-        existing_id = existing_by_name.get(name.lower())
-        if existing_id:
-            judge_pairs.append((existing_id, name))
+        judge = create_judge(client, name=name, evaluation_goal=goal, namespace=SAMPLE)
+        if judge:
+            judge_pairs.append((judge.id, judge.name))
         else:
-            judge = create_judge(client, name=name, evaluation_goal=goal)
-            if judge:
-                judge_pairs.append((judge.id, judge.name))
-            else:
-                print(f"  WARNING: Failed to create judge '{name}'")
-
+            print(f"  WARNING: Failed to create judge '{name}'")
     return judge_pairs
 
 
 def main() -> None:
     """Run the OpenAI integration demo."""
     print("=== LayerLens + OpenAI Integration ===\n")
-    print("Running traced OpenAI completion...\n")
 
-    meta = _get_openai_completion()
-    print(f"Model: {meta['model']}")
-    print(f'Prompt: "{meta["prompt"]}"')
-    print(f"Response: {meta['tokens_used']} tokens ({meta['latency_ms'] / 1000:.1f}s)")
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("ERROR: OPENAI_API_KEY is not set.")
+        print("This sample traces a REAL OpenAI call -- set OPENAI_API_KEY and retry.")
+        sys.exit(1)
 
     try:
         client = Stratix()
     except Exception as exc:
-        print(f"\nERROR: Failed to initialize LayerLens client: {exc}")
+        print(f"ERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    trace_result = upload_trace_dict(
-        client,
-        input_text=meta["prompt"],
-        output_text=meta["response"],
-        metadata={
-            "model": meta["model"],
-            "tokens_used": meta["tokens_used"],
-            "latency_ms": meta["latency_ms"],
-        },
-    )
-    trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else "trace-oai-001"
+    # Instrument the OpenAI client so the call below emits real model.invoke /
+    # cost.record events into the trace.
+    from openai import OpenAI
+    from layerlens.instrument.adapters.providers.openai import instrument_openai
 
+    openai_client = OpenAI(api_key=api_key)
+    instrument_openai(openai_client)
+
+    print(f"Running a traced OpenAI completion ({MODEL})...\n")
+
+    def _call() -> str:
+        completion = openai_client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": PROMPT}],
+        )
+        return completion.choices[0].message.content or ""
+
+    # trace_call runs the instrumented completion, uploads the real trace, and
+    # returns the created trace ID for evaluation.
+    response_text, trace_id = trace_call(
+        client, agent_name="openai-assistant", run_fn=_call, input_value=PROMPT
+    )
+    if not trace_id:
+        print("ERROR: trace upload failed.")
+        sys.exit(1)
+
+    print(f'Prompt:   "{PROMPT}"')
+    print(f"Response: {response_text[:80]}{'...' if len(response_text) > 80 else ''}")
     print("\nLayerLens Evaluation:")
     print(f"  Trace ID:     {trace_id}")
 
-    # Create or find judges, then run evaluations
-    judge_pairs = _ensure_judges(client)
-
-    # Track which judges were created (not pre-existing) for cleanup
+    # Capture which judges already exist BEFORE creating ours, so cleanup only
+    # deletes the judges this run created (never the customer's own judges).
     existing_resp = client.judges.get_many()
-    existing_ids: set[str] = set()
+    pre_existing_ids: set[str] = set()
     if existing_resp and existing_resp.judges:
-        existing_ids = {j.id for j in existing_resp.judges}
-    created_judge_ids = [jid for jid, _ in judge_pairs if jid not in existing_ids]
+        pre_existing_ids = {j.id for j in existing_resp.judges}
 
+    created_judge_ids: list[str] = []
     try:
+        judge_pairs = _ensure_judges(client)
+        created_judge_ids = [jid for jid, _ in judge_pairs if jid not in pre_existing_ids]
+
         for judge_id, label in judge_pairs:
             te = client.trace_evaluations.create(
                 trace_id=trace_id,
@@ -185,6 +139,9 @@ def main() -> None:
                 print(f"  {label:14s} {color}{verdict.upper()}{_RESET} ({r.score:.2f})")
             else:
                 print(f"  {label:14s} -- timed out waiting for results")
+    except RuntimeError as exc:
+        print(f"\nNOTE: evaluations skipped -- {exc}")
+        print("  The trace is uploaded; add a project/public model to enable judges.")
     finally:
         for jid in created_judge_ids:
             try:

@@ -666,3 +666,104 @@ class TestDisconnectLeaveNoTrace:
         assert agent.run is original_run
         for cbs in agent.step_callbacks._callbacks.values():
             assert len(cbs) == 0
+
+
+# ---------------------------------------------------------------------------
+# Honest graph contract (Lever A) — recursive managed-agent instrumentation.
+#
+# The server graph engine builds nodes from the first HONEST agent_name and
+# edges from agent.handoff{from_agent,to_agent}. This adapter must:
+#   (a) emit one honest agent_name node per developer-NAMED managed sub-agent
+#       (on agent.input / agent.output / model.invoke) AND a real
+#       agent.handoff manager -> sub for each delegation;
+#   (b) NEVER fold type(agent).__name__ (a class default such as
+#       "CodeAgent"/"ToolCallingAgent" — on the generic denylist) into
+#       agent_name. An unnamed agent stays BLANK (no fabricated name/edge).
+# ---------------------------------------------------------------------------
+
+
+def _sub_run(sub: Any) -> Any:
+    """A sub-agent run that fires one real ActionStep (a model round)."""
+
+    def _run(*args: Any, **kwargs: Any) -> str:
+        sub.step_callbacks.callback(
+            _make_action_step(token_usage=TokenUsage(input_tokens=10, output_tokens=5)),
+            agent=sub,
+        )
+        return f"{sub.name} done"
+
+    return _run
+
+
+class TestHonestGraphContract:
+    def test_managed_agents_emit_honest_names_and_handoff(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = SmolAgentsAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+
+        web = _make_mock_agent(name="web_search_agent", agent_type="ToolCallingAgent", model_id="gpt-4o")
+        writer = _make_mock_agent(name="report_writer", agent_type="CodeAgent", model_id="gpt-4o")
+        web.run = _sub_run(web)
+        writer.run = _sub_run(writer)
+
+        manager = _make_mock_agent(
+            name="manager",
+            agent_type="CodeAgent",
+            model_id="gpt-4o",
+            managed_agents={"web_search_agent": web, "report_writer": writer},
+        )
+        adapter.connect(target=manager)
+
+        def _manager_run(*args: Any, **kwargs: Any) -> str:
+            # The manager delegates to each managed sub-agent (their run() is
+            # now traced by the adapter's recursive instrumentation).
+            web.run("search AI safety")
+            writer.run("write the report")
+            return "final result"
+
+        adapter._original_run = _manager_run
+        manager.run("research task")
+
+        events = uploaded["events"]
+
+        # (a) honest per-sub agent_name on model.invoke
+        model_names = {e["payload"].get("agent_name") for e in find_events(events, "model.invoke")}
+        assert "web_search_agent" in model_names
+        assert "report_writer" in model_names
+
+        # honest per-sub agent_name on agent.input / agent.output
+        input_names = {e["payload"].get("agent_name") for e in find_events(events, "agent.input")}
+        assert {"manager", "web_search_agent", "report_writer"} <= input_names
+        output_names = {e["payload"].get("agent_name") for e in find_events(events, "agent.output")}
+        assert {"web_search_agent", "report_writer"} <= output_names
+
+        # (b) a real handoff edge manager -> each sub
+        edges = {(h["payload"]["from_agent"], h["payload"]["to_agent"]) for h in find_events(events, "agent.handoff")}
+        assert ("manager", "web_search_agent") in edges
+        assert ("manager", "report_writer") in edges
+
+        # No class default ever surfaces as an identity.
+        all_names = {e["payload"].get("agent_name") for e in events}
+        assert "CodeAgent" not in all_names
+        assert "ToolCallingAgent" not in all_names
+
+        adapter.disconnect()
+
+    def test_unnamed_agent_renders_class_name_verbatim_ateam_parity(self, mock_client):
+        """ateam parity (#3): an unnamed agent's class default ("CodeAgent") is now
+        surfaced VERBATIM as agent_name so the trace renders like ateam (which reads
+        the name verbatim), instead of a blank column. Handoff endpoints still stay
+        honest — a single unnamed agent has no handoff."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = SmolAgentsAdapter(mock_client)
+        agent = _make_mock_agent(name=None, agent_type="CodeAgent", model_id="gpt-4o")
+        adapter.connect(target=agent)
+
+        _simulate_run(adapter, agent, steps=[_make_action_step()])
+
+        events = uploaded["events"]
+        agent_in = find_event(events, "agent.input")
+        assert agent_in["payload"].get("agent_name") == "CodeAgent"
+        # A single unnamed agent still has no (honest) handoff edge.
+        assert find_events(events, "agent.handoff") == []
+
+        adapter.disconnect()

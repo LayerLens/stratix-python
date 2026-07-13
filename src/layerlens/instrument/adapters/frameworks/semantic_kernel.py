@@ -1,13 +1,57 @@
 from __future__ import annotations
 
+import re
 import logging
 from typing import Any, Dict, List, Optional
 
 from ._utils import truncate, safe_serialize
+from ..._identity import _API_METHOD_RE, _s, _is_generic
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
 log = logging.getLogger(__name__)
+
+# SK gives an unnamed agent a ``default_factory`` name of the exact shape
+# ``agent_<16 random ASCII letters>`` (see semantic_kernel.agents.agent.Agent).
+# That is a framework-generated placeholder, NOT a developer-declared identity —
+# it must never surface as a graph node. This is a precise shape match: a real
+# developer name like ``agent_router`` (underscore, not 16 pure letters) or
+# ``researcher`` still passes through honestly.
+_SK_AUTO_AGENT_NAME_RE = re.compile(r"^agent_[A-Za-z]{16}$")
+
+
+def _honest_agent_name(raw: Any) -> Optional[str]:
+    """A producer-declared SK agent name, honest-guarded — or ``None``.
+
+    Rejects: a blank/whitespace/control-only value, SK's auto-generated
+    ``agent_<random>`` default, the shared generic class-name/placeholder
+    denylist (``_is_generic``), and a dotted API-method label (``_API_METHOD_RE``).
+    Reuses the single-source honesty guards in
+    :mod:`layerlens.instrument._identity` so the adapter can never fabricate an
+    agent identity. Returns the trimmed, control/bidi-sanitized name otherwise.
+    """
+    name = _s(raw)
+    if name is None:
+        return None
+    if _SK_AUTO_AGENT_NAME_RE.match(name):
+        return None
+    if _is_generic(name) or _API_METHOD_RE.match(name.lower()):
+        return None
+    return name
+
+
+def _raw_agent_name(raw: Any) -> Optional[str]:
+    """ateam-parity verbatim fallback (#3): the raw agent name, sanitized, with the
+    generic-denylist and api-method guards RELAXED so an unnamed/generic SK agent
+    still renders like ateam — but STILL dropping SK's random ``agent_<16 letters>``
+    auto-name (a non-deterministic, useless node label, different every run). Used
+    only for the per-event ``agent_name`` stamp; handoff endpoints and the
+    group_prev_agent chain stay on the honest :func:`_honest_agent_name`."""
+    name = _s(raw)
+    if name is None or _SK_AUTO_AGENT_NAME_RE.match(name):
+        return None
+    return name
+
 
 try:
     import semantic_kernel as _sk  # pyright: ignore[reportMissingImports]  # noqa: F401
@@ -48,6 +92,10 @@ class SemanticKernelAdapter(FrameworkAdapter):
         self._filter_ids: List[tuple] = []  # (FilterTypes, filter_id) for removal
         self._seen_plugins: set = set()
         self._patched_services: Dict[str, Any] = {}  # service_id -> original method
+        # AgentGroupChat (multi-agent) instrumentation: the chat instance and the
+        # original bound methods we shadow-wrapped (restored on disconnect).
+        self._group_chat: Any = None
+        self._patched_chat_methods: Dict[str, Any] = {}  # method_name -> original bound method
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -57,6 +105,13 @@ class SemanticKernelAdapter(FrameworkAdapter):
         self._check_dependency(_HAS_SEMANTIC_KERNEL)
         if target is None:
             raise ValueError("SemanticKernelAdapter requires a target kernel: adapter.connect(target=kernel)")
+
+        # An AgentGroupChat (multi-agent orchestration) is instrumented by
+        # wrapping its turn stream, NOT via the kernel filter API. Discriminate
+        # on the kernel-only ``add_filter`` surface.
+        if not hasattr(target, "add_filter") and _is_agent_group_chat(target):
+            self._connect_group_chat(target)
+            return
 
         from semantic_kernel.filters.filter_types import (
             FilterTypes,
@@ -101,10 +156,147 @@ class SemanticKernelAdapter(FrameworkAdapter):
                         filter_type,
                         filter_id,
                     )
+        self._restore_group_chat()
         self._unpatch_chat_services()
         self._filter_ids.clear()
         self._seen_plugins.clear()
         self._kernel = None
+
+    # ------------------------------------------------------------------
+    # AgentGroupChat (multi-agent) instrumentation — Lever A honest graph
+    # ------------------------------------------------------------------
+
+    def _connect_group_chat(self, chat: Any) -> None:
+        """Shadow-wrap the chat's async turn-stream entry points.
+
+        AgentGroupChat.invoke / invoke_stream are async generators that yield one
+        ``ChatMessageContent`` per agent turn (``message.name`` is the producing
+        :class:`ChatCompletionAgent`'s declared name). We wrap them to emit a
+        honest ``agent_name`` on agent.input/agent.output/model.invoke plus an
+        ``agent.handoff`` on each distinct turn transition. The chat is a Pydantic
+        model, so we install the wrapper via ``object.__setattr__`` (an instance
+        attribute shadows the class method) and remove it again on disconnect.
+        """
+        self._group_chat = chat
+        for method_name in ("invoke", "invoke_stream"):
+            original = getattr(chat, method_name, None)
+            if not callable(original):
+                continue
+            wrapped = self._make_traced_group_invoke(original)
+            try:
+                object.__setattr__(chat, method_name, wrapped)
+                self._patched_chat_methods[method_name] = original
+            except Exception:
+                log.debug("layerlens: could not wrap AgentGroupChat.%s", method_name, exc_info=True)
+
+    def _restore_group_chat(self) -> None:
+        if self._group_chat is not None:
+            for method_name in list(self._patched_chat_methods):
+                # We shadowed the class method with an instance-dict entry; popping
+                # it restores the original bound class method.
+                try:
+                    self._group_chat.__dict__.pop(method_name, None)
+                except Exception:
+                    log.debug("layerlens: could not restore AgentGroupChat.%s", method_name, exc_info=True)
+        self._patched_chat_methods.clear()
+        self._group_chat = None
+
+    def _make_traced_group_invoke(self, original: Any) -> Any:
+        adapter = self
+
+        async def _traced_group_invoke(*args: Any, **kwargs: Any) -> Any:
+            run = adapter._begin_run()
+            run.data["handoff_edges"] = set()
+            try:
+                async for message in original(*args, **kwargs):
+                    adapter._emit_group_message(message)
+                    yield message
+            finally:
+                adapter._end_run()
+
+        return _traced_group_invoke
+
+    def _emit_group_message(self, message: Any) -> None:
+        """Emit honest per-turn events for one AgentGroupChat message.
+
+        Only ASSISTANT-role messages are agent turns. ``agent_name`` is set ONLY
+        when :func:`_honest_agent_name` accepts the producing agent's name — an
+        unnamed/auto-named agent stays honestly blank (no fabricated identity, no
+        handoff). Plugins/tools are never surfaced here as agents.
+        """
+        run = self._get_run()
+        if run is None:
+            return
+
+        role = getattr(message, "role", None)
+        role_name = getattr(role, "value", None) or (str(role) if role is not None else "")
+        if role_name and role_name.lower() != "assistant":
+            return
+
+        name = _honest_agent_name(getattr(message, "name", None))
+        # ateam parity (#3): honest name preferred for handoff edges + the
+        # group_prev_agent chain; a verbatim (generic) fallback is used ONLY for
+        # the per-event agent_name stamp so an unnamed SK agent still renders.
+        stamp_name = name or _raw_agent_name(getattr(message, "name", None))
+        content = getattr(message, "content", None)
+        model = _s(getattr(message, "ai_model_id", None))
+        metadata = getattr(message, "metadata", None)
+        usage = metadata.get("usage") if isinstance(metadata, dict) else None
+        tokens = self._normalize_tokens(usage)
+
+        data = run.data
+        prev_agent = data.get("group_prev_agent")
+        prev_content = data.get("group_prev_content")
+        edges = data.setdefault("handoff_edges", set())
+
+        span_id = self._new_span_id()
+
+        # agent.handoff — a distinct, honest turn transition (deduped per run).
+        if name and prev_agent and prev_agent != name:
+            edge = (prev_agent, name)
+            if edge not in edges:
+                edges.add(edge)
+                self._emit(
+                    "agent.handoff",
+                    self._payload(from_agent=prev_agent, to_agent=name),
+                    span_id=self._new_span_id(),
+                )
+
+        # agent.input — the conversation state this agent acted on.
+        in_payload = self._payload()
+        if stamp_name:
+            in_payload["agent_name"] = stamp_name
+        self._set_if_capturing(in_payload, "input", prev_content)
+        self._emit("agent.input", in_payload, span_id=span_id)
+
+        # model.invoke — the agent's model call, attributed to the honest agent.
+        if model or tokens:
+            mi_payload = self._payload()
+            if stamp_name:
+                mi_payload["agent_name"] = stamp_name
+            if model:
+                mi_payload["model"] = model
+            mi_payload.update(tokens)
+            self._emit("model.invoke", mi_payload, span_id=span_id)
+
+            if tokens and model:
+                cost_payload = self._payload()
+                if stamp_name:
+                    cost_payload["agent_name"] = stamp_name
+                cost_payload["model"] = model
+                cost_payload.update(tokens)
+                self._emit("cost.record", cost_payload, span_id=span_id)
+
+        # agent.output — the message this agent produced.
+        out_payload = self._payload()
+        if stamp_name:
+            out_payload["agent_name"] = stamp_name
+        self._set_if_capturing(out_payload, "output", content)
+        self._emit("agent.output", out_payload, span_id=span_id)
+
+        if name:
+            data["group_prev_agent"] = name
+        data["group_prev_content"] = content
 
     # ------------------------------------------------------------------
     # Run boundary tracking via nesting depth
@@ -418,6 +610,17 @@ class SemanticKernelAdapter(FrameworkAdapter):
 # ------------------------------------------------------------------
 # Module-level helpers
 # ------------------------------------------------------------------
+
+
+def _is_agent_group_chat(target: Any) -> bool:
+    """Duck-type: an SK AgentGroupChat exposes an ``agents`` collection plus the
+    ``invoke`` and ``add_agent`` turn-orchestration API (a Kernel has none of
+    these). Used to route ``connect(target=...)`` to the multi-agent path."""
+    return (
+        hasattr(target, "agents")
+        and callable(getattr(target, "invoke", None))
+        and callable(getattr(target, "add_agent", None))
+    )
 
 
 def _get_filter_list(kernel: Any, filter_type: Any) -> list:

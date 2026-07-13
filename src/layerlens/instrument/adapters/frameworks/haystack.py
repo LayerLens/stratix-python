@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterator, Optional
 from contextlib import contextmanager
 
 from ._utils import safe_serialize
+from ..._identity import _API_METHOD_RE, _is_generic
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
@@ -97,6 +98,20 @@ class HaystackAdapter(FrameworkAdapter):
             span_name="haystack:pipeline",
         )
 
+        # Re-emit the pipeline shape so the server graph engine can render each
+        # named component as a node. Only the honest, producer-declared
+        # component names observed during this run are listed — an unnamed /
+        # generic component is never fabricated into a node.
+        components = self._collected_components()
+        if components:
+            self._emit(
+                "environment.config",
+                self._payload(components=components),
+                span_id=root,
+                parent_span_id=None,
+                span_name="haystack:pipeline",
+            )
+
         out = self._payload(latency_ms=elapsed_ms)
         self._set_if_capturing(out, "output", safe_serialize(tags.get("haystack.pipeline.output_data")))
         if tags.get("error"):
@@ -116,10 +131,51 @@ class HaystackAdapter(FrameworkAdapter):
         comp_type = str(tags.get("haystack.component.type", ""))
         comp_name = str(tags.get("haystack.component.name", "unknown"))
 
+        # ``component_name`` is the field the server graph engine reads to build
+        # a haystack node. The instance name a developer gave the component
+        # (``retriever``, ``llm``) is producer-declared and honest; a missing
+        # name (the ``"unknown"`` default) or any generic/API-method label is
+        # NOT — it must stay blank rather than fabricate a node identity.
+        honest_name = _honest_component_name(comp_name)
+        if honest_name is not None:
+            self._record_component(honest_name, comp_type)
+
         if any(kw in comp_type.lower() for kw in _GENERATOR_KEYWORDS):
-            self._on_generator_end(span, elapsed_ms, tags, comp_name, comp_type)
+            self._on_generator_end(span, elapsed_ms, tags, comp_name, comp_type, honest_name)
         else:
-            self._on_tool_end(span, elapsed_ms, tags, comp_name, comp_type)
+            self._on_tool_end(span, elapsed_ms, tags, comp_name, comp_type, honest_name)
+
+    def _record_component(self, name: str, comp_type: str) -> None:
+        """Accumulate a distinct honest component for this run's ``environment.config``."""
+        run = self._get_run()
+        if run is None:
+            return
+        seen = run.data.setdefault("haystack_components", [])
+        if not any(c["name"] == name for c in seen):
+            entry: Dict[str, Any] = {"name": name}
+            if comp_type:
+                entry["component_class"] = comp_type
+            seen.append(entry)
+
+    def _collected_components(self) -> list:
+        run = self._get_run()
+        if run is None:
+            return []
+        return list(run.data.get("haystack_components", []))
+
+    @staticmethod
+    def _stamp_component(payload: Dict[str, Any], honest_name: Optional[str], comp_type: str) -> None:
+        """Stamp the honest graph-node identity on a component event.
+
+        ``component_name`` is what the server graph engine reads for haystack, so
+        it is set ONLY when the developer declared a real component name (never a
+        generic/API-method label). ``component_class`` is the component's class
+        (``OpenAIChatGenerator``) — carried as metadata, never as the node id.
+        """
+        if honest_name is not None:
+            payload["component_name"] = honest_name
+        if comp_type:
+            payload["component_class"] = comp_type
 
     def _on_generator_end(
         self,
@@ -128,14 +184,19 @@ class HaystackAdapter(FrameworkAdapter):
         tags: Dict[str, Any],
         name: str,
         comp_type: str,
+        honest_name: Optional[str] = None,
     ) -> None:
         model = _extract_model(tags)
         output = tags.get("haystack.component.output", {})
         tokens = self._normalize_tokens(_extract_usage(output))
 
         payload = self._payload(component_type=comp_type, latency_ms=elapsed_ms)
+        self._stamp_component(payload, honest_name, comp_type)
         if model:
             payload["model"] = model
+        fr = _extract_finish_reason(output)
+        if fr:
+            payload["finish_reason"] = str(fr)
         payload.update(tokens)
         self._set_if_capturing(payload, "input", safe_serialize(tags.get("haystack.component.input")))
         if isinstance(output, dict) and "replies" in output:
@@ -161,8 +222,10 @@ class HaystackAdapter(FrameworkAdapter):
         tags: Dict[str, Any],
         name: str,
         comp_type: str,
+        honest_name: Optional[str] = None,
     ) -> None:
         call = self._payload(tool_name=name, component_type=comp_type)
+        self._stamp_component(call, honest_name, comp_type)
         self._set_if_capturing(call, "input", safe_serialize(tags.get("haystack.component.input")))
         self._emit(
             "tool.call",
@@ -173,6 +236,7 @@ class HaystackAdapter(FrameworkAdapter):
         )
 
         result = self._payload(tool_name=name, component_type=comp_type, latency_ms=elapsed_ms)
+        self._stamp_component(result, honest_name, comp_type)
         self._set_if_capturing(result, "output", safe_serialize(tags.get("haystack.component.output")))
         if tags.get("error"):
             result["error"] = str(tags.get("error.message", "unknown"))
@@ -299,6 +363,23 @@ class _LayerLensSpan:
 # ---------------------------------------------------------------------------
 
 
+def _honest_component_name(name: Any) -> Optional[str]:
+    """The producer-declared component name, honest-guarded — or None.
+
+    Returns the trimmed component name a developer gave the pipeline component,
+    unless it is empty, the ``"unknown"`` default (an unset name), any generic
+    class/placeholder label, or a dotted API-method label — none of which is a
+    real, producer-declared node identity. Reuses the shared anti-fabrication
+    guard so the haystack graph node is never invented.
+    """
+    if not isinstance(name, str):
+        return None
+    n = name.strip()
+    if not n or _is_generic(n) or _API_METHOD_RE.match(n.lower()):
+        return None
+    return n
+
+
 def _extract_model(tags: Dict[str, Any]) -> Optional[str]:
     model = tags.get("haystack.model")
     if model:
@@ -319,6 +400,15 @@ def _extract_usage(output: Any) -> Optional[Dict[str, int]]:
     meta_list = output.get("meta")
     if isinstance(meta_list, list) and meta_list and isinstance(meta_list[0], dict):
         return meta_list[0].get("usage")
+    return None
+
+
+def _extract_finish_reason(output: Any) -> Optional[str]:
+    if not isinstance(output, dict):
+        return None
+    meta_list = output.get("meta")
+    if isinstance(meta_list, list) and meta_list and isinstance(meta_list[0], dict):
+        return meta_list[0].get("finish_reason")
     return None
 
 

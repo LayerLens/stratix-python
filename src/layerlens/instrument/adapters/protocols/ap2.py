@@ -288,6 +288,9 @@ class AP2ProtocolAdapter(BaseProtocolAdapter):
         contents = _attr(payment, "payment_mandate_contents")
         payment_mandate_id = _attr(contents, "payment_mandate_id") or uuid.uuid4().hex[:16]
         user_auth = _attr(payment, "user_authorization")
+        # The merchant the payment is bound to (PaymentMandateContents.merchant_agent).
+        # An identifier, not content — survives redaction like task_id (S15/F8).
+        merchant_agent = _attr(contents, "merchant_agent")
 
         cart = self._carts.get(cart_id) if cart_id else None
         if cart is not None:
@@ -375,20 +378,20 @@ class AP2ProtocolAdapter(BaseProtocolAdapter):
         if cart is not None:
             self._charged_carts.add(cart.cart_id)
             cart.signed = True
-        self.emit(
-            PAYMENT_MANDATE_SIGNED,
-            {
-                "payment_mandate_id": payment_mandate_id,
-                "cart_id": cart.cart_id if cart else None,
-                "status": "signed",
-                "currency": currency,
-                "user_authorization_present": user_auth is not None,
-                "user_authorization_fp": self._fingerprint(user_auth) if user_auth is not None else None,
-                # content (stripped under no-content):
-                "amount": amount,
-                "cumulative_spend": new_total,
-            },
-        )
+        signed_payload: Dict[str, Any] = {
+            "payment_mandate_id": payment_mandate_id,
+            "cart_id": cart.cart_id if cart else None,
+            "status": "signed",
+            "currency": currency,
+            "user_authorization_present": user_auth is not None,
+            "user_authorization_fp": self._fingerprint(user_auth) if user_auth is not None else None,
+            # content (stripped under no-content):
+            "amount": amount,
+            "cumulative_spend": new_total,
+        }
+        if merchant_agent is not None:
+            signed_payload["merchant_agent"] = str(merchant_agent)
+        self.emit(PAYMENT_MANDATE_SIGNED, signed_payload)
 
     # ── receipt: gated on signed + unexpired (NOT the sign path alone) ──
 

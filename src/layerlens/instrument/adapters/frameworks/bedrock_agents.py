@@ -474,6 +474,11 @@ class _CompletionProxy:
         client_request_id = metadata.get("clientRequestId") if isinstance(metadata, dict) else None
         if client_request_id:
             payload["client_request_id"] = str(client_request_id)
+        # Fill the response_id column from the honest per-response identifier: the
+        # underlying model call's id, else the InvokeAgent AWS RequestId (G3).
+        resp_id = client_request_id or getattr(self, "_request_id", None)
+        if resp_id:
+            payload["response_id"] = str(resp_id)
         self._emit("model.invoke", payload, span_id=span_id, span_name="bedrock.model")
 
         if tokens_prompt or tokens_completion:
@@ -638,12 +643,16 @@ class _CompletionProxy:
     def _on_collaborator(self, output: Dict[str, Any], inp: Dict[str, Any], trace_id: Optional[str] = None) -> None:
         collab_in = inp.get("agentCollaboratorInvocationInput", {}) if isinstance(inp, dict) else {}
         collab_in = collab_in if isinstance(collab_in, dict) else {}
-        to_agent = collab_in.get("agentCollaboratorName") or output.get("agentCollaboratorName") or "collaborator"
+        # from_agent (the supervisor) is always the honest constructor-injected
+        # agent id; to_agent is honest only when AWS names the collaborator —
+        # omit rather than fabricate the literal "collaborator" (F9).
+        to_agent = collab_in.get("agentCollaboratorName") or output.get("agentCollaboratorName")
         payload = self._adapter._payload(
             from_agent=self._agent_id,
-            to_agent=to_agent,
             reason="supervisor_delegation",
         )
+        if to_agent:
+            payload["to_agent"] = str(to_agent)
         if trace_id:
             payload["bedrock_trace_id"] = str(trace_id)
         self._adapter._set_if_capturing(payload, "input", safe_serialize(collab_in.get("input")))

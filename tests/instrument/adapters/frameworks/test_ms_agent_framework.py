@@ -239,6 +239,71 @@ class TestMessageProcessing:
         assert cost["payload"]["tokens_prompt"] == 10
         assert cost["payload"]["tokens_completion"] == 20
 
+    def test_model_invoke_emitted_with_tokens_when_model_absent(self, mock_client):
+        """G5: when the framework reports usage but NO model id, model.invoke is
+        still emitted with the flat tokens so tokens_total fills — both ateam and
+        atlas read tokens_total from model.invoke only, and previously the tokens
+        were stranded on cost.record (model.invoke was gated on a model id)."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(
+            adapter,
+            chat,
+            [_msg(agent_name="primary", metadata={"usage": {"prompt_tokens": 7, "completion_tokens": 5}})],
+        )
+
+        mi = find_event(uploaded["events"], "model.invoke")
+        assert mi["payload"]["tokens_total"] == 12
+        assert mi["payload"]["tokens_prompt"] == 7
+        # model/provider honestly omitted when the framework surfaces no model id.
+        assert "model" not in mi["payload"]
+
+    def test_model_invoke_has_flat_token_keys(self, mock_client):
+        """S18/F11: model.invoke itself carries the flat tokens_* keys the
+        atlas extractor reads, not just the sibling cost.record."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(
+            adapter,
+            chat,
+            [
+                _msg(
+                    agent_name="primary",
+                    metadata={
+                        "model": "gpt-4o",
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+                    },
+                )
+            ],
+        )
+
+        model_invoke = find_event(uploaded["events"], "model.invoke")
+        assert model_invoke["payload"]["tokens_prompt"] == 10
+        assert model_invoke["payload"]["tokens_completion"] == 20
+        assert model_invoke["payload"]["tokens_total"] == 30
+
+    def test_model_invoke_without_usage_has_no_token_keys(self, mock_client):
+        """No usage on the metadata must leave model.invoke unchanged (no fabrication)."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(
+            adapter,
+            chat,
+            [_msg(agent_name="primary", metadata={"model": "gpt-4o"})],
+        )
+
+        model_invoke = find_event(uploaded["events"], "model.invoke")
+        assert "tokens_prompt" not in model_invoke["payload"]
+        assert "tokens_completion" not in model_invoke["payload"]
+        assert "tokens_total" not in model_invoke["payload"]
+        assert find_events(uploaded["events"], "cost.record") == []
+
     def test_handoff_emitted_on_agent_turn_change(self, mock_client):
         uploaded = capture_framework_trace(mock_client)
         adapter = MSAgentFrameworkAdapter(mock_client)

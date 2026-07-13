@@ -21,7 +21,20 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import (
+    create_judge,
+    poll_evaluation_results,
+    recorded_trace_path,
+    upload_recorded_trace,
+)
+
+# This sample uploads RECORDED REAL traces: each was captured from a genuine
+# instrumented ``fraud-risk-analyzer`` run over the scenarios below (see
+# ``samples/data/_generate_fixtures.py``), so the LayerLens UI renders the
+# Agent, Framework, and Status columns from real data. The scenarios remain
+# here as documentation of what was analyzed and to label the evaluation output.
+SAMPLE = "financial_fraud"
+FIXTURE = recorded_trace_path("industry", "financial_fraud.jsonl")
 
 TRANSACTIONS: list[dict[str, Any]] = [
     {
@@ -77,45 +90,44 @@ def main() -> None:
         print(f"ERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    # Create judges up front
-    judges = {
-        "fraud_risk": create_judge(
-            client,
-            name="Fraud Risk Judge",
-            evaluation_goal="Evaluate the fraud risk score of the transaction based on amount, merchant, and risk factors.",
-        ),
-        "financial_guardrail": create_judge(
-            client,
-            name="Financial Guardrail Judge",
-            evaluation_goal="Evaluate whether the transaction complies with financial guardrails and regulatory limits.",
-        ),
-        "aml_compliance": create_judge(
-            client,
-            name="AML Compliance Judge",
-            evaluation_goal="Evaluate whether the transaction shows patterns consistent with anti-money laundering (AML) violations such as structuring or suspicious activity.",
-        ),
-    }
-    judge_ids = [j.id for j in judges.values()]
+    # Upload the recorded real traces first. Doing this before judge creation
+    # means the traces always land even if the org has no evaluation model yet.
+    print(f"Uploading {len(TRANSACTIONS)} recorded fraud-analysis traces...\n")
+    trace_ids = upload_recorded_trace(client, FIXTURE)
+    if not trace_ids:
+        print("ERROR: no traces uploaded (fixture missing or rejected).")
+        sys.exit(1)
 
+    # Create judges. If the org has no models available, judge creation raises
+    # RuntimeError -- we skip the evaluations (the traces are already uploaded)
+    # rather than crash.
+    judge_ids: list[str] = []
     try:
-        print(f"Analyzing {len(TRANSACTIONS)} transactions...\n")
-
-        for txn in TRANSACTIONS:
-            trace_result = upload_trace_dict(
+        judges = {
+            "fraud_risk": create_judge(
                 client,
-                input_text=str(txn),
-                output_text=f"Risk assessment for {txn['merchant']}: {txn['description']}",
-                metadata={
-                    "amount": txn["amount"],
-                    "merchant": txn["merchant"],
-                    "category": txn["category"],
-                    "risk_factors": txn["risk_factors"],
-                },
-            )
-            trace_id = (
-                trace_result.trace_ids[0] if trace_result.trace_ids else txn["id"]
-            )
+                name="Fraud Risk Judge",
+                evaluation_goal="Evaluate the fraud risk score of the transaction based on amount, merchant, and risk factors.",
+                namespace=SAMPLE,
+            ),
+            "financial_guardrail": create_judge(
+                client,
+                name="Financial Guardrail Judge",
+                evaluation_goal="Evaluate whether the transaction complies with financial guardrails and regulatory limits.",
+                namespace=SAMPLE,
+            ),
+            "aml_compliance": create_judge(
+                client,
+                name="AML Compliance Judge",
+                evaluation_goal="Evaluate whether the transaction shows patterns consistent with anti-money laundering (AML) violations such as structuring or suspicious activity.",
+                namespace=SAMPLE,
+            ),
+        }
+        judge_ids = [j.id for j in judges.values()]
 
+        print(f"Analyzing {len(trace_ids)} transactions...\n")
+
+        for txn, trace_id in zip(TRANSACTIONS, trace_ids):
             # Evaluate with all judges and collect results
             eval_results: dict[str, Any] = {}
             for judge_key, judge_obj in judges.items():
@@ -160,6 +172,9 @@ def main() -> None:
 
             print()
 
+    except RuntimeError as exc:
+        print(f"\nNOTE: evaluations skipped -- {exc}")
+        print("  Traces are uploaded; add a project/public model to enable judges.")
     finally:
         for jid in judge_ids:
             try:

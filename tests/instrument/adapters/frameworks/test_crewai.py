@@ -14,6 +14,7 @@ from __future__ import annotations
 # and importorskip only catches ImportError, so we guard explicitly.
 import sys
 import datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -1056,6 +1057,43 @@ class TestDelegation:
         self._end_crew(adapter)
 
         assert find_events(uploaded["events"], "agent.handoff") == []
+
+    def test_delegation_from_tool_omits_from_agent_when_role_untracked(self, adapter_and_trace):
+        """S16/F9: the coworker (to_agent) is honest, but with no tracked current
+        agent role the from_agent is omitted, not fabricated as "unknown"."""
+        adapter, uploaded = adapter_and_trace
+        # Start the crew (run active) but NO agent execution -> no current role.
+        adapter._on_crew_started(None, CrewKickoffStartedEvent(crew_name="C", inputs={}))
+        evt = ToolUsageStartedEvent(
+            tool_name="Delegate work to coworker",
+            tool_args={"task": "x", "coworker": "researcher", "context": ""},
+            agent_key="k1",
+        )
+        adapter._on_tool_started(None, evt)
+        self._end_crew(adapter)
+
+        handoff = find_event(uploaded["events"], "agent.handoff")
+        assert handoff["payload"]["to_agent"] == "researcher"
+        assert "from_agent" not in handoff["payload"], "fabricated 'unknown' from_agent"
+
+    def test_delegation_started_suppressed_when_no_honest_endpoints(self, adapter_and_trace):
+        """S16/F9: a delegation event carrying no from/to attrs names neither
+        endpoint honestly, so no handoff is drawn (no fabricated manager/worker)."""
+        adapter, uploaded = adapter_and_trace
+        self._begin_crew_with_agent(adapter, role="manager")
+        adapter._on_delegation_started(None, SimpleNamespace())
+        self._end_crew(adapter)
+        assert find_events(uploaded["events"], "agent.handoff") == []
+
+    def test_delegation_started_keeps_honest_endpoints(self, adapter_and_trace):
+        """Regression: real from/to attrs are still emitted in full."""
+        adapter, uploaded = adapter_and_trace
+        self._begin_crew_with_agent(adapter, role="manager")
+        adapter._on_delegation_started(None, SimpleNamespace(from_agent="planner", to_agent="writer"))
+        self._end_crew(adapter)
+        handoff = find_event(uploaded["events"], "agent.handoff")
+        assert handoff["payload"]["from_agent"] == "planner"
+        assert handoff["payload"]["to_agent"] == "writer"
 
     def test_delegation_seq_increments_across_calls(self, adapter_and_trace):
         adapter, uploaded = adapter_and_trace

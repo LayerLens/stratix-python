@@ -300,8 +300,17 @@ class PydanticAIAdapter(FrameworkAdapter):
     def _emit_model_response(self, response: Any, latency_ms: float, fallback_model_name: Optional[str]) -> None:
         model_name = getattr(response, "model_name", None) or fallback_model_name
         payload = self._payload()
+        # Attribute the model call to the DECLARED agent (never the model — that
+        # would be model-as-agent) so the graph engine places this node-bearing
+        # event on the honest node; stays absent for an unnamed agent.
+        agent_name = self._agent_display_name(self._target)
+        if agent_name:
+            payload["agent_name"] = agent_name
         if model_name:
             payload["model"] = str(model_name)
+        prid = getattr(response, "provider_response_id", None)
+        if prid:
+            payload["response_id"] = str(prid)
         payload["latency_ms"] = latency_ms
         payload.update(self._normalize_tokens(getattr(response, "usage", None)))
         self._emit("model.invoke", payload)
@@ -463,6 +472,9 @@ class _InstrumentedModel(WrapperModel):  # type: ignore[misc,valid-type]
         # StreamedResponse knows its usage/model; emit one streaming invoke.
         latency_ms = (time.time_ns() - start_ns) / 1_000_000
         payload = adapter._payload(streaming=True)
+        agent_name = adapter._agent_display_name(adapter._target)
+        if agent_name:
+            payload["agent_name"] = agent_name
         model_name = getattr(streamed, "model_name", None) or getattr(self.wrapped, "model_name", None)
         if model_name:
             payload["model"] = str(model_name)
