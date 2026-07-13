@@ -1,0 +1,552 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent-graph contract — testing-gap closure (2026-07-13)</title>
+<style>
+  :root {
+    --ground: #f5f8f9;
+    --surface: #ffffff;
+    --surface-2: #eef3f5;
+    --ink: #15202a;
+    --muted: #566873;
+    --faint: #7c8b95;
+    --line: #d5e0e5;
+    --line-strong: #bccbd2;
+    --accent: #0e6b8c;
+    --accent-soft: #e2eef2;
+    --ok: #2f7a52;
+    --ok-soft: #e4f0ea;
+    --warn: #935f0f;
+    --warn-soft: #f6ecd8;
+    --was: #a4403a;
+    --shadow: 0 1px 2px rgba(21, 32, 42, 0.06), 0 4px 16px rgba(21, 32, 42, 0.05);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: "Inter var", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0d141a;
+      --surface: #141e26;
+      --surface-2: #1a2731;
+      --ink: #e7eef2;
+      --muted: #94a6b1;
+      --faint: #6f818d;
+      --line: #253440;
+      --line-strong: #33454f;
+      --accent: #4cb9d8;
+      --accent-soft: #123039;
+      --ok: #5bbf8b;
+      --ok-soft: #14281f;
+      --warn: #d0a24e;
+      --warn-soft: #2a2110;
+      --was: #d97a74;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 22px rgba(0, 0, 0, 0.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0d141a; --surface: #141e26; --surface-2: #1a2731; --ink: #e7eef2;
+    --muted: #94a6b1; --faint: #6f818d; --line: #253440; --line-strong: #33454f;
+    --accent: #4cb9d8; --accent-soft: #123039; --ok: #5bbf8b; --ok-soft: #14281f;
+    --warn: #d0a24e; --warn-soft: #2a2110; --was: #d97a74;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 22px rgba(0,0,0,.3);
+  }
+  :root[data-theme="light"] {
+    --ground: #f5f8f9; --surface: #ffffff; --surface-2: #eef3f5; --ink: #15202a;
+    --muted: #566873; --faint: #7c8b95; --line: #d5e0e5; --line-strong: #bccbd2;
+    --accent: #0e6b8c; --accent-soft: #e2eef2; --ok: #2f7a52; --ok-soft: #e4f0ea;
+    --warn: #935f0f; --warn-soft: #f6ecd8; --was: #a4403a;
+    --shadow: 0 1px 2px rgba(21,32,42,.06), 0 4px 16px rgba(21,32,42,.05);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ---- Masthead ---- */
+  header.mast {
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 40px;
+    padding: 56px 0 34px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 18px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .eyebrow .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  h1 {
+    font-size: clamp(28px, 4.4vw, 42px);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    font-weight: 680;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 18px;
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0 0 26px;
+    text-wrap: pretty;
+  }
+  .provenance {
+    display: flex; flex-wrap: wrap; gap: 8px 20px;
+    font-size: 13px; color: var(--faint);
+    font-family: var(--mono);
+  }
+  .provenance b { color: var(--muted); font-weight: 500; }
+
+  code, .mono { font-family: var(--mono); font-size: 0.88em; }
+  code {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.06em 0.4em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  /* ---- Summary cards ---- */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 14px;
+    margin: 0 0 14px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 18px 16px;
+    box-shadow: var(--shadow);
+  }
+  .card .num {
+    font-size: 30px; font-weight: 680; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums; line-height: 1;
+    display: block; margin-bottom: 8px;
+  }
+  .card .lbl { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+  .card.accent { border-color: var(--accent); }
+  .card.accent .num { color: var(--accent); }
+
+  .lede-note {
+    font-size: 14px; color: var(--muted);
+    background: var(--accent-soft);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 13px 16px; margin: 22px 0 0;
+  }
+
+  /* ---- Section ---- */
+  section { margin-top: 56px; }
+  h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--faint); font-weight: 600; font-family: var(--mono);
+    margin: 0 0 22px; padding-bottom: 10px; border-bottom: 1px solid var(--line);
+  }
+
+  /* ---- Gap ledger ---- */
+  .gap {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 0 22px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 24px 22px 20px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .gap .rail { border-right: 1px solid var(--line); padding-right: 14px; }
+  .gap .gid {
+    font-family: var(--mono); font-weight: 680; font-size: 20px;
+    letter-spacing: -0.01em; color: var(--accent); line-height: 1;
+    margin-bottom: 12px;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em;
+    text-transform: uppercase; font-weight: 600;
+    padding: 4px 8px; border-radius: 6px; white-space: nowrap;
+  }
+  .chip.ok { color: var(--ok); background: var(--ok-soft); }
+  .chip .tick { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pr {
+    display: inline-block; margin-top: 10px;
+    font-family: var(--mono); font-size: 12px;
+    color: var(--accent); text-decoration: none;
+    border-bottom: 1px solid transparent;
+  }
+  .pr:hover { border-bottom-color: var(--accent); }
+  .pr .repo { color: var(--faint); }
+
+  .gap .body h3 {
+    font-size: 18px; font-weight: 620; margin: 2px 0 8px; letter-spacing: -0.01em;
+  }
+  .gap .was {
+    font-size: 13.5px; color: var(--muted); margin: 0 0 12px;
+  }
+  .gap .was b { color: var(--was); font-weight: 600; }
+  .gap ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+  .gap li {
+    font-size: 14.5px; color: var(--ink); padding-left: 20px; position: relative;
+    line-height: 1.5;
+  }
+  .gap li::before {
+    content: ""; position: absolute; left: 2px; top: 0.62em;
+    width: 8px; height: 8px; border: 1.5px solid var(--accent);
+    border-radius: 2px; transform: rotate(45deg);
+  }
+  .teeth {
+    margin-top: 13px; font-size: 13px; color: var(--muted);
+    font-family: var(--mono); line-height: 1.55;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 13px;
+  }
+  .teeth .k { color: var(--ok); font-weight: 600; }
+  .teeth .r { color: var(--was); font-weight: 600; }
+
+  /* ---- Tables ---- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--surface); }
+  th, td { text-align: left; padding: 11px 15px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th {
+    font-family: var(--mono); font-size: 11.5px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--faint); font-weight: 600;
+    background: var(--surface-2); position: sticky; top: 0;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.mono, .nodes { font-family: var(--mono); font-size: 12.5px; }
+  td.center { text-align: center; font-variant-numeric: tabular-nums; }
+  .tag { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 5px; white-space: nowrap; }
+  .tag.agentic { color: var(--accent); background: var(--accent-soft); }
+  .tag.empty { color: var(--muted); background: var(--surface-2); }
+  .blank { color: var(--faint); font-style: italic; }
+
+  /* ---- Residuals / observations ---- */
+  .obs {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--warn); border-radius: 0 10px 10px 0;
+    padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow);
+  }
+  .obs h4 { margin: 0 0 6px; font-size: 15px; font-weight: 620; }
+  .obs h4 .badge {
+    font-family: var(--mono); font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--warn); background: var(--warn-soft);
+    padding: 3px 7px; border-radius: 5px; margin-right: 9px; vertical-align: 2px;
+  }
+  .obs p { margin: 0; font-size: 14px; color: var(--muted); }
+
+  .method { columns: 2; column-gap: 34px; }
+  .method .step { break-inside: avoid; margin-bottom: 18px; }
+  .method .step h4 { margin: 0 0 5px; font-size: 14px; font-weight: 620; font-family: var(--mono); color: var(--accent); }
+  .method .step p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  @media (max-width: 620px) { .method { columns: 1; } .gap { grid-template-columns: 1fr; } .gap .rail { border-right: none; border-bottom: 1px solid var(--line); padding: 0 0 14px; margin-bottom: 14px; display: flex; gap: 14px; align-items: center; } .gap .gid { margin-bottom: 0; } }
+
+  footer {
+    margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--faint); font-family: var(--mono);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  }
+  a { color: var(--accent); }
+  .flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-family: var(--mono); font-size: 13px; color: var(--muted); margin: -6px 0 26px; }
+  .flow .node { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 7px; padding: 6px 11px; color: var(--ink); }
+  .flow .arr { color: var(--accent); font-weight: 700; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="dot"></span> Testing-gap closure &nbsp;·&nbsp; 2026-07-13 &nbsp;·&nbsp; test-first, PRs open for review</p>
+    <h1>Closing the agent-graph contract's testing gaps</h1>
+    <p class="standfirst">
+      A measured coverage pass found the adapter&nbsp;→&nbsp;server graph-engine&nbsp;→&nbsp;frontend
+      contract strong in breadth but thin in verification — the render layer that once blanked
+      65.8% of traces was checked only by hand, and 9 of 19 frameworks had no server-side honesty
+      fixture. All seven gaps are now closed test-first, one PR per cluster, each proven to fail
+      before it was made to pass.
+    </p>
+    <div class="provenance">
+      <span><b>SDK</b> feat/adapter-honest-graph-contract</span>
+      <span><b>atlas</b> feat/agent-graph-server-engine</span>
+      <span><b>engine</b> merged to main as #2054 today</span>
+    </div>
+  </header>
+
+  <div class="flow" aria-label="contract under test">
+    <span class="node">SDK adapter events</span>
+    <span class="arr">→</span>
+    <span class="node">server graph engine</span>
+    <span class="arr">→</span>
+    <span class="node">frontend render</span>
+  </div>
+
+  <div class="cards">
+    <div class="card accent"><span class="num">7 / 7</span><span class="lbl">gaps closed, one PR each</span></div>
+    <div class="card"><span class="num">7</span><span class="lbl">PRs open — none merged, as scoped</span></div>
+    <div class="card"><span class="num">19 / 19</span><span class="lbl">frameworks with a server honesty fixture (was 10)</span></div>
+    <div class="card"><span class="num">34</span><span class="lbl">live contract assertions green vs a real engine</span></div>
+    <div class="card"><span class="num">0</span><span class="lbl">product-behaviour changes</span></div>
+  </div>
+  <p class="lede-note">
+    <b>Discipline held throughout.</b> Every new test was watched to fail when the feature is broken,
+    then made green — node labels, colour maps, empty-states, content redaction, honesty guards, and
+    live node-sets each verified with a red-before-green demonstration. No fixture was hand-authored:
+    node-sets were captured from real adapter output and transcribed from what the real engine produces.
+  </p>
+
+  <section>
+    <h2>The gap ledger</h2>
+
+    <div class="gap">
+      <div class="rail">
+        <div class="gid">G1</div>
+        <span class="chip ok"><span class="tick"></span> Closed</span>
+        <a class="pr" href="https://github.com/LayerLens/atlas-app/pull/2079"><span class="repo">atlas</span> #2079</a>
+      </div>
+      <div class="body">
+        <h3>Frontend render-regression harness</h3>
+        <p class="was">Was: <b>zero</b> component tests. vitest ran <code>environment:"node"</code>, no jsdom,
+          no <code>@xyflow/react</code> in any test. The render layer that once blanked 65.8% of real traces
+          was verified only by hand.</p>
+        <ul>
+          <li>First jsdom render tests in the repo: <code>@testing-library/react</code> + the canonical
+            React&nbsp;Flow polyfills (ResizeObserver, DOMMatrix, element sizing) so nodes actually render.</li>
+          <li>Drives every <code>DerivedGraph</code> the server ships and asserts: topology present → each node
+            label renders with its <code>agent_type</code> colour; topology absent → the honest
+            &ldquo;No agent topology&rdquo; empty-state, never a blank canvas.</li>
+          <li>Fixtures are generated from the real Go engine, so a server↔FE render divergence surfaces here.</li>
+        </ul>
+        <p class="teeth">teeth · break node label → <span class="r">11 red</span> · break colour map →
+          <span class="r">2 red</span> · break empty-state → <span class="r">3 red</span> · restore →
+          <span class="k">15 / 15 green</span> · full FE suite <span class="k">873 green</span></p>
+      </div>
+    </div>
+
+    <div class="gap">
+      <div class="rail">
+        <div class="gid">G2</div>
+        <span class="chip ok"><span class="tick"></span> Closed</span>
+        <a class="pr" href="https://github.com/LayerLens/atlas-app/pull/2080"><span class="repo">atlas</span> #2080</a>
+      </div>
+      <div class="body">
+        <h3>Server honesty fixtures for the 9 uncovered frameworks</h3>
+        <p class="was">Was: <code>graph_honesty_fixtures.json</code> covered <b>10 of 19</b> frameworks;
+          the engine was unverified for the other nine.</p>
+        <ul>
+          <li>Added a captured lane for agentforce, embedding, haystack, langchain, llamaindex,
+            ms_agent_framework, openai_agents, semantic_kernel, vector_store (10 → 19).</li>
+          <li>Node-sets captured from <b>real adapter output</b> (each framework's recorded-replay test,
+            sealed) then transcribed from what the real engine produces — both matrices + a per-lane
+            fabrication-token list.</li>
+          <li>embedding &amp; vector_store are non-agentic → assert the honest empty-state; llamaindex is a bare
+            provider call → honestly blank (no model-as-agent fabrication).</li>
+        </ul>
+        <p class="teeth">teeth · corrupt a captured identity → <span class="r">node-set + column red</span> ·
+          inject a fake agent into a non-agentic lane → <span class="r">empty-state red</span> · restore →
+          <span class="k">all green</span></p>
+      </div>
+    </div>
+
+    <div class="gap">
+      <div class="rail">
+        <div class="gid">G3<br>+G4</div>
+        <span class="chip ok"><span class="tick"></span> Closed</span>
+        <a class="pr" href="https://github.com/LayerLens/stratix-python-private/pull/45"><span class="repo">SDK</span> #45</a>
+      </div>
+      <div class="body">
+        <h3>Runnable samples &amp; multi-agent breadth</h3>
+        <p class="was">Was: 8 frameworks had no runnable sample; runnable multi-agent teams existed only
+          for autogen &amp; crewai.</p>
+        <ul>
+          <li>8 new <code>samples/adapters/frameworks/*.py</code> via the real <code>capture_events</code>
+            harness (not Mock stubs) — each drives its adapter's real workload.</li>
+          <li>3 genuine multi-agent teams beyond autogen/crewai: google_adk sub-agents, semantic_kernel
+            group-chat, ms_agent_framework group-chat. embedding &amp; vector_store named honestly N/A (no team concept).</li>
+          <li>A credless smoke test runs every sample to its honest guard; vector_store captures a real
+            offline event.</li>
+        </ul>
+        <p class="teeth">teeth · sample missing → <span class="r">11 red</span> · added → <span class="k">green</span>
+          · <code>test_samples.py</code> 777 → <span class="k">847 passed</span></p>
+      </div>
+    </div>
+
+    <div class="gap">
+      <div class="rail">
+        <div class="gid">G5</div>
+        <span class="chip ok"><span class="tick"></span> Closed</span>
+        <a class="pr" href="https://github.com/LayerLens/stratix-python-private/pull/46"><span class="repo">SDK</span> #46</a>
+      </div>
+      <div class="body">
+        <h3>Recorded corpus for 5 frameworks</h3>
+        <p class="was">Was: no recorded-replay test for embedding, google_adk, langfuse, strands, vector_store.</p>
+        <ul>
+          <li>4 new fixtures recorded from <b>real</b> provider responses (OpenAI embeddings, OpenAI SSE
+            stream, Gemini generateContent, Langfuse REST) — never hand-authored, provenance-stamped, scrubbed.</li>
+          <li>vector_store is honestly N/A for transport-replay (in-process Chroma) → a real deterministic
+            in-process test instead.</li>
+          <li>Each drives the real adapter over the sealed response and asserts the emitted token/identity fields.</li>
+        </ul>
+        <p class="teeth">teeth · corrupt a captured token count → <span class="r">red</span> · restore →
+          <span class="k">green</span> · secret-leak scan <span class="k">31 passed</span> (no leaks)</p>
+      </div>
+    </div>
+
+    <div class="gap">
+      <div class="rail">
+        <div class="gid">G6</div>
+        <span class="chip ok"><span class="tick"></span> Closed</span>
+        <a class="pr" href="https://github.com/LayerLens/stratix-python-private/pull/44"><span class="repo">SDK</span> #44</a>
+      </div>
+      <div class="body">
+        <h3>Content-on/off × graph invariant</h3>
+        <p class="was">Was: <code>capture_content</code> was well-tested in both modes generally, but nothing
+          asserted the graph is <b>identical</b> with content on vs off — the reason a redacted trace still
+          renders its agent graph.</p>
+        <ul>
+          <li>Emits a representative multi-agent trace through the real collector twice, under configs that
+            differ <em>only</em> in <code>capture_content</code>, and asserts the engine-read graph fields are
+            byte-identical while the free-text content is stripped.</li>
+          <li>Non-vacuous by construction: the sentinel content must be present with capture on and gone with it off.</li>
+        </ul>
+        <p class="teeth">teeth · add a topology key to the content-strip set → <span class="r">red</span> · restore →
+          <span class="k">4 / 4 green</span> · lint clean · py3.9 + py3.11</p>
+      </div>
+    </div>
+
+    <div class="gap">
+      <div class="rail">
+        <div class="gid">G7</div>
+        <span class="chip ok"><span class="tick"></span> Closed</span>
+        <a class="pr" href="https://github.com/LayerLens/stratix-python-private/pull/47"><span class="repo">SDK</span> #47</a>
+      </div>
+      <div class="body">
+        <h3>Live end-to-end contract harness &amp; dual-oracle</h3>
+        <p class="was">Was: no test seeded real adapter output into a running atlas and asserted the graph
+          both computes and renders; and no surfacing of the <code>honestGuard</code> divergence.</p>
+        <ul>
+          <li>Deterministic half (no stack): the shipped engine (<code>honestGuard=false</code>) vs guarded
+            (<code>=true</code>) over the corpus — enumerates every node the shipped default admits that the
+            guard rejects, and asserts that set is bounded to identities the SDK's own resolver also rejects.</li>
+          <li>Live half (gated): seeds each lane via a real <code>Stratix()</code> client, reads back the
+            server graph, and asserts node-set == fixture, count-aware column == graph, graph present iff
+            topology, re-upload unsets a stale graph, and each served graph is FE-renderable.</li>
+        </ul>
+        <p class="teeth">teeth · corrupt the oracle → <span class="r">deterministic + live node-set red</span> ·
+          make the guard drop a real agent → <span class="r">divergence red</span> · verified live
+          <span class="k">34 passed</span> (13 deterministic + 21 live)</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>G2 — what the real engine actually infers (all captured, none authored)</h2>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Lane</th><th>Node(s)</th><th>Agent column</th><th>Kind</th><th>Identity source</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">agentforce-s1</td><td class="nodes">Agentforce_Employee_Agent</td><td class="nodes">same</td><td><span class="tag agentic">agentic</span></td><td>STDM session agent</td></tr>
+          <tr><td class="mono">haystack-s1</td><td class="nodes">llm</td><td class="nodes">llm</td><td><span class="tag agentic">agentic</span></td><td>pipeline component name</td></tr>
+          <tr><td class="mono">langchain-s1</td><td class="nodes">ChatPromptTemplate</td><td class="nodes">same</td><td><span class="tag agentic">agentic</span></td><td>chain runnable name</td></tr>
+          <tr><td class="mono">ms_agent_framework-s1</td><td class="nodes">replay_agent</td><td class="nodes">same</td><td><span class="tag agentic">agentic</span></td><td>declared agent name</td></tr>
+          <tr><td class="mono">openai_agents-s1</td><td class="nodes">pong_agent</td><td class="nodes">same</td><td><span class="tag agentic">agentic</span></td><td>declared agent name</td></tr>
+          <tr><td class="mono">semantic_kernel-s1</td><td class="nodes">replay</td><td class="nodes">same</td><td><span class="tag agentic">agentic</span></td><td>plugin name</td></tr>
+          <tr><td class="mono">embedding-s1</td><td class="blank">— none —</td><td class="blank">blank</td><td><span class="tag empty">empty-state</span></td><td>non-agentic (embedding)</td></tr>
+          <tr><td class="mono">llamaindex-s1</td><td class="blank">— none —</td><td class="blank">blank</td><td><span class="tag empty">empty-state</span></td><td>bare provider call</td></tr>
+          <tr><td class="mono">vector_store-s1</td><td class="blank">— none —</td><td class="blank">blank</td><td><span class="tag empty">empty-state</span></td><td>non-agentic (retrieval)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede-note" style="border-left-color: var(--warn); background: var(--warn-soft);">
+      All nine are <b>guard-invariant</b> — honest declared identities or an honest empty state — so the shipped
+      default equals the guarded oracle. The <code>honestGuard</code> divergence lives entirely in the
+      pre-existing generic-name lanes (<code>agno_agent</code>, <code>ToolCallingAgent</code>,
+      <code>Strands&nbsp;Agents</code>), which G7 enumerates.
+    </p>
+  </section>
+
+  <section>
+    <h2>Residuals &amp; honestly-named observations</h2>
+
+    <div class="obs">
+      <h4><span class="badge">N/A, named</span>Non-agentic adapters assert an empty-state, not a node-set</h4>
+      <p>embedding &amp; vector_store are retrieval/embedding instrumentation, not agent frameworks. For G2 they
+        assert the honest empty-state (0 nodes, blank column, and the model id never becoming a node); for G4
+        they have no team concept. This is the correct assertion, called out rather than forced into a fake node-set.</p>
+    </div>
+
+    <div class="obs">
+      <h4><span class="badge">Surfaced</span>langchain &amp; haystack node labels are framework names</h4>
+      <p>Captured honestly: <code>langchain-s1</code> renders <code>ChatPromptTemplate</code> (the chain's runnable
+        name) and <code>haystack-s1</code> renders <code>llm</code> (the literal pipeline component name) — the
+        SDK genuinely emits these as <code>agent_name</code>. Whether they belong in the generic-identity denylist
+        is a product decision; these fixtures now make it visible. Out of scope to change here.</p>
+    </div>
+
+    <div class="obs">
+      <h4><span class="badge">Environment</span>G7 live half ran against the dev deploy, not local :8080</h4>
+      <p>The brief targeted local <code>:8080</code>. That stack is running with the engine, but its app-key
+        validation goes through AWS and no local write credential was available (the bundled admin JWT is a cloud
+        token that expired 2026-07-03) — a credential gap, not code. The identical suite is base-URL-driven and
+        runs against <code>:8080</code> unchanged once a local key exists; it was executed against the
+        engine-bearing dev deploy (34 passed).</p>
+    </div>
+
+    <div class="obs">
+      <h4><span class="badge">Scope</span>Product posture &amp; OTLP left untouched, by design</h4>
+      <p>The <code>honestGuard=false</code> default is a product decision — surfaced by the G7 dual-oracle as a
+        monitored fact, not changed. The OTLP-has-no-graph question is a separate workstream
+        (<code>otlp-contract-reconciliation-*</code>). New G2 lanes are single-agent scenarios; the multi-agent
+        column stays exercised by the existing <code>autogen-s2</code> / <code>google_adk-s2</code> lanes.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>How the fixtures were captured (reproducible, cred-free where possible)</h2>
+    <div class="method">
+      <div class="step"><h4>capture</h4><p>Ran each framework's real recorded-replay test over its sealed
+        provider response, wrapping the upload to seal the emitted event stream — real adapter, real shape, no creds.</p></div>
+      <div class="step"><h4>infer</h4><p>Fed those events through the real Go engine
+        (<code>InferAgentGraph</code>, both honestGuard variants) and read back the actual node-set, column, edges, and topology.</p></div>
+      <div class="step"><h4>transcribe</h4><p>Copied the engine's output into the Go matrices and the FE fixtures —
+        so the tests assert what the engine really does, and can never drift into a self-fulfilling mirror.</p></div>
+      <div class="step"><h4>break &amp; watch</h4><p>Broke the feature (a label, a colour, an identity, a strip-set,
+        the oracle) and watched the assertion go red before wiring it green — the CLAUDE.md rule-4 gate on every cluster.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Agent-graph contract · testing-gap closure G1–G7</span>
+    <span>2026-07-13 · 7 PRs open for review, not merged</span>
+  </footer>
+</div>
+
+<script>
+  // Respect a viewer theme toggle if the host stamps data-theme; otherwise follow the OS.
+  (function () {
+    try {
+      var stored = localStorage.getItem("theme");
+      if (stored === "dark" || stored === "light") {
+        document.documentElement.setAttribute("data-theme", stored);
+      }
+    } catch (e) {}
+  })();
+</script>
