@@ -1,0 +1,56 @@
+{
+  "provenance": {
+    "provider": "google_genai",
+    "sdk_version": "2.8.0",
+    "model": "gemini-2.5-flash",
+    "scenario": "default",
+    "captured_at": "2026-07-13T15:51:25+00:00"
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/gemini-2.5-flash:generateContent"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "candidates": [
+            {
+              "content": {
+                "parts": [
+                  {
+                    "text": "pong"
+                  }
+                ],
+                "role": "model"
+              },
+              "finishReason": "STOP",
+              "index": 0
+            }
+          ],
+          "usageMetadata": {
+            "promptTokenCount": 6,
+            "candidatesTokenCount": 1,
+            "totalTokenCount": 24,
+            "promptTokensDetails": [
+              {
+                "modality": "TEXT",
+                "tokenCount": 6
+              }
+            ],
+            "thoughtsTokenCount": 17,
+            "serviceTier": "standard"
+          },
+          "modelVersion": "gemini-2.5-flash",
+          "responseId": "fAlVatf0JdOwqtsP2s7hgQU"
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        }
+      }
+    }
+  ]
+}

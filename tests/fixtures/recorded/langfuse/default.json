@@ -1,0 +1,267 @@
+{
+  "provenance": {
+    "provider": "langfuse",
+    "sdk_version": "rest-api-public",
+    "model": "gpt-4o-mini",
+    "scenario": "default",
+    "captured_at": "2026-07-13T15:53:35+00:00"
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/public/traces"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "data": [
+            {
+              "id": "46eb025923234058b2bc0d9d7ffeaebb",
+              "projectId": "cmq8rm6mx000aob07l9xpxetu",
+              "name": "sdk-audit-langfuse",
+              "timestamp": "2026-07-07T05:45:58.377Z",
+              "environment": "default",
+              "tags": [],
+              "bookmarked": false,
+              "release": null,
+              "version": null,
+              "userId": null,
+              "sessionId": null,
+              "public": false,
+              "input": "Name two oceans in a few words. LL-SENTINEL-7f3a9c2e",
+              "output": "Pacific and Atlantic.",
+              "metadata": {
+                "layerlens_trace_id": "ll-audit-roundtrip"
+              },
+              "createdAt": "2026-07-07T05:45:58.957Z",
+              "updatedAt": "2026-07-07T05:46:04.025Z",
+              "observations": [
+                "0eba4e1951f24472815fc6df83a79f64",
+                "fbb077f092394669bec68d1548c9993f"
+              ],
+              "scores": [],
+              "totalCost": 5.4e-06,
+              "latency": 0,
+              "htmlPath": "/project/cmq8rm6mx000aob07l9xpxetu/traces/46eb025923234058b2bc0d9d7ffeaebb",
+              "externalId": null
+            }
+          ],
+          "meta": {
+            "page": 1,
+            "limit": 1,
+            "totalItems": 22,
+            "totalPages": 22
+          }
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/public/traces"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "data": [
+            {
+              "id": "46eb025923234058b2bc0d9d7ffeaebb",
+              "projectId": "cmq8rm6mx000aob07l9xpxetu",
+              "name": "sdk-audit-langfuse",
+              "timestamp": "2026-07-07T05:45:58.377Z",
+              "environment": "default",
+              "tags": [],
+              "bookmarked": false,
+              "release": null,
+              "version": null,
+              "userId": null,
+              "sessionId": null,
+              "public": false,
+              "input": "Name two oceans in a few words. LL-SENTINEL-7f3a9c2e",
+              "output": "Pacific and Atlantic.",
+              "metadata": {
+                "layerlens_trace_id": "ll-audit-roundtrip"
+              },
+              "createdAt": "2026-07-07T05:45:58.957Z",
+              "updatedAt": "2026-07-07T05:46:04.025Z",
+              "observations": [
+                "0eba4e1951f24472815fc6df83a79f64",
+                "fbb077f092394669bec68d1548c9993f"
+              ],
+              "scores": [],
+              "totalCost": 5.4e-06,
+              "latency": 0,
+              "htmlPath": "/project/cmq8rm6mx000aob07l9xpxetu/traces/46eb025923234058b2bc0d9d7ffeaebb",
+              "externalId": null
+            }
+          ],
+          "meta": {
+            "page": 1,
+            "limit": 1,
+            "totalItems": 22,
+            "totalPages": 22
+          }
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/public/traces/46eb025923234058b2bc0d9d7ffeaebb"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "id": "46eb025923234058b2bc0d9d7ffeaebb",
+          "projectId": "cmq8rm6mx000aob07l9xpxetu",
+          "name": "sdk-audit-langfuse",
+          "timestamp": "2026-07-07T05:45:58.377Z",
+          "environment": "default",
+          "tags": [],
+          "bookmarked": false,
+          "release": null,
+          "version": null,
+          "userId": null,
+          "sessionId": null,
+          "public": false,
+          "input": "Name two oceans in a few words. LL-SENTINEL-7f3a9c2e",
+          "output": "Pacific and Atlantic.",
+          "metadata": {
+            "layerlens_trace_id": "ll-audit-roundtrip"
+          },
+          "createdAt": "2026-07-07T05:45:58.957Z",
+          "updatedAt": "2026-07-07T05:46:04.025Z",
+          "externalId": null,
+          "scores": [],
+          "latency": 0,
+          "observations": [
+            {
+              "id": "fbb077f092394669bec68d1548c9993f",
+              "traceId": "46eb025923234058b2bc0d9d7ffeaebb",
+              "startTime": "2026-07-07T05:45:58.377Z",
+              "endTime": null,
+              "projectId": "cmq8rm6mx000aob07l9xpxetu",
+              "parentObservationId": null,
+              "type": "SPAN",
+              "environment": "default",
+              "name": "lookup",
+              "level": "DEFAULT",
+              "statusMessage": null,
+              "version": null,
+              "createdAt": "2026-07-07T05:45:58.958Z",
+              "updatedAt": "2026-07-07T05:46:04.053Z",
+              "input": "oceans",
+              "output": "5 oceans",
+              "metadata": {
+                "layerlens_span_id": "span-tool"
+              },
+              "model": null,
+              "modelParameters": null,
+              "completionStartTime": null,
+              "promptId": null,
+              "promptName": null,
+              "promptVersion": null,
+              "latency": null,
+              "timeToFirstToken": null,
+              "usageDetails": {},
+              "costDetails": {},
+              "usagePricingTierId": null,
+              "usagePricingTierName": null,
+              "inputPrice": 0,
+              "outputPrice": 0,
+              "totalPrice": 0,
+              "calculatedInputCost": null,
+              "calculatedOutputCost": null,
+              "calculatedTotalCost": 0,
+              "unit": "TOKENS",
+              "promptTokens": 0,
+              "completionTokens": 0,
+              "totalTokens": 0,
+              "modelId": null,
+              "usage": {
+                "unit": "TOKENS",
+                "input": 0,
+                "output": 0,
+                "total": 0
+              }
+            },
+            {
+              "id": "0eba4e1951f24472815fc6df83a79f64",
+              "traceId": "46eb025923234058b2bc0d9d7ffeaebb",
+              "startTime": "2026-07-07T05:45:58.377Z",
+              "endTime": null,
+              "projectId": "cmq8rm6mx000aob07l9xpxetu",
+              "parentObservationId": null,
+              "type": "GENERATION",
+              "environment": "default",
+              "name": "llm",
+              "level": "DEFAULT",
+              "statusMessage": null,
+              "version": null,
+              "createdAt": "2026-07-07T05:45:58.957Z",
+              "updatedAt": "2026-07-07T05:46:04.052Z",
+              "input": "Name two oceans in a few words. LL-SENTINEL-7f3a9c2e",
+              "output": "Pacific and Atlantic.",
+              "metadata": {
+                "layerlens_span_id": "span-llm"
+              },
+              "model": "gpt-4o-mini",
+              "modelParameters": null,
+              "completionStartTime": null,
+              "promptId": null,
+              "promptName": null,
+              "promptVersion": null,
+              "latency": null,
+              "timeToFirstToken": null,
+              "usageDetails": {
+                "input": 12,
+                "output": 6,
+                "total": 18
+              },
+              "costDetails": {
+                "input": 1.8e-06,
+                "output": 3.6e-06,
+                "total": 5.4e-06
+              },
+              "usagePricingTierId": "clyrjp56f0000t0mzapoocd7u_tier_default",
+              "usagePricingTierName": "Standard",
+              "inputPrice": 1.5e-07,
+              "outputPrice": 6e-07,
+              "totalPrice": 0,
+              "calculatedInputCost": 1.8e-06,
+              "calculatedOutputCost": 3.6e-06,
+              "calculatedTotalCost": 5.4e-06,
+              "unit": "TOKENS",
+              "promptTokens": 12,
+              "completionTokens": 6,
+              "totalTokens": 18,
+              "modelId": "clyrjp56f0000t0mzapoocd7u",
+              "usage": {
+                "unit": "TOKENS",
+                "input": 12,
+                "output": 6,
+                "total": 18
+              }
+            }
+          ],
+          "htmlPath": "/project/cmq8rm6mx000aob07l9xpxetu/traces/46eb025923234058b2bc0d9d7ffeaebb",
+          "totalCost": 5.4e-06
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        }
+      }
+    }
+  ]
+}
