@@ -1,0 +1,1228 @@
+{
+  "pydantic_ai-s1": [
+    {
+      "trace_id": "f11b55b7ca8b4c44",
+      "span_id": "2bdc37bf74314c74",
+      "sequence_id": 1,
+      "timestamp_ns": 1783015558726236000,
+      "payload": {
+        "framework": "pydantic-ai",
+        "model": "gpt-4o-mini",
+        "result_type": "str",
+        "deps_type": "object"
+      },
+      "parent_span_id": "2bdc37bf74314c74",
+      "span_name": "pydantic_ai:gpt-4o-mini",
+      "event_type": "agent.input"
+    },
+    {
+      "span_id": "0ab8714a42b04a87",
+      "parent_span_id": "2bdc37bf74314c74",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1783015562465460000,
+      "payload": {
+        "tokens_prompt": 63,
+        "tokens_completion": 12,
+        "tokens_total": 75,
+        "framework": "pydantic-ai",
+        "model": "gpt-4o-mini-2024-07-18",
+        "latency_ms": 3733.504
+      },
+      "event_type": "model.invoke",
+      "trace_id": "f11b55b7ca8b4c44"
+    },
+    {
+      "span_name": "pydantic_ai:gpt-4o-mini",
+      "sequence_id": 3,
+      "payload": {
+        "status": "ok",
+        "model": "gpt-4o-mini",
+        "tokens_completion": 12,
+        "tokens_total": 75,
+        "framework": "pydantic-ai",
+        "latency_ms": 3739.798,
+        "tokens_prompt": 63,
+        "model_requests": 1
+      },
+      "event_type": "agent.output",
+      "span_id": "2bdc37bf74314c74",
+      "timestamp_ns": 1783015562466364000,
+      "trace_id": "f11b55b7ca8b4c44",
+      "parent_span_id": "2bdc37bf74314c74"
+    },
+    {
+      "timestamp_ns": 1783015562466441000,
+      "payload": {
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 63,
+        "tokens_completion": 12,
+        "tokens_total": 75,
+        "model_requests": 1,
+        "cost_usd": 1.665e-05,
+        "framework": "pydantic-ai"
+      },
+      "trace_id": "f11b55b7ca8b4c44",
+      "parent_span_id": "2bdc37bf74314c74",
+      "span_name": null,
+      "event_type": "cost.record",
+      "span_id": "10c13b6eb4e942c7",
+      "sequence_id": 4
+    }
+  ],
+  "bedrock_agents-s1": [
+    {
+      "span_id": "1fc5b4f7b2a9440a",
+      "parent_span_id": "f63fed46a82d4bc3",
+      "span_name": "bedrock.config",
+      "sequence_id": 1,
+      "timestamp_ns": 1783016341364188000,
+      "payload": {
+        "framework": "bedrock_agents",
+        "agent_id": "9WBVYFT6RB",
+        "agent_alias_id": "U2YUM9TNKB",
+        "enable_trace": true
+      },
+      "event_type": "environment.config",
+      "trace_id": "81cac20ae8a24c67"
+    },
+    {
+      "span_name": "bedrock.invoke_agent",
+      "sequence_id": 2,
+      "trace_id": "81cac20ae8a24c67",
+      "span_id": "f63fed46a82d4bc3",
+      "parent_span_id": "f63fed46a82d4bc3",
+      "timestamp_ns": 1783016341364835000,
+      "payload": {
+        "session_id": "ll-audit-457dfc0c2402",
+        "enable_trace": true,
+        "framework": "bedrock_agents",
+        "agent_id": "9WBVYFT6RB"
+      },
+      "event_type": "agent.input"
+    },
+    {
+      "payload": {
+        "framework": "bedrock_agents",
+        "model": "amazon.nova-micro-v1:0",
+        "aws_request_id": "e8e72dd8-6c74-413c-be63-0fbe4b804084",
+        "provider": "aws_bedrock",
+        "tokens_prompt": 852,
+        "tokens_completion": 130,
+        "tokens_total": 982,
+        "bedrock_trace_id": "e8e72dd8-6c74-413c-be63-0fbe4b804084-0",
+        "client_request_id": "f63050f6-33bc-4873-a075-a6cb437623b3"
+      },
+      "trace_id": "81cac20ae8a24c67",
+      "parent_span_id": "f63fed46a82d4bc3",
+      "event_type": "model.invoke",
+      "span_id": "e5319ca0d9da4aa8",
+      "span_name": "bedrock.model",
+      "sequence_id": 3,
+      "timestamp_ns": 1783016343200333000
+    },
+    {
+      "span_name": null,
+      "payload": {
+        "tokens_completion": 130,
+        "bedrock_trace_id": "e8e72dd8-6c74-413c-be63-0fbe4b804084-0",
+        "model": "amazon.nova-micro-v1:0",
+        "cost_usd": 4.802e-05,
+        "aws_request_id": "e8e72dd8-6c74-413c-be63-0fbe4b804084",
+        "provider": "aws_bedrock",
+        "tokens_prompt": 852,
+        "tokens_total": 982,
+        "framework": "bedrock_agents"
+      },
+      "span_id": "e5319ca0d9da4aa8",
+      "sequence_id": 4,
+      "timestamp_ns": 1783016343200931000,
+      "event_type": "cost.record",
+      "trace_id": "81cac20ae8a24c67",
+      "parent_span_id": "f63fed46a82d4bc3"
+    },
+    {
+      "sequence_id": 5,
+      "timestamp_ns": 1783016343321199000,
+      "event_type": "agent.output",
+      "span_id": "f63fed46a82d4bc3",
+      "span_name": "bedrock.invoke_agent",
+      "payload": {
+        "framework": "bedrock_agents",
+        "session_id": "ll-audit-457dfc0c2402",
+        "latency_ms": 794.785,
+        "aws_request_id": "e8e72dd8-6c74-413c-be63-0fbe4b804084"
+      },
+      "trace_id": "81cac20ae8a24c67",
+      "parent_span_id": "f63fed46a82d4bc3"
+    }
+  ],
+  "autogen-s2": [
+    {
+      "parent_span_id": "97c459ab62e44560",
+      "sequence_id": 1,
+      "timestamp_ns": 1783018318332181000,
+      "event_type": "agent.input",
+      "trace_id": "2d163d6a3f484b15",
+      "span_id": "6d694cf832624e42",
+      "span_name": null,
+      "payload": {
+        "receiver": "router/default",
+        "message_kind": "DIRECT",
+        "delivery_stage": "SEND",
+        "framework": "autogen",
+        "conversation_id": "None->router/default",
+        "turn_index": 0,
+        "message_index": 1
+      }
+    },
+    {
+      "span_id": "948e2ba77e1c4627",
+      "span_name": null,
+      "payload": {
+        "message_index": 1,
+        "receiver": "router/default",
+        "message_kind": "DIRECT",
+        "delivery_stage": "DELIVER",
+        "framework": "autogen",
+        "conversation_id": "None->router/default",
+        "turn_index": 0
+      },
+      "trace_id": "2d163d6a3f484b15",
+      "parent_span_id": "f13c42de078f480f",
+      "sequence_id": 2,
+      "timestamp_ns": 1783018318332655000,
+      "event_type": "agent.input"
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "2d163d6a3f484b15",
+      "span_id": "53ea7bd4b5cd473e",
+      "span_name": null,
+      "sequence_id": 3,
+      "payload": {
+        "delivery_stage": "SEND",
+        "framework": "autogen",
+        "message_index": 1,
+        "receiver": "fulfillment/default",
+        "message_kind": "DIRECT",
+        "conversation_id": "router/default->fulfillment/default",
+        "turn_index": 0,
+        "sender": "router/default"
+      },
+      "parent_span_id": "f13c42de078f480f",
+      "timestamp_ns": 1783018318332994000
+    },
+    {
+      "trace_id": "2d163d6a3f484b15",
+      "span_id": "533fa78183b4497c",
+      "parent_span_id": "b3e1b4aeffcd4b8a",
+      "timestamp_ns": 1783018318333159000,
+      "event_type": "agent.input",
+      "span_name": null,
+      "sequence_id": 4,
+      "payload": {
+        "message_index": 1,
+        "sender": "router/default",
+        "receiver": "fulfillment/default",
+        "message_kind": "DIRECT",
+        "delivery_stage": "DELIVER",
+        "framework": "autogen",
+        "conversation_id": "router/default->fulfillment/default",
+        "turn_index": 0
+      }
+    },
+    {
+      "trace_id": "2d163d6a3f484b15",
+      "span_id": "c96c00e3e9ad4818",
+      "span_name": null,
+      "sequence_id": 5,
+      "payload": {
+        "framework": "autogen",
+        "error_type": "Exception",
+        "agent_id": "fulfillment/default"
+      },
+      "event_type": "agent.error",
+      "parent_span_id": "b3e1b4aeffcd4b8a",
+      "timestamp_ns": 1783018318333329000
+    },
+    {
+      "event_type": "agent.error",
+      "span_name": null,
+      "timestamp_ns": 1783018318333500000,
+      "payload": {
+        "framework": "autogen",
+        "error_type": "Exception",
+        "agent_id": "router/default"
+      },
+      "trace_id": "2d163d6a3f484b15",
+      "span_id": "8b6b4836d41b46aa",
+      "parent_span_id": "f13c42de078f480f",
+      "sequence_id": 6
+    },
+    {
+      "sequence_id": 7,
+      "event_type": "conversation.ended",
+      "trace_id": "2d163d6a3f484b15",
+      "span_name": null,
+      "timestamp_ns": 1783018318333808000,
+      "payload": {
+        "framework": "autogen",
+        "conversation_id": "None->router/default",
+        "participants": [
+          "router/default"
+        ],
+        "message_count": 1,
+        "turn_count": 0,
+        "reason": "trace_end"
+      },
+      "span_id": "0fe3fc15a7ae4a82",
+      "parent_span_id": "97c459ab62e44560"
+    },
+    {
+      "timestamp_ns": 1783018318333854000,
+      "trace_id": "2d163d6a3f484b15",
+      "span_id": "e5bae0a2fdd84ec6",
+      "span_name": null,
+      "sequence_id": 8,
+      "payload": {
+        "framework": "autogen",
+        "conversation_id": "None->router/default",
+        "participants": [
+          "router/default"
+        ],
+        "message_count": 1,
+        "turn_count": 0,
+        "reason": "trace_end"
+      },
+      "event_type": "conversation.ended",
+      "parent_span_id": "f13c42de078f480f"
+    },
+    {
+      "trace_id": "2d163d6a3f484b15",
+      "event_type": "conversation.ended",
+      "span_id": "80c6ca61417b4ff6",
+      "parent_span_id": "f13c42de078f480f",
+      "span_name": null,
+      "sequence_id": 9,
+      "timestamp_ns": 1783018318333898000,
+      "payload": {
+        "turn_count": 0,
+        "reason": "trace_end",
+        "framework": "autogen",
+        "conversation_id": "router/default->fulfillment/default",
+        "participants": [
+          "fulfillment/default",
+          "router/default"
+        ],
+        "message_count": 1
+      }
+    },
+    {
+      "timestamp_ns": 1783018318333937000,
+      "payload": {
+        "framework": "autogen",
+        "conversation_id": "router/default->fulfillment/default",
+        "participants": [
+          "fulfillment/default",
+          "router/default"
+        ],
+        "message_count": 1,
+        "turn_count": 0,
+        "reason": "trace_end"
+      },
+      "event_type": "conversation.ended",
+      "trace_id": "2d163d6a3f484b15",
+      "span_id": "7d2078e286184106",
+      "parent_span_id": "b3e1b4aeffcd4b8a",
+      "span_name": null,
+      "sequence_id": 10
+    }
+  ],
+  "smolagents-s1": [
+    {
+      "event_type": "agent.input",
+      "parent_span_id": null,
+      "timestamp_ns": 1783009226136877000,
+      "trace_id": "3a1c35d68e1440fc",
+      "span_id": "8087e7a887cf44eb",
+      "span_name": "ToolCallingAgent",
+      "sequence_id": 1,
+      "payload": {
+        "framework": "smolagents",
+        "agent_name": "ToolCallingAgent",
+        "agent_type": "ToolCallingAgent",
+        "model": "gpt-4o-mini",
+        "tools": [
+          "ocean_count",
+          "final_answer"
+        ]
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "3a1c35d68e1440fc",
+      "span_id": "b8d46263993b4eec",
+      "parent_span_id": "82d1fb5a22654349",
+      "span_name": null,
+      "timestamp_ns": 1783009227607550000,
+      "sequence_id": 2,
+      "payload": {
+        "framework": "smolagents",
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 907,
+        "tokens_completion": 11,
+        "tokens_total": 918
+      }
+    },
+    {
+      "timestamp_ns": 1783009227607755000,
+      "event_type": "cost.record",
+      "span_id": "b8d46263993b4eec",
+      "parent_span_id": "82d1fb5a22654349",
+      "sequence_id": 3,
+      "payload": {
+        "tokens_prompt": 907,
+        "tokens_completion": 11,
+        "tokens_total": 918,
+        "model": "gpt-4o-mini",
+        "cost_usd": 0.00014265,
+        "framework": "smolagents"
+      },
+      "trace_id": "3a1c35d68e1440fc",
+      "span_name": null
+    },
+    {
+      "span_id": "6089a0daaace4cbb",
+      "parent_span_id": "82d1fb5a22654349",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1783009227607830000,
+      "payload": {
+        "framework": "smolagents",
+        "tool_name": "ocean_count"
+      },
+      "event_type": "tool.call",
+      "trace_id": "3a1c35d68e1440fc"
+    },
+    {
+      "event_type": "tool.result",
+      "trace_id": "3a1c35d68e1440fc",
+      "parent_span_id": "82d1fb5a22654349",
+      "sequence_id": 5,
+      "span_id": "6089a0daaace4cbb",
+      "span_name": null,
+      "timestamp_ns": 1783009227607861000,
+      "payload": {
+        "framework": "smolagents",
+        "tool_name": "ocean_count"
+      }
+    },
+    {
+      "span_name": "step:1",
+      "sequence_id": 6,
+      "timestamp_ns": 1783009227607904000,
+      "span_id": "82d1fb5a22654349",
+      "payload": {
+        "framework": "smolagents",
+        "step_number": 1,
+        "phase": "action",
+        "model": "gpt-4o-mini",
+        "duration_ns": 1466135978
+      },
+      "event_type": "agent.step",
+      "trace_id": "3a1c35d68e1440fc",
+      "parent_span_id": "8087e7a887cf44eb"
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "3a1c35d68e1440fc",
+      "span_id": "ccd46f7eef194377",
+      "parent_span_id": "db91d45302fe4e71",
+      "span_name": null,
+      "sequence_id": 7,
+      "payload": {
+        "tokens_total": 988,
+        "framework": "smolagents",
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 967,
+        "tokens_completion": 21
+      },
+      "timestamp_ns": 1783009228867003000
+    },
+    {
+      "payload": {
+        "framework": "smolagents",
+        "tokens_prompt": 967,
+        "tokens_completion": 21,
+        "tokens_total": 988,
+        "model": "gpt-4o-mini",
+        "cost_usd": 0.00015765
+      },
+      "span_id": "ccd46f7eef194377",
+      "event_type": "cost.record",
+      "trace_id": "3a1c35d68e1440fc",
+      "parent_span_id": "db91d45302fe4e71",
+      "span_name": null,
+      "sequence_id": 8,
+      "timestamp_ns": 1783009228867083000
+    },
+    {
+      "event_type": "agent.step",
+      "span_id": "db91d45302fe4e71",
+      "parent_span_id": "8087e7a887cf44eb",
+      "span_name": "step:2",
+      "payload": {
+        "phase": "action",
+        "model": "gpt-4o-mini",
+        "duration_ns": 1258826017,
+        "is_final_answer": true,
+        "framework": "smolagents",
+        "step_number": 2
+      },
+      "trace_id": "3a1c35d68e1440fc",
+      "sequence_id": 9,
+      "timestamp_ns": 1783009228867131000
+    },
+    {
+      "trace_id": "3a1c35d68e1440fc",
+      "span_id": "8087e7a887cf44eb",
+      "parent_span_id": null,
+      "span_name": "ToolCallingAgent",
+      "timestamp_ns": 1783009228867199000,
+      "event_type": "agent.output",
+      "sequence_id": 10,
+      "payload": {
+        "framework": "smolagents",
+        "agent_name": "ToolCallingAgent",
+        "duration_ns": 2730351000
+      }
+    }
+  ],
+  "crewai-s1": [
+    {
+      "timestamp_ns": 1783009158298313000,
+      "event_type": "agent.input",
+      "trace_id": "4b3d04435a5b43b8",
+      "parent_span_id": null,
+      "sequence_id": 1,
+      "payload": {
+        "framework": "crewai",
+        "crew_name": "crew"
+      },
+      "span_id": "3dc0e4ad0b7548e2",
+      "span_name": "crew"
+    },
+    {
+      "span_id": "ca20b9bd524c4265",
+      "parent_span_id": "3dc0e4ad0b7548e2",
+      "span_name": "task",
+      "sequence_id": 2,
+      "payload": {
+        "framework": "crewai"
+      },
+      "event_type": "agent.input",
+      "timestamp_ns": 1783009158302848000,
+      "trace_id": "4b3d04435a5b43b8"
+    },
+    {
+      "trace_id": "4b3d04435a5b43b8",
+      "parent_span_id": "ca20b9bd524c4265",
+      "sequence_id": 3,
+      "event_type": "agent.input",
+      "span_id": "316d9f1a6a834454",
+      "span_name": "agent:researcher",
+      "timestamp_ns": 1783009158305316000,
+      "payload": {
+        "framework": "crewai",
+        "agent_role": "researcher",
+        "allow_delegation": false
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "parent_span_id": "316d9f1a6a834454",
+      "payload": {
+        "framework": "crewai",
+        "model": "gpt-4.1-mini",
+        "latency_ms": 1283.037
+      },
+      "trace_id": "4b3d04435a5b43b8",
+      "span_id": "26ab55ac248a4bd7",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1783009159590299000
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "4b3d04435a5b43b8",
+      "span_name": "agent:researcher",
+      "timestamp_ns": 1783009159598364000,
+      "span_id": "316d9f1a6a834454",
+      "parent_span_id": "ca20b9bd524c4265",
+      "sequence_id": 5,
+      "payload": {
+        "framework": "crewai",
+        "agent_role": "researcher",
+        "status": "ok"
+      }
+    },
+    {
+      "span_id": "ca20b9bd524c4265",
+      "parent_span_id": "3dc0e4ad0b7548e2",
+      "sequence_id": 6,
+      "payload": {
+        "framework": "crewai"
+      },
+      "event_type": "agent.output",
+      "trace_id": "4b3d04435a5b43b8",
+      "span_name": "task",
+      "timestamp_ns": 1783009159598600000
+    }
+  ],
+  "google_adk-s2": [
+    {
+      "event_type": "agent.input",
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "b7770c126264456f",
+      "payload": {
+        "user_id": "auditor-s2",
+        "framework": "google_adk",
+        "agent_name": "triage",
+        "session_id": "17ea260a-d7c8-4040-b14b-f2cb2b9693a8",
+        "app_name": "layerlens-live-s2",
+        "session_state_keys": [],
+        "invocation_id": "e-aad7b24d-7d74-4471-91b7-e4398ca41742",
+        "agent_tree": {
+          "name": "triage",
+          "children": [
+            {
+              "name": "billing",
+              "children": []
+            },
+            {
+              "name": "tech",
+              "children": []
+            }
+          ]
+        }
+      },
+      "parent_span_id": null,
+      "span_name": "triage",
+      "sequence_id": 1,
+      "timestamp_ns": 1783018422818099000
+    },
+    {
+      "parent_span_id": "b7770c126264456f",
+      "span_name": "config:triage",
+      "trace_id": "cdaf92488bb645ed",
+      "sequence_id": 2,
+      "timestamp_ns": 1783018422819362000,
+      "payload": {
+        "agent_type": "LlmAgent",
+        "model": "gemini-2.5-flash",
+        "sub_agents": [
+          "billing",
+          "tech"
+        ],
+        "session_id": "17ea260a-d7c8-4040-b14b-f2cb2b9693a8",
+        "framework": "google_adk",
+        "agent_name": "triage"
+      },
+      "event_type": "environment.config",
+      "span_id": "4ec800a768074d89"
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "0d88d9dd1246437c",
+      "span_name": "agent:triage",
+      "sequence_id": 3,
+      "parent_span_id": "b7770c126264456f",
+      "timestamp_ns": 1783018422819401000,
+      "payload": {
+        "framework": "google_adk",
+        "agent_name": "triage"
+      }
+    },
+    {
+      "span_id": "377cd6e2f30b496e",
+      "span_name": null,
+      "event_type": "model.invoke",
+      "trace_id": "cdaf92488bb645ed",
+      "parent_span_id": "0d88d9dd1246437c",
+      "sequence_id": 4,
+      "timestamp_ns": 1783018425174892000,
+      "payload": {
+        "tokens_total": 434,
+        "latency_ms": 2351.955,
+        "framework": "google_adk",
+        "model": "gemini-2.5-flash",
+        "provider": "google",
+        "tokens_prompt": 415,
+        "tokens_completion": 19
+      }
+    },
+    {
+      "span_name": null,
+      "sequence_id": 5,
+      "event_type": "cost.record",
+      "timestamp_ns": 1783018425175005000,
+      "payload": {
+        "tokens_prompt": 415,
+        "tokens_completion": 19,
+        "tokens_total": 434,
+        "model": "gemini-2.5-flash",
+        "cost_usd": 3.683e-05,
+        "framework": "google_adk"
+      },
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "377cd6e2f30b496e",
+      "parent_span_id": "0d88d9dd1246437c"
+    },
+    {
+      "trace_id": "cdaf92488bb645ed",
+      "span_name": "tool:transfer_to_agent",
+      "timestamp_ns": 1783018425175749000,
+      "event_type": "tool.call",
+      "span_id": "6c116363321f426f",
+      "parent_span_id": "0d88d9dd1246437c",
+      "sequence_id": 6,
+      "payload": {
+        "framework": "google_adk",
+        "tool_name": "transfer_to_agent",
+        "latency_ms": 0.143
+      }
+    },
+    {
+      "event_type": "tool.result",
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "6c116363321f426f",
+      "parent_span_id": "0d88d9dd1246437c",
+      "span_name": "tool:transfer_to_agent",
+      "sequence_id": 7,
+      "timestamp_ns": 1783018425175787000,
+      "payload": {
+        "framework": "google_adk",
+        "tool_name": "transfer_to_agent"
+      }
+    },
+    {
+      "event_type": "agent.handoff",
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "b159c552725b4a19",
+      "span_name": "handoff:triage->billing",
+      "parent_span_id": "b7770c126264456f",
+      "sequence_id": 8,
+      "timestamp_ns": 1783018425176060000,
+      "payload": {
+        "framework": "google_adk",
+        "from_agent": "triage",
+        "to_agent": "billing"
+      }
+    },
+    {
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "bd64266fa86d4ac4",
+      "parent_span_id": "b7770c126264456f",
+      "span_name": "config:billing",
+      "sequence_id": 9,
+      "payload": {
+        "agent_name": "billing",
+        "agent_type": "LlmAgent",
+        "model": "gemini-2.5-flash",
+        "session_id": "17ea260a-d7c8-4040-b14b-f2cb2b9693a8",
+        "framework": "google_adk"
+      },
+      "event_type": "environment.config",
+      "timestamp_ns": 1783018425177434000
+    },
+    {
+      "event_type": "agent.input",
+      "span_id": "e9d1d6897e28452a",
+      "sequence_id": 10,
+      "timestamp_ns": 1783018425177477000,
+      "trace_id": "cdaf92488bb645ed",
+      "parent_span_id": "b7770c126264456f",
+      "span_name": "agent:billing",
+      "payload": {
+        "framework": "google_adk",
+        "agent_name": "billing"
+      }
+    },
+    {
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "801b4e736737415e",
+      "sequence_id": 11,
+      "event_type": "model.invoke",
+      "parent_span_id": "e9d1d6897e28452a",
+      "span_name": null,
+      "timestamp_ns": 1783018427011779000,
+      "payload": {
+        "provider": "google",
+        "tokens_prompt": 438,
+        "tokens_completion": 21,
+        "tokens_total": 459,
+        "latency_ms": 1832.637,
+        "framework": "google_adk",
+        "model": "gemini-2.5-flash"
+      }
+    },
+    {
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "801b4e736737415e",
+      "span_name": null,
+      "sequence_id": 12,
+      "timestamp_ns": 1783018427011869000,
+      "payload": {
+        "tokens_completion": 21,
+        "tokens_total": 459,
+        "model": "gemini-2.5-flash",
+        "cost_usd": 3.915e-05,
+        "framework": "google_adk",
+        "tokens_prompt": 438
+      },
+      "event_type": "cost.record",
+      "parent_span_id": "e9d1d6897e28452a"
+    },
+    {
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "e9d1d6897e28452a",
+      "sequence_id": 13,
+      "payload": {
+        "duration_ns": 1834973000,
+        "framework": "google_adk",
+        "agent_name": "billing"
+      },
+      "event_type": "agent.output",
+      "parent_span_id": "b7770c126264456f",
+      "span_name": "agent:billing",
+      "timestamp_ns": 1783018427012392000
+    },
+    {
+      "trace_id": "cdaf92488bb645ed",
+      "span_id": "b7770c126264456f",
+      "parent_span_id": null,
+      "timestamp_ns": 1783018427012762000,
+      "event_type": "agent.output",
+      "span_name": "triage",
+      "sequence_id": 14,
+      "payload": {
+        "framework": "google_adk",
+        "agent_name": "triage",
+        "duration_ns": 4194770000
+      }
+    },
+    {
+      "trace_id": "cdaf92488bb645ed",
+      "parent_span_id": null,
+      "sequence_id": 15,
+      "timestamp_ns": 1783018427012819000,
+      "payload": {
+        "agent_name": "triage",
+        "source": "framework",
+        "framework": "google_adk"
+      },
+      "event_type": "agent.identity",
+      "span_id": "b7770c126264456f",
+      "span_name": null
+    }
+  ],
+  "langfuse-s1": [
+    {
+      "span_id": "6fd3b1ab7130477e",
+      "parent_span_id": null,
+      "span_name": "sdk-audit-langfuse",
+      "sequence_id": 1,
+      "timestamp_ns": 1783009302921935000,
+      "event_type": "agent.input",
+      "payload": {
+        "langfuse_trace_id": "ee3d077db0764451b48a0dd344678d7a",
+        "name": "sdk-audit-langfuse",
+        "metadata": {
+          "layerlens_trace_id": "ll-audit-roundtrip"
+        },
+        "framework": "langfuse"
+      },
+      "trace_id": "5ad7f36b838844d4"
+    },
+    {
+      "sequence_id": 2,
+      "timestamp_ns": 1783009302922134000,
+      "payload": {
+        "framework": "langfuse",
+        "langfuse_observation_id": "0ca7b6b4e10044b080905275ae94f996",
+        "name": "lookup"
+      },
+      "event_type": "tool.call",
+      "trace_id": "5ad7f36b838844d4",
+      "parent_span_id": "6fd3b1ab7130477e",
+      "span_name": "lookup",
+      "span_id": "f7ffb990833344ab"
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "5ad7f36b838844d4",
+      "span_id": "73fc3b75f7dc43c7",
+      "span_name": "llm",
+      "sequence_id": 3,
+      "timestamp_ns": 1783009302922232000,
+      "payload": {
+        "framework": "langfuse",
+        "langfuse_observation_id": "bcc7604aa1d040359de1925759d8d05f",
+        "name": "llm",
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 12,
+        "tokens_completion": 6,
+        "tokens_total": 18
+      },
+      "parent_span_id": "6fd3b1ab7130477e"
+    },
+    {
+      "sequence_id": 4,
+      "event_type": "cost.record",
+      "trace_id": "5ad7f36b838844d4",
+      "timestamp_ns": 1783009302922324000,
+      "payload": {
+        "tokens_total": 18,
+        "cost_usd": 5.4e-06,
+        "cost_input_usd": 1.8e-06,
+        "cost_details": {
+          "input": 1.8e-06,
+          "output": 3.6e-06,
+          "total": 5.4e-06
+        },
+        "framework": "langfuse",
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 12,
+        "tokens_completion": 6,
+        "cost_output_usd": 3.6e-06,
+        "cost_total_usd": 5.4e-06
+      },
+      "span_id": "73fc3b75f7dc43c7",
+      "parent_span_id": "6fd3b1ab7130477e",
+      "span_name": null
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "5ad7f36b838844d4",
+      "span_id": "6fd3b1ab7130477e",
+      "parent_span_id": null,
+      "span_name": "sdk-audit-langfuse",
+      "payload": {
+        "langfuse_trace_id": "ee3d077db0764451b48a0dd344678d7a",
+        "framework": "langfuse"
+      },
+      "sequence_id": 5,
+      "timestamp_ns": 1783009302922390000
+    },
+    {
+      "trace_id": "5ad7f36b838844d4",
+      "span_id": "6fd3b1ab7130477e",
+      "sequence_id": 6,
+      "payload": {
+        "framework": "langfuse",
+        "agent_name": "sdk-audit-langfuse",
+        "source": "decorator"
+      },
+      "event_type": "agent.identity",
+      "parent_span_id": null,
+      "span_name": null,
+      "timestamp_ns": 1783009302922453000
+    }
+  ],
+  "langgraph-s1": [
+    {
+      "event_type": "agent.input",
+      "span_id": "c6ce6b0a5a9341ac",
+      "span_name": null,
+      "timestamp_ns": 1783009129754753000,
+      "payload": {
+        "framework": "langgraph",
+        "name": "unknown"
+      },
+      "trace_id": "01b7f2a6a8fc479c",
+      "parent_span_id": "46cebfc5260d44ec",
+      "sequence_id": 1
+    },
+    {
+      "event_type": "agent.node.enter",
+      "span_id": "7a984330599e45ba",
+      "span_name": null,
+      "sequence_id": 2,
+      "trace_id": "01b7f2a6a8fc479c",
+      "parent_span_id": "c6ce6b0a5a9341ac",
+      "timestamp_ns": 1783009129755601000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "respond",
+        "step": 1
+      }
+    },
+    {
+      "span_id": "7a984330599e45ba",
+      "span_name": null,
+      "payload": {
+        "framework": "langgraph",
+        "name": "respond",
+        "node": "respond",
+        "step": 1
+      },
+      "event_type": "agent.input",
+      "parent_span_id": "c6ce6b0a5a9341ac",
+      "sequence_id": 3,
+      "timestamp_ns": 1783009129755634000,
+      "trace_id": "01b7f2a6a8fc479c"
+    },
+    {
+      "trace_id": "01b7f2a6a8fc479c",
+      "span_name": null,
+      "sequence_id": 4,
+      "payload": {
+        "latency_ms": 1502.082,
+        "finish_reason": "length",
+        "tokens_prompt": 29,
+        "framework": "langgraph",
+        "name": "ChatOpenAI",
+        "model": "gpt-4o-mini-2024-07-18",
+        "tokens_completion": 32,
+        "tokens_total": 61
+      },
+      "event_type": "model.invoke",
+      "span_id": "c6532dcaa9de4c29",
+      "parent_span_id": "46cebfc5260d44ec",
+      "timestamp_ns": 1783009131258213000
+    },
+    {
+      "trace_id": "01b7f2a6a8fc479c",
+      "span_id": "c6532dcaa9de4c29",
+      "sequence_id": 5,
+      "event_type": "cost.record",
+      "parent_span_id": "46cebfc5260d44ec",
+      "span_name": null,
+      "timestamp_ns": 1783009131258359000,
+      "payload": {
+        "framework": "langgraph",
+        "model": "gpt-4o-mini-2024-07-18",
+        "tokens_prompt": 29,
+        "tokens_completion": 32,
+        "tokens_total": 61,
+        "cost_usd": 2.355e-05
+      }
+    },
+    {
+      "event_type": "agent.node.exit",
+      "trace_id": "01b7f2a6a8fc479c",
+      "parent_span_id": "c6ce6b0a5a9341ac",
+      "timestamp_ns": 1783009131258613000,
+      "span_id": "7a984330599e45ba",
+      "span_name": null,
+      "sequence_id": 6,
+      "payload": {
+        "framework": "langgraph",
+        "node": "respond",
+        "step": 1,
+        "latency_ms": 1503.019
+      }
+    },
+    {
+      "trace_id": "01b7f2a6a8fc479c",
+      "span_id": "7a984330599e45ba",
+      "parent_span_id": "c6ce6b0a5a9341ac",
+      "span_name": null,
+      "timestamp_ns": 1783009131258706000,
+      "event_type": "agent.state.change",
+      "sequence_id": 7,
+      "payload": {
+        "step": 1,
+        "state_hash": "sha256:fffcb9de15021eb20467447d728fda7e3592a2f8d1723686539af8a85bc82fe2",
+        "state_keys": [
+          "reply",
+          "text"
+        ],
+        "framework": "langgraph",
+        "node": "respond"
+      }
+    },
+    {
+      "timestamp_ns": 1783009131258773000,
+      "parent_span_id": "c6ce6b0a5a9341ac",
+      "span_name": null,
+      "sequence_id": 8,
+      "payload": {
+        "framework": "langgraph",
+        "status": "ok"
+      },
+      "event_type": "agent.output",
+      "trace_id": "01b7f2a6a8fc479c",
+      "span_id": "7a984330599e45ba"
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "01b7f2a6a8fc479c",
+      "parent_span_id": "46cebfc5260d44ec",
+      "sequence_id": 9,
+      "span_id": "c6ce6b0a5a9341ac",
+      "span_name": null,
+      "timestamp_ns": 1783009131259222000,
+      "payload": {
+        "framework": "langgraph",
+        "status": "ok"
+      }
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "01b7f2a6a8fc479c",
+      "span_id": "7a984330599e45ba",
+      "parent_span_id": "c6ce6b0a5a9341ac",
+      "timestamp_ns": 1783009131259357000,
+      "span_name": null,
+      "sequence_id": 10,
+      "payload": {
+        "agent_name": "respond",
+        "source": "framework",
+        "framework": "langgraph"
+      }
+    },
+    {
+      "event_type": "trace.root",
+      "span_id": "46cebfc5260d44ec",
+      "span_name": "trace",
+      "trace_id": "01b7f2a6a8fc479c",
+      "parent_span_id": null,
+      "sequence_id": 11,
+      "timestamp_ns": 1783009131259399000,
+      "payload": {
+        "synthesized": true
+      }
+    }
+  ],
+  "agno-s1": [
+    {
+      "event_type": "agent.input",
+      "span_name": "agno:agno_agent",
+      "payload": {
+        "agent_name": "agno_agent",
+        "model": "gpt-4o-mini",
+        "framework": "agno"
+      },
+      "trace_id": "48bbb96b4d714d7b",
+      "span_id": "14bf2c20dd43455a",
+      "parent_span_id": "14bf2c20dd43455a",
+      "sequence_id": 1,
+      "timestamp_ns": 1783009240126817000
+    },
+    {
+      "span_id": "14bf2c20dd43455a",
+      "sequence_id": 2,
+      "timestamp_ns": 1783009243128545000,
+      "payload": {
+        "model": "gpt-4o-mini",
+        "latency_ms": 3001.756,
+        "framework": "agno",
+        "agent_name": "agno_agent"
+      },
+      "parent_span_id": "14bf2c20dd43455a",
+      "span_name": "agno:agno_agent",
+      "event_type": "agent.output",
+      "trace_id": "48bbb96b4d714d7b"
+    },
+    {
+      "parent_span_id": "14bf2c20dd43455a",
+      "span_name": "model.invoke",
+      "sequence_id": 3,
+      "timestamp_ns": 1783009243128661000,
+      "payload": {
+        "tokens_total": 75,
+        "framework": "agno",
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 29,
+        "tokens_completion": 46
+      },
+      "event_type": "model.invoke",
+      "trace_id": "48bbb96b4d714d7b",
+      "span_id": "bae6a42c7b3c4052"
+    },
+    {
+      "trace_id": "48bbb96b4d714d7b",
+      "parent_span_id": "14bf2c20dd43455a",
+      "span_name": null,
+      "timestamp_ns": 1783009243128753000,
+      "payload": {
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 29,
+        "tokens_completion": 46,
+        "tokens_total": 75,
+        "cost_usd": 3.195e-05,
+        "framework": "agno"
+      },
+      "event_type": "cost.record",
+      "span_id": "bae6a42c7b3c4052",
+      "sequence_id": 4
+    }
+  ],
+  "strands-s1": [
+    {
+      "sequence_id": 1,
+      "payload": {
+        "model": "gpt-4o-mini",
+        "framework": "strands",
+        "agent_name": "Strands Agents"
+      },
+      "event_type": "agent.input",
+      "span_id": "30210311e0994532",
+      "parent_span_id": null,
+      "timestamp_ns": 1783009252645068000,
+      "trace_id": "e7cfa57bb3434bbf",
+      "span_name": "Strands Agents"
+    },
+    {
+      "event_type": "model.invoke",
+      "span_id": "418c7a3f583e4219",
+      "span_name": null,
+      "timestamp_ns": 1783009256089132000,
+      "trace_id": "e7cfa57bb3434bbf",
+      "parent_span_id": "30210311e0994532",
+      "sequence_id": 2,
+      "payload": {
+        "model": "gpt-4o-mini",
+        "latency_ms": 3443.639,
+        "stop_reason": "end_turn",
+        "framework": "strands"
+      }
+    },
+    {
+      "trace_id": "e7cfa57bb3434bbf",
+      "span_name": null,
+      "sequence_id": 3,
+      "payload": {
+        "cycle_index": 0,
+        "model": "gpt-4o-mini",
+        "cost_usd": 3.315e-05,
+        "framework": "strands",
+        "tokens_prompt": 45,
+        "tokens_completion": 44,
+        "tokens_total": 89
+      },
+      "event_type": "cost.record",
+      "span_id": "f053a485835f47e3",
+      "parent_span_id": "418c7a3f583e4219",
+      "timestamp_ns": 1783009256089737000
+    },
+    {
+      "event_type": "agent.output",
+      "span_name": "Strands Agents",
+      "payload": {
+        "framework": "strands",
+        "agent_name": "Strands Agents",
+        "duration_ns": 3444513000,
+        "stop_reason": "end_turn"
+      },
+      "trace_id": "e7cfa57bb3434bbf",
+      "span_id": "30210311e0994532",
+      "parent_span_id": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1783009256089801000
+    }
+  ]
+}

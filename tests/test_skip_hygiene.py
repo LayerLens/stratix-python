@@ -31,6 +31,7 @@ KNOWN_SKIP_TARGETS = {
     "fastapi",
     "litellm",
     "ollama",
+    "openai",
     "vertexai.generative_models",
     # framework adapters (installed per-venv; absent on the base env by design)
     "pydantic_ai",
@@ -53,6 +54,7 @@ KNOWN_SKIP_TARGETS = {
     "strands",
     "agno",
     "google.adk",
+    "google.genai",
     # protocol / integration extras
     "copilotkit",
     "ag_ui_langgraph",

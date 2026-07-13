@@ -667,7 +667,11 @@ class TestErrorIsolation:
         adapter._on_before_agent(None, None)
         adapter._on_after_agent(None, None)
         adapter._on_before_model(None, None)
-        adapter._on_after_model(None, Mock(model_version=None, usage_metadata=None))
+        # finish_reason must be explicit-None like elsewhere in this file (see the
+        # _make_llm_response note): an auto-attribute Mock renders as "<Mock id=...>"
+        # whose numeric id can match the card_pan secret scanner, flaking the
+        # _enforce_schema_lock teardown non-deterministically by memory address.
+        adapter._on_after_model(None, Mock(model_version=None, usage_metadata=None, finish_reason=None))
         adapter._on_before_tool(None, None, Mock(function_call_id=None))
         adapter._on_event(None, Mock(actions=None))
 

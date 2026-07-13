@@ -173,6 +173,54 @@ def capture_openai() -> None:
     )
 
 
+def capture_openai_embeddings() -> None:
+    """Real ``POST /v1/embeddings`` — the upstream the EmbeddingAdapter parses.
+
+    The SDK requests base64 embeddings by default and decodes them client-side,
+    so the recorded body carries the compact base64 vectors; the replay test's
+    real client decodes them back to the 1536-float vector the adapter measures.
+    """
+    import openai
+
+    rec = _RecordingTransport()
+    client = openai.OpenAI(http_client=httpx.Client(transport=rec))
+    model = os.environ.get("LL_OPENAI_EMBED_MODEL", "text-embedding-3-small")
+    client.embeddings.create(model=model, input="hello world")
+    _write(
+        "openai",
+        "embeddings",
+        _http_fixture("openai", openai.__version__, model, "embeddings", rec.interactions[-1:]),
+    )
+
+
+def capture_openai_stream() -> None:
+    """Real streaming ``POST /v1/chat/completions`` (SSE) — the upstream the
+    strands ``OpenAIModel`` consumes (it forces ``stream=True`` +
+    ``stream_options={"include_usage": True}``). Consuming the iterator makes
+    ``_RecordingTransport`` capture the full ``text/event-stream`` body,
+    including the final usage-only chunk the adapter's cost accounting reads."""
+    import openai
+
+    rec = _RecordingTransport()
+    client = openai.OpenAI(http_client=httpx.Client(transport=rec))
+    model = os.environ.get("LL_OPENAI_MODEL", "gpt-4o-mini")
+    stream = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": "Reply with exactly: pong"}],
+        temperature=0,
+        max_tokens=8,
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    for _ in stream:  # drain so the SSE body is fully captured
+        pass
+    _write(
+        "openai",
+        "stream",
+        _http_fixture("openai", openai.__version__, model, "stream", rec.interactions[-1:]),
+    )
+
+
 def capture_anthropic() -> None:
     import anthropic
 
@@ -214,6 +262,31 @@ def capture_anthropic() -> None:
         "anthropic",
         "tool_call",
         _http_fixture("anthropic", anthropic.__version__, model, "tool_call", rec2.interactions[-1:]),
+    )
+
+
+def capture_google_genai() -> None:
+    """Real ``generateContent`` on ``google.genai`` — the upstream the Google ADK
+    ``Gemini`` model consumes. genai's ``HttpOptions.client_args`` accepts an
+    httpx ``transport=``, so ``_RecordingTransport`` captures the raw
+    ``generateContent`` JSON body (candidates[].content.parts[].text +
+    usageMetadata + modelVersion). The replay test drives a real ADK ``Runner``
+    whose async genai client serves this body back over a MockTransport."""
+    from google import genai
+    from google.genai import types
+
+    rec = _RecordingTransport()
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
+    model = os.environ.get("LL_GEMINI_MODEL", "gemini-2.5-flash")
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(client_args={"transport": rec}),
+    )
+    client.models.generate_content(model=model, contents="Reply with exactly: pong")
+    _write(
+        "google_genai",
+        "default",
+        _http_fixture("google_genai", genai.__version__, model, "default", rec.interactions[-1:]),
     )
 
 
@@ -351,6 +424,54 @@ def capture_litellm() -> None:
     )
 
 
+def capture_langfuse() -> None:
+    """Real Langfuse REST import — the upstream the LangfuseAdapter parses.
+
+    The adapter builds its own ``httpx.Client`` (no injection kwarg), so we swap
+    the module's ``httpx`` for a recording shim (identical to
+    ``capture_agentforce``). A ``connect`` + ``import_traces(limit=1)`` produces
+    three ordered GETs — the connect-validation list, the import list, and the
+    single-trace detail — which the replay test serves back in the same order.
+    Requires a live Langfuse instance that actually HAS importable traces.
+    """
+    from unittest.mock import Mock
+
+    import layerlens.instrument.adapters.frameworks.langfuse as lf
+
+    rec = _RecordingTransport()
+    real_httpx = lf.httpx
+
+    class _RecordingShim:
+        def Client(self, **kwargs: Any) -> Any:
+            kwargs.pop("transport", None)
+            return real_httpx.Client(transport=rec, **kwargs)
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real_httpx, name)
+
+    lf.httpx = _RecordingShim()
+    try:
+        adapter = lf.LangfuseAdapter(Mock())
+        adapter.connect(
+            public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
+            secret_key=os.environ["LANGFUSE_SECRET_KEY"],
+            host=os.environ["LANGFUSE_BASE_URL"],
+        )
+        imported = adapter.import_traces(limit=1)
+        adapter.disconnect()
+    finally:
+        lf.httpx = real_httpx
+
+    if imported < 1:
+        raise RuntimeError("Langfuse instance returned no importable traces — cannot record a real fixture.")
+
+    _write(
+        "langfuse",
+        "default",
+        _http_fixture("langfuse", "rest-api-public", "gpt-4o-mini", "default", rec.interactions),
+    )
+
+
 def _jsonable(obj: Any) -> Any:
     """Make a boto3 completion event JSON-serializable (bytes -> base64 dict,
     datetime -> isoformat)."""
@@ -409,12 +530,16 @@ def capture_agentforce() -> None:
 
 CAPTURES: Dict[str, Callable[[], None]] = {
     "openai": capture_openai,
+    "openai_embeddings": capture_openai_embeddings,
+    "openai_stream": capture_openai_stream,
+    "google_genai": capture_google_genai,
     "anthropic": capture_anthropic,
     "bedrock": capture_bedrock,
     "bedrock_agents": capture_bedrock_agents,
     "ollama": capture_ollama,
     "litellm": capture_litellm,
     "agentforce": capture_agentforce,
+    "langfuse": capture_langfuse,
 }
 
 

@@ -1,0 +1,106 @@
+{
+  "agno-s1": {
+    "lane": "agno-s1",
+    "shipped_nodes": [
+      "agno_agent"
+    ],
+    "shipped_column": "agno_agent",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "autogen-s2": {
+    "lane": "autogen-s2",
+    "shipped_nodes": [
+      "fulfillment/default",
+      "router/default"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "fulfillment/default",
+      "router/default"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "bedrock_agents-s1": {
+    "lane": "bedrock_agents-s1",
+    "shipped_nodes": [
+      "9WBVYFT6RB"
+    ],
+    "shipped_column": "9WBVYFT6RB",
+    "guarded_nodes": [
+      "9WBVYFT6RB"
+    ],
+    "guarded_column": "9WBVYFT6RB"
+  },
+  "crewai-s1": {
+    "lane": "crewai-s1",
+    "shipped_nodes": [
+      "researcher"
+    ],
+    "shipped_column": "researcher",
+    "guarded_nodes": [
+      "researcher"
+    ],
+    "guarded_column": "researcher"
+  },
+  "google_adk-s2": {
+    "lane": "google_adk-s2",
+    "shipped_nodes": [
+      "billing",
+      "triage"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "billing",
+      "triage"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "langfuse-s1": {
+    "lane": "langfuse-s1",
+    "shipped_nodes": [
+      "sdk-audit-langfuse"
+    ],
+    "shipped_column": "sdk-audit-langfuse",
+    "guarded_nodes": [
+      "sdk-audit-langfuse"
+    ],
+    "guarded_column": "sdk-audit-langfuse"
+  },
+  "langgraph-s1": {
+    "lane": "langgraph-s1",
+    "shipped_nodes": [
+      "respond"
+    ],
+    "shipped_column": "respond",
+    "guarded_nodes": [
+      "respond"
+    ],
+    "guarded_column": "respond"
+  },
+  "pydantic_ai-s1": {
+    "lane": "pydantic_ai-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "smolagents-s1": {
+    "lane": "smolagents-s1",
+    "shipped_nodes": [
+      "ToolCallingAgent"
+    ],
+    "shipped_column": "ToolCallingAgent",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "strands-s1": {
+    "lane": "strands-s1",
+    "shipped_nodes": [
+      "Strands Agents"
+    ],
+    "shipped_column": "Strands Agents",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  }
+}
