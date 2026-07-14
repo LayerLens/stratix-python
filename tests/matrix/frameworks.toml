@@ -39,7 +39,7 @@ tests = [
 
 [frameworks.openai_agents]
 python = "3.11"
-install = ["openai-agents==0.4.2"]
+install = ["openai-agents==0.4.2", "openai==2.32.0"]
 tests = [
     "tests/instrument/adapters/frameworks/test_openai_agents.py",
     "tests/instrument/adapters/frameworks/test_openai_agents_recorded.py",
