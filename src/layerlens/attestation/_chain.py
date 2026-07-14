@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import copy
 from typing import Any, Dict, List, Optional
 
-from ._hash import compute_hash
+from ._hash import compute_hash, event_hash_input
 from ._envelope import HashScope, AttestationEnvelope
 
 
@@ -39,8 +39,11 @@ class HashChain:
     def add_event(self, data: Dict[str, Any]) -> AttestationEnvelope:
         """Hash an event and append it to the chain."""
         self._check_active()
-        # Include previous_hash in the hashed payload for chaining
-        payload = {**data, "_previous_hash": self._last_hash}
+        # Canonical hash input excludes the self-referential hash fields and
+        # injects _previous_hash for chaining, so a verifier that rebuilds the
+        # chain from the wire events (which now carry their own hash) reproduces
+        # the identical hashes.
+        payload = event_hash_input(data, self._last_hash)
         event_hash = compute_hash(payload)
         envelope = AttestationEnvelope(
             hash=event_hash,

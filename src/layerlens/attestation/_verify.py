@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from dataclasses import field, dataclass
 
-from ._hash import compute_hash
+from ._hash import compute_hash, event_hash_input
 from ._signing import hmac_verify
 from ._envelope import HashScope, AttestationEnvelope
 
@@ -148,7 +148,11 @@ def detect_tampering(
 
     modified: List[int] = []
     for i, (envelope, data) in enumerate(zip(envelopes, original_data)):
-        payload = {**data, "_previous_hash": envelope.previous_hash}
+        # Canonical hash input (strips the self-referential hash fields the wire
+        # event now carries, re-injects _previous_hash) — the same function the
+        # chain builder uses, so a genuinely-unmodified event recomputes to its
+        # stored hash.
+        payload = event_hash_input(data, envelope.previous_hash)
         recomputed = compute_hash(payload)
         if recomputed != envelope.hash:
             modified.append(i)

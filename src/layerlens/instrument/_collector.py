@@ -226,7 +226,7 @@ class TraceCollector:
             "payload": payload,
         }
         try:
-            self._chain.add_event(event)
+            envelope = self._chain.add_event(event)
         except Exception:
             # F-L1-003: a non-JSON-native payload value (Decimal/bytes/...) must
             # not raise out of the attestation hash and crash the host app.
@@ -235,11 +235,21 @@ class TraceCollector:
             # bump) with a warning rather than propagate.
             event["payload"] = _json_safe(event["payload"])
             try:
-                self._chain.add_event(event)
+                envelope = self._chain.add_event(event)
             except Exception:
                 self._sequence -= 1
                 log.warning("layerlens: dropping unhashable event %s", event_type, exc_info=True)
                 return
+        # Attach the per-event attestation hash onto the wire event so a consumer
+        # (ateam) can verify per-event and record origin='sdk', rather than
+        # relying on positional alignment with the parallel
+        # ``attestation.chain.events[]`` array (still emitted, for back-compat).
+        # Attached AFTER the chain has hashed the event so the hash never feeds
+        # into its own digest: the recompute must strip ``hash``/``previous_hash``
+        # and re-inject ``_previous_hash`` (the chain hashes ``{**event,
+        # '_previous_hash': prev}``). Proven by test_attached_hash_recomputes.
+        event["hash"] = envelope.hash
+        event["previous_hash"] = envelope.previous_hash
         self._events.append(event)
 
     @property
