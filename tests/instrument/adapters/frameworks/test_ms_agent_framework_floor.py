@@ -1,0 +1,273 @@
+"""Offline error + attestation + redaction floor for the Microsoft Agent Framework adapter.
+
+Closes the W2 census ◑/gap cells that the existing ``test_ms_agent_framework.py``
+proves only via synthetic ``SimpleNamespace`` messages or a hand-rolled
+``RuntimeError("kaboom")`` string, by driving a *real*
+``semantic_kernel.agents.ChatCompletionAgent`` (the single-agent chat the
+``MSAgentFrameworkAdapter`` wraps) backed by an ``openai.AsyncOpenAI`` client over
+``httpx.MockTransport`` — the proven seam from ``test_ms_agent_framework_recorded.py``.
+The network is the ONLY mock; the SK agent, its async chat service, the openai
+client's real deserialization, and the adapter's own async-generator wrapper /
+message parser are all real. So a regression fails in plain CI with no
+credentials and no network:
+
+* Error-paths  — a REAL ``openai.AuthenticationError`` is *raised by the real
+                 AsyncOpenAI client deserializing a real 401 body* served over the
+                 mocked transport (NOT the synthetic ``RuntimeError("kaboom")`` the
+                 existing suite yields). Real SK wraps the provider error in its own
+                 ``ServiceResponseException`` at the chat-service boundary, so the
+                 adapter's ``except BaseException`` finally-block surfaces it as
+                 ``agent.error`` with the honest real-SDK wrapper class name
+                 ``error_type == "ServiceResponseException"`` and the underlying
+                 openai error text (``AuthenticationError`` / ``401`` /
+                 ``invalid_api_key``) flowing through verbatim.
+* Attestation  — a real ``agent.invoke`` over the recorded openai response flushes a
+                 trace whose attestation chain reconstructs and ``verify_chain(...)``
+                 returns valid; one envelope per event; a tamper control breaks link
+                 1 to prove the check is not vacuous.
+* Redaction    — a real agent run whose assistant reply carries a SENTINEL, with
+                 ``capture_content=False``, keeps the structural events
+                 (agent.input/model.invoke/cost.record/agent.output) but strips the
+                 ``output`` content field — and a SENTINEL sweep over
+                 ``json.dumps(events)`` — from the stored trace, with a
+                 ``capture_content=True`` vacuity control proving the same path DOES
+                 carry the content otherwise.
+
+Known offline gap NOT closed here (see the W2 held findings, reported to the
+orchestrator — NOT papered over with a green assertion): on a REAL SK run the
+model id is stranded on ``message.ai_model_id`` / ``message.inner_content.model``
+while the adapter's ``_emit_model_metadata`` reads only the (empty) message-level
+``metadata["model"]`` — so ``model.invoke`` / ``cost.record`` carry ``model=None``
+and the shared framework price-on-emit hook cannot compute ``cost_usd`` (a
+``cost.record`` is tokens-only on real runs). The sibling ``SemanticKernelAdapter``
+reads the configured ``ai_model_id`` and DOES price, so this is a source-level
+divergence PINGed for adjudication, not an intrinsic limitation of the trace.
+
+Note: ``test_ms_agent_framework_recorded.py`` disables content capture citing a
+``ChatHistoryAgentThread`` that ``safe_serialize`` "would raise inside
+agent.output"; on the pinned ``semantic-kernel==1.36.0`` that no longer
+reproduces (the real ``AgentResponseItem`` model-dumps cleanly), so the
+``capture_content=True`` control and the attestation run below serialize the real
+response object without error.
+"""
+
+from __future__ import annotations
+
+import json
+import asyncio
+import dataclasses
+
+import pytest
+
+pytest.importorskip("semantic_kernel.agents")
+
+import httpx  # noqa: E402
+from semantic_kernel.agents import ChatCompletionAgent  # noqa: E402
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion  # noqa: E402
+
+from openai import AsyncOpenAI  # noqa: E402
+from layerlens.attestation._verify import verify_chain  # noqa: E402
+from layerlens.attestation._envelope import HashScope, AttestationEnvelope  # noqa: E402
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
+from layerlens.instrument.adapters.frameworks.ms_agent_framework import (  # noqa: E402
+    MSAgentFrameworkAdapter,
+)
+
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
+from ..._recorded import load_recorded, mock_transport  # noqa: E402
+
+SENTINEL = "LL-SENTINEL-7f3a9c2e"
+_MODEL = "gpt-4o-mini"
+
+# Content-off config that differs from the control ONLY in ``capture_content`` so
+# the redaction assertion isolates the content gate (mirrors the SK-adapter floor).
+_CONTENT_OFF = dataclasses.replace(CaptureConfig.full(), capture_content=False)
+
+
+# ---------------------------------------------------------------------------
+# Real-agent-over-mocked-transport helpers (the proven recorded seam)
+# ---------------------------------------------------------------------------
+def _agent_over_transport(transport: httpx.MockTransport, *, model: str = _MODEL) -> ChatCompletionAgent:
+    """A real ``ChatCompletionAgent`` whose OpenAI chat service routes through
+    ``transport``. SK's OpenAI chat service is async-only; the MockTransport is
+    injected through the documented ``async_client=`` seam so the *real* openai
+    client does its real routing + deserialization against the served body."""
+    async_client = AsyncOpenAI(api_key="test-key", http_client=httpx.AsyncClient(transport=transport))
+    service = OpenAIChatCompletion(ai_model_id=model, async_client=async_client)
+    return ChatCompletionAgent(service=service, name="replay_agent", instructions="reply")
+
+
+def _drain(agent: ChatCompletionAgent, *, prompt: str = "Reply with exactly: pong"):
+    async def run():
+        return [item async for item in agent.invoke(messages=prompt)]
+
+    return asyncio.run(run())
+
+
+def _recorded_transport() -> httpx.MockTransport:
+    fixture = load_recorded("openai", "default")
+    transport, _ = mock_transport(fixture)
+    return transport
+
+
+def _sentinel_transport(sentinel: str) -> httpx.MockTransport:
+    """A real chat-completion body whose assistant reply carries ``sentinel`` and a
+    real usage triple (so the structural model.invoke/cost.record still emit)."""
+    body = {
+        "id": "chatcmpl-floor",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": f"Answer: {sentinel}"},
+            }
+        ],
+        "usage": {"prompt_tokens": 12, "completion_tokens": 1, "total_tokens": 13},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    return httpx.MockTransport(handler)
+
+
+def _drive(mock_client, transport, config, *, prompt: str = "Reply with exactly: pong"):
+    """Instrument the real agent, run one ``invoke`` to completion, return the
+    captured trace + result. ``instrument_chat`` (not ``connect``) is the proven
+    recorded-test entry point — it wraps the agent's async-gen ``invoke``."""
+    uploaded = capture_framework_trace(mock_client)
+    agent = _agent_over_transport(transport)
+    adapter = MSAgentFrameworkAdapter(mock_client, capture_config=config)
+    adapter.instrument_chat(agent)
+    result = _drain(agent, prompt=prompt)
+    adapter.disconnect()
+    return uploaded, result
+
+
+# ---------------------------------------------------------------------------
+# Real error-shape floor — a genuine openai SDK exception, raised the real way
+# ---------------------------------------------------------------------------
+class TestRealErrorShape:
+    def test_real_openai_401_surfaces_as_agent_error(self, mock_client):
+        # A real 401 body — the real AsyncOpenAI client deserializes it and raises a
+        # genuine ``openai.AuthenticationError`` (401 is not retried), which the real
+        # SK chat service wraps and re-raises through ``agent.invoke``. NOT the
+        # synthetic ``RuntimeError("kaboom")`` the existing suite yields.
+        body = {
+            "error": {
+                "message": "Incorrect API key provided.",
+                "type": "invalid_request_error",
+                "code": "invalid_api_key",
+            }
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(401, json=body)
+
+        uploaded = capture_framework_trace(mock_client)
+        agent = _agent_over_transport(httpx.MockTransport(handler))
+        adapter = MSAgentFrameworkAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.instrument_chat(agent)
+        # The 401 propagates out of ``agent.invoke``; the adapter's wrapper catches
+        # it in its ``finally`` block, emits ``agent.error``, and re-raises.
+        with pytest.raises(Exception, match="401"):
+            _drain(agent)
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        errors = find_events(events, "agent.error")
+        assert len(errors) == 1, f"expected exactly one agent.error, saw {[e['payload'] for e in errors]}"
+        payload = errors[0]["payload"]
+
+        # Honest real-SDK classification — bite: lost if the adapter stops emitting
+        # on failure or misclassifies. The real SK chat service wraps the provider
+        # error in ``ServiceResponseException`` (``type(exc).__name__``).
+        assert payload["error_type"] == "ServiceResponseException"
+        assert payload["status"] == "error"
+        assert payload["framework"] == "ms_agent_framework"
+        assert "latency_ms" in payload
+        # The REAL underlying openai exception flows through verbatim (bite:
+        # dropped/mangled error text fails here) — proof a genuine SDK error, not a
+        # synthetic string, reached the adapter. These survive the secret-scrub
+        # chokepoint (no secret-shaped substring).
+        assert "AuthenticationError" in payload["error"]
+        assert "401" in payload["error"]
+        assert "Incorrect API key provided" in payload["error"]
+        assert "invalid_api_key" in payload["error"]
+
+
+# ---------------------------------------------------------------------------
+# Offline attestation-chain verification over a real agent run
+# ---------------------------------------------------------------------------
+class TestAttestationOffline:
+    def test_attestation_chain_verifies_over_real_agent(self, mock_client):
+        uploaded, result = _drive(
+            mock_client, _recorded_transport(), CaptureConfig.full(), prompt="Reply with exactly: pong"
+        )
+        # AgentResponseItem.message is the ChatMessageContent; its text is "pong".
+        assert str(result[0].message.content) == "pong"
+
+        events = uploaded["events"]
+        assert events, "real agent invoke must flush a non-empty trace"
+        chain = (uploaded["attestation"] or {}).get("chain") or {}
+        raw = chain.get("events") or []
+        envelopes = [
+            AttestationEnvelope(hash=e["hash"], scope=HashScope(e["scope"]), previous_hash=e.get("previous_hash"))
+            for e in raw
+        ]
+        assert envelopes, "no attestation envelopes captured for the real agent trace"
+        assert len(envelopes) == len(events), (
+            f"attestation chain has {len(envelopes)} envelopes for {len(events)} events"
+        )
+        assert (uploaded["attestation"] or {}).get("root_hash") is not None
+
+        result_ok = verify_chain(envelopes)
+        assert result_ok.valid, f"attestation chain invalid: {result_ok.error}"
+
+        # Vacuity control: verify_chain must REJECT a broken interior link, proving
+        # the pass above is not trivially true.
+        assert len(envelopes) >= 2
+        tampered = list(envelopes)
+        tampered[1] = AttestationEnvelope(
+            hash=tampered[1].hash,
+            scope=tampered[1].scope,
+            previous_hash="sha256:deadbeef-not-the-prior-hash",
+        )
+        broken = verify_chain(tampered)
+        assert not broken.valid and broken.break_index == 1, "verify_chain failed to detect a broken link"
+
+
+# ---------------------------------------------------------------------------
+# Redaction content-absence over a real agent lifecycle
+# ---------------------------------------------------------------------------
+class TestRedactionFloor:
+    def test_content_present_when_capturing(self, mock_client):
+        """Vacuity control: with capture_content=True the SAME real run DOES carry
+        the SENTINEL and the ``output`` content key it rides on — without this the
+        redaction sweep below could pass trivially."""
+        uploaded, _ = _drive(mock_client, _sentinel_transport(SENTINEL), CaptureConfig.full())
+        events = uploaded["events"]
+        assert SENTINEL in json.dumps(events), "control run must carry the SENTINEL when capturing content"
+        assert "output" in find_event(events, "agent.output")["payload"]
+
+    def test_content_absent_when_not_capturing(self, mock_client):
+        """capture_content=False keeps the structural events but strips the assistant
+        reply content — and the SENTINEL — from the stored trace."""
+        uploaded, _ = _drive(mock_client, _sentinel_transport(SENTINEL), _CONTENT_OFF)
+        events = uploaded["events"]
+        assert events, "the lifecycle must still emit structural events without content"
+
+        # Structure survives (the run still happened) ...
+        assert find_events(events, "agent.input"), "agent.input dropped under capture_content=False"
+        assert find_events(events, "model.invoke"), "model.invoke dropped under capture_content=False"
+        assert find_events(events, "cost.record"), "cost.record dropped under capture_content=False"
+        assert find_events(events, "agent.output"), "agent.output dropped under capture_content=False"
+
+        # ... but no content leaks.
+        # 1) SENTINEL sweep over the serialized trace.
+        assert SENTINEL not in json.dumps(events), "PRIVACY LEAK: SENTINEL survived capture_content=False"
+        # 2) The content key is absent from the payload that would carry it.
+        assert "output" not in find_event(events, "agent.output")["payload"], "agent.output leaked 'output'"
