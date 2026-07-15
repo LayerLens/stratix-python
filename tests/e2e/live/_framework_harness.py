@@ -17,6 +17,7 @@ from ._harness import (
     _collect,
     _poll_get,
     _teardown,
+    _known_cost,
     _events_by_type,
     _upload_capture,
     _assert_attestation,
@@ -65,6 +66,15 @@ def run_framework_case(client: Any, case: FrameworkCase, variant: str) -> Dict[s
         "trace_id": backend_id,
         "n_events": len(events),
         "event_types": {k: len(v) for k, v in by_type.items()},
+        # The report's cost column defaults to 0 when this key is absent, which
+        # silently reported every paid framework lane as $0.000000. Sum the real
+        # cost.record events instead — an unpriced local model (ollama) then
+        # reports a truthful 0, and a paid lane reports what it truly spent.
+        "total_cost_usd": _known_cost(by_type.get("cost.record", [])),
+        # Same story as the cost column: absent -> the report rendered "0
+        # tool.call" for a lane that really made several (browser_use makes one
+        # per real browser action).
+        "tool_calls": len(by_type.get("tool.call", [])),
         "attestation_ok": True,
         "redaction_ok": variant == "redaction",
         "linked": linkage.get("linked"),

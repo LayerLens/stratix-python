@@ -72,7 +72,7 @@ def run_case(client: Any, case: ProviderCase, variant: str) -> Dict[str, Any]:
         "n_events": len(events),
         "event_types": {k: len(v) for k, v in by_type.items()},
         "tool_calls": len(by_type.get("tool.call", [])),
-        "total_cost_usd": round(total_cost, 8),
+        "total_cost_usd": _known_cost(by_type.get("cost.record", [])),
         "redaction_ok": variant == "redaction",
         "attestation_ok": True,
         "data_has_events": data_has_events,
@@ -276,6 +276,26 @@ def _sum_cost(cost_records: List[Dict[str, Any]]) -> float:
         if isinstance(val, (int, float)):
             total += float(val)
     return total
+
+
+def _known_cost(cost_records: List[Dict[str, Any]]) -> Optional[float]:
+    """The run's real spend, or None when it is genuinely NOT KNOWABLE.
+
+    An unknown cost is not a zero cost. Two real lanes report no price and mean
+    different things: an ollama model is unpriced (a cost.record with real tokens
+    and cost_usd=None), and marvin surfaces no usage at all, so a REAL paid
+    gpt-4o-mini call emits no cost.record. Summing either to 0.0 renders
+    "$0.000000" — which reads as "this was free" and makes untracked real spend
+    indistinguishable from a genuinely free local run.
+    """
+    priced = [
+        _payload(cr).get("cost_usd")
+        for cr in cost_records
+        if isinstance(_payload(cr).get("cost_usd"), (int, float))
+    ]
+    if not priced:
+        return None
+    return round(sum(float(v) for v in priced), 8)
 
 
 def _first_model(by_type: Dict[str, List[Dict[str, Any]]]) -> Optional[str]:

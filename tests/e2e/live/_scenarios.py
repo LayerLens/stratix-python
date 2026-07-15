@@ -418,3 +418,59 @@ def run_litellm(flow: str) -> None:
             litellm.completion(model=model, messages=[{"role": "user", "content": turn}], max_tokens=20)
     finally:
         uninstrument_litellm()
+
+
+# --------------------------------------------------------------------------- #
+# OpenRouter — the OpenAI-compatible gateway. SEALED: this machine has no
+# OPENROUTER_API_KEY, so the ProviderCase is credential-gated and self-skips.
+#
+# It is deliberately NOT pointed at another provider's endpoint to manufacture a
+# green: OpenRouter's whole adapter surface is gateway-specific (the ``:free``
+# slug routing, the ``extra_body={"usage": {"include": True}}`` accounting block
+# the gateway answers with its own charge, and the ``HTTP-Referer``/``X-Title``
+# attribution headers). A run against api.openai.com would exercise none of it
+# and would be a lie about which provider answered. The adapter stays covered by
+# its unit doubles + the recorded corpus (tests/fixtures/recorded/openrouter).
+#
+# Set OPENROUTER_API_KEY (sk-or-...) and this lane runs for real, unchanged.
+# --------------------------------------------------------------------------- #
+#: OpenRouter's free route — the default so an opted-in run costs nothing.
+_OPENROUTER_MODEL = os.environ.get("LL_OPENROUTER_MODEL", "meta-llama/llama-3-8b-instruct:free")
+
+
+def run_openrouter(flow: str) -> None:
+    from layerlens.instrument.adapters.providers.openrouter import (
+        build_client,
+        instrument_openrouter,
+        uninstrument_openrouter,
+    )
+
+    client = build_client(
+        os.environ["OPENROUTER_API_KEY"],
+        http_referer="https://layerlens.ai",
+        x_title="LayerLens live adapter verification",
+    )
+    instrument_openrouter(client)
+    try:
+        if flow == "error":
+            try:
+                client.chat.completions.create(
+                    model=_BAD_MODEL,
+                    messages=[{"role": "user", "content": f"hi {SENTINEL}"}],
+                    max_tokens=16,
+                )
+            except Exception:
+                pass
+            return
+        for turn in _CHAT_TURNS:
+            client.chat.completions.create(
+                model=_OPENROUTER_MODEL,
+                messages=[{"role": "user", "content": turn}],
+                max_tokens=32,
+                # OpenRouter reports its OWN charge back in the usage block when
+                # accounting is requested; the adapter records that rather than
+                # pricing the slug from our catalog.
+                extra_body={"usage": {"include": True}},
+            )
+    finally:
+        uninstrument_openrouter()

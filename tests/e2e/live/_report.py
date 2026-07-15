@@ -19,16 +19,49 @@ def _report_dir() -> str:
     return os.path.join(os.path.dirname(__file__), ".report")
 
 
+def _app_base() -> str:
+    """The UI origin that actually serves the API this run uploaded to.
+
+    Defaulting to production is wrong for the local docker stack, which is where
+    these lanes normally run: every row then deep-links to app.layerlens.ai for a
+    trace that only exists in local Mongo — a dead link that also reads as though
+    a local run had published to prod. Follow the upload target unless told
+    otherwise (the local FE is served natively on :3000).
+    """
+    explicit = os.environ.get("LAYERLENS_APP_BASE_URL")
+    if explicit:
+        return explicit.rstrip("/")
+    api = os.environ.get("LAYERLENS_STRATIX_BASE_URL", "")
+    if "localhost" in api or "127.0.0.1" in api:
+        return "http://localhost:3000"
+    return _DEFAULT_APP_BASE
+
+
 def ui_link(row: Dict[str, Any]) -> str:
     """Best-effort deep-link to the trace in the LayerLens UI.
 
-    The exact UI path is not yet confirmed, so this is templated from
-    LAYERLENS_APP_BASE_URL; the raw trace_id/org/project are always in the report
-    so the trace is locatable even if the path differs.
+    The exact UI path is not yet confirmed, so this is templated from the app
+    base; the raw trace_id/org/project are always in the report so the trace is
+    locatable even if the path differs.
     """
-    base = os.environ.get("LAYERLENS_APP_BASE_URL", _DEFAULT_APP_BASE).rstrip("/")
+    base = _app_base()
     trace_id = row.get("trace_id") or ""
     return f"{base}/traces/{trace_id}"
+
+
+
+def _cost_cell(row: Dict[str, Any]) -> str:
+    """Render spend, distinguishing "no price is knowable" from "it was free".
+
+    ``total_cost_usd`` is None when the trace carries no priced cost.record —
+    an unpriced local model, or an adapter (marvin) that surfaces no usage at
+    all. Rendering that as "$0.000000" claims the run was free and hides real
+    untracked spend behind the same string a genuinely free ollama lane prints.
+    """
+    cost = row.get("total_cost_usd")
+    if cost is None:
+        return "n/a"
+    return f"{cost:.6f}"
 
 
 def write_markdown_report(rows: List[Dict[str, Any]]) -> str:
@@ -51,13 +84,16 @@ def write_markdown_report(rows: List[Dict[str, Any]]) -> str:
         trace_cell = f"[{r.get('trace_id', '')}]({link})"
         lines.append(
             "| {provider} | {variant} | {model} | {n} | {types} | {tools} | {cost} | {red} | {att} | {echo} | {trace} |".format(
-                provider=r.get("provider", ""),
+                # Framework rows key this as ``framework`` (the terminal summary
+                # already falls back; the table did not, so every framework lane
+                # rendered a nameless row).
+                provider=r.get("provider") or r.get("framework", ""),
                 variant=r.get("variant", ""),
                 model=r.get("model") or "-",
-                n=r.get("n_events", 0),
+                n=r.get("n_events", r.get("event_count")) or 0,
                 types=types or "-",
                 tools=r.get("tool_calls", 0),
-                cost=f"{r.get('total_cost_usd', 0):.6f}",
+                cost=_cost_cell(r),
                 red="yes" if r.get("redaction_ok") else "-",
                 att="ok" if r.get("attestation_ok") else "FAIL",
                 echo="yes" if r.get("data_has_events") else "no",
@@ -80,12 +116,12 @@ def terminal_summary_lines(rows: List[Dict[str, Any]], path: str) -> List[str]:
         if n_events is None:
             n_events = r.get("event_count")  # self-flushing rows
         out.append(
-            "  {name}/{variant}: {n} events, {tools} tool.call, ${cost:.6f}  ->  {link}".format(
+            "  {name}/{variant}: {n} events, {tools} tool.call, {cost}  ->  {link}".format(
                 name=r.get("provider") or r.get("framework", ""),
                 variant=r.get("variant", ""),
                 n=n_events if n_events is not None else "?",
                 tools=r.get("tool_calls", 0),
-                cost=r.get("total_cost_usd", 0),
+                cost=("cost n/a" if r.get("total_cost_usd") is None else "$%.6f" % r["total_cost_usd"]),
                 link=ui_link(r),
             )
         )

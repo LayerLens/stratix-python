@@ -398,6 +398,11 @@ class TestCost:
         assert cost["tokens_completion"] == 6
         # Real pricing off the real token counts — never a fabricated 0.0.
         assert cost["cost_usd"] > 0, "v2 model id was not normalised, so the trace ships unpriced"
+        # The provider is resolved for model.invoke, so cost.record must carry it
+        # too: a spend row that cannot say WHO was billed is unattributable, and
+        # the dspy/instructor cost rows both name it.
+        invoke = find_event(uploaded["events"], "model.invoke")["payload"]
+        assert cost["provider"] == invoke["provider"]
 
     def test_no_tokens_means_no_cost_record(self, mock_client):
         """Honest omission: a response with no usage may not be priced."""

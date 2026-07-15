@@ -95,6 +95,12 @@ def _detect_framework_version() -> Optional[str]:
         return None
 
 
+#: The ONLY colon suffixes a v2 ``ModelId`` uses to select a transport. Mirascope's
+#: own normaliser (``providers.openai.model_id.model_name``) strips exactly these
+#: two and nothing else, so anything else after a colon belongs to the model name.
+_TRANSPORT_SUFFIXES: Tuple[str, ...] = (":responses", ":completions")
+
+
 def _bare_model_id(model_id: str) -> str:
     """``'openai/gpt-4o-mini:responses'`` -> ``'gpt-4o-mini'``.
 
@@ -102,8 +108,20 @@ def _bare_model_id(model_id: str) -> str:
     Neither is part of the model's name, and LayerLens pricing resolves only the
     bare id — the discarded parts ride ``provider`` and ``model_id``, so nothing
     is lost.
+
+    Only the closed set of transport suffixes is stripped. A colon is NOT a
+    generic delimiter here: ollama (and every other OpenAI-compatible provider
+    that namespaces by tag) puts the tag after it, so ``ollama/llama3:8b`` names
+    the model ``llama3:8b`` — mirascope itself sends that verbatim on the wire and
+    the response reports it back. Dropping the tag would report ``llama3``, a
+    DIFFERENT model that did not run (``llama3:8b`` vs ``llama3:70b``), and would
+    silently mis-price it.
     """
-    bare = model_id.split(":", 1)[0]
+    bare = model_id
+    for suffix in _TRANSPORT_SUFFIXES:
+        if bare.endswith(suffix):
+            bare = bare[: -len(suffix)]
+            break
     return bare.rpartition("/")[2] or bare
 
 
@@ -164,13 +182,28 @@ def _honest_agent_name(function_name: Optional[str]) -> Optional[str]:
 
 
 def _format_name(target: Any) -> Optional[str]:
-    """The ``format=`` class name (v2's structured-output spec), or None."""
+    """The ``format=`` spec's name (v2's structured-output spec), or None.
+
+    ``format=`` takes either the formattable type itself (``format=Car``) or a
+    wrapper built by ``llm.format(Car, mode=...)`` — the latter is mandatory to
+    select a formatting mode, and the only way to get typed output from a model
+    without tool support. Mirascope normalises the wrapper into a ``Format`` whose
+    ``.name`` is the formattable's name, so that is read FIRST: falling straight
+    through to ``type(spec).__name__`` would report the literal ``"Format"`` as
+    the customer's response model on every moded call.
+    """
     spec = getattr(getattr(target, "prompt", None), "format", None)
     if spec is None:
         return None
     if isinstance(spec, type):
         return spec.__name__
-    return _str_or_none(getattr(spec, "__name__", None)) or type(spec).__name__
+    # ``Format.name`` is the formattable's name; ``__name__`` covers a bare
+    # callable/parser spec. Only then fall back to the wrapper's own class.
+    return (
+        _str_or_none(getattr(spec, "name", None))
+        or _str_or_none(getattr(spec, "__name__", None))
+        or type(spec).__name__
+    )
 
 
 def _capped(value: Any) -> Any:
@@ -491,6 +524,10 @@ class MirascopeAdapter(FrameworkAdapter):
 
         if tokens:
             cost_payload = self._payload(model=model)
+            # A spend row that cannot say who was billed is unattributable, so it
+            # carries the same resolved provider as the model.invoke beside it.
+            if provider:
+                cost_payload["provider"] = provider
             cost_payload.update(tokens)
             self._emit("cost.record", cost_payload)
 
