@@ -150,7 +150,9 @@ class TestToolCall:
         assert p["framework"] == "marvin"
         assert p["tool_name"] == "marvin.classify"
         assert p["name"] == "marvin.classify"
-        assert p["agent_id"] == "marvin.classify"
+        # NOT also agent_id: atlas nodes agent_id, so the primitive's own name
+        # would render as the agent (see test_the_framework_label_is_never_a_graph_node).
+        assert "agent_id" not in p
         assert p["primitive"] == "classify"
         assert p["success"] is True
         assert p["latency_ms"] > 0
@@ -218,7 +220,7 @@ class TestToolCall:
         p = find_event(uploaded["events"], "tool.call")["payload"]
         assert p["primitive"] == "fn"
         assert p["tool_name"] == "marvin.write_headline"
-        assert p["agent_id"] == "marvin.write_headline"
+        assert "agent_id" not in p
 
     def test_fn_decoration_alone_emits_nothing(self, mock_client, adapter, agent):
         """Decorating must not fabricate events — only CALLING the function traces."""
@@ -363,6 +365,45 @@ class TestAgentIdentity:
         p = find_event(uploaded["events"], "tool.call")["payload"]
         assert "agent_name" not in p, f"marvin's random default name {unnamed.name!r} leaked into the Agent column"
 
+    #: The payload keys atlas's InferAgentGraph treats as a graph-node identity
+    #: (apps/backend/services/graph_inference.go :: nodeIdentityFields). It reads
+    #: ``agent_id`` as well as ``agent_name``, so withholding only ``agent_name``
+    #: does NOT keep a label out of the Agent column.
+    _GRAPH_NODE_IDENTITY_KEYS = (
+        "node",
+        "node_name",
+        "agent",
+        "agent_name",
+        "agent_id",
+        "agent_role",
+        "plugin_name",
+        "component_name",
+    )
+
+    def test_the_framework_label_is_never_a_graph_node(self, mock_client, adapter, agent):
+        """``marvin`` is the framework's own name, not an agent a producer declared.
+
+        ateam stamps ``agent_id="marvin"`` on environment.config. atlas nodes
+        EVERY identity key, so that label renders as a second agent beside the
+        real one and a single-agent extraction reports Agent = ``multi-agent``
+        (proven against the real engine: marvin-s1 rendered
+        ``['listing-extraction-agent', 'marvin']``). The topology must have one
+        node — the declared agent.
+        """
+        uploaded = capture_framework_trace(mock_client)
+        marvin.classify("great", labels=["positive", "negative"], agent=agent)
+
+        identities = {
+            payload[key]
+            for event in uploaded["events"]
+            for payload in (event["payload"],)
+            for key in self._GRAPH_NODE_IDENTITY_KEYS
+            if isinstance(payload.get(key), str) and payload[key].strip()
+        }
+        assert identities == {"Sentiment Analyst"}, (
+            f"exactly the declared agent must be graph-node-visible; got {sorted(identities)}"
+        )
+
     def test_bare_primitive_has_no_agent_name(self, mock_client, monkeypatch):
         """"marvin.classify" is an API-method label, not an agent — an honest "—"."""
         stub = _StubMarvin(model="openai:gpt-4o")
@@ -374,8 +415,11 @@ class TestAgentIdentity:
         finally:
             a.disconnect()
         p = find_event(uploaded["events"], "tool.call")["payload"]
+        # A bare primitive declares NO agent, so the trace carries none: the
+        # topology is honestly empty rather than naming the function that ran.
         assert "agent_name" not in p
-        assert p["agent_id"] == "marvin.classify"
+        assert "agent_id" not in p
+        assert p["tool_name"] == "marvin.classify"
 
 
 # ---------------------------------------------------------------------------
@@ -390,7 +434,9 @@ class TestEnvironmentConfig:
         configs = find_events(uploaded["events"], "environment.config")
         assert len(configs) == 1, f"expected exactly one environment.config, got {len(configs)}"
         cfg = configs[0]["payload"]
-        assert cfg["agent_id"] == "marvin"
+        # The framework is named in config, which atlas does NOT read as a node
+        # identity — unlike agent_id, which ateam puts "marvin" in.
+        assert "agent_id" not in cfg
         assert cfg["config"]["framework"] == "marvin"
         assert cfg["config"]["model"] == "openai:gpt-4o"
 

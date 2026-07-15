@@ -1,388 +1,461 @@
 {
-  "agno-s1": {
-    "lane": "agno-s1",
-    "shipped_nodes": [
-      "agno_agent"
-    ],
-    "shipped_column": "agno_agent",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "autogen-s2": {
-    "lane": "autogen-s2",
-    "shipped_nodes": [
-      "fulfillment/default",
-      "router/default"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "fulfillment/default",
-      "router/default"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "bedrock_agents-s1": {
-    "lane": "bedrock_agents-s1",
-    "shipped_nodes": [
-      "9WBVYFT6RB"
-    ],
-    "shipped_column": "9WBVYFT6RB",
-    "guarded_nodes": [
-      "9WBVYFT6RB"
-    ],
-    "guarded_column": "9WBVYFT6RB"
-  },
-  "crewai-s1": {
-    "lane": "crewai-s1",
-    "shipped_nodes": [
-      "researcher"
-    ],
-    "shipped_column": "researcher",
-    "guarded_nodes": [
-      "researcher"
-    ],
-    "guarded_column": "researcher"
-  },
-  "google_adk-s2": {
-    "lane": "google_adk-s2",
-    "shipped_nodes": [
-      "billing",
-      "triage"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "billing",
-      "triage"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "langfuse-s1": {
-    "lane": "langfuse-s1",
-    "shipped_nodes": [
-      "sdk-audit-langfuse"
-    ],
-    "shipped_column": "sdk-audit-langfuse",
-    "guarded_nodes": [
-      "sdk-audit-langfuse"
-    ],
-    "guarded_column": "sdk-audit-langfuse"
-  },
-  "langgraph-s1": {
-    "lane": "langgraph-s1",
-    "shipped_nodes": [
-      "respond"
-    ],
-    "shipped_column": "respond",
-    "guarded_nodes": [
-      "respond"
-    ],
-    "guarded_column": "respond"
-  },
-  "pydantic_ai-s1": {
-    "lane": "pydantic_ai-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "smolagents-s1": {
-    "lane": "smolagents-s1",
-    "shipped_nodes": [
-      "ToolCallingAgent"
-    ],
-    "shipped_column": "ToolCallingAgent",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "strands-s1": {
-    "lane": "strands-s1",
-    "shipped_nodes": [
-      "Strands Agents"
-    ],
-    "shipped_column": "Strands Agents",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "langgraph-s2": {
-    "lane": "langgraph-s2",
-    "shipped_nodes": [
-      "compliance-checker",
-      "credit-analyst",
-      "decision",
-      "risk-assessor",
-      "underwriting-supervisor"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "compliance-checker",
-      "credit-analyst",
-      "decision",
-      "risk-assessor",
-      "underwriting-supervisor"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "crewai-s2": {
-    "lane": "crewai-s2",
-    "shipped_nodes": [
-      "Crew Manager",
-      "billing-specialist",
-      "network-specialist"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "Crew Manager",
-      "billing-specialist",
-      "network-specialist"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "llamaindex-s2": {
-    "lane": "llamaindex-s2",
-    "shipped_nodes": [
-      "clause-risk",
-      "contract-intake"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "clause-risk",
-      "contract-intake"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "agno-s2": {
-    "lane": "agno-s2",
-    "shipped_nodes": [
-      "compliance-checker",
-      "risk-analyst",
-      "underwriting-team"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "compliance-checker",
-      "risk-analyst",
-      "underwriting-team"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "ms_agent_framework-s2": {
-    "lane": "ms_agent_framework-s2",
-    "shipped_nodes": [
-      "AgentGroupChat",
-      "dispatch-optimizer",
-      "grid-load-forecaster",
-      "reliability-auditor"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "dispatch-optimizer",
-      "grid-load-forecaster",
-      "reliability-auditor"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "openai_agents-s2": {
-    "lane": "openai_agents-s2",
-    "shipped_nodes": [
-      "returns-specialist",
-      "triage-agent"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "returns-specialist",
-      "triage-agent"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "semantic_kernel-s2": {
-    "lane": "semantic_kernel-s2",
-    "shipped_nodes": [
-      "attending-physician",
-      "clinical-pharmacist",
-      "triage-nurse"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "attending-physician",
-      "clinical-pharmacist",
-      "triage-nurse"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "smolagents-s2": {
-    "lane": "smolagents-s2",
-    "shipped_nodes": [
-      "newsroom_editor",
-      "research_agent",
-      "story_writer"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "newsroom_editor",
-      "research_agent",
-      "story_writer"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "strands-s2": {
-    "lane": "strands-s2",
-    "shipped_nodes": [
-      "corrective-action-engineer",
-      "defect-analyst",
-      "intake-coordinator"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "corrective-action-engineer",
-      "defect-analyst",
-      "intake-coordinator"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "a2a-s1": {
-    "lane": "a2a-s1",
-    "shipped_nodes": [
-      "billing-specialist",
-      "dispute-orchestrator"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "billing-specialist",
-      "dispute-orchestrator"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "a2a-s2": {
-    "lane": "a2a-s2",
-    "shipped_nodes": [
-      "billing-specialist",
-      "dispute-orchestrator",
-      "ledger-adjuster"
-    ],
-    "shipped_column": "multi-agent",
-    "guarded_nodes": [
-      "billing-specialist",
-      "dispute-orchestrator",
-      "ledger-adjuster"
-    ],
-    "guarded_column": "multi-agent"
-  },
-  "agui-s1": {
-    "lane": "agui-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "mcp-s1": {
-    "lane": "mcp-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "litellm-s1": {
-    "lane": "litellm-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "ollama-s1": {
-    "lane": "ollama-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "google_vertex-s1": {
-    "lane": "google_vertex-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "agentforce-s1": {
-    "lane": "agentforce-s1",
-    "shipped_nodes": [
-      "Agentforce_Employee_Agent"
-    ],
-    "shipped_column": "Agentforce_Employee_Agent",
-    "guarded_nodes": [
-      "Agentforce_Employee_Agent"
-    ],
-    "guarded_column": "Agentforce_Employee_Agent"
-  },
-  "embedding-s1": {
-    "lane": "embedding-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "haystack-s1": {
-    "lane": "haystack-s1",
-    "shipped_nodes": [
-      "llm"
-    ],
-    "shipped_column": "llm",
-    "guarded_nodes": [
-      "llm"
-    ],
-    "guarded_column": "llm"
-  },
-  "ms_agent_framework-s1": {
-    "lane": "ms_agent_framework-s1",
-    "shipped_nodes": [
-      "replay_agent"
-    ],
-    "shipped_column": "replay_agent",
-    "guarded_nodes": [
-      "replay_agent"
-    ],
-    "guarded_column": "replay_agent"
-  },
-  "openai_agents-s1": {
-    "lane": "openai_agents-s1",
-    "shipped_nodes": [
-      "pong_agent"
-    ],
-    "shipped_column": "pong_agent",
-    "guarded_nodes": [
-      "pong_agent"
-    ],
-    "guarded_column": "pong_agent"
-  },
-  "semantic_kernel-s1": {
-    "lane": "semantic_kernel-s1",
-    "shipped_nodes": [
-      "replay"
-    ],
-    "shipped_column": "replay",
-    "guarded_nodes": [
-      "replay"
-    ],
-    "guarded_column": "replay"
-  },
-  "vector_store-s1": {
-    "lane": "vector_store-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "llamaindex-s1": {
-    "lane": "llamaindex-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  },
-  "langchain-s1": {
-    "lane": "langchain-s1",
-    "shipped_nodes": [],
-    "shipped_column": "",
-    "guarded_nodes": [],
-    "guarded_column": ""
-  }
+ "a2a-s1": {
+  "lane": "a2a-s1",
+  "shipped_nodes": [
+   "billing-specialist",
+   "dispute-orchestrator"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "billing-specialist",
+   "dispute-orchestrator"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "a2a-s2": {
+  "lane": "a2a-s2",
+  "shipped_nodes": [
+   "billing-specialist",
+   "dispute-orchestrator",
+   "ledger-adjuster"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "billing-specialist",
+   "dispute-orchestrator",
+   "ledger-adjuster"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "agentforce-s1": {
+  "lane": "agentforce-s1",
+  "shipped_nodes": [
+   "Agentforce_Employee_Agent"
+  ],
+  "shipped_column": "Agentforce_Employee_Agent",
+  "guarded_nodes": [
+   "Agentforce_Employee_Agent"
+  ],
+  "guarded_column": "Agentforce_Employee_Agent"
+ },
+ "agno-s1": {
+  "lane": "agno-s1",
+  "shipped_nodes": [
+   "agno_agent"
+  ],
+  "shipped_column": "agno_agent",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "agno-s2": {
+  "lane": "agno-s2",
+  "shipped_nodes": [
+   "compliance-checker",
+   "risk-analyst",
+   "underwriting-team"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "compliance-checker",
+   "risk-analyst",
+   "underwriting-team"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "agui-s1": {
+  "lane": "agui-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "autogen-s2": {
+  "lane": "autogen-s2",
+  "shipped_nodes": [
+   "fulfillment/default",
+   "router/default"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "fulfillment/default",
+   "router/default"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "bedrock_agents-s1": {
+  "lane": "bedrock_agents-s1",
+  "shipped_nodes": [
+   "9WBVYFT6RB"
+  ],
+  "shipped_column": "9WBVYFT6RB",
+  "guarded_nodes": [
+   "9WBVYFT6RB"
+  ],
+  "guarded_column": "9WBVYFT6RB"
+ },
+ "browser_use-s1": {
+  "lane": "browser_use-s1",
+  "shipped_nodes": [
+   "trip-research-agent"
+  ],
+  "shipped_column": "trip-research-agent",
+  "guarded_nodes": [
+   "trip-research-agent"
+  ],
+  "guarded_column": "trip-research-agent"
+ },
+ "crewai-s1": {
+  "lane": "crewai-s1",
+  "shipped_nodes": [
+   "researcher"
+  ],
+  "shipped_column": "researcher",
+  "guarded_nodes": [
+   "researcher"
+  ],
+  "guarded_column": "researcher"
+ },
+ "crewai-s2": {
+  "lane": "crewai-s2",
+  "shipped_nodes": [
+   "Crew Manager",
+   "billing-specialist",
+   "network-specialist"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "Crew Manager",
+   "billing-specialist",
+   "network-specialist"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "dspy-s1": {
+  "lane": "dspy-s1",
+  "shipped_nodes": [
+   "TutorRAG"
+  ],
+  "shipped_column": "TutorRAG",
+  "guarded_nodes": [
+   "TutorRAG"
+  ],
+  "guarded_column": "TutorRAG"
+ },
+ "embedding-s1": {
+  "lane": "embedding-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "google_adk-s2": {
+  "lane": "google_adk-s2",
+  "shipped_nodes": [
+   "billing",
+   "triage"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "billing",
+   "triage"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "google_vertex-s1": {
+  "lane": "google_vertex-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "haystack-s1": {
+  "lane": "haystack-s1",
+  "shipped_nodes": [
+   "llm"
+  ],
+  "shipped_column": "llm",
+  "guarded_nodes": [
+   "llm"
+  ],
+  "guarded_column": "llm"
+ },
+ "instructor-s1": {
+  "lane": "instructor-s1",
+  "shipped_nodes": [
+   "contract-metadata-extractor"
+  ],
+  "shipped_column": "contract-metadata-extractor",
+  "guarded_nodes": [
+   "contract-metadata-extractor"
+  ],
+  "guarded_column": "contract-metadata-extractor"
+ },
+ "langchain-s1": {
+  "lane": "langchain-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "langfuse-s1": {
+  "lane": "langfuse-s1",
+  "shipped_nodes": [
+   "sdk-audit-langfuse"
+  ],
+  "shipped_column": "sdk-audit-langfuse",
+  "guarded_nodes": [
+   "sdk-audit-langfuse"
+  ],
+  "guarded_column": "sdk-audit-langfuse"
+ },
+ "langgraph-s1": {
+  "lane": "langgraph-s1",
+  "shipped_nodes": [
+   "respond"
+  ],
+  "shipped_column": "respond",
+  "guarded_nodes": [
+   "respond"
+  ],
+  "guarded_column": "respond"
+ },
+ "langgraph-s2": {
+  "lane": "langgraph-s2",
+  "shipped_nodes": [
+   "compliance-checker",
+   "credit-analyst",
+   "decision",
+   "risk-assessor",
+   "underwriting-supervisor"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "compliance-checker",
+   "credit-analyst",
+   "decision",
+   "risk-assessor",
+   "underwriting-supervisor"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "litellm-s1": {
+  "lane": "litellm-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "llamaindex-s1": {
+  "lane": "llamaindex-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "llamaindex-s2": {
+  "lane": "llamaindex-s2",
+  "shipped_nodes": [
+   "clause-risk",
+   "contract-intake"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "clause-risk",
+   "contract-intake"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "marvin-s1": {
+  "lane": "marvin-s1",
+  "shipped_nodes": [
+   "listing-extraction-agent"
+  ],
+  "shipped_column": "listing-extraction-agent",
+  "guarded_nodes": [
+   "listing-extraction-agent"
+  ],
+  "guarded_column": "listing-extraction-agent"
+ },
+ "mcp-s1": {
+  "lane": "mcp-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "mirascope-s1": {
+  "lane": "mirascope-s1",
+  "shipped_nodes": [
+   "fnol_intake_agent"
+  ],
+  "shipped_column": "fnol_intake_agent",
+  "guarded_nodes": [
+   "fnol_intake_agent"
+  ],
+  "guarded_column": "fnol_intake_agent"
+ },
+ "ms_agent_framework-s1": {
+  "lane": "ms_agent_framework-s1",
+  "shipped_nodes": [
+   "replay_agent"
+  ],
+  "shipped_column": "replay_agent",
+  "guarded_nodes": [
+   "replay_agent"
+  ],
+  "guarded_column": "replay_agent"
+ },
+ "ms_agent_framework-s2": {
+  "lane": "ms_agent_framework-s2",
+  "shipped_nodes": [
+   "AgentGroupChat",
+   "dispatch-optimizer",
+   "grid-load-forecaster",
+   "reliability-auditor"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "dispatch-optimizer",
+   "grid-load-forecaster",
+   "reliability-auditor"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "ollama-s1": {
+  "lane": "ollama-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "openai_agents-s1": {
+  "lane": "openai_agents-s1",
+  "shipped_nodes": [
+   "pong_agent"
+  ],
+  "shipped_column": "pong_agent",
+  "guarded_nodes": [
+   "pong_agent"
+  ],
+  "guarded_column": "pong_agent"
+ },
+ "openai_agents-s2": {
+  "lane": "openai_agents-s2",
+  "shipped_nodes": [
+   "returns-specialist",
+   "triage-agent"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "returns-specialist",
+   "triage-agent"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "openinference-s1": {
+  "lane": "openinference-s1",
+  "shipped_nodes": [
+   "retail_support_agent"
+  ],
+  "shipped_column": "retail_support_agent",
+  "guarded_nodes": [
+   "retail_support_agent"
+  ],
+  "guarded_column": "retail_support_agent"
+ },
+ "openrouter-s1": {
+  "lane": "openrouter-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "pydantic_ai-s1": {
+  "lane": "pydantic_ai-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "semantic_kernel-s1": {
+  "lane": "semantic_kernel-s1",
+  "shipped_nodes": [
+   "replay"
+  ],
+  "shipped_column": "replay",
+  "guarded_nodes": [
+   "replay"
+  ],
+  "guarded_column": "replay"
+ },
+ "semantic_kernel-s2": {
+  "lane": "semantic_kernel-s2",
+  "shipped_nodes": [
+   "attending-physician",
+   "clinical-pharmacist",
+   "triage-nurse"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "attending-physician",
+   "clinical-pharmacist",
+   "triage-nurse"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "smolagents-s1": {
+  "lane": "smolagents-s1",
+  "shipped_nodes": [
+   "ToolCallingAgent"
+  ],
+  "shipped_column": "ToolCallingAgent",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "smolagents-s2": {
+  "lane": "smolagents-s2",
+  "shipped_nodes": [
+   "newsroom_editor",
+   "research_agent",
+   "story_writer"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "newsroom_editor",
+   "research_agent",
+   "story_writer"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "strands-s1": {
+  "lane": "strands-s1",
+  "shipped_nodes": [
+   "Strands Agents"
+  ],
+  "shipped_column": "Strands Agents",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ },
+ "strands-s2": {
+  "lane": "strands-s2",
+  "shipped_nodes": [
+   "corrective-action-engineer",
+   "defect-analyst",
+   "intake-coordinator"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "corrective-action-engineer",
+   "defect-analyst",
+   "intake-coordinator"
+  ],
+  "guarded_column": "multi-agent"
+ },
+ "vector_store-s1": {
+  "lane": "vector_store-s1",
+  "shipped_nodes": [],
+  "shipped_column": "",
+  "guarded_nodes": [],
+  "guarded_column": ""
+ }
 }

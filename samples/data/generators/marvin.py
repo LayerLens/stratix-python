@@ -76,6 +76,7 @@ structure the SDK did not produce.
 from __future__ import annotations
 
 import os
+import contextlib
 import sys
 import json
 import datetime as _dt
@@ -302,6 +303,53 @@ def _marvin_agent(rec: _RecordingAsyncTransport):
     return marvin.Agent(name=_AGENT_NAME, model=model, instructions=_AGENT_INSTRUCTIONS)
 
 
+
+# Marvin names its end-turn tool ``MarkTaskSuccessful_{Task.id}``, where Task.id
+# is a fresh ``uuid4().hex[:8]`` per construction. That id travels to the
+# provider and comes back inside the recorded response, so an un-pinned
+# re-record mints new tool names and the recorded corpus stops replaying (the
+# replayed body then calls a tool the fresh run never registered). Pinning the
+# two ids here — the SAME literals the replay test pins — makes a re-record
+# reproduce a corpus that still replays. It fixes only marvin's internal
+# correlator; the provider's response is untouched and real.
+CAST_TASK_ID = "f7fa2283"
+EXTRACT_TASK_ID = "e7a1497f"
+
+
+class _FrozenUuidModule:
+    """Stand-in for ``uuid`` that always mints the same id.
+
+    Installed ONLY as ``marvin.tasks.task.uuid``: every other uuid user in the
+    process (notably the SDK's own span-id minting) keeps the real module.
+    """
+
+    def __init__(self, hex_value: str) -> None:
+        self._hex = hex_value
+
+    def uuid4(self) -> Any:
+        class _Frozen:
+            hex = self._hex
+
+        return _Frozen()
+
+    def __getattr__(self, item: str) -> Any:
+        import uuid as _real_uuid
+
+        return getattr(_real_uuid, item)
+
+
+@contextlib.contextmanager
+def _pinned_task_id(task_id: str):
+    import marvin.tasks.task as _task_mod
+
+    original = _task_mod.uuid
+    _task_mod.uuid = _FrozenUuidModule(task_id + "0" * 24)
+    try:
+        yield
+    finally:
+        _task_mod.uuid = original
+
+
 def generate_marvin_single(client: Stratix) -> dict:
     """Record the REAL Marvin MLS listing-intake run and seal both artifacts.
 
@@ -332,18 +380,20 @@ def generate_marvin_single(client: Stratix) -> dict:
 
         @trace(client, name=_AGENT_NAME, capture_config=_CAPTURE)
         def _normalize_listing(description: str) -> dict:
-            record = marvin.cast(
-                description,
-                target=PropertyListing,
-                instructions=_CAST_INSTRUCTIONS,
-                agent=agent,
-            )
-            features = marvin.extract(
-                description,
-                target=str,
-                instructions=_EXTRACT_INSTRUCTIONS,
-                agent=agent,
-            )
+            with _pinned_task_id(CAST_TASK_ID):
+                record = marvin.cast(
+                    description,
+                    target=PropertyListing,
+                    instructions=_CAST_INSTRUCTIONS,
+                    agent=agent,
+                )
+            with _pinned_task_id(EXTRACT_TASK_ID):
+                features = marvin.extract(
+                    description,
+                    target=str,
+                    instructions=_EXTRACT_INSTRUCTIONS,
+                    agent=agent,
+                )
             return {
                 "listing_id": LISTING_ID,
                 "record": record.model_dump(),

@@ -87,8 +87,8 @@ marvin.settings.enable_default_print_handler = False
 #: The random per-Task ids Marvin generated during the recording run. The
 #: recorded responses call ``MarkTaskSuccessful_<id>``, so the replay must
 #: reconstruct the same tool name for pydantic-ai to route the call.
-_CAST_TASK_ID = "30e5df4a"
-_EXTRACT_TASK_ID = "74e5f42a"
+_CAST_TASK_ID = "f7fa2283"
+_EXTRACT_TASK_ID = "e7a1497f"
 
 _AGENT_NAME = "listing-extraction-agent"
 
@@ -224,8 +224,8 @@ class TestMarvinRecorded:
         #     the recorded stream ends with a real usage block, but Marvin exposes
         #     no usage on its primitives, so the adapter reports no tokens and
         #     emits NO cost.record rather than fabricating one.
-        assert '"total_tokens":1366' in raw
-        assert '"prompt_tokens":1275' in raw
+        assert '"total_tokens":1363' in raw
+        assert '"prompt_tokens":1274' in raw
         for key in ("tokens_prompt", "tokens_completion", "tokens_total", "cost_usd"):
             assert key not in mi["payload"], (
                 "marvin surfaces no usage on its primitives — %s must NOT be invented" % key
@@ -281,7 +281,7 @@ class TestMarvinRecorded:
         # Same honest omission on the extract path: a real usage block in the
         # body, no invented tokens/cost at marvin's layer.
         raw = fixture["interactions"][0]["response"]["text"]
-        assert '"total_tokens":879' in raw
+        assert '"total_tokens":865' in raw
         assert "tokens_total" not in mi["payload"]
         assert find_events(events, "cost.record") == []
 

@@ -665,11 +665,17 @@ class MarvinAdapter(FrameworkAdapter):
         error: Optional[BaseException],
     ) -> None:
         label = f"marvin.{ctx.fn_name}"
+        # ateam also stamps this label as ``agent_id``, a third copy of the same
+        # string. atlas's InferAgentGraph reads agent_id as a graph-node identity
+        # (graph_inference.go :: nodeIdentityFields), so the primitive's own name
+        # renders as the AGENT whenever the caller declared no marvin.Agent —
+        # "marvin.classify" is the function that ran, not somebody's agent.
+        # Nothing is lost by omitting it: ``tool_name``/``name`` carry the label
+        # and ``primitive`` carries the kind.
         payload = self._payload(
             run_id=ctx.run_id,
             tool_name=label,
             name=label,
-            agent_id=label,
             primitive=ctx.primitive,
             latency_ms=latency_ms,
             success=error is None,
@@ -717,7 +723,6 @@ class MarvinAdapter(FrameworkAdapter):
         payload = self._payload(
             run_id=ctx.run_id,
             primitive=ctx.primitive,
-            agent_id=f"marvin.{ctx.fn_name}",
             model_name=ctx.model,
             model=ctx.model,
             latency_ms=latency_ms,
@@ -765,10 +770,13 @@ class MarvinAdapter(FrameworkAdapter):
                 return
             self._config_emitted = True
             module = self._marvin_module
-        # agent_id is the constant framework label here, and NO agent_name is
-        # stamped alongside it: "marvin" is a generic framework label, not a
-        # producer-declared agent.
-        payload = self._payload(agent_id="marvin", config=_detect_marvin_settings(module))
+        # ateam stamps agent_id="marvin" here. NO identity is carried instead:
+        # "marvin" is the framework's own name, not a producer-declared agent,
+        # and atlas nodes every identity key — including agent_id — so the label
+        # rendered as a second agent beside the real one and turned a
+        # single-agent extraction into Agent = "multi-agent". The framework is
+        # already named in ``config["framework"]``, which is not an identity key.
+        payload = self._payload(config=_detect_marvin_settings(module))
         self._emit("environment.config", payload, span_id=self._new_span_id(), span_name="marvin:config")
 
 
