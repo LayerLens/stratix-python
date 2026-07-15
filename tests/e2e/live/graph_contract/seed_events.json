@@ -3214,12 +3214,12 @@
   "ms_agent_framework-s2": [
     {
       "event_type": "environment.config",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "cc05aa1a09aa41a8",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "01a345092d194c82",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 1,
-      "timestamp_ns": 1784074241664611000,
+      "timestamp_ns": 1784121045221928000,
       "payload": {
         "framework": "ms_agent_framework",
         "chat_name": "AgentGroupChat",
@@ -3232,211 +3232,220 @@
         "selection_strategy": "SequentialSelectionStrategy",
         "termination_strategy": "DefaultTerminationStrategy"
       },
-      "hash": "sha256:fdf8d5788a2ef8c5d6e2b5f34fe0cfe91b7f464097910afb83330467edde0eb2",
+      "hash": "sha256:5125bbd1e37556c00f0c8669f6c5b89bf7acfc7530c479998289d892dba6c3c4",
       "previous_hash": null
     },
     {
       "event_type": "agent.input",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "d60c13acda6b4620",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "5a149f46bec643ee",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 2,
-      "timestamp_ns": 1784074241664664000,
+      "timestamp_ns": 1784121045221997000,
       "payload": {
         "framework": "ms_agent_framework",
         "agent_name": "AgentGroupChat",
         "chat_name": "AgentGroupChat"
       },
-      "hash": "sha256:e35eecbb611328f4e3b1897f93dcf8d56ed5767e68a22e8fee9cf7f094c19bea",
-      "previous_hash": "sha256:fdf8d5788a2ef8c5d6e2b5f34fe0cfe91b7f464097910afb83330467edde0eb2"
+      "hash": "sha256:1a0c73ea35923e61e474cd9ea3f3f567b36a81036267849cd95a7996e7ef9242",
+      "previous_hash": "sha256:5125bbd1e37556c00f0c8669f6c5b89bf7acfc7530c479998289d892dba6c3c4"
     },
     {
       "event_type": "agent.handoff",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "5260ae85a17f41ab",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "edf8495df03949a2",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 3,
-      "timestamp_ns": 1784074243650807000,
+      "timestamp_ns": 1784121046285970000,
       "payload": {
         "from_agent": "AgentGroupChat",
         "to_agent": "grid-load-forecaster",
-        "timestamp_ns": 1784074243650701000,
+        "timestamp_ns": 1784121046285787000,
         "framework": "ms_agent_framework",
         "reason": "group_chat_turn"
       },
-      "hash": "sha256:860907c043da0f375941bc8fde99212474b3088ddc3a0a9caa7fa2ced7ba8ad4",
-      "previous_hash": "sha256:e35eecbb611328f4e3b1897f93dcf8d56ed5767e68a22e8fee9cf7f094c19bea"
+      "hash": "sha256:8567b6c4afccbb9af6697ea90b98616bd9310cd514546ed9ac799ddb54c074c5",
+      "previous_hash": "sha256:1a0c73ea35923e61e474cd9ea3f3f567b36a81036267849cd95a7996e7ef9242"
     },
     {
       "event_type": "model.invoke",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "d2a89c34739d4066",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "5dc033de35cf4ade",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 4,
-      "timestamp_ns": 1784074243650893000,
+      "timestamp_ns": 1784121046286146000,
       "payload": {
         "framework": "ms_agent_framework",
+        "model": "gpt-4o-mini",
+        "provider": "openai",
         "tokens_prompt": 163,
-        "tokens_completion": 95,
-        "tokens_total": 258
+        "tokens_completion": 81,
+        "tokens_total": 244
       },
-      "hash": "sha256:1f63b03f9dd8c68aebcc7411af3a7087499fcb4d68926ece2b4865b2dde08c07",
-      "previous_hash": "sha256:860907c043da0f375941bc8fde99212474b3088ddc3a0a9caa7fa2ced7ba8ad4"
+      "hash": "sha256:1c4e127d97b14d2b2671da9a57790cc5ff088396424a9bf40c3b4182b66b2c2c",
+      "previous_hash": "sha256:8567b6c4afccbb9af6697ea90b98616bd9310cd514546ed9ac799ddb54c074c5"
     },
     {
       "event_type": "cost.record",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "9b2388e0d6e7450c",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "c3cc47e9b4ba4b8e",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 5,
-      "timestamp_ns": 1784074243650927000,
+      "timestamp_ns": 1784121046286249000,
       "payload": {
         "framework": "ms_agent_framework",
-        "model": null,
+        "model": "gpt-4o-mini",
         "tokens_prompt": 163,
-        "tokens_completion": 95,
-        "tokens_total": 258
+        "tokens_completion": 81,
+        "tokens_total": 244,
+        "cost_usd": 7.305e-05
       },
-      "hash": "sha256:2797bcdab4854cda7af325827c6d2c5572aba94ab781b0c7beb4d2a885756be0",
-      "previous_hash": "sha256:1f63b03f9dd8c68aebcc7411af3a7087499fcb4d68926ece2b4865b2dde08c07"
+      "hash": "sha256:795402ecca1d142c55f257cd3f7e213c6f7bd0e34bef2b11c1f4b443f775a023",
+      "previous_hash": "sha256:1c4e127d97b14d2b2671da9a57790cc5ff088396424a9bf40c3b4182b66b2c2c"
     },
     {
       "event_type": "agent.handoff",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "a10b9bd284344c68",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "1513320c7da6428b",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 6,
-      "timestamp_ns": 1784074245201914000,
+      "timestamp_ns": 1784121048383237000,
       "payload": {
         "from_agent": "grid-load-forecaster",
         "to_agent": "dispatch-optimizer",
-        "timestamp_ns": 1784074245201784000,
+        "timestamp_ns": 1784121048382986000,
         "framework": "ms_agent_framework",
         "reason": "group_chat_turn"
       },
-      "hash": "sha256:c0e377c09411c8150b11170d5fb679eb2a07461aac2bfa436f22ee244febf319",
-      "previous_hash": "sha256:2797bcdab4854cda7af325827c6d2c5572aba94ab781b0c7beb4d2a885756be0"
+      "hash": "sha256:c8e6d76c9e938cc470bac74fd18c14770f44d368e6275f101c9df0045c51382c",
+      "previous_hash": "sha256:795402ecca1d142c55f257cd3f7e213c6f7bd0e34bef2b11c1f4b443f775a023"
     },
     {
       "event_type": "model.invoke",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "642b04c55a0e42cc",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "e33524196d4d418c",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 7,
-      "timestamp_ns": 1784074245202056000,
+      "timestamp_ns": 1784121048383503000,
       "payload": {
         "framework": "ms_agent_framework",
-        "tokens_prompt": 370,
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "tokens_prompt": 342,
         "tokens_completion": 64,
-        "tokens_total": 434
+        "tokens_total": 406
       },
-      "hash": "sha256:b122e5a42d818c82a37aa77f73abf684d05bd01008b0a36640a15e56df7657e8",
-      "previous_hash": "sha256:c0e377c09411c8150b11170d5fb679eb2a07461aac2bfa436f22ee244febf319"
+      "hash": "sha256:69dca06d68aa15326798857e74e4559f7d98f23cda4fef8b1197a4d7845a9447",
+      "previous_hash": "sha256:c8e6d76c9e938cc470bac74fd18c14770f44d368e6275f101c9df0045c51382c"
     },
     {
       "event_type": "cost.record",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "daba5122f7df462a",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "458b968f48014ae6",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 8,
-      "timestamp_ns": 1784074245202251000,
+      "timestamp_ns": 1784121048383703000,
       "payload": {
         "framework": "ms_agent_framework",
-        "model": null,
-        "tokens_prompt": 370,
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 342,
         "tokens_completion": 64,
-        "tokens_total": 434
+        "tokens_total": 406,
+        "cost_usd": 8.97e-05
       },
-      "hash": "sha256:f41f3b33509d6dc75723c8e8caf4024c7ced339a96f0576e7eb807fd1f36c68d",
-      "previous_hash": "sha256:b122e5a42d818c82a37aa77f73abf684d05bd01008b0a36640a15e56df7657e8"
+      "hash": "sha256:bfa3b7eedd76716d199c9647cca1681e44f81b85971132d501e75eaabd46a0a5",
+      "previous_hash": "sha256:69dca06d68aa15326798857e74e4559f7d98f23cda4fef8b1197a4d7845a9447"
     },
     {
       "event_type": "agent.handoff",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "7d5ed98004e54a07",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "74d3105d55224605",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 9,
-      "timestamp_ns": 1784074247121751000,
+      "timestamp_ns": 1784121049440745000,
       "payload": {
         "from_agent": "dispatch-optimizer",
         "to_agent": "reliability-auditor",
-        "timestamp_ns": 1784074247121235000,
+        "timestamp_ns": 1784121049440461000,
         "framework": "ms_agent_framework",
         "reason": "group_chat_turn"
       },
-      "hash": "sha256:5779259dd4b422a3973beec2d60c15f6e58dca2e9cabdb839cf1e13d9c13bf62",
-      "previous_hash": "sha256:f41f3b33509d6dc75723c8e8caf4024c7ced339a96f0576e7eb807fd1f36c68d"
+      "hash": "sha256:b3dbf87d0431b0d7840cf18eb4d2a05757c4769ec1d71445b799374c59e6c18d",
+      "previous_hash": "sha256:bfa3b7eedd76716d199c9647cca1681e44f81b85971132d501e75eaabd46a0a5"
     },
     {
       "event_type": "model.invoke",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "f553b12fb3034b05",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "f27090a9c0c248bd",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 10,
-      "timestamp_ns": 1784074247122024000,
+      "timestamp_ns": 1784121049441024000,
       "payload": {
         "framework": "ms_agent_framework",
-        "tokens_prompt": 523,
-        "tokens_completion": 91,
-        "tokens_total": 614
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "tokens_prompt": 495,
+        "tokens_completion": 72,
+        "tokens_total": 567
       },
-      "hash": "sha256:dbdda81897f7bc57cb159bc9be0bd52c6e0cdfe5d3f7711bdc2d484a186a6d1a",
-      "previous_hash": "sha256:5779259dd4b422a3973beec2d60c15f6e58dca2e9cabdb839cf1e13d9c13bf62"
+      "hash": "sha256:2031dd028749fb24cc7218e891144501b75620aacc0932335e9162be44bce09b",
+      "previous_hash": "sha256:b3dbf87d0431b0d7840cf18eb4d2a05757c4769ec1d71445b799374c59e6c18d"
     },
     {
       "event_type": "cost.record",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "3a371da214124459",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "38171ad0af4647b1",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 11,
-      "timestamp_ns": 1784074247122134000,
+      "timestamp_ns": 1784121049441377000,
       "payload": {
         "framework": "ms_agent_framework",
-        "model": null,
-        "tokens_prompt": 523,
-        "tokens_completion": 91,
-        "tokens_total": 614
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 495,
+        "tokens_completion": 72,
+        "tokens_total": 567,
+        "cost_usd": 0.00011745
       },
-      "hash": "sha256:83abf4bc2dadd243ec32a73bd71af93ec6f63f25f2c60026e1ba9db25c793165",
-      "previous_hash": "sha256:dbdda81897f7bc57cb159bc9be0bd52c6e0cdfe5d3f7711bdc2d484a186a6d1a"
+      "hash": "sha256:c30433a2d5a2a2ca611e8de2db81b65e8410c5447d0e4f7a85db23886c6d387a",
+      "previous_hash": "sha256:2031dd028749fb24cc7218e891144501b75620aacc0932335e9162be44bce09b"
     },
     {
       "event_type": "agent.output",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "ec4c81c9b4764a66",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "3b795b719c084e39",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 12,
-      "timestamp_ns": 1784074247123299000,
+      "timestamp_ns": 1784121049441969000,
       "payload": {
         "framework": "ms_agent_framework",
         "agent_name": "AgentGroupChat",
         "chat_name": "AgentGroupChat",
-        "latency_ms": 5457.928,
+        "latency_ms": 4219.866,
         "output": {
           "ai_model_id": "gpt-4o-mini",
           "metadata": {
             "logprobs": null,
-            "id": "chatcmpl-E1hUzdMP4qWp4DQTGLtUwZ3fiJ8nd",
-            "created": 1784074245,
-            "system_fingerprint": "fp_f48f1594a2",
+            "id": "chatcmpl-E1tfsuVZE11PhVZ6w78rUg2tA0Tj8",
+            "created": 1784121048,
+            "system_fingerprint": "fp_60952bc00e",
             "usage": {
-              "prompt_tokens": 523,
+              "prompt_tokens": 495,
               "prompt_tokens_details": {
                 "audio_tokens": 0,
                 "cached_tokens": 0
               },
-              "completion_tokens": 91,
+              "completion_tokens": 72,
               "completion_tokens_details": {
                 "accepted_prediction_tokens": 0,
                 "audio_tokens": 0,
@@ -3453,7 +3462,7 @@
               "ai_model_id": null,
               "metadata": {},
               "content_type": "text",
-              "text": "The proposed dispatch, which includes activating both peakers to cover the lost capacity from the nuclear unit, keeps the system compliant with N-1 contingency requirements since available capacity will exceed peak demand with a margin of 1.6 GW (43.6 GW available versus 42.0 GW demand). However, the residual risk exists due to operating the transmission corridor at 92% of its stability limit, which could lead to vulnerabilities under further contingencies.",
+              "text": "The proposed dispatch, which involves activating both peaking units, raises the available capacity to 43.6 GW against a demand of 42.0 GW, maintaining compliance with N-1 contingency requirements. However, with transmission on the western corridor at 92% of its stability limit, there exists a residual risk of overloading transmission lines during peak conditions.",
               "encoding": null
             }
           ],
@@ -3462,38 +3471,38 @@
           "status": null
         }
       },
-      "hash": "sha256:3512057644f2f3eb06635a666fe6c230da76804ad6ee0438a8e5ea67c6bf7db6",
-      "previous_hash": "sha256:83abf4bc2dadd243ec32a73bd71af93ec6f63f25f2c60026e1ba9db25c793165"
+      "hash": "sha256:1f1e89832d584b95805786e3729f39e4e23a0d590a57d9356842651f2b698564",
+      "previous_hash": "sha256:c30433a2d5a2a2ca611e8de2db81b65e8410c5447d0e4f7a85db23886c6d387a"
     },
     {
       "event_type": "agent.identity",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "a10b9bd284344c68",
-      "parent_span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "1513320c7da6428b",
+      "parent_span_id": "71bd3491b5864ade",
       "span_name": null,
       "sequence_id": 13,
-      "timestamp_ns": 1784074247123461000,
+      "timestamp_ns": 1784121049442150000,
       "payload": {
         "agent_name": "grid-load-forecaster",
         "source": "handoff",
         "framework": "ms_agent_framework"
       },
-      "hash": "sha256:84e6b0dfc93f21a602d6ee60170a4414a37220b096708e886a74295680930112",
-      "previous_hash": "sha256:3512057644f2f3eb06635a666fe6c230da76804ad6ee0438a8e5ea67c6bf7db6"
+      "hash": "sha256:d7ea119cbd4146786b58768ee2b912bee5d49535646b2b1c227879b431aa4de6",
+      "previous_hash": "sha256:1f1e89832d584b95805786e3729f39e4e23a0d590a57d9356842651f2b698564"
     },
     {
       "event_type": "trace.root",
-      "trace_id": "f9f4d86c95104a84",
-      "span_id": "baa08bf383b3413e",
+      "trace_id": "1d85d2976ad941c6",
+      "span_id": "71bd3491b5864ade",
       "parent_span_id": null,
       "span_name": "trace",
       "sequence_id": 14,
-      "timestamp_ns": 1784074247123507000,
+      "timestamp_ns": 1784121049442272000,
       "payload": {
         "synthesized": true
       },
-      "hash": "sha256:9176441acd3219529bcbd552610b6cd84e277586adb659acd88805f9902576e4",
-      "previous_hash": "sha256:84e6b0dfc93f21a602d6ee60170a4414a37220b096708e886a74295680930112"
+      "hash": "sha256:1edc43bc385567cba523fac4c792e730b33f203e12a32c400c83d1444898a21c",
+      "previous_hash": "sha256:d7ea119cbd4146786b58768ee2b912bee5d49535646b2b1c227879b431aa4de6"
     }
   ],
   "openai_agents-s2": [
