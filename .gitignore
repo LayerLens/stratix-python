@@ -5,6 +5,7 @@ venv/
 _dev
 
 __pycache__
+*.pyc
 .mypy_cache
 
 dist
