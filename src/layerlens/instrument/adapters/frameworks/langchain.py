@@ -93,16 +93,23 @@ def _to_jsonable(obj: Any, _depth: int = 0) -> Any:
         return str(obj)
 
 
-# LangChain composition primitives + legacy chain/agent classes. When a runnable
-# is invoked WITHOUT a developer-declared ``run_name``, LangChain passes the
-# runnable's ``get_name()`` (a class default like ``RunnableSequence`` or
-# ``AgentExecutor``) as the ``name`` kwarg to ``on_chain_start``. That is plumbing,
-# never a producer-declared agent identity — surfacing it in the Agent column is a
+# LangChain composition primitives + legacy chain/agent classes + LCEL component
+# class defaults. When a runnable is invoked WITHOUT a developer-declared
+# ``run_name``, LangChain passes the runnable's ``get_name()`` (a class default
+# like ``RunnableSequence``, ``AgentExecutor``, or the class of the prompt/parser
+# component running as a chain step — ``ChatPromptTemplate``, ``StrOutputParser``)
+# as the ``name`` kwarg to ``on_chain_start``. That is plumbing, never a
+# producer-declared agent identity — surfacing it in the Agent column is a
 # fabrication, so it must stay honestly blank. All of LangChain's composition
 # wrappers live under the ``Runnable*`` prefix (handled separately); this is the
-# precise denylist of the remaining legacy chain/agent class defaults.
+# precise denylist of the remaining legacy chain/agent + LCEL component class
+# defaults. Model component class defaults (``ChatOpenAI`` ...) are rejected by
+# the shared ``_is_generic`` guard, and models run through the on_(chat_)model
+# path rather than on_chain_start, so they never reach this list as an agent
+# identity anyway.
 _LANGCHAIN_CLASS_DEFAULTS = frozenset(
     {
+        # legacy chain / agent class defaults
         "agentexecutor",
         "llmchain",
         "conversationchain",
@@ -115,6 +122,37 @@ _LANGCHAIN_CLASS_DEFAULTS = frozenset(
         "sequentialchain",
         "simplesequentialchain",
         "transformchain",
+        # LCEL prompt-template component class defaults
+        "prompttemplate",
+        "chatprompttemplate",
+        "humanmessageprompttemplate",
+        "systemmessageprompttemplate",
+        "aimessageprompttemplate",
+        "chatmessageprompttemplate",
+        "messagesplaceholder",
+        "fewshotprompttemplate",
+        "fewshotchatmessageprompttemplate",
+        "pipelineprompttemplate",
+        "imageprompttemplate",
+        # LCEL output-parser component class defaults
+        "stroutputparser",
+        "jsonoutputparser",
+        "simplejsonoutputparser",
+        "pydanticoutputparser",
+        "listoutputparser",
+        "commaseparatedlistoutputparser",
+        "markdownlistoutputparser",
+        "numberedlistoutputparser",
+        "xmloutputparser",
+        "structuredoutputparser",
+        "booleanoutputparser",
+        "datetimeoutputparser",
+        "enumoutputparser",
+        "regexparser",
+        "outputfixingparser",
+        "retryoutputparser",
+        "jsonoutputkeytoolsparser",
+        "pydantictoolsparser",
     }
 )
 
@@ -216,7 +254,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        payload = self._payload(error=str(error), status="error")
+        payload = self._payload(error=str(error), error_type=type(error).__name__, status="error")
         agent_name = self._chain_agent_names.pop(str(run_id), None)
         if agent_name is not None:
             payload["agent_name"] = agent_name
@@ -446,7 +484,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
 
         self._emit(
             "agent.error",
-            self._payload(error=str(error), status="error"),
+            self._payload(error=str(error), error_type=type(error).__name__, status="error"),
             run_id=run_id,
             parent_run_id=pending.get("parent_run_id"),
         )
@@ -493,7 +531,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     ) -> None:
         self._emit(
             "agent.error",
-            self._payload(error=str(error), status="error"),
+            self._payload(error=str(error), error_type=type(error).__name__, status="error"),
             run_id=run_id,
             parent_run_id=parent_run_id,
         )
@@ -544,7 +582,7 @@ class LangChainCallbackHandler(BaseCallbackHandler, FrameworkAdapter):
     ) -> None:
         self._emit(
             "agent.error",
-            self._payload(error=str(error), status="error"),
+            self._payload(error=str(error), error_type=type(error).__name__, status="error"),
             run_id=run_id,
             parent_run_id=parent_run_id,
         )

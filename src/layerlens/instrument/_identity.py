@@ -84,6 +84,39 @@ _GENERIC_IDENTITY_VALUES = frozenset(
         # autogen-core internal orchestration container — the group-chat manager
         # is plumbing that routes turns, not a producer-declared agent.
         "group_chat_manager",
+        # LangChain LCEL prompt/parser component class defaults surfaced via
+        # get_name()/serialized["name"] on a chain step — plumbing data transforms,
+        # never a producer-declared agent (a bare ``prompt | model`` chain must
+        # render an honest "—", not fabricate a "ChatPromptTemplate" agent).
+        "prompttemplate",
+        "chatprompttemplate",
+        "humanmessageprompttemplate",
+        "systemmessageprompttemplate",
+        "aimessageprompttemplate",
+        "chatmessageprompttemplate",
+        "messagesplaceholder",
+        "fewshotprompttemplate",
+        "fewshotchatmessageprompttemplate",
+        "pipelineprompttemplate",
+        "imageprompttemplate",
+        "stroutputparser",
+        "jsonoutputparser",
+        "simplejsonoutputparser",
+        "pydanticoutputparser",
+        "listoutputparser",
+        "commaseparatedlistoutputparser",
+        "markdownlistoutputparser",
+        "numberedlistoutputparser",
+        "xmloutputparser",
+        "structuredoutputparser",
+        "booleanoutputparser",
+        "datetimeoutputparser",
+        "enumoutputparser",
+        "regexparser",
+        "outputfixingparser",
+        "retryoutputparser",
+        "jsonoutputkeytoolsparser",
+        "pydantictoolsparser",
     }
 )
 

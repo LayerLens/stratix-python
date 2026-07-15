@@ -100,6 +100,12 @@ BEDROCK_PRICING: dict[str, dict[str, float]] = {
     "amazon.nova-lite-v1:0": {"input": 0.00006, "output": 0.00024},
     "amazon.nova-pro-v1:0": {"input": 0.0008, "output": 0.0032},
     "amazon.nova-premier-v1:0": {"input": 0.0025, "output": 0.0125},
+    # Amazon Titan Text on Bedrock. The family is parsed by the provider adapter
+    # (results[0].tokenCount for completion) but had no rates, so cost resolved
+    # to None (ADP-W1 BUG-2). us-east-1 on-demand per-1K USD.
+    "amazon.titan-text-lite-v1": {"input": 0.00015, "output": 0.0002},
+    "amazon.titan-text-express-v1": {"input": 0.0002, "output": 0.0006},
+    "amazon.titan-text-premier-v1:0": {"input": 0.0005, "output": 0.0015},
     # Mistral on Bedrock (LAY-3452). The family is parsed by the provider
     # adapter but had no rates, so cost resolved to None.
     "mistral.mistral-7b-instruct-v0:2": {"input": 0.00015, "output": 0.0002},

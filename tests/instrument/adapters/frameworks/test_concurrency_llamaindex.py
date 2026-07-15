@@ -39,6 +39,9 @@ from llama_index.core.instrumentation.events.query import (  # noqa: E402
     QueryStartEvent,
 )
 
+from layerlens.models import CreateTracesResponse  # noqa: E402
+from layerlens.instrument._upload import shutdown_uploads  # noqa: E402
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.llamaindex import LlamaIndexAdapter  # noqa: E402
 
 # -- Helpers (copied from test_llamaindex.py — do not import private
@@ -84,11 +87,14 @@ def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
     """Set up mock_client to accumulate SEPARATE trace payloads per upload."""
     traces: List[Dict[str, Any]] = []
 
-    def _capture(path: str) -> None:
+    def _capture(path: str) -> CreateTracesResponse:
         with open(path) as f:
             data = json.load(f)
         traces.append(data[0])
         record_for_schema_lock(data[0].get("events", []))
+        # Non-empty trace_ids: an empty/None return is treated as a REJECT
+        # (F-L7-002), which would drop the trace from the isolation check.
+        return CreateTracesResponse(trace_ids=[data[0].get("trace_id") or "mock-trace-id"])
 
     mock_client.traces.upload.side_effect = _capture
     return traces
@@ -105,6 +111,10 @@ def _assert_isolated_traces(
     contain none of the other runs' markers, and exactly its own run's
     events (by event_type counts).
     """
+    # flush() enqueues each trace onto the client's BACKGROUND upload channel;
+    # drain it before asserting so the collected `traces` are complete (else the
+    # count is racy — the upload thread may not have run yet).
+    shutdown_uploads(10.0)
     assert len(traces) == len(markers), (
         f"Expected {len(markers)} uploaded traces (one per run), got {len(traces)} — "
         "interleaved runs merged or lost a trace"
@@ -185,7 +195,17 @@ _EXPECTED_RUN_COUNTS = {
 
 @pytest.fixture
 def adapter(mock_client):
-    return LlamaIndexAdapter(mock_client)
+    # Full capture so the run-content markers the isolation check searches for
+    # are actually captured — the default standard() config redacts content
+    # (capture_content=False), which would erase the markers from the events.
+    return LlamaIndexAdapter(mock_client, capture_config=CaptureConfig.full())
+
+
+#: The adapter installs these handler classes on the global dispatcher (see
+#: ``llamaindex.py`` ``_make_span_handler`` / ``_make_event_handler``). The old
+#: filter matched ``"LayerLens"`` in the class name, which never hit these
+#: names — so cleanup was a no-op and handlers leaked across the module.
+_ADAPTER_HANDLER_NAMES = {"_SpanHandler", "_EventHandler"}
 
 
 @pytest.fixture(autouse=True)
@@ -193,8 +213,8 @@ def clean_dispatcher():
     """Remove our handlers after each test to prevent leaks."""
     yield
     dispatcher = get_dispatcher()
-    dispatcher.event_handlers = [h for h in dispatcher.event_handlers if "LayerLens" not in type(h).__name__]
-    dispatcher.span_handlers = [h for h in dispatcher.span_handlers if "LayerLens" not in type(h).__name__]
+    dispatcher.event_handlers = [h for h in dispatcher.event_handlers if type(h).__name__ not in _ADAPTER_HANDLER_NAMES]
+    dispatcher.span_handlers = [h for h in dispatcher.span_handlers if type(h).__name__ not in _ADAPTER_HANDLER_NAMES]
 
 
 # -- Tests --

@@ -48,6 +48,7 @@ KNOWN_SKIP_TARGETS = {
     "semantic_kernel.contents",
     "llama_index",
     "llama_index.core",
+    "llama_index.llms.openai",
     "haystack",
     "chromadb",
     "smolagents",

@@ -1224,5 +1224,1664 @@
       "sequence_id": 4,
       "timestamp_ns": 1783009256089801000
     }
+  ],
+  "langgraph-s2": [
+    {
+      "event_type": "agent.input",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "f9ee654e0247401b",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1783431991108545000,
+      "payload": {
+        "framework": "langgraph",
+        "name": "unknown",
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": []
+        }
+      }
+    },
+    {
+      "event_type": "agent.node.enter",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bf089b6e4b2e496f",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1783431991111008000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "underwriting-supervisor",
+        "step": 1,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": []
+        }
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bf089b6e4b2e496f",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 3,
+      "timestamp_ns": 1783431991111167000,
+      "payload": {
+        "framework": "langgraph",
+        "name": "underwriting-supervisor",
+        "node": "underwriting-supervisor",
+        "step": 1,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": []
+        }
+      }
+    },
+    {
+      "event_type": "agent.node.exit",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bf089b6e4b2e496f",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1783431991111313000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "underwriting-supervisor",
+        "step": 1,
+        "latency_ms": 1.331,
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.state.change",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bf089b6e4b2e496f",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1783431991111382000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "underwriting-supervisor",
+        "step": 1,
+        "state_hash": "sha256:f3d68fe16e3e7b84da04c43002cca9816e072f27c8be41a2f2d13ca23f4efbd6",
+        "state_keys": [
+          "assessments"
+        ]
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bf089b6e4b2e496f",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 6,
+      "timestamp_ns": 1783431991111441000,
+      "payload": {
+        "framework": "langgraph",
+        "status": "ok",
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.node.enter",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a62e098b56dd4d73",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 7,
+      "timestamp_ns": 1783431991111941000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "credit-analyst",
+        "step": 2,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.handoff",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "9b9a2a5939c84306",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 8,
+      "timestamp_ns": 1783431991112009000,
+      "payload": {
+        "from_agent": "underwriting-supervisor",
+        "to_agent": "credit-analyst",
+        "timestamp_ns": 1783431991111975000,
+        "framework": "langgraph"
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a62e098b56dd4d73",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 9,
+      "timestamp_ns": 1783431991112137000,
+      "payload": {
+        "framework": "langgraph",
+        "name": "credit-analyst",
+        "node": "credit-analyst",
+        "step": 2,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "0124052669ec460a",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 10,
+      "timestamp_ns": 1783431996445152000,
+      "payload": {
+        "name": "openai.chat.completions.create",
+        "model": "gpt-4o-mini-2024-07-18",
+        "latency_ms": 5331.69412612915,
+        "parameters": {
+          "model": "gpt-4o-mini"
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are credit-analyst. In 2-3 sentences assess the applicant's creditworthiness (FICO, DTI, income, employment stability)."
+          },
+          {
+            "role": "user",
+            "content": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}"
+          }
+        ],
+        "output_message": {
+          "role": "assistant",
+          "content": "The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manageable debt levels relative to income, while a steady employment history of six years adds to their stability. With an annual income of $138,000 and a 20% down payment on a property appraised at $525,000, the applicant is well-positioned for a conventional mortgage."
+        },
+        "otel_gen_ai": {
+          "gen_ai.system": "openai",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.request.model": "gpt-4o-mini",
+          "gen_ai.response.model": "gpt-4o-mini-2024-07-18",
+          "gen_ai.response.id": "chatcmpl-Dz0Q5P6VhKC1TclNl0xPuSD3b10Fy",
+          "gen_ai.response.finish_reasons": [
+            "stop"
+          ],
+          "gen_ai.openai.response.system_fingerprint": "fp_a849775b18",
+          "gen_ai.openai.response.service_tier": "default",
+          "gen_ai.usage.input_tokens": 142,
+          "gen_ai.usage.output_tokens": 98,
+          "gen_ai.usage.cache_read_input_tokens": 0
+        },
+        "framework": "openai",
+        "usage": {
+          "prompt_tokens": 142,
+          "completion_tokens": 98,
+          "total_tokens": 240,
+          "cached_tokens": 0,
+          "reasoning_tokens": 0
+        },
+        "response_model": "gpt-4o-mini-2024-07-18",
+        "response_id": "chatcmpl-Dz0Q5P6VhKC1TclNl0xPuSD3b10Fy",
+        "system_fingerprint": "fp_a849775b18",
+        "service_tier": "default",
+        "finish_reason": "stop",
+        "prompt_tokens": 142,
+        "completion_tokens": 98,
+        "total_tokens": 240
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "0124052669ec460a",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 11,
+      "timestamp_ns": 1783431996445472000,
+      "payload": {
+        "provider": "openai",
+        "model": "gpt-4o-mini-2024-07-18",
+        "cost_usd": 8.01e-05,
+        "prompt_tokens": 142,
+        "completion_tokens": 98,
+        "total_tokens": 240,
+        "cached_tokens": 0,
+        "reasoning_tokens": 0,
+        "framework": "openai",
+        "service_tier": "default"
+      }
+    },
+    {
+      "event_type": "agent.node.exit",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a62e098b56dd4d73",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 12,
+      "timestamp_ns": 1783431996446112000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "credit-analyst",
+        "step": 2,
+        "latency_ms": 5334.08,
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.state.change",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a62e098b56dd4d73",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 13,
+      "timestamp_ns": 1783431996446407000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "credit-analyst",
+        "step": 2,
+        "state_hash": "sha256:1ded8afca54202d8b26cd978cd09da366f476872c00e2541367beadb787982e4",
+        "state_keys": [
+          "assessments"
+        ]
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a62e098b56dd4d73",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 14,
+      "timestamp_ns": 1783431996446608000,
+      "payload": {
+        "framework": "langgraph",
+        "status": "ok",
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.node.enter",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "d422143fae0c4528",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 15,
+      "timestamp_ns": 1783431996448041000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "risk-assessor",
+        "step": 3,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.handoff",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "2a75db660d2340de",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 16,
+      "timestamp_ns": 1783431996448163000,
+      "payload": {
+        "from_agent": "credit-analyst",
+        "to_agent": "risk-assessor",
+        "timestamp_ns": 1783431996448103000,
+        "framework": "langgraph"
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "d422143fae0c4528",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 17,
+      "timestamp_ns": 1783431996448446000,
+      "payload": {
+        "framework": "langgraph",
+        "name": "risk-assessor",
+        "node": "risk-assessor",
+        "step": 3,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "6b2cd3a5422b42d0",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 18,
+      "timestamp_ns": 1783431999377256000,
+      "payload": {
+        "name": "anthropic.messages.create",
+        "model": "claude-haiku-4-5-20251001",
+        "latency_ms": 2927.901029586792,
+        "parameters": {
+          "max_tokens": 400,
+          "model": "claude-haiku-4-5-20251001",
+          "has_system": true,
+          "system_length": 135,
+          "messages_count": 1,
+          "message_roles": {
+            "user": 1
+          }
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}"
+          }
+        ],
+        "output_message": {
+          "type": "text",
+          "text": "# Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-to-loan ratio shows the property represents 3x annual income, which is at the upper-middle range for conventional lending.\n\n**Collateral Risk:** Low. The LTV is 80% (loan $420K / appraised value $525K), which is at or below standard conventional mortgage thresholds, and the single-family home in Austin's appreciating market provides solid collateral security with reasonable equity cushion."
+        },
+        "otel_gen_ai": {
+          "gen_ai.system": "anthropic",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.request.max_tokens": 400,
+          "gen_ai.request.model": "claude-haiku-4-5-20251001",
+          "gen_ai.response.model": "claude-haiku-4-5-20251001",
+          "gen_ai.response.id": "msg_011CcnoMPZc4P7tnxb2cZTJK",
+          "gen_ai.response.finish_reasons": [
+            "end_turn"
+          ],
+          "gen_ai.usage.input_tokens": 153,
+          "gen_ai.usage.output_tokens": 146,
+          "gen_ai.usage.cache_read_input_tokens": 0,
+          "gen_ai.usage.cache_creation_input_tokens": 0,
+          "gen_ai.anthropic.cache_read_input_tokens": 0,
+          "gen_ai.anthropic.cache_creation_input_tokens": 0
+        },
+        "framework": "anthropic",
+        "usage": {
+          "prompt_tokens": 153,
+          "completion_tokens": 146,
+          "input_tokens": 153,
+          "output_tokens": 146,
+          "cached_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0
+        },
+        "response_model": "claude-haiku-4-5-20251001",
+        "response_id": "msg_011CcnoMPZc4P7tnxb2cZTJK",
+        "stop_reason": "end_turn",
+        "role": "assistant",
+        "content_block_counts": {
+          "text": 1
+        },
+        "has_thinking": false,
+        "prompt_tokens": 153,
+        "completion_tokens": 146,
+        "total_tokens": 299
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "6b2cd3a5422b42d0",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 19,
+      "timestamp_ns": 1783431999377455000,
+      "payload": {
+        "provider": "anthropic",
+        "model": "claude-haiku-4-5-20251001",
+        "cost_usd": 0.0007064,
+        "prompt_tokens": 153,
+        "completion_tokens": 146,
+        "input_tokens": 153,
+        "output_tokens": 146,
+        "cached_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "framework": "anthropic"
+      }
+    },
+    {
+      "event_type": "agent.node.exit",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "d422143fae0c4528",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 20,
+      "timestamp_ns": 1783431999377824000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "risk-assessor",
+        "step": 3,
+        "latency_ms": 2929.921,
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.state.change",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "d422143fae0c4528",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 21,
+      "timestamp_ns": 1783431999377928000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "risk-assessor",
+        "step": 3,
+        "state_hash": "sha256:2c53fdffbafa1e1724b7fa64a06fea6f22161b8ee78dc407b69c1c3e3c644310",
+        "state_keys": [
+          "assessments"
+        ]
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "d422143fae0c4528",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 22,
+      "timestamp_ns": 1783431999378162000,
+      "payload": {
+        "framework": "langgraph",
+        "status": "ok",
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.node.enter",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a3f75fffa4624a84",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 23,
+      "timestamp_ns": 1783431999379019000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "compliance-checker",
+        "step": 4,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.handoff",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a44b438313744f07",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 24,
+      "timestamp_ns": 1783431999379125000,
+      "payload": {
+        "from_agent": "risk-assessor",
+        "to_agent": "compliance-checker",
+        "timestamp_ns": 1783431999379071000,
+        "framework": "langgraph"
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a3f75fffa4624a84",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 25,
+      "timestamp_ns": 1783431999379465000,
+      "payload": {
+        "framework": "langgraph",
+        "name": "compliance-checker",
+        "node": "compliance-checker",
+        "step": 4,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "4cde60d9c9cc4f94",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 26,
+      "timestamp_ns": 1783432002620597000,
+      "payload": {
+        "name": "ollama.chat",
+        "model": "llama3:8b",
+        "latency_ms": 3240.48113822937,
+        "parameters": {
+          "model": "llama3:8b"
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are compliance-checker. In 2-3 sentences confirm the decision relies only on permissible factors and complies with fair-lending/ECOA rules."
+          },
+          {
+            "role": "user",
+            "content": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}"
+          }
+        ],
+        "output_message": {
+          "role": "assistant",
+          "content": "Based on the provided information, I confirm that the decision relies only on permissible factors and complies with fair-lending/ECOA rules. The evaluation is made solely based on the applicant's creditworthiness (FICO score), financial capacity (annual income, DTI ratio), and property characteristics (appraised value, location). No prohibited factors, such as race or national origin, are considered in this decision-making process."
+        },
+        "otel_gen_ai": {
+          "gen_ai.system": "ollama",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.request.model": "llama3:8b",
+          "gen_ai.response.model": "llama3:8b",
+          "gen_ai.response.finish_reasons": [
+            "stop"
+          ],
+          "gen_ai.usage.input_tokens": 146,
+          "gen_ai.usage.output_tokens": 87
+        },
+        "framework": "ollama",
+        "response_model": "llama3:8b",
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 146,
+          "completion_tokens": 87,
+          "total_tokens": 233
+        },
+        "duration_ms": 3231.449917,
+        "endpoint": "http://localhost:11434",
+        "prompt_tokens": 146,
+        "completion_tokens": 87,
+        "total_tokens": 233
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "4cde60d9c9cc4f94",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 27,
+      "timestamp_ns": 1783432002620740000,
+      "payload": {
+        "provider": "ollama",
+        "model": "llama3:8b",
+        "cost_usd": null,
+        "prompt_tokens": 146,
+        "completion_tokens": 87,
+        "total_tokens": 233,
+        "framework": "ollama"
+      }
+    },
+    {
+      "event_type": "agent.node.exit",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a3f75fffa4624a84",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 28,
+      "timestamp_ns": 1783432002621101000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "compliance-checker",
+        "step": 4,
+        "latency_ms": 3242.226,
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-",
+            "compliance-checker: Based on the provided information, I confirm that the decision relies only on permissible factors and complies with fair-lending/ECOA rules. The evaluation is made solely based on the applicant's cred"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.state.change",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a3f75fffa4624a84",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 29,
+      "timestamp_ns": 1783432002621193000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "compliance-checker",
+        "step": 4,
+        "state_hash": "sha256:de9359c3b0bb10137a882979fe08ff28bec48f4a40ced84fbe02fc78e2cbdfdb",
+        "state_keys": [
+          "assessments"
+        ]
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "a3f75fffa4624a84",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 30,
+      "timestamp_ns": 1783432002621425000,
+      "payload": {
+        "framework": "langgraph",
+        "status": "ok",
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-",
+            "compliance-checker: Based on the provided information, I confirm that the decision relies only on permissible factors and complies with fair-lending/ECOA rules. The evaluation is made solely based on the applicant's cred"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.node.enter",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bb278fd595654070",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 31,
+      "timestamp_ns": 1783432002622141000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "decision",
+        "step": 5,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-",
+            "compliance-checker: Based on the provided information, I confirm that the decision relies only on permissible factors and complies with fair-lending/ECOA rules. The evaluation is made solely based on the applicant's cred"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.handoff",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "958d4732705449ec",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 32,
+      "timestamp_ns": 1783432002622212000,
+      "payload": {
+        "from_agent": "compliance-checker",
+        "to_agent": "decision",
+        "timestamp_ns": 1783432002622179000,
+        "framework": "langgraph"
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bb278fd595654070",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 33,
+      "timestamp_ns": 1783432002622510000,
+      "payload": {
+        "framework": "langgraph",
+        "name": "decision",
+        "node": "decision",
+        "step": 5,
+        "input": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-",
+            "compliance-checker: Based on the provided information, I confirm that the decision relies only on permissible factors and complies with fair-lending/ECOA rules. The evaluation is made solely based on the applicant's cred"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "fdada2be69604c95",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 34,
+      "timestamp_ns": 1783432005055622000,
+      "payload": {
+        "name": "ollama.chat",
+        "model": "llama3:8b",
+        "latency_ms": 2431.483030319214,
+        "parameters": {
+          "model": "llama3:8b"
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are underwriting-supervisor. Given the specialists' assessments, decide APPROVE / CONDITIONAL / DECLINE in one sentence with a brief rationale."
+          },
+          {
+            "role": "user",
+            "content": "supervisor: intake complete; delegating to credit-analyst\ncredit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage\nrisk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-\ncompliance-checker: Based on the provided information, I confirm that the decision relies only on permissible factors and complies with fair-lending/ECOA rules. The evaluation is made solely based on the applicant's cred"
+          }
+        ],
+        "output_message": {
+          "role": "assistant",
+          "content": "APPROVE: With a solid FICO score of 724, stable employment, and manageable debt-to-income ratio, the risk assessment indicates low to moderate default risk, which, combined with compliance confirmation from the compliance-checker, suggests a responsible borrower."
+        },
+        "otel_gen_ai": {
+          "gen_ai.system": "ollama",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.request.model": "llama3:8b",
+          "gen_ai.response.model": "llama3:8b",
+          "gen_ai.response.finish_reasons": [
+            "stop"
+          ],
+          "gen_ai.usage.input_tokens": 201,
+          "gen_ai.usage.output_tokens": 52
+        },
+        "framework": "ollama",
+        "response_model": "llama3:8b",
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 201,
+          "completion_tokens": 52,
+          "total_tokens": 253
+        },
+        "duration_ms": 2429.002041,
+        "endpoint": "http://localhost:11434",
+        "prompt_tokens": 201,
+        "completion_tokens": 52,
+        "total_tokens": 253
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "fdada2be69604c95",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 35,
+      "timestamp_ns": 1783432005055964000,
+      "payload": {
+        "provider": "ollama",
+        "model": "llama3:8b",
+        "cost_usd": null,
+        "prompt_tokens": 201,
+        "completion_tokens": 52,
+        "total_tokens": 253,
+        "framework": "ollama"
+      }
+    },
+    {
+      "event_type": "agent.node.exit",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bb278fd595654070",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 36,
+      "timestamp_ns": 1783432005057001000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "decision",
+        "step": 5,
+        "latency_ms": 2434.391,
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-",
+            "compliance-checker: Based on the provided information, I confirm that the decision relies only on permissible factors and complies with fair-lending/ECOA rules. The evaluation is made solely based on the applicant's cred",
+            "decision: APPROVE: With a solid FICO score of 724, stable employment, and manageable debt-to-income ratio, the risk assessment indicates low to moderate default risk, which, combined with compliance confirmatio"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.state.change",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bb278fd595654070",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 37,
+      "timestamp_ns": 1783432005057137000,
+      "payload": {
+        "framework": "langgraph",
+        "node": "decision",
+        "step": 5,
+        "state_hash": "sha256:ff6cc8aeed1e8ea56bc52b92a394cd87592e74dd6707be43fce1a83c5cd73e3f",
+        "state_keys": [
+          "assessments"
+        ]
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bb278fd595654070",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 38,
+      "timestamp_ns": 1783432005057418000,
+      "payload": {
+        "framework": "langgraph",
+        "status": "ok",
+        "output": {
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-",
+            "compliance-checker: Based on the provided information, I confirm that the decision relies only on permissible factors and complies with fair-lending/ECOA rules. The evaluation is made solely based on the applicant's cred",
+            "decision: APPROVE: With a solid FICO score of 724, stable employment, and manageable debt-to-income ratio, the risk assessment indicates low to moderate default risk, which, combined with compliance confirmatio"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "f9ee654e0247401b",
+      "parent_span_id": "26a5d7c21fc640f2",
+      "span_name": null,
+      "sequence_id": 39,
+      "timestamp_ns": 1783432005058115000,
+      "payload": {
+        "framework": "langgraph",
+        "status": "ok",
+        "output": {
+          "application": "{\"applicant_id\": \"APP-4471\", \"loan_type\": \"conventional_mortgage\", \"amount\": 420000, \"applicant\": {\"fico\": 724, \"annual_income\": 138000, \"dti_ratio\": 0.31, \"employment_years\": 6, \"down_payment_pct\": 20}, \"property\": {\"type\": \"single_family\", \"appraised_value\": 525000, \"location\": \"Austin, TX\"}}",
+          "assessments": [
+            "supervisor: intake complete; delegating to credit-analyst",
+            "credit-analyst: The applicant demonstrates solid creditworthiness with a FICO score of 724, which is considered good and suggests a responsible credit history. Their debt-to-income (DTI) ratio of 31% indicates manage",
+            "risk-assessor: # Risk Assessment - APP-4471\n\n**Default Risk:** Low to moderate. The applicant has a reasonable FICO score (724), stable employment (6 years), and manageable debt-to-income ratio (31%), though income-",
+            "compliance-checker: Based on the provided information, I confirm that the decision relies only on permissible factors and complies with fair-lending/ECOA rules. The evaluation is made solely based on the applicant's cred",
+            "decision: APPROVE: With a solid FICO score of 724, stable employment, and manageable debt-to-income ratio, the risk assessment indicates low to moderate default risk, which, combined with compliance confirmatio"
+          ]
+        }
+      }
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "bf089b6e4b2e496f",
+      "parent_span_id": "f9ee654e0247401b",
+      "span_name": null,
+      "sequence_id": 40,
+      "timestamp_ns": 1783432005058235000,
+      "payload": {
+        "agent_name": "underwriting-supervisor",
+        "source": "framework",
+        "framework": "langgraph"
+      }
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "49648b0622eb43a6",
+      "span_id": "26a5d7c21fc640f2",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 41,
+      "timestamp_ns": 1783432005058270000,
+      "payload": {
+        "synthesized": true
+      }
+    }
+  ],
+  "crewai-s2": [
+    {
+      "event_type": "agent.input",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "a835007bbf27471f",
+      "parent_span_id": null,
+      "span_name": "crew",
+      "sequence_id": 1,
+      "timestamp_ns": 1784056509053729000,
+      "payload": {
+        "framework": "crewai",
+        "crew_name": "crew"
+      },
+      "hash": "sha256:5920357e5ef3e985484a1a4cf9c8575cef0d559493c9066cb09ddbdc0c384137",
+      "previous_hash": null
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "a713551f39e04f9e",
+      "parent_span_id": "a835007bbf27471f",
+      "span_name": "task",
+      "sequence_id": 2,
+      "timestamp_ns": 1784056509067842000,
+      "payload": {
+        "framework": "crewai"
+      },
+      "hash": "sha256:33c0b515d9edc11a459416e6e7190c5a4a394e0b89f2e52d4fd93a6e67dbcd61",
+      "previous_hash": "sha256:5920357e5ef3e985484a1a4cf9c8575cef0d559493c9066cb09ddbdc0c384137"
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "8e9a2c043ab642ee",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": "agent:Crew Manager",
+      "sequence_id": 3,
+      "timestamp_ns": 1784056509074132000,
+      "payload": {
+        "framework": "crewai",
+        "agent_role": "Crew Manager",
+        "allow_delegation": true,
+        "tools": [
+          "Delegate work to coworker",
+          "Ask question to coworker"
+        ]
+      },
+      "hash": "sha256:91aff638bda404742f1752d4f368dd16fceec4d7644209ede1ede059dbc399a3",
+      "previous_hash": "sha256:33c0b515d9edc11a459416e6e7190c5a4a394e0b89f2e52d4fd93a6e67dbcd61"
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "8926f848e9f748e3",
+      "parent_span_id": "8e9a2c043ab642ee",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1784056515187977000,
+      "payload": {
+        "framework": "crewai",
+        "model": "gpt-4o-mini",
+        "latency_ms": 6111.483
+      },
+      "hash": "sha256:0affbc7d5ce48133d0fbdda1293b33af2c3c27645aa29047ec9a8e0c2e15dbe4",
+      "previous_hash": "sha256:91aff638bda404742f1752d4f368dd16fceec4d7644209ede1ede059dbc399a3"
+    },
+    {
+      "event_type": "tool.call",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "ad1249eb12704f2e",
+      "parent_span_id": "8e9a2c043ab642ee",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1784056515189424000,
+      "payload": {
+        "framework": "crewai",
+        "tool_name": "delegate_work_to_coworker"
+      },
+      "hash": "sha256:e2996f76eb286bae5cd0c58b6d5c535b8388428dcf630a4cd4924aed941a6cf2",
+      "previous_hash": "sha256:0affbc7d5ce48133d0fbdda1293b33af2c3c27645aa29047ec9a8e0c2e15dbe4"
+    },
+    {
+      "event_type": "agent.handoff",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "9918d5f7b934498e",
+      "parent_span_id": "ad1249eb12704f2e",
+      "span_name": null,
+      "sequence_id": 6,
+      "timestamp_ns": 1784056515189515000,
+      "payload": {
+        "framework": "crewai",
+        "to_agent": "billing-specialist",
+        "reason": "delegation",
+        "delegation_seq": 1,
+        "tool_name": "delegate_work_to_coworker",
+        "from_agent": "Crew Manager",
+        "handoff_context_hash": "sha256:5623b5c9f119bef2b1c1394a090df413b945e3aad9148a87ab871ae36fd720b7"
+      },
+      "hash": "sha256:72e78288032344d7b7988a51f1b2f995d55987ec979dff04fe50e1d9c4ee9732",
+      "previous_hash": "sha256:e2996f76eb286bae5cd0c58b6d5c535b8388428dcf630a4cd4924aed941a6cf2"
+    },
+    {
+      "event_type": "tool.call",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "ed0c1be3cf2b486b",
+      "parent_span_id": "8e9a2c043ab642ee",
+      "span_name": null,
+      "sequence_id": 7,
+      "timestamp_ns": 1784056515189591000,
+      "payload": {
+        "framework": "crewai",
+        "tool_name": "delegate_work_to_coworker"
+      },
+      "hash": "sha256:2c66f955c4a5346726360f443735bb4eb053b7314ae12022650655c84cddce34",
+      "previous_hash": "sha256:72e78288032344d7b7988a51f1b2f995d55987ec979dff04fe50e1d9c4ee9732"
+    },
+    {
+      "event_type": "agent.handoff",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "a945d65a90084ed4",
+      "parent_span_id": "ed0c1be3cf2b486b",
+      "span_name": null,
+      "sequence_id": 8,
+      "timestamp_ns": 1784056515189663000,
+      "payload": {
+        "framework": "crewai",
+        "to_agent": "network-specialist",
+        "reason": "delegation",
+        "delegation_seq": 2,
+        "tool_name": "delegate_work_to_coworker",
+        "from_agent": "Crew Manager",
+        "handoff_context_hash": "sha256:26411ebe1f1fa781a9cad43d069e096e12b78571e8359b258a2f59abf4dba07f"
+      },
+      "hash": "sha256:068cf1aa6986f8fb91dd393456ca448dec6f79c0a6f05d214abe56f52e149549",
+      "previous_hash": "sha256:2c66f955c4a5346726360f443735bb4eb053b7314ae12022650655c84cddce34"
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "45102c22dc964ee0",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": "agent:network-specialist",
+      "sequence_id": 9,
+      "timestamp_ns": 1784056515191091000,
+      "payload": {
+        "framework": "crewai",
+        "agent_role": "network-specialist",
+        "allow_delegation": false
+      },
+      "hash": "sha256:41e6c797de7e33160766b49a0d8b4179c4c7f7ae45f271c2261c18d8a2ddd419",
+      "previous_hash": "sha256:068cf1aa6986f8fb91dd393456ca448dec6f79c0a6f05d214abe56f52e149549"
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "72cf51f5eb494a7a",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": "agent:billing-specialist",
+      "sequence_id": 10,
+      "timestamp_ns": 1784056515191152000,
+      "payload": {
+        "framework": "crewai",
+        "agent_role": "billing-specialist",
+        "allow_delegation": false
+      },
+      "hash": "sha256:37605cfb9fa512eed890ff9d5d5370205e4fd3644902d873c40241d92ac578b7",
+      "previous_hash": "sha256:41e6c797de7e33160766b49a0d8b4179c4c7f7ae45f271c2261c18d8a2ddd419"
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "9b91bc27378f49c1",
+      "parent_span_id": "72cf51f5eb494a7a",
+      "span_name": null,
+      "sequence_id": 11,
+      "timestamp_ns": 1784056520667660000,
+      "payload": {
+        "framework": "crewai",
+        "model": "gpt-4o-mini",
+        "latency_ms": 5473.067
+      },
+      "hash": "sha256:480669ca60b02ee1cb55473f32a73285e5aef85e917f9dcc944f55f3a478d536",
+      "previous_hash": "sha256:37605cfb9fa512eed890ff9d5d5370205e4fd3644902d873c40241d92ac578b7"
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "72cf51f5eb494a7a",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": "agent:billing-specialist",
+      "sequence_id": 12,
+      "timestamp_ns": 1784056520672043000,
+      "payload": {
+        "framework": "crewai",
+        "agent_role": "billing-specialist",
+        "status": "ok"
+      },
+      "hash": "sha256:d53de9fd4be38ebd835e470daebc1c4b338a53ee25a24b6a14783c411b79dbea",
+      "previous_hash": "sha256:480669ca60b02ee1cb55473f32a73285e5aef85e917f9dcc944f55f3a478d536"
+    },
+    {
+      "event_type": "tool.result",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "ed0c1be3cf2b486b",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": null,
+      "sequence_id": 13,
+      "timestamp_ns": 1784056520672108000,
+      "payload": {
+        "framework": "crewai",
+        "tool_name": "delegate_work_to_coworker",
+        "latency_ms": 5483.227
+      },
+      "hash": "sha256:4440b1a928268afc72bd9051614103c91a41c80f805f19f829fe41f3c4223555",
+      "previous_hash": "sha256:d53de9fd4be38ebd835e470daebc1c4b338a53ee25a24b6a14783c411b79dbea"
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "2ac104624f214180",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": null,
+      "sequence_id": 14,
+      "timestamp_ns": 1784056523339851000,
+      "payload": {
+        "framework": "crewai",
+        "model": "gpt-4o-mini",
+        "latency_ms": 8146.1
+      },
+      "hash": "sha256:ff13bb4ef9600923448c889621d9aefc3554cf60e22f0baa1db6d886bec47d5b",
+      "previous_hash": "sha256:4440b1a928268afc72bd9051614103c91a41c80f805f19f829fe41f3c4223555"
+    },
+    {
+      "event_type": "tool.result",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "57f9b94a232f48c9",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": null,
+      "sequence_id": 15,
+      "timestamp_ns": 1784056523343250000,
+      "payload": {
+        "framework": "crewai",
+        "tool_name": "delegate_work_to_coworker",
+        "latency_ms": 8153.956000000001
+      },
+      "hash": "sha256:ea82065ee94dba323ad2a5580927964b2222db63438d48bf990c1da5109bcb86",
+      "previous_hash": "sha256:ff13bb4ef9600923448c889621d9aefc3554cf60e22f0baa1db6d886bec47d5b"
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "45102c22dc964ee0",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": "agent:network-specialist",
+      "sequence_id": 16,
+      "timestamp_ns": 1784056523343332000,
+      "payload": {
+        "framework": "crewai",
+        "agent_role": "network-specialist",
+        "status": "ok"
+      },
+      "hash": "sha256:5295794b240f76bc9792209e468c8070adbc912cc75e58232b11536b8b68d382",
+      "previous_hash": "sha256:ea82065ee94dba323ad2a5580927964b2222db63438d48bf990c1da5109bcb86"
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "4b8381a927164889",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": null,
+      "sequence_id": 17,
+      "timestamp_ns": 1784056530672405000,
+      "payload": {
+        "framework": "crewai",
+        "model": "gpt-4o-mini",
+        "latency_ms": 7325.446
+      },
+      "hash": "sha256:35d19a9abf3dea09f127997d24fc7dd63ef907df2c9e520783203b6cc5562b4a",
+      "previous_hash": "sha256:5295794b240f76bc9792209e468c8070adbc912cc75e58232b11536b8b68d382"
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "8e9a2c043ab642ee",
+      "parent_span_id": "a713551f39e04f9e",
+      "span_name": "agent:Crew Manager",
+      "sequence_id": 18,
+      "timestamp_ns": 1784056530674690000,
+      "payload": {
+        "framework": "crewai",
+        "agent_role": "Crew Manager",
+        "status": "ok"
+      },
+      "hash": "sha256:22478a76da811b2819b2216e593d43f19842b0a1b01cb8e052f97cd60ff29e03",
+      "previous_hash": "sha256:35d19a9abf3dea09f127997d24fc7dd63ef907df2c9e520783203b6cc5562b4a"
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "a713551f39e04f9e",
+      "parent_span_id": "a835007bbf27471f",
+      "span_name": "task",
+      "sequence_id": 19,
+      "timestamp_ns": 1784056530676213000,
+      "payload": {
+        "framework": "crewai"
+      },
+      "hash": "sha256:09279e2cf48afc274ee260be51da85cc17ac99204ed8091dcfcf312062497761",
+      "previous_hash": "sha256:22478a76da811b2819b2216e593d43f19842b0a1b01cb8e052f97cd60ff29e03"
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "a835007bbf27471f",
+      "parent_span_id": null,
+      "span_name": "crew",
+      "sequence_id": 20,
+      "timestamp_ns": 1784056530678408000,
+      "payload": {
+        "framework": "crewai",
+        "crew_name": "crew",
+        "duration_ns": 21624678000,
+        "tokens_total": 11850
+      },
+      "hash": "sha256:9899d86a7101b293c34963af47ed0b3695b65594adcafedd6987d9c0c0dfebc4",
+      "previous_hash": "sha256:09279e2cf48afc274ee260be51da85cc17ac99204ed8091dcfcf312062497761"
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "a835007bbf27471f",
+      "parent_span_id": null,
+      "span_name": null,
+      "sequence_id": 21,
+      "timestamp_ns": 1784056530678445000,
+      "payload": {
+        "framework": "crewai",
+        "tokens_total": 11850
+      },
+      "hash": "sha256:0617fb363e0d6c88b77fc432d3e0afb4e3b7717cebcd8b063242850af76a6f52",
+      "previous_hash": "sha256:9899d86a7101b293c34963af47ed0b3695b65594adcafedd6987d9c0c0dfebc4"
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "e5d11d471d03408b",
+      "span_id": "9918d5f7b934498e",
+      "parent_span_id": "ad1249eb12704f2e",
+      "span_name": null,
+      "sequence_id": 22,
+      "timestamp_ns": 1784056530678520000,
+      "payload": {
+        "agent_name": "Crew Manager",
+        "source": "handoff",
+        "framework": "crewai"
+      },
+      "hash": "sha256:a3d2be248301088bdc14c9a731c6b15cb03c6fbbb4130c8821c49e8bc4cde7af",
+      "previous_hash": "sha256:0617fb363e0d6c88b77fc432d3e0afb4e3b7717cebcd8b063242850af76a6f52"
+    }
+  ],
+  "llamaindex-s2": [
+    {
+      "event_type": "agent.input",
+      "trace_id": "79575502405d47c7",
+      "span_id": "AgentWorkflow.se",
+      "parent_span_id": "AgentWorkflow.ru",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1784057315876418000,
+      "payload": {
+        "framework": "llamaindex",
+        "agent_name": "contract-intake",
+        "input": [
+          {
+            "role": "user",
+            "additional_kwargs": {},
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": "Review this SaaS master agreement between Acme Corp (vendor) and Widget Inc (customer). Clauses present: term_and_termination (auto-renewal, 180-day notice), payment_terms (net-45), limitation_of_liability (UNLIMITED liability for data breaches, no cap), data_protection (GDPR processor), confidentiality, indemnification. Flag the legal risks and recommend changes."
+              }
+            ]
+          }
+        ]
+      },
+      "hash": "sha256:c54b6da6595ab87c3997c63f0610459747d94a9471302049cdd7c59837a86e07",
+      "previous_hash": null
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "79575502405d47c7",
+      "span_id": "OpenAI.astream_c",
+      "parent_span_id": null,
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1784057318811625000,
+      "payload": {
+        "framework": "llamaindex",
+        "model": "gpt-4o-mini-2024-07-18",
+        "response_id": "chatcmpl-E1d5x3eP0TLjFsNFkML0qy6kDmriY",
+        "tokens_prompt": 251,
+        "tokens_completion": 37,
+        "tokens_total": 288,
+        "latency_ms": 2933.429002761841,
+        "messages": [
+          {
+            "role": "system",
+            "additional_kwargs": {},
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": "You are contract-intake, a legal contract intake agent. Read the contract summary, state the contract type and the clauses present in ONE sentence, then IMMEDIATELY hand off to 'clause-risk' to assess the legal risks. Do not attempt the risk analysis yourself."
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "additional_kwargs": {},
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": "Review this SaaS master agreement between Acme Corp (vendor) and Widget Inc (customer). Clauses present: term_and_termination (auto-renewal, 180-day notice), payment_terms (net-45), limitation_of_liability (UNLIMITED liability for data breaches, no cap), data_protection (GDPR processor), confidentiality, indemnification. Flag the legal risks and recommend changes."
+              }
+            ]
+          }
+        ]
+      },
+      "hash": "sha256:7324739eb6f685f5164712022b1d2353089f596eaa4fae107c060069041e24c8",
+      "previous_hash": "sha256:c54b6da6595ab87c3997c63f0610459747d94a9471302049cdd7c59837a86e07"
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "79575502405d47c7",
+      "span_id": "OpenAI.astream_c",
+      "parent_span_id": null,
+      "span_name": null,
+      "sequence_id": 3,
+      "timestamp_ns": 1784057318811703000,
+      "payload": {
+        "framework": "llamaindex",
+        "model": "gpt-4o-mini-2024-07-18",
+        "tokens_prompt": 251,
+        "tokens_completion": 37,
+        "tokens_total": 288,
+        "cost_usd": 5.985e-05
+      },
+      "hash": "sha256:bfa5d1a3154d698eff850934cc9c83fb0abe05acce7334cac6dee96258e4a178",
+      "previous_hash": "sha256:7324739eb6f685f5164712022b1d2353089f596eaa4fae107c060069041e24c8"
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "79575502405d47c7",
+      "span_id": "AgentWorkflow.pa",
+      "parent_span_id": "AgentWorkflow.ru",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1784057318812627000,
+      "payload": {
+        "framework": "llamaindex",
+        "agent_name": "contract-intake"
+      },
+      "hash": "sha256:89fa60f86aa903a0af2609ee151c032582dbf3dc67f46ede74622b4303627dc5",
+      "previous_hash": "sha256:bfa5d1a3154d698eff850934cc9c83fb0abe05acce7334cac6dee96258e4a178"
+    },
+    {
+      "event_type": "agent.handoff",
+      "trace_id": "79575502405d47c7",
+      "span_id": "AgentWorkflow.ca",
+      "parent_span_id": "AgentWorkflow.ru",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1784057318813274000,
+      "payload": {
+        "framework": "llamaindex",
+        "from_agent": "contract-intake",
+        "to_agent": "clause-risk"
+      },
+      "hash": "sha256:10869346dd427056ec3adce2316e4626beb9bc9871c2c23599c1ea2547585ddd",
+      "previous_hash": "sha256:89fa60f86aa903a0af2609ee151c032582dbf3dc67f46ede74622b4303627dc5"
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "79575502405d47c7",
+      "span_id": "AgentWorkflow.se",
+      "parent_span_id": "AgentWorkflow.ru",
+      "span_name": null,
+      "sequence_id": 6,
+      "timestamp_ns": 1784057318816321000,
+      "payload": {
+        "framework": "llamaindex",
+        "agent_name": "clause-risk",
+        "input": [
+          {
+            "role": "user",
+            "additional_kwargs": {},
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": "Review this SaaS master agreement between Acme Corp (vendor) and Widget Inc (customer). Clauses present: term_and_termination (auto-renewal, 180-day notice), payment_terms (net-45), limitation_of_liability (UNLIMITED liability for data breaches, no cap), data_protection (GDPR processor), confidentiality, indemnification. Flag the legal risks and recommend changes."
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "additional_kwargs": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "call_BhvDhG6b4NRtMWzMLWuaBYXy",
+                  "function": {
+                    "arguments": "{\"to_agent\":\"clause-risk\",\"reason\":\"To assess the legal risks associated with the identified clauses in the SaaS master agreement.\"}",
+                    "name": "handoff"
+                  },
+                  "type": "function"
+                }
+              ]
+            },
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": ""
+              },
+              {
+                "block_type": "tool_call",
+                "tool_call_id": "call_BhvDhG6b4NRtMWzMLWuaBYXy",
+                "tool_name": "handoff",
+                "tool_kwargs": "{\"to_agent\":\"clause-risk\",\"reason\":\"To assess the legal risks associated with the identified clauses in the SaaS master agreement.\"}"
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "additional_kwargs": {
+              "tool_call_id": "call_BhvDhG6b4NRtMWzMLWuaBYXy"
+            },
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": "Agent clause-risk is now handling the request due to the following reason: To assess the legal risks associated with the identified clauses in the SaaS master agreement..\nPlease continue with the current request."
+              }
+            ]
+          }
+        ]
+      },
+      "hash": "sha256:130dbb37b2548e570e8a47d6486ef4d700c432ffe9e88641d50451dc5afc26d6",
+      "previous_hash": "sha256:10869346dd427056ec3adce2316e4626beb9bc9871c2c23599c1ea2547585ddd"
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "79575502405d47c7",
+      "span_id": "OpenAI.astream_c",
+      "parent_span_id": null,
+      "span_name": null,
+      "sequence_id": 7,
+      "timestamp_ns": 1784057322650633000,
+      "payload": {
+        "framework": "llamaindex",
+        "model": "gpt-4o-mini-2024-07-18",
+        "response_id": "chatcmpl-E1d5zLmCxVYctIr0h2dMtnW2w17C5",
+        "tokens_prompt": 217,
+        "tokens_completion": 106,
+        "tokens_total": 323,
+        "latency_ms": 3833.2979679107666,
+        "messages": [
+          {
+            "role": "system",
+            "additional_kwargs": {},
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": "You are clause-risk, a legal risk analyst. Given the intake summary, name the two highest-risk clauses, rate each risk (low/medium/high), and give a one-line negotiation recommendation for each."
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "additional_kwargs": {},
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": "Review this SaaS master agreement between Acme Corp (vendor) and Widget Inc (customer). Clauses present: term_and_termination (auto-renewal, 180-day notice), payment_terms (net-45), limitation_of_liability (UNLIMITED liability for data breaches, no cap), data_protection (GDPR processor), confidentiality, indemnification. Flag the legal risks and recommend changes."
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "additional_kwargs": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "call_BhvDhG6b4NRtMWzMLWuaBYXy",
+                  "function": {
+                    "arguments": "{\"to_agent\":\"clause-risk\",\"reason\":\"To assess the legal risks associated with the identified clauses in the SaaS master agreement.\"}",
+                    "name": "handoff"
+                  },
+                  "type": "function"
+                }
+              ]
+            },
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": ""
+              },
+              {
+                "block_type": "tool_call",
+                "tool_call_id": "call_BhvDhG6b4NRtMWzMLWuaBYXy",
+                "tool_name": "handoff",
+                "tool_kwargs": "{\"to_agent\":\"clause-risk\",\"reason\":\"To assess the legal risks associated with the identified clauses in the SaaS master agreement.\"}"
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "additional_kwargs": {
+              "tool_call_id": "call_BhvDhG6b4NRtMWzMLWuaBYXy"
+            },
+            "blocks": [
+              {
+                "block_type": "text",
+                "text": "Agent clause-risk is now handling the request due to the following reason: To assess the legal risks associated with the identified clauses in the SaaS master agreement..\nPlease continue with the current request."
+              }
+            ]
+          }
+        ],
+        "output_message": "The two highest-risk clauses in the SaaS master agreement are:\n\n1. **Limitation of Liability**: \n   - **Risk Rating**: High\n   - **Recommendation**: Negotiate to include a cap on liability for data breaches to limit potential financial exposure.\n\n2. **Term and Termination**: \n   - **Risk Rating**: Medium\n   - **Recommendation**: Consider revising the auto-renewal clause to require a shorter notice period for termination to allow for more flexibility in contract management."
+      },
+      "hash": "sha256:eaf210d17ffa3c137336418045de583bbe04482fd71373a3267a785bf866813c",
+      "previous_hash": "sha256:130dbb37b2548e570e8a47d6486ef4d700c432ffe9e88641d50451dc5afc26d6"
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "79575502405d47c7",
+      "span_id": "OpenAI.astream_c",
+      "parent_span_id": null,
+      "span_name": null,
+      "sequence_id": 8,
+      "timestamp_ns": 1784057322650713000,
+      "payload": {
+        "framework": "llamaindex",
+        "model": "gpt-4o-mini-2024-07-18",
+        "tokens_prompt": 217,
+        "tokens_completion": 106,
+        "tokens_total": 323,
+        "cost_usd": 9.615e-05
+      },
+      "hash": "sha256:10bd411f4cb282e2e9003bf8dd1ddce67145212a2e97db64c56690e2c8440b31",
+      "previous_hash": "sha256:eaf210d17ffa3c137336418045de583bbe04482fd71373a3267a785bf866813c"
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "79575502405d47c7",
+      "span_id": "AgentWorkflow.pa",
+      "parent_span_id": "AgentWorkflow.ru",
+      "span_name": null,
+      "sequence_id": 9,
+      "timestamp_ns": 1784057322651426000,
+      "payload": {
+        "framework": "llamaindex",
+        "agent_name": "clause-risk",
+        "output": "The two highest-risk clauses in the SaaS master agreement are:\n\n1. **Limitation of Liability**: \n   - **Risk Rating**: High\n   - **Recommendation**: Negotiate to include a cap on liability for data breaches to limit potential financial exposure.\n\n2. **Term and Termination**: \n   - **Risk Rating**: Medium\n   - **Recommendation**: Consider revising the auto-renewal clause to require a shorter notice period for termination to allow for more flexibility in contract management."
+      },
+      "hash": "sha256:cb95f6fb7c33d771b0779d05b4d376f439d50445b95d3adabd44e4718b305410",
+      "previous_hash": "sha256:10bd411f4cb282e2e9003bf8dd1ddce67145212a2e97db64c56690e2c8440b31"
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "79575502405d47c7",
+      "span_id": "AgentWorkflow.se",
+      "parent_span_id": "AgentWorkflow.ru",
+      "span_name": null,
+      "sequence_id": 10,
+      "timestamp_ns": 1784057322652164000,
+      "payload": {
+        "agent_name": "contract-intake",
+        "source": "framework",
+        "framework": "llamaindex"
+      },
+      "hash": "sha256:9676f2c7d9520ef14afbd49345d969419a287e4da183cf7d94bb85ec7f7713ea",
+      "previous_hash": "sha256:cb95f6fb7c33d771b0779d05b4d376f439d50445b95d3adabd44e4718b305410"
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "79575502405d47c7",
+      "span_id": "AgentWorkflow.ru",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 11,
+      "timestamp_ns": 1784057322652181000,
+      "payload": {
+        "synthesized": true
+      },
+      "hash": "sha256:0c158d6ad7585fb2ed3a05c58c5c6a1318a65e9ce8ba22a91d224cbeeef8df3a",
+      "previous_hash": "sha256:9676f2c7d9520ef14afbd49345d969419a287e4da183cf7d94bb85ec7f7713ea"
+    }
   ]
 }

@@ -117,6 +117,69 @@ def test_real_event_bus_emits_handoff_on_delegation_tool(adapter_in_real_bus):
     assert p["handoff_context_hash"].startswith("sha256:")
 
 
+def test_real_runtime_sanitized_tool_name_emits_handoff(adapter_in_real_bus):
+    """Real crewai fires ToolUsageStartedEvent with the *sanitized* tool name
+    (crewai.utilities.string_utils.sanitize_tool_name lowercases + underscores),
+    so the runtime never emits the human-readable "Delegate work to coworker"
+    form the other tests hand-build — it emits 'delegate_work_to_coworker'.
+    The delegation detector must match that real form or a real hierarchical
+    crew produces ZERO agent.handoff (empty graph)."""
+    from crewai.utilities.string_utils import sanitize_tool_name
+
+    # Guard: assert we're testing the form crewai actually emits at runtime.
+    assert sanitize_tool_name("Delegate work to coworker") == "delegate_work_to_coworker"
+
+    adapter, uploads = adapter_in_real_bus
+    _start_crew_with_manager()
+
+    _emit(
+        ToolUsageStartedEvent(
+            tool_name="delegate_work_to_coworker",
+            tool_args={
+                "task": "Find recent papers on attention mechanisms",
+                "coworker": "researcher",
+                "context": "Focus on transformers and LLMs",
+            },
+            agent_key="manager_1",
+        )
+    )
+
+    _finish_crew()
+
+    handoff = first_event(uploads, "agent.handoff")
+    p = handoff["payload"]
+    assert p["from_agent"] == "manager"
+    assert p["to_agent"] == "researcher"
+    assert p["reason"] == "delegation"
+    assert p["delegation_seq"] == 1
+    assert p["tool_name"] == "delegate_work_to_coworker"
+    assert p["handoff_context_hash"].startswith("sha256:")
+
+
+def test_real_runtime_sanitized_ask_question_emits_handoff(adapter_in_real_bus):
+    """The 'ask question to coworker' delegation tool is likewise sanitized to
+    'ask_question_to_coworker' at runtime — it too must be detected."""
+    from crewai.utilities.string_utils import sanitize_tool_name
+
+    assert sanitize_tool_name("Ask question to coworker") == "ask_question_to_coworker"
+
+    adapter, uploads = adapter_in_real_bus
+    _start_crew_with_manager()
+
+    _emit(
+        ToolUsageStartedEvent(
+            tool_name="ask_question_to_coworker",
+            tool_args={"question": "What is the deadline?", "coworker": "researcher"},
+            agent_key="manager_1",
+        )
+    )
+    _finish_crew()
+
+    h = first_event(uploads, "agent.handoff")
+    assert h["payload"]["to_agent"] == "researcher"
+    assert h["payload"]["reason"] == "delegation"
+
+
 def test_chain_of_delegations_keeps_sequence(adapter_in_real_bus):
     adapter, uploads = adapter_in_real_bus
     _start_crew_with_manager()

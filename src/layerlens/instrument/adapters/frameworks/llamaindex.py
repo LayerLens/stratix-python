@@ -81,6 +81,34 @@ class LlamaIndexAdapter(FrameworkAdapter):
         self._open_spans: Dict[str, Any] = {}  # span_id → BaseSpan
         self._timestamps: Dict[str, float] = {}
         self._llm_start_times: Dict[str, float] = {}
+        # Streaming-flush ordering (BUG-8). LlamaIndex exits a streaming LLM's
+        # span the instant ``stream_chat``/``stream_complete`` RETURNS its
+        # generator — before the generator is consumed and before the trailing
+        # ``LLMChat/CompletionEndEvent`` (carrying model.invoke + cost.record)
+        # fires. On the standalone (no-bound-collector) path that end event
+        # would land on an already-popped-and-flushed root collector and be
+        # dropped.
+        #
+        # The end event is NOT always emitted on the same span that owns the
+        # trace collector. A bare ``llm.stream_chat()`` makes the stream span
+        # itself the root, but a first-class RAG chain
+        # (``index.as_query_engine(streaming=True, response_mode="tree_summarize"
+        # |"simple_summarize"|"generation").query(...)`` or a lazy streaming chat
+        # engine) returns a ``StreamingResponse`` whose generator is consumed by
+        # the CALLER: the OUTER ``RetrieverQueryEngine.query`` span (which owns
+        # the collector) exits while the nested LLM stream is still in flight,
+        # and the ``LLMChatEndEvent`` fires one-or-more frames later against a
+        # torn-down span tree. So in-flight LLM calls are tracked against the
+        # collector-owning ROOT span (``_root_span_of`` at start), not the LLM
+        # call's own span — a root with ANY live descendant streamed LLM defers
+        # its flush. ``_inflight_llm`` counts started-but-not-ended LLM calls per
+        # ROOT span; ``_deferred`` holds root spans whose flush we withheld at
+        # exit; ``_llm_root`` maps each in-flight LLM call's span_id -> its root
+        # so the end handler can resolve the (now-detached) owning collector and
+        # release it once the last in-flight call for that root ends.
+        self._inflight_llm: Dict[str, int] = {}
+        self._deferred: set = set()
+        self._llm_root: Dict[str, str] = {}
         # Honest-graph state (AgentWorkflow multi-agent path), keyed by the
         # root span id that owns the trace collector:
         #   _current_agent  — the developer-declared name of the agent whose
@@ -157,6 +185,16 @@ class LlamaIndexAdapter(FrameworkAdapter):
                     return self._collectors[current]
                 span = self._open_spans.get(current)
                 current = span.parent_id if span is not None else None
+            # BUG-8: a deferred-streaming end event fires against a torn-down span
+            # tree (the whole query/synthesize/stream chain has already exited, so
+            # the walk above finds nothing). Resolve its collector PRECISELY via the
+            # root captured at LLM start — this both lands the late model.invoke /
+            # cost.record in the correct (deferred) trace AND prevents the
+            # "any active collector" fallback below from misattributing it into an
+            # unrelated concurrent query's trace.
+            root = self._llm_root.get(span_id)
+            if root is not None and root in self._collectors:
+                return self._collectors[root]
             # Fallback: any active collector
             if self._collectors:
                 return next(iter(self._collectors.values()))
@@ -285,12 +323,24 @@ class LlamaIndexAdapter(FrameworkAdapter):
         )
 
     def _flush_all(self) -> None:
+        # Safety net (BUG-8, abandoned-generator case): a caller that abandons a
+        # streaming response's generator before exhaustion never triggers the
+        # trailing ``LLMChat/CompletionEndEvent`` (a ``GeneratorExit`` surfaces as
+        # an ``ExceptionEvent`` -> agent.error instead), so ``_end_llm_call`` is
+        # never called and that root stays parked in ``_deferred``/``_collectors``.
+        # ``disconnect()`` calls this, and it flushes EVERY still-live collector —
+        # including deferred roots — so a parked trace is uploaded (with whatever
+        # was genuinely captured; the never-fired model.invoke is honestly absent),
+        # never leaked. Bounded: the collector set is drained and cleared here.
         with self._lock:
             collectors = list(self._collectors.values())
             self._collectors.clear()
             self._open_spans.clear()
             self._timestamps.clear()
             self._llm_start_times.clear()
+            self._inflight_llm.clear()
+            self._deferred.clear()
+            self._llm_root.clear()
             self._current_agent.clear()
             self._handoffs_seen.clear()
         for c in collectors:
@@ -317,16 +367,81 @@ class LlamaIndexAdapter(FrameworkAdapter):
         return span
 
     def _on_span_exit(self, id_: str) -> Any:
+        collector = None
         with self._lock:
             span = self._open_spans.get(id_)
             self._timestamps.pop(id_, None)
+            # BUG-8: defer sealing a root that has ANY live descendant streamed
+            # LLM call in flight (``_inflight_llm`` is keyed by this root span —
+            # see __init__). LlamaIndex exits the stream span, and the outer
+            # query/synthesize span above it, as soon as a lazy StreamingResponse's
+            # generator is RETURNED — BEFORE the trailing end event fires; flushing
+            # now would leave the model.invoke/cost.record that end event emits
+            # with no collector to land in (standalone path) — silently dropped.
+            # Keep the collector reachable and let ``_end_llm_call`` flush it once
+            # this root's in-flight count reaches zero.
+            if id_ in self._collectors and self._inflight_llm.get(id_, 0) > 0:
+                self._deferred.add(id_)
+                return span
             collector = self._collectors.pop(id_, None)
             if collector is not None:
                 self._current_agent.pop(id_, None)
                 self._handoffs_seen.pop(id_, None)
+                self._deferred.discard(id_)
+                self._inflight_llm.pop(id_, None)
         if collector is not None:
             collector.flush()
         return span
+
+    def _track_inflight_llm(self, span_id: str) -> None:
+        """Record that a streamed LLM call (event span ``span_id``) has STARTED,
+        against the collector-owning ROOT span above it (BUG-8).
+
+        Resolved at start time — while the whole query/synthesize/stream chain is
+        still open — so ``_root_span_of`` can actually walk the tree; the mapping
+        is what lets the (much later) end handler find the owning collector after
+        the tree has been torn down. ``_root_span_of`` takes ``self._lock``, so it
+        is called BEFORE acquiring the lock to update the counters."""
+        root = self._root_span_of(span_id)
+        if root is None:
+            return
+        with self._lock:
+            self._inflight_llm[root] = self._inflight_llm.get(root, 0) + 1
+            self._llm_root[span_id] = root
+
+    def _end_llm_call(self, span_id: Optional[str]) -> None:
+        """Signal that the LLM call whose event carried ``span_id`` has ended.
+
+        Resolves the collector-owning ROOT span that call was tracked against at
+        start (``_llm_root``), decrements that root's in-flight count and, if the
+        count reaches zero for a root whose flush was deferred at exit (BUG-8,
+        streaming), flushes and seals it now — after the end event's
+        model.invoke/cost.record have been recorded into it. Called by the LLM
+        end handlers, which may fire long after the whole span tree has exited
+        (lazy StreamingResponse consumed by the caller), so the root can no longer
+        be walked from the span tree and must come from the captured mapping."""
+        if not span_id:
+            return
+        collector = None
+        with self._lock:
+            root = self._llm_root.pop(span_id, None)
+            if root is None:
+                # This LLM call's start was never tracked (no owning root resolved)
+                # — nothing was deferred on its behalf, so nothing to release.
+                return
+            n = self._inflight_llm.get(root, 0)
+            if n > 1:
+                self._inflight_llm[root] = n - 1
+                return
+            self._inflight_llm.pop(root, None)
+            if root in self._deferred:
+                self._deferred.discard(root)
+                collector = self._collectors.pop(root, None)
+                if collector is not None:
+                    self._current_agent.pop(root, None)
+                    self._handoffs_seen.pop(root, None)
+        if collector is not None:
+            collector.flush()
 
     def _on_span_drop(self, id_: str) -> Any:
         return self._on_span_exit(id_)  # same cleanup
@@ -351,6 +466,7 @@ class LlamaIndexAdapter(FrameworkAdapter):
         span_id = getattr(event, "span_id", None)
         if span_id:
             self._llm_start_times[span_id] = time.time()
+            self._track_inflight_llm(span_id)
 
     def _on_llm_chat_end(self, event: Any) -> None:
         span_id = getattr(event, "span_id", None)
@@ -392,6 +508,10 @@ class LlamaIndexAdapter(FrameworkAdapter):
             cost.update(tokens)
             self._fire("cost.record", cost, span_id=span_id)
 
+        # BUG-8: the chat span may already have exited (streaming) — release the
+        # deferred flush now that its terminal events are recorded.
+        self._end_llm_call(span_id)
+
     # ------------------------------------------------------------------
     # LLM Completion
     # ------------------------------------------------------------------
@@ -400,6 +520,7 @@ class LlamaIndexAdapter(FrameworkAdapter):
         span_id = getattr(event, "span_id", None)
         if span_id:
             self._llm_start_times[span_id] = time.time()
+            self._track_inflight_llm(span_id)
 
     def _on_llm_completion_end(self, event: Any) -> None:
         span_id = getattr(event, "span_id", None)
@@ -436,6 +557,10 @@ class LlamaIndexAdapter(FrameworkAdapter):
                 cost["model"] = model
             cost.update(tokens)
             self._fire("cost.record", cost, span_id=span_id)
+
+        # BUG-8: release any deferred flush for a completion span that already
+        # exited (streaming) once its terminal events are recorded.
+        self._end_llm_call(span_id)
 
     # ------------------------------------------------------------------
     # Tool calls

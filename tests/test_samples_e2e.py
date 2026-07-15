@@ -68,6 +68,18 @@ INDUSTRY_SAMPLES = [
     "underwriting_team",
     "support_triage_team",
     "clinical_consult_team",
+    "telecom_support_crew",
+    "media_content_moderation",
+    "retail_catalog_qa",
+    "energy_grid_forecast",
+    "energy_grid_tooluse",
+    "manufacturing_predictive_maintenance",
+    "manufacturing_maintenance_tooluse",
+    "healthcare_clinical_chain",
+    "healthcare_clinical_agent",
+    "legal_contract_rag",
+    "legal_agentworkflow",
+    "travel_itinerary",
 ]
 
 COWORK_SAMPLES = [
@@ -2235,8 +2247,8 @@ class TestSampleCompleteness:
 
     def test_all_54_samples_covered(self):
         """Verify ALL_SAMPLE_PATHS contains exactly 66 entries."""
-        assert len(ALL_SAMPLE_PATHS) == 66, (
-            f"Expected 66 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
+        assert len(ALL_SAMPLE_PATHS) == 78, (
+            f"Expected 78 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
         )
 
     def test_all_sample_paths_exist(self):
@@ -2250,6 +2262,6 @@ class TestSampleCompleteness:
 
     def test_mocked_samples_cover_all(self):
         """ALL_MOCKED_SAMPLES should produce exactly 66 entries."""
-        assert len(ALL_MOCKED_SAMPLES) == 66, (
-            f"Expected 66 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
+        assert len(ALL_MOCKED_SAMPLES) == 78, (
+            f"Expected 78 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
         )

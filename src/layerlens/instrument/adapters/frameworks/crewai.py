@@ -16,6 +16,14 @@ log = logging.getLogger(__name__)
 
 # CrewAI's built-in delegation tools (case-insensitive substring match).
 # https://docs.crewai.com/concepts/agents#agent-delegation
+#
+# Patterns are stored in the human-readable "space" form. At runtime crewai
+# does NOT emit that form: the LLM-facing tool name is passed through
+# ``crewai.utilities.string_utils.sanitize_tool_name`` (lowercase + underscores)
+# before it lands on ``ToolUsageStartedEvent.tool_name`` (crewai/tools/tool_usage.py),
+# so a real hierarchical crew emits ``delegate_work_to_coworker`` /
+# ``ask_question_to_coworker``. ``_is_delegation_tool`` normalizes underscores
+# back to spaces before matching so BOTH forms are detected.
 _DELEGATION_TOOL_PATTERNS: Tuple[str, ...] = (
     "delegate work to coworker",
     "ask question to coworker",
@@ -30,7 +38,10 @@ _MAX_TRACKED_EVENTS = 10_000
 def _is_delegation_tool(tool_name: Optional[str]) -> bool:
     if not tool_name:
         return False
-    low = tool_name.lower()
+    # Normalize the sanitized runtime form ("delegate_work_to_coworker") back to
+    # the human-readable pattern form ("delegate work to coworker") so both the
+    # raw tool label and the sanitized name crewai actually emits match.
+    low = tool_name.lower().replace("_", " ")
     return any(pat in low for pat in _DELEGATION_TOOL_PATTERNS)
 
 

@@ -17,6 +17,8 @@ tests = [
     "tests/instrument/adapters/frameworks/test_langchain.py",
     "tests/instrument/adapters/frameworks/test_langchain_memory.py",
     "tests/instrument/adapters/frameworks/test_langchain_recorded.py",
+    "tests/instrument/adapters/frameworks/test_langchain_floor.py",
+    "tests/instrument/adapters/frameworks/test_langchain_bugfix.py",
 ]
 
 [frameworks.langgraph]
@@ -25,6 +27,7 @@ install = ["langchain-core==0.3.84", "langgraph==1.0.1", "langchain-openai==0.3.
 tests = [
     "tests/instrument/adapters/frameworks/test_langgraph.py",
     "tests/instrument/adapters/frameworks/test_langgraph_recorded.py",
+    "tests/instrument/adapters/frameworks/test_langgraph_floor.py",
 ]
 
 [frameworks.crewai]
@@ -34,6 +37,7 @@ tests = [
     "tests/instrument/adapters/frameworks/test_crewai.py",
     "tests/instrument/adapters/frameworks/test_crewai_recorded.py",
     "tests/instrument/adapters/frameworks/test_concurrency_crewai.py",
+    "tests/instrument/adapters/frameworks/test_crewai_floor.py",
     "tests/e2e/test_e2e_crewai_delegation.py",
 ]
 
@@ -88,6 +92,9 @@ install = ["llama-index-core==0.14.22", "llama-index-llms-openai"]
 tests = [
     "tests/instrument/adapters/frameworks/test_llamaindex.py",
     "tests/instrument/adapters/frameworks/test_llamaindex_recorded.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_llamaindex.py",
+    "tests/instrument/adapters/frameworks/test_llamaindex_floor.py",
+    "tests/instrument/adapters/frameworks/test_llamaindex_bugfix.py",
 ]
 
 [frameworks.haystack]

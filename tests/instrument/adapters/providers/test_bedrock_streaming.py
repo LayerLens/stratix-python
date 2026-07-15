@@ -1,35 +1,27 @@
 """Streaming-path tests for the AWS Bedrock provider adapter (G8 / W4).
 
 Bedrock streams in production via ``invoke_model_with_response_stream`` and
-``converse_stream``, but had NO streaming test. These pin the adapter's
-CURRENT streaming contract.
+``converse_stream``. These pin the adapter's streaming contract.
 
-Current contract (documented limitation)
------------------------------------------
-``BedrockProvider`` is a direct :class:`BaseAdapter` (not a ``MonkeyPatchProvider``)
-so it has none of the ``aggregate_stream`` / ``stream_chunks_sync`` machinery the
-OpenAI/Anthropic/Ollama adapters use. Its ``_wrap_stream`` deliberately does NOT
-consume the response: ``botocore`` returns a single-read
-``botocore.eventstream.EventStream`` for these operations, and buffering it to
-aggregate content/usage would break the caller's own iteration. So the adapter
-emits a BARE ``model.invoke`` carrying ``streaming=True`` + the method name and
-returns the untouched response (the module docstring states this).
+Contract (BUG-1 fixed — streaming now aggregates)
+-------------------------------------------------
+``botocore`` returns a single-read ``botocore.eventstream.EventStream`` for
+these operations. ``_wrap_stream`` wraps that stream in a re-iterable proxy
+(:class:`~layerlens.instrument.adapters.providers.bedrock._StreamTee`) that
+tees every chunk back to the caller (single-read semantics preserved) while
+accumulating them. On stream exhaustion it emits a FULL ``model.invoke``:
 
-Consequently there is:
+* aggregated ``output_message`` + input ``messages``;
+* aggregated ``usage`` (+ flat token fields) and a priced ``cost.record`` on
+  the same span;
+* ``ttft_ms`` / ``streaming_duration_ms`` timing.
 
-* NO ``output_message`` / ``messages`` (input not parsed for streaming).
-* NO ``usage`` and therefore NO ``cost.record`` for a streaming call.
-* NO ``ttft_ms`` / ``streaming_duration_ms`` (the adapter never wraps the
-  iterator, so it can't time first-token / total duration).
-
-These tests assert exactly that contract and prove iterator passthrough (the
-caller still receives every real-shaped chunk). **Chunk aggregation for Bedrock
-streaming — content/usage/TTFT on the streaming ``model.invoke`` — is a deferred
-follow-up.** Adding it safely means wrapping the returned ``EventStream`` in a
-re-iterable proxy (so single-read semantics are preserved) plus per-family
-event accumulators (Anthropic SSE bytes for invoke_model; Converse
-``contentBlockDelta``/``metadata`` events for converse_stream) — a non-trivial
-src change that is out of scope here.
+Per-family accumulators cover Anthropic Messages SSE bytes and Nova/Converse
+``contentBlockDelta``/``metadata`` events for ``invoke_model_with_response_stream``
+and the Converse event stream for ``converse_stream``. These tests assert that
+aggregated contract AND that iterator passthrough is preserved (the caller
+still receives every real-shaped chunk). Deeper per-family stream coverage
+lives in ``test_bedrock_bugfix.py``.
 
 Test mechanics mirror ``test_bedrock.py``: a real ``bedrock-runtime`` boto3
 client (region us-east-1, static fake creds) is driven through
@@ -214,21 +206,31 @@ class TestInvokeModelWithResponseStream:
 
         events = capture_trace["events"]
         mi = find_event(events, "model.invoke")
-        # Current contract: a BARE streaming marker — method name + streaming flag.
         assert mi["payload"]["name"] == "aws_bedrock.invoke_model_with_response_stream"
         assert mi["payload"]["model"] == _MODEL_ID
         assert mi["payload"]["streaming"] is True
         assert mi["payload"]["method"] == "invoke_model_with_response_stream"
         assert mi["payload"]["latency_ms"] > 0
 
-        # Deferred-aggregation limitation: no input/output/usage on the streaming
-        # invoke, and therefore no cost.record for a streamed call.
-        assert mi["payload"]["messages"] is None
-        assert mi["payload"]["output_message"] is None
-        assert "usage" not in mi["payload"]
-        assert "ttft_ms" not in mi["payload"]
-        assert "streaming_duration_ms" not in mi["payload"]
-        assert not find_events(events, "cost.record")
+        # BUG-1 fixed: the stream is aggregated into a full model.invoke.
+        assert mi["payload"]["output_message"] == {"role": "assistant", "content": "Hello from Bedrock!"}
+        assert mi["payload"]["usage"]["prompt_tokens"] == 12
+        assert mi["payload"]["usage"]["completion_tokens"] == 8
+        assert mi["payload"]["prompt_tokens"] == 12
+        assert mi["payload"]["completion_tokens"] == 8
+        assert mi["payload"]["stop_reason"] == "end_turn"
+        assert mi["payload"]["ttft_ms"] >= 0
+        assert mi["payload"]["streaming_duration_ms"] >= 0
+        # Input messages parsed from the request body too.
+        assert mi["payload"]["messages"] == [
+            {"role": "system", "content": "You are terse."},
+            {"role": "user", "content": "Say hello"},
+        ]
+
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["model"] == _MODEL_ID
+        assert cost["payload"]["cost_usd"] is not None and cost["payload"]["cost_usd"] > 0
+        assert cost["span_id"] == mi["span_id"]
 
         provider.disconnect()
 
@@ -314,12 +316,19 @@ class TestConverseStream:
         assert mi["payload"]["method"] == "converse_stream"
         assert mi["payload"]["latency_ms"] > 0
 
-        # Deferred-aggregation limitation (see module docstring): no usage/output
-        # parsing for the streaming path, hence no cost.record.
-        assert mi["payload"]["output_message"] is None
-        assert "usage" not in mi["payload"]
-        assert "ttft_ms" not in mi["payload"]
-        assert not find_events(events, "cost.record")
+        # BUG-1 fixed: the Converse event stream is aggregated.
+        assert mi["payload"]["output_message"] == {
+            "role": "assistant",
+            "content": "Paris is the capital of France.",
+        }
+        assert mi["payload"]["usage"] == {"prompt_tokens": 9, "completion_tokens": 7, "total_tokens": 16}
+        assert mi["payload"]["stop_reason"] == "end_turn"
+        assert mi["payload"]["ttft_ms"] >= 0
+        assert mi["payload"]["messages"] == [{"role": "user", "content": "What is the capital of France?"}]
+
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["cost_usd"] is not None and cost["payload"]["cost_usd"] > 0
+        assert cost["span_id"] == mi["span_id"]
 
         provider.disconnect()
 

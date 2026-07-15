@@ -102,5 +102,52 @@
     "shipped_column": "Strands Agents",
     "guarded_nodes": [],
     "guarded_column": ""
+  },
+  "langgraph-s2": {
+    "lane": "langgraph-s2",
+    "shipped_nodes": [
+      "compliance-checker",
+      "credit-analyst",
+      "decision",
+      "risk-assessor",
+      "underwriting-supervisor"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "compliance-checker",
+      "credit-analyst",
+      "decision",
+      "risk-assessor",
+      "underwriting-supervisor"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "crewai-s2": {
+    "lane": "crewai-s2",
+    "shipped_nodes": [
+      "Crew Manager",
+      "billing-specialist",
+      "network-specialist"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "Crew Manager",
+      "billing-specialist",
+      "network-specialist"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "llamaindex-s2": {
+    "lane": "llamaindex-s2",
+    "shipped_nodes": [
+      "clause-risk",
+      "contract-intake"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "clause-risk",
+      "contract-intake"
+    ],
+    "guarded_column": "multi-agent"
   }
 }

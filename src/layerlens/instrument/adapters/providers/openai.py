@@ -45,25 +45,48 @@ class OpenAIProvider(MonkeyPatchProvider):
                 return out
         except (AttributeError, IndexError):
             pass
-        return None
+        # Responses API (OpenAI's default for new / o-series models) has no
+        # ``.choices``; its assistant text lives in ``.output_text`` / ``.output``.
+        return _extract_responses_output(response)
 
     @staticmethod
     def extract_meta(response: Any) -> Dict[str, Any]:
         meta: Dict[str, Any] = {}
         usage = getattr(response, "usage", None)
         if usage is not None:
-            details = getattr(usage, "prompt_tokens_details", None)
-            cached = _opt_int(getattr(details, "cached_tokens", None)) if details is not None else None
-            completion_details = getattr(usage, "completion_tokens_details", None)
+            # Chat Completions expose ``prompt_tokens`` / ``completion_tokens``;
+            # the Responses API exposes ``input_tokens`` / ``output_tokens``.
+            # Accept either spelling so tokens (and therefore cost) populate for
+            # both surfaces instead of silently resolving to zero.
+            prompt = _opt_int(getattr(usage, "prompt_tokens", None))
+            if prompt is None:
+                prompt = _opt_int(getattr(usage, "input_tokens", None))
+            completion = _opt_int(getattr(usage, "completion_tokens", None))
+            if completion is None:
+                completion = _opt_int(getattr(usage, "output_tokens", None))
+            total = _opt_int(getattr(usage, "total_tokens", None))
+            if not total:
+                total = (prompt or 0) + (completion or 0)
+            # Cached-token details: chat -> prompt_tokens_details;
+            # responses -> input_tokens_details.
+            prompt_details = getattr(usage, "prompt_tokens_details", None) or getattr(
+                usage, "input_tokens_details", None
+            )
+            cached = _opt_int(getattr(prompt_details, "cached_tokens", None)) if prompt_details is not None else None
+            # Reasoning-token details: chat -> completion_tokens_details;
+            # responses -> output_tokens_details.
+            completion_details = getattr(usage, "completion_tokens_details", None) or getattr(
+                usage, "output_tokens_details", None
+            )
             reasoning = (
                 _opt_int(getattr(completion_details, "reasoning_tokens", None))
                 if completion_details is not None
                 else None
             )
             meta["usage"] = {
-                "prompt_tokens": _opt_int(getattr(usage, "prompt_tokens", 0)) or 0,
-                "completion_tokens": _opt_int(getattr(usage, "completion_tokens", 0)) or 0,
-                "total_tokens": _opt_int(getattr(usage, "total_tokens", 0)) or 0,
+                "prompt_tokens": prompt or 0,
+                "completion_tokens": completion or 0,
+                "total_tokens": total or 0,
                 **({"cached_tokens": cached} if cached is not None else {}),
                 **({"reasoning_tokens": reasoning} if reasoning is not None else {}),
             }
@@ -89,15 +112,17 @@ class OpenAIProvider(MonkeyPatchProvider):
     def extract_tool_calls(response: Any) -> list[dict[str, Any]]:
         try:
             choices = response.choices
-            if not choices:
-                return []
-            msg = choices[0].message
-            raw = getattr(msg, "tool_calls", None) or []
-            if not _is_iterable(raw):
-                return []
-            return [_serialize_tool_call(tc) for tc in raw]
+            if choices:
+                msg = choices[0].message
+                raw = getattr(msg, "tool_calls", None) or []
+                if not _is_iterable(raw):
+                    return []
+                return [_serialize_tool_call(tc) for tc in raw]
         except (AttributeError, IndexError):
-            return []
+            pass
+        # Responses API surfaces tool invocations as ``function_call`` items in
+        # ``.output`` rather than ``choices[0].message.tool_calls``.
+        return _responses_tool_calls(response)
 
     @staticmethod
     def aggregate_stream(chunks: list[Any]) -> Any:
@@ -201,6 +226,79 @@ def _maybe_load_json(s: Any) -> Any:
         snippet = s if len(s) <= 200 else s[:200] + "..."
         log.warning("malformed tool_call JSON arguments (%s): %r", exc, snippet)
         return s
+
+
+def _is_responses_shaped(response: Any) -> bool:
+    """True for a Responses-API object: no ``.choices`` but carries
+    ``.output`` / ``.output_text``.
+
+    This deliberately excludes embeddings responses (which expose ``.data`` and
+    neither ``.output`` nor ``.output_text``) so embeddings keep their honest
+    ``output_message=None``.
+    """
+    if getattr(response, "choices", None) is not None:
+        return False
+    return hasattr(response, "output_text") or hasattr(response, "output")
+
+
+def _responses_text(response: Any) -> Any:
+    """Aggregate assistant text from a Responses object.
+
+    Prefers the SDK's computed ``output_text`` convenience; falls back to
+    walking ``output`` message items and joining their ``output_text`` content
+    parts. Returns ``None`` when there is no text (e.g. a tool-call-only turn),
+    mirroring chat's ``content=None`` in that case.
+    """
+    output_text = getattr(response, "output_text", None)
+    if isinstance(output_text, str) and output_text:
+        return output_text
+    parts: list[str] = []
+    for item in getattr(response, "output", None) or []:
+        if getattr(item, "type", None) != "message":
+            continue
+        for chunk in getattr(item, "content", None) or []:
+            text = getattr(chunk, "text", None)
+            if isinstance(text, str) and text:
+                parts.append(text)
+    if parts:
+        return "".join(parts)
+    return None
+
+
+def _responses_tool_calls(response: Any) -> list[Dict[str, Any]]:
+    """Normalize Responses ``function_call`` output items to our tool-call shape."""
+    calls: list[Dict[str, Any]] = []
+    for item in getattr(response, "output", None) or []:
+        if getattr(item, "type", None) != "function_call":
+            continue
+        calls.append(
+            {
+                "id": getattr(item, "call_id", None) or getattr(item, "id", None),
+                "type": "function",
+                "tool_name": getattr(item, "name", None),
+                "arguments": _maybe_load_json(getattr(item, "arguments", None)),
+            }
+        )
+    return calls
+
+
+def _extract_responses_output(response: Any) -> Any:
+    """Build a chat-shaped ``output_message`` from a Responses object.
+
+    Returns ``None`` for non-Responses objects (chat handled by the caller,
+    embeddings honestly carry no output message) and for a Responses object
+    that yielded neither text nor tool calls.
+    """
+    if not _is_responses_shaped(response):
+        return None
+    content = _responses_text(response)
+    tool_calls = _responses_tool_calls(response)
+    if content is None and not tool_calls:
+        return None
+    out: Dict[str, Any] = {"role": "assistant", "content": content}
+    if tool_calls:
+        out["tool_calls"] = tool_calls
+    return out
 
 
 class _StreamedChatResponse:
