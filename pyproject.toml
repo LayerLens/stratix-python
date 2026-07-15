@@ -70,6 +70,33 @@ semantic-kernel = ["semantic-kernel>=1.0.0; python_version >= '3.10'"]
 mcp = ["mcp>=0.9; python_version >= '3.10'"]
 a2a = ["a2a-sdk>=0.1; python_version >= '3.10'"]
 agui = []
+# DSPy renamed its distribution from ``dspy-ai`` to ``dspy`` at 2.6; 3.x requires
+# Python 3.10+, so gate the extra to keep the 3.9 lockfile resolvable.
+dspy = ["dspy>=2.6; python_version >= '3.10'"]
+instructor = ["instructor>=1.3.0"]
+# Marvin 3.x runs on Pydantic AI. marvin 3.2.7 declares ``pydantic-ai>=1.9.0``
+# with NO upper bound, but breaks at RUNTIME from 1.95.0 (its streaming.py calls
+# the pre-1.95 ModelResponsePartsManager signature) — the dependency still
+# RESOLVES, so an uncapped `pip install layerlens[marvin]` yields an install that
+# raises TypeError on the first primitive call. Bisected: 1.94.0 last-good,
+# 1.95.0 first-broken. Cap here until marvin corrects its own metadata; this is
+# deliberately NOT added to ``all-frameworks``, so the bound cannot leak onto
+# users who only wanted the pydantic-ai adapter.
+marvin = [
+  "marvin>=3.0; python_version >= '3.10'",
+  "pydantic-ai>=1.9,<1.95; python_version >= '3.10'",
+]
+# Mirascope v2 relocated the call surface from ``mirascope.core.<provider>.call``
+# to ``mirascope.llm.call``; the adapter targets v2, so exclude the v1 line
+# rather than silently no-op against it.
+mirascope = ["mirascope[openai]>=2.0,<3; python_version >= '3.10'"]
+browser-use = ["browser-use>=0.13; python_version >= '3.11'"]
+# Ingestion tier: no runtime dependency. The OpenInference semantic conventions
+# are attribute-key strings the producer already stamped, so the importer reads
+# exported spans with nothing installed. Mirrors the empty ``agui`` extra.
+openinference = []
+# OpenRouter is an OpenAI-compatible gateway — the openai SDK IS the client.
+providers-openrouter = ["openai>=1.0.0"]
 all-providers = [
   "openai>=1.0.0",
   "anthropic>=0.18.0",

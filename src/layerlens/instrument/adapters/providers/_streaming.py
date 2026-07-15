@@ -99,6 +99,8 @@ def stream_chunks_sync(
     extra_params: Dict[str, Any],
     provider: Optional[str] = None,
     framework: Optional[str] = None,
+    extract_provider_cost: Optional[Callable[[Any], Optional[float]]] = None,
+    provider_cost_only: bool = False,
 ) -> Iterator[Any]:
     """Generator that yields every chunk and emits the consolidated event on close.
 
@@ -141,6 +143,8 @@ def stream_chunks_sync(
             streaming_duration_ms=latency_ms,
             provider=provider,
             framework=framework,
+            extract_provider_cost=extract_provider_cost,
+            provider_cost_only=provider_cost_only,
         )
 
     return generator()
@@ -161,6 +165,8 @@ def stream_chunks_async(
     extra_params: Dict[str, Any],
     provider: Optional[str] = None,
     framework: Optional[str] = None,
+    extract_provider_cost: Optional[Callable[[Any], Optional[float]]] = None,
+    provider_cost_only: bool = False,
 ) -> AsyncIterator[Any]:
     """Async sibling of :func:`stream_chunks_sync`."""
     wrapper = StreamingResponseWrapper(event_name, kwargs, start)
@@ -199,6 +205,8 @@ def stream_chunks_async(
             streaming_duration_ms=latency_ms,
             provider=provider,
             framework=framework,
+            extract_provider_cost=extract_provider_cost,
+            provider_cost_only=provider_cost_only,
         )
 
     return generator()

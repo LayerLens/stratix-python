@@ -32,6 +32,13 @@ class OpenAIProvider(MonkeyPatchProvider):
     name = "openai"
     capture_params = _CAPTURE_PARAMS
 
+    #: Event-name prefix for the patched surfaces. OpenAI-compatible gateways
+    #: reached through this same client (OpenRouter) override it so the
+    #: ``model.invoke.name`` names the surface that actually served the call
+    #: instead of claiming ``openai.*``. ``_derive_operation`` reads the suffix,
+    #: so it resolves identically for any prefix.
+    event_prefix: str = "openai"
+
     @staticmethod
     def extract_output(response: Any) -> Any:
         try:
@@ -143,11 +150,11 @@ class OpenAIProvider(MonkeyPatchProvider):
         completions = target.chat.completions
         orig = completions.create
         self._originals["chat.completions.create"] = orig
-        completions.create = self._wrap_auto("openai.chat.completions.create", orig)
+        completions.create = self._wrap_auto(f"{self.event_prefix}.chat.completions.create", orig)
         if hasattr(completions, "acreate"):
             async_orig = completions.acreate
             self._originals["chat.completions.acreate"] = async_orig
-            completions.acreate = self._wrap_async("openai.chat.completions.create", async_orig)
+            completions.acreate = self._wrap_async(f"{self.event_prefix}.chat.completions.create", async_orig)
 
     def _patch_responses(self, target: Any) -> None:
         if not hasattr(target, "responses"):
@@ -156,7 +163,7 @@ class OpenAIProvider(MonkeyPatchProvider):
         if hasattr(responses, "create"):
             orig = responses.create
             self._originals["responses.create"] = orig
-            responses.create = self._wrap_auto("openai.responses.create", orig)
+            responses.create = self._wrap_auto(f"{self.event_prefix}.responses.create", orig)
 
     def _patch_embeddings(self, target: Any) -> None:
         if not hasattr(target, "embeddings"):
@@ -165,7 +172,7 @@ class OpenAIProvider(MonkeyPatchProvider):
         if hasattr(embeddings, "create"):
             orig = embeddings.create
             self._originals["embeddings.create"] = orig
-            embeddings.create = self._wrap_auto("openai.embeddings.create", orig)
+            embeddings.create = self._wrap_auto(f"{self.event_prefix}.embeddings.create", orig)
 
 
 def _opt_int(val: Any) -> Any:

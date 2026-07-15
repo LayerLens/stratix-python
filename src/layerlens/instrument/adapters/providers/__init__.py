@@ -29,6 +29,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "GoogleVertexProvider": ("google_vertex", "GoogleVertexProvider"),
     "OllamaProvider": ("ollama", "OllamaProvider"),
     "LiteLLMProvider": ("litellm", "LiteLLMProvider"),
+    "OpenRouterProvider": ("openrouter", "OpenRouterProvider"),
 }
 
 
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
     from .bedrock import BedrockProvider as BedrockProvider
     from .litellm import LiteLLMProvider as LiteLLMProvider
     from .anthropic import AnthropicProvider as AnthropicProvider
+    from .openrouter import OpenRouterProvider as OpenRouterProvider
     from .azure_openai import AzureOpenAIProvider as AzureOpenAIProvider
     from .google_vertex import GoogleVertexProvider as GoogleVertexProvider
 

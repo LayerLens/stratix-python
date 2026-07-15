@@ -45,6 +45,8 @@ def emit_llm_events(
     streaming_duration_ms: Optional[float] = None,
     provider: Optional[str] = None,
     framework: Optional[str] = None,
+    extract_provider_cost: Optional[Callable[[Any], Optional[float]]] = None,
+    provider_cost_only: bool = False,
 ) -> None:
     """Emit ``model.invoke`` + optional ``tool.call`` + ``cost.record`` events.
 
@@ -61,6 +63,9 @@ def emit_llm_events(
     (litellm shows 'litellm' not the routed provider; azure_openai shows
     'azure_openai' not 'openai') — S19/F12. ``cost.record.provider`` stays the
     honest underlying provider, unchanged.
+
+    ``extract_provider_cost`` / ``provider_cost_only`` carry a gateway's own
+    billed charge into the cost record — see :func:`_emit_cost`.
     """
     collector = _current_collector.get()
     if collector is None:
@@ -136,6 +141,12 @@ def emit_llm_events(
 
     usage = response_meta.get("usage")
     if usage:
+        provider_cost: Optional[float] = None
+        if extract_provider_cost is not None:
+            try:
+                provider_cost = extract_provider_cost(response)
+            except Exception:  # noqa: BLE001 — a broken cost probe must not fail the call
+                provider_cost = None
         _emit_cost(
             collector,
             provider=resolved,
@@ -146,6 +157,8 @@ def emit_llm_events(
             parent_span_id=parent_span_id,
             service_tier=response_meta.get("service_tier"),
             framework=framework,
+            provider_cost_usd=provider_cost,
+            provider_cost_only=provider_cost_only,
         )
 
 
@@ -228,6 +241,8 @@ def _emit_cost(
     parent_span_id: Optional[str],
     service_tier: Optional[str] = None,
     framework: Optional[str] = None,
+    provider_cost_usd: Optional[float] = None,
+    provider_cost_only: bool = False,
 ) -> None:
     """Emit cost.record. Accepts either a dict usage or NormalizedTokenUsage.
 
@@ -235,6 +250,18 @@ def _emit_cost(
     (re)computed at the collector chokepoint (A1) from this payload, which is why
     ``service_tier`` is threaded into the payload — so the central formula can
     apply tier pricing uniformly.
+
+    ``provider_cost_usd`` is a charge the gateway ITSELF reported (OpenRouter
+    usage accounting). That is a billed fact rather than our estimate of one, so
+    it outranks the catalog and is stamped ``cost_source="provider"`` — a
+    downstream consumer must be able to tell a real charge from a computed guess.
+
+    ``provider_cost_only`` marks a gateway whose rates no bundled table holds: if
+    it reported nothing, we emit NOTHING. Pricing a routed ``vendor/model`` slug
+    from our own catalog would attach a number the customer was never billed, and
+    the collector chokepoint would happily do exactly that for any slug that
+    resolves (``gpt-4o`` via OpenRouter is priced at OpenAI list rates, which
+    OpenRouter does not charge).
     """
     if isinstance(usage, NormalizedTokenUsage):
         normalized = usage
@@ -253,16 +280,29 @@ def _emit_cost(
     else:
         return
 
-    cost_usd = (
-        calculate_cost(model or "", normalized, pricing_table or PRICING, service_tier=service_tier) if model else None
-    )
+    if provider_cost_usd is not None:
+        cost_usd: Optional[float] = provider_cost_usd
+    elif provider_cost_only:
+        return
+    else:
+        cost_usd = (
+            calculate_cost(model or "", normalized, pricing_table or PRICING, service_tier=service_tier)
+            if model
+            else None
+        )
 
     cost_payload: Dict[str, Any] = {
         "provider": provider,
         "model": model,
-        "cost_usd": cost_usd,
         **usage_payload,
+        # Set AFTER the usage spread: the price is decided above and must never be
+        # clobbered by a like-named key in a provider's raw usage block.
+        "cost_usd": cost_usd,
     }
+    if provider_cost_usd is not None:
+        # Provenance of a billed fact. Absent => our catalog priced it (or it is
+        # genuinely unpriced) — never let the two be confused downstream.
+        cost_payload["cost_source"] = "provider"
     # Integration name (S19/F12) — distinct from `provider`, the honest
     # underlying provider that priced the call (unchanged).
     if framework:

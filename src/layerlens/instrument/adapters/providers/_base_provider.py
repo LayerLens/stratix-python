@@ -38,6 +38,14 @@ class MonkeyPatchProvider(BaseAdapter):
     #: Subclasses may set a per-provider pricing table override (Azure, Bedrock).
     pricing_table: Optional[dict[str, dict[str, float]]] = None
 
+    #: True for a gateway that bills the caller at its own rates, which no table we
+    #: ship holds (OpenRouter). Such a gateway is the SOLE authority on cost: when
+    #: it reports no charge, ``cost.record`` is not emitted at all, because pricing
+    #: its routed ``vendor/model`` slug from the bundled catalog would invent a
+    #: charge the customer was never billed. Providers we DO have rates for leave
+    #: this False and keep the catalog estimate.
+    provider_cost_only: bool = False
+
     def __init__(self) -> None:
         self._client: Any = None
         self._originals: Dict[str, Any] = {}
@@ -66,6 +74,14 @@ class MonkeyPatchProvider(BaseAdapter):
     @staticmethod
     def derive_params(kwargs: Dict[str, Any]) -> Dict[str, Any]:  # noqa: ARG004
         return {}
+
+    # Optional hook: gateways that report the real billed charge on the response
+    # (OpenRouter usage accounting) return it here. A charge the provider reports
+    # is a billed FACT, so it outranks any catalog estimate. ``None`` means the
+    # provider reported nothing — NOT that the call was free.
+    @staticmethod
+    def extract_provider_cost(response: Any) -> Optional[float]:  # noqa: ARG004
+        return None
 
     # Optional hook (LAY-3455): routing providers (LiteLLM) override this to
     # attribute the call to the underlying provider that actually served the
@@ -120,6 +136,8 @@ class MonkeyPatchProvider(BaseAdapter):
                 extra_params=type(self).derive_params(kwargs),
                 provider=type(self).classify_provider(event_name, kwargs),
                 framework=self.name,
+                extract_provider_cost=type(self).extract_provider_cost,
+                provider_cost_only=type(self).provider_cost_only,
             )
             return response
 
@@ -157,6 +175,8 @@ class MonkeyPatchProvider(BaseAdapter):
                 extra_params=type(self).derive_params(kwargs),
                 provider=type(self).classify_provider(event_name, kwargs),
                 framework=self.name,
+                extract_provider_cost=type(self).extract_provider_cost,
+                provider_cost_only=type(self).provider_cost_only,
             )
             return response
 
@@ -186,6 +206,8 @@ class MonkeyPatchProvider(BaseAdapter):
             extra_params=type(self).derive_params(kwargs),
             provider=type(self).classify_provider(event_name, kwargs),
             framework=self.name,
+            extract_provider_cost=type(self).extract_provider_cost,
+            provider_cost_only=type(self).provider_cost_only,
         )
 
     def _wrap_async_stream_iterator(
@@ -210,6 +232,8 @@ class MonkeyPatchProvider(BaseAdapter):
             extra_params=type(self).derive_params(kwargs),
             provider=type(self).classify_provider(event_name, kwargs),
             framework=self.name,
+            extract_provider_cost=type(self).extract_provider_cost,
+            provider_cost_only=type(self).provider_cost_only,
         )
 
     def disconnect(self) -> None:

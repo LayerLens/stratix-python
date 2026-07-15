@@ -154,3 +154,69 @@ tests = [
 python = "3.11"
 install = ["chromadb==1.5.9"]
 tests = ["tests/instrument/adapters/frameworks/test_vector_store.py"]
+
+# --- ADP-PORT (2026-07-15). Pins are the versions each suite was VERIFIED green
+# on, extracted from the per-adapter audit venvs at /Users/lean/code/layerlens/.audit-venvs/.
+# Two pins below are LOAD-BEARING and must not be relaxed without re-verifying —
+# see the comment on each.
+
+[frameworks.dspy]
+python = "3.11"
+# litellm is pinned because DSPy pulls it transitively and 1.92.0 fails to BUILD
+# on this toolchain (its Rust dep needs a Cargo `edition2024` that ships with a
+# newer Cargo than the pinned one); 1.90.2 resolves from wheels.
+install = ["dspy==3.2.1", "litellm==1.90.2", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_dspy.py",
+    "tests/instrument/adapters/frameworks/test_dspy_floor.py",
+]
+
+[frameworks.instructor]
+python = "3.11"
+install = ["instructor==1.15.4", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_instructor.py",
+    "tests/instrument/adapters/frameworks/test_instructor_floor.py",
+]
+
+[frameworks.marvin]
+python = "3.11"
+# pydantic-ai is pinned because marvin 3.2.7 declares `>=1.9.0` with NO upper
+# bound but breaks at RUNTIME from 1.95.0 (pre-1.95 ModelResponsePartsManager
+# signature). Bisected: 1.94.0 last-good, 1.95.0 first-broken. An unpinned row
+# resolves happily and then TypeErrors on the first primitive call.
+install = ["marvin==3.2.7", "pydantic-ai==1.94.0", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_marvin.py",
+    "tests/instrument/adapters/frameworks/test_marvin_floor.py",
+]
+
+[frameworks.mirascope]
+python = "3.11"
+# v2 line only: the adapter targets `mirascope.llm.call`, which does not exist
+# on v1 (`mirascope.core.*`).
+install = ["mirascope[openai]==2.5.0"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_mirascope.py",
+    "tests/instrument/adapters/frameworks/test_mirascope_floor.py",
+]
+
+[frameworks.browser_use]
+python = "3.11"
+# No browser is launched: the suites drive duck-typed AgentHistoryList-shaped
+# objects, so the row stays hermetic and needs no chromium download.
+install = ["browser-use==0.13.4"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_browser_use.py",
+    "tests/instrument/adapters/frameworks/test_browser_use_floor.py",
+]
+
+[frameworks.openinference]
+python = "3.11"
+# Ingestion tier: the adapter has no runtime dep, but the suites build REAL OTel
+# ReadableSpans, so the row installs the SDK + the semantic conventions.
+install = ["openinference-semantic-conventions==0.1.30", "opentelemetry-sdk==1.43.0"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_openinference.py",
+    "tests/instrument/adapters/frameworks/test_openinference_floor.py",
+]
