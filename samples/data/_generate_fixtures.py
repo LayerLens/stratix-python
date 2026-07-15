@@ -2268,6 +2268,34 @@ def main() -> None:
             _gen(client)
         except Exception as _exc:  # noqa: BLE001 - a missing framework/cred is a skip
             print(f"  [skip] {_gen.__name__}: {type(_exc).__name__}: {_exc}")
+
+    # ADP-W2 Family-B recorders — one module per adapter under
+    # ``samples/data/generators/``. Same best-effort contract (a missing
+    # framework / credential / provisioned agent is a skip, not a crash), so a
+    # single-framework audit venv regenerates just its adapter's fixtures. Each
+    # module exposes ``generate_<adapter>_single`` and ``generate_<adapter>_multi``
+    # (bedrock_agents_multi requires a provisioned multi-collaborator supervisor
+    # agent and is skipped where none exists — see the module docstring).
+    if HERE not in sys.path:
+        sys.path.insert(0, HERE)
+    _W2_ADAPTERS = (
+        "agno", "autogen", "bedrock_agents", "haystack", "ms_agent_framework",
+        "openai_agents", "pydantic_ai", "semantic_kernel", "smolagents", "strands",
+    )
+    for _name in _W2_ADAPTERS:
+        try:
+            _mod = importlib.import_module(f"generators.{_name}")
+        except Exception as _exc:  # noqa: BLE001 - a missing framework is a skip
+            print(f"  [skip] generators.{_name}: {type(_exc).__name__}: {_exc}")
+            continue
+        for _suffix in ("single", "multi"):
+            _fn = getattr(_mod, f"generate_{_name}_{_suffix}", None)
+            if _fn is None:
+                continue
+            try:
+                _fn(client)
+            except Exception as _exc:  # noqa: BLE001 - a missing cred/agent is a skip
+                print(f"  [skip] generate_{_name}_{_suffix}: {type(_exc).__name__}: {_exc}")
     print("=== done ===")
 
 

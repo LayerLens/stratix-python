@@ -80,6 +80,26 @@ INDUSTRY_SAMPLES = [
     "legal_contract_rag",
     "legal_agentworkflow",
     "travel_itinerary",
+    # ADP-W2 Family-B (record-real-once) — frameworks/platforms wave A
+    "insurance_claims_agno",
+    "insurance_underwriting_agno_team",
+    "telecom_autogen_triage",
+    "telecom_autogen_groupchat",
+    "government_benefits_bedrock",
+    "legal_haystack_clause_qa",
+    "legal_haystack_rag",
+    "energy_msagent_forecast",
+    "energy_msagent_ops",
+    "retail_openai_agents_orders",
+    "retail_openai_agents_triage",
+    "financialservices_pydantic_extract",
+    "financialservices_pydantic_underwriting",
+    "healthcare_sk_triage",
+    "healthcare_sk_care_panel",
+    "media_smolagents_newsroom",
+    "media_smolagents_research_team",
+    "manufacturing_strands_qa",
+    "manufacturing_strands_defect_swarm",
 ]
 
 COWORK_SAMPLES = [
@@ -2247,8 +2267,8 @@ class TestSampleCompleteness:
 
     def test_all_54_samples_covered(self):
         """Verify ALL_SAMPLE_PATHS contains exactly 66 entries."""
-        assert len(ALL_SAMPLE_PATHS) == 78, (
-            f"Expected 78 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
+        assert len(ALL_SAMPLE_PATHS) == 97, (
+            f"Expected 97 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
         )
 
     def test_all_sample_paths_exist(self):
@@ -2262,6 +2282,6 @@ class TestSampleCompleteness:
 
     def test_mocked_samples_cover_all(self):
         """ALL_MOCKED_SAMPLES should produce exactly 66 entries."""
-        assert len(ALL_MOCKED_SAMPLES) == 78, (
-            f"Expected 78 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
+        assert len(ALL_MOCKED_SAMPLES) == 97, (
+            f"Expected 97 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
         )
