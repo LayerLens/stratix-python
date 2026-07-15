@@ -170,6 +170,77 @@ class TestPayloadContract:
         )
         assert span_to_events(rec)[0][1]["embedding_count"] == 3
 
+    # --- D4: real instrumentors emit the FLATTENED embeddings form -----------
+
+    def test_embedding_count_from_the_flattened_form_real_instrumentors_emit(self) -> None:
+        """D4: OTel attributes cannot hold nested objects, so a REAL OpenInference
+        instrumentor emits ``embedding.embeddings.{i}.embedding.vector`` — never a
+        list. Counting only the list form loses the count on every real span.
+        Mirrors the proven ``retrieval.query`` approach (distinct integer indices).
+        """
+        rec = _record(
+            "EMBEDDING",
+            attributes={
+                "embedding.model_name": "text-embedding-3-small",
+                "embedding.embeddings.0.embedding.vector": [0.1, 0.2],
+                "embedding.embeddings.0.embedding.text": "first chunk",
+                "embedding.embeddings.1.embedding.vector": [0.3, 0.4],
+                "embedding.embeddings.1.embedding.text": "second chunk",
+            },
+        )
+        # Two DISTINCT indices (0, 1) across four flattened keys.
+        assert span_to_events(rec)[0][1]["embedding_count"] == 2
+
+    def test_embedding_count_is_omitted_never_zero_filled_when_absent(self) -> None:
+        """D4 honesty: a count that cannot be determined is OMITTED, never 0 —
+        a zero embedding count is a claim the span does not support."""
+        rec = _record("EMBEDDING", attributes={"embedding.model_name": "m"})
+        assert "embedding_count" not in span_to_events(rec)[0][1]
+
+    # --- D3: the TOOL input fallback must be first-NON-EMPTY -----------------
+
+    def test_an_empty_tool_parameters_falls_back_to_the_real_input(self) -> None:
+        """D3 (Go semantics): ``tool.parameters=""`` must NOT shadow ``input.value``.
+
+        A present-but-EMPTY tool.parameters is not a value — an ``is not None``
+        fallback yields input='' and silently LOSES the real tool input the span
+        carries. First-non-empty keeps it (openinference.go oiString).
+        """
+        rec = _record(
+            "TOOL",
+            "web_search",
+            attributes={
+                "tool.name": "web_search",
+                "tool.parameters": "",
+                "input.value": '{"query": "layerlens pricing"}',
+            },
+        )
+        p = span_to_events(rec, capture_content=True)[0][1]
+        assert p["input"] == '{"query": "layerlens pricing"}', (
+            f"empty tool.parameters must fall through to input.value, got {p.get('input')!r} "
+            f"— the real tool input was LOST"
+        )
+
+    def test_a_populated_tool_parameters_still_wins_over_input_value(self) -> None:
+        """D3 keeps the precedence: a NON-empty tool.parameters is preferred."""
+        rec = _record(
+            "TOOL",
+            "web_search",
+            attributes={
+                "tool.name": "web_search",
+                "tool.parameters": '{"q": "real params"}',
+                "input.value": "ignored",
+            },
+        )
+        assert span_to_events(rec, capture_content=True)[0][1]["input"] == '{"q": "real params"}'
+
+    def test_tool_input_omitted_when_both_sources_are_empty(self) -> None:
+        """D3 honesty: nothing to report stays omitted, never an empty string."""
+        rec = _record(
+            "TOOL", "t", attributes={"tool.name": "t", "tool.parameters": "", "input.value": ""}
+        )
+        assert "input" not in span_to_events(rec, capture_content=True)[0][1]
+
     def test_reranker_fields(self) -> None:
         rec = _record(
             "RERANKER",
@@ -301,6 +372,44 @@ class TestHonestySkips:
     def test_error_absent_for_a_clean_span(self) -> None:
         assert "error" not in span_to_events(_record("LLM", status="OK"))[0][1]
         assert "error" not in span_to_events(_record("LLM", status="UNSET"))[0][1]
+
+    # --- D2: the error SET-CONDITION is the span status, never the message ---
+
+    def test_a_non_errored_span_with_a_status_message_is_not_labelled_errored(self) -> None:
+        """D2 (Go semantics): a status=OK span carrying a description is NOT an error.
+
+        OTel lets a successful span carry a status description. Setting ``error``
+        from a truthy message REGARDLESS of status (the ateam behaviour) labels a
+        healthy span as failed — a fabricated failure the Go bridge does not emit.
+        """
+        for status in ("OK", "UNSET"):
+            rec = _record("LLM", status=status, status_message="cache miss; refetched")
+            p = span_to_events(rec, capture_content=True)[0][1]
+            assert "error" not in p, (
+                f"status={status} with a description must NOT set error "
+                f"(got {p.get('error')!r}) — a non-errored span is not errored"
+            )
+
+    def test_a_non_errored_span_with_a_message_is_not_errored_under_privacy_mode(self) -> None:
+        """The D2 set-condition holds with content capture OFF too — the privacy
+        gate must not resurrect the error signal on a clean span."""
+        rec = _record("LLM", status="OK", status_message="cache miss; refetched")
+        assert "error" not in span_to_events(rec, capture_content=False)[0][1]
+
+    def test_an_errored_span_still_reports_its_message(self) -> None:
+        """D2 keeps the ERROR path intact: message when errored + capturing."""
+        rec = _record("LLM", status="ERROR", status_message="rate limited")
+        assert span_to_events(rec, capture_content=True)[0][1]["error"] == "rate limited"
+
+    def test_an_errored_span_with_no_message_falls_back_to_the_literal(self) -> None:
+        """D2 keeps the content-free literal fallback when the status is ERROR
+        but the producer left the message empty."""
+        assert (
+            span_to_events(_record("LLM", status="ERROR", status_message=""), capture_content=True)[
+                0
+            ][1]["error"]
+            == "span status ERROR"
+        )
 
     def test_names_degrade_to_declared_sentinels(self) -> None:
         assert span_to_events(_record("TOOL", ""))[0][1]["tool_name"] == "unknown"

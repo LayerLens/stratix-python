@@ -26,13 +26,26 @@ This mapping is a CROSS-LANGUAGE CONTRACT: atlas re-implements it in Go at
 here must stay identical to that file — change them together or an OpenInference
 trace renders differently depending on whether it arrived via the SDK or OTLP.
 
-KNOWN DIVERGENCE (tracked): ``_common`` stamps a content-free ``status``
-(OK/ERROR/UNSET) that the Go mirror does not yet emit. It is REQUIRED here because
-this side runs the collector-tier redaction backstop, which strips ``error`` from
-model.invoke / agent.output under the default ``capture_content=False`` — leaving a
-failed LLM call indistinguishable from a successful one without it (LAY-3620). The
-Go mirror stamps only ``error`` (openinference.go:83-91) and needs the same
-``status`` field to re-converge.
+The contract is PINNED, not merely documented: ``tests/instrument/adapters/frameworks/
+test_openinference_conformance.py`` feeds a shared span corpus through this module and
+asserts the events match a committed oracle generated from the REAL Go bridge, and
+atlas's ``TestOpenInferenceConformanceOracleIsCurrent`` fails if the Go side drifts
+from that same oracle. Drift on either side is caught. Change the mapping here and
+you must regenerate the oracle — see ``tests/.../oi_conformance/README.md``.
+
+KNOWN DIVERGENCES (deliberate, encoded as named exceptions in the conformance lane):
+
+* ``_common`` stamps a content-free ``status`` (OK/ERROR/UNSET) the Go mirror does
+  not emit. REQUIRED here because this side runs the collector-tier redaction
+  backstop, which strips ``error`` from model.invoke / agent.output under the default
+  ``capture_content=False`` — leaving a failed LLM call indistinguishable from a
+  successful one without it (LAY-3620). The Go mirror stamps only ``error`` and needs
+  the same ``status`` field to re-converge.
+* D1 — the duration field NAME: ``latency_ms`` here (the SDK canon, see
+  ``tests/instrument/_event_schema.py``) vs ``duration_ms`` in Go (the OTLP path's
+  platform-wide convention — convert.go/merge.go/writer.go all use it). Renaming
+  either side alone would break it against its OWN siblings, so it is documented and
+  LEFT. The lane exempts the name and still pins the value.
 
 Usage::
 
@@ -155,6 +168,46 @@ def _set_if_capturing(
         payload[key] = value
 
 
+def _first_non_empty(attrs: Dict[str, Any], *keys: str) -> Any:
+    """The first attribute among *keys* that carries an actual value, else None.
+
+    Mirrors the Go bridge's ``oiString`` (openinference.go): a present-but-EMPTY
+    string is NOT a value — it falls through to the next key. An ``is not None``
+    test would let ``tool.parameters=""`` shadow a populated ``input.value`` and
+    silently lose the real payload (D3). A non-string value is returned as-is;
+    :func:`_safe_str` renders it, matching the Go stringify.
+    """
+    for key in keys:
+        value = attrs.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            if value:
+                return value
+            continue
+        return value
+    return None
+
+
+def _flattened_index_count(attrs: Dict[str, Any], prefix_key: str) -> int:
+    """Count DISTINCT integer indices among ``<prefix_key>.{i}.*`` flattened keys.
+
+    OTel attributes are scalars (or scalar arrays) — they CANNOT hold a nested
+    object — so a real OpenInference instrumentor flattens collections into
+    indexed keys. Only integer heads count: ``<prefix>.foo.bar`` is some other
+    attribute, not a collection member, and counting it would inflate the total.
+    """
+    indices: set[int] = set()
+    prefix = prefix_key + "."
+    for key in attrs:
+        if key.startswith(prefix):
+            head = key[len(prefix) :].split(".", 1)[0]
+            idx = _as_int(head)
+            if idx is not None:
+                indices.add(idx)
+    return len(indices)
+
+
 def _duration_ns(record: Dict[str, Any]) -> Optional[int]:
     start = record.get("start_ns")
     end = record.get("end_ns")
@@ -221,17 +274,24 @@ def _common(record: Dict[str, Any], *, capture_content: bool) -> Dict[str, Any]:
 def _set_error(record_payload: Dict[str, Any], record: Dict[str, Any], *, capture_content: bool) -> None:
     """Stamp the honest error signal, gating only the producer's free text.
 
+    The SET-CONDITION is the span STATUS, never the message (D2, Go parity —
+    ``openinference.go`` ``spanStatusIsError``). OTel lets a SUCCESSFUL span carry
+    a status description ("cache miss; refetched"); keying off a truthy message
+    would label that healthy span as failed — a fabricated failure. A span is
+    errored iff it says it is.
+
     ``status_message`` is a producer free-text string that can carry prompt or
     user data, so it is content and rides behind the gate. That the span FAILED
     is structure, not content, so under ``capture_content=False`` an errored span
     still reports the content-free :data:`_ERROR_SIGNAL` — redaction strips the
     text without blinding the failure.
     """
+    if record.get("status") != "ERROR":
+        return
     message = record.get("status_message")
-    errored = record.get("status") == "ERROR"
     if message and capture_content:
         record_payload["error"] = _safe_str(message, limit=400)
-    elif message or errored:
+    else:
         record_payload["error"] = _ERROR_SIGNAL
 
 
@@ -246,15 +306,28 @@ def _retrieval_doc_count(attrs: Dict[str, Any]) -> int:
     docs = attrs.get(RETRIEVAL_DOCUMENTS)
     if isinstance(docs, (list, tuple)):
         return len(docs)
-    indices: set[int] = set()
-    prefix = RETRIEVAL_DOCUMENTS + "."
-    for key in attrs:
-        if key.startswith(prefix):
-            head = key[len(prefix) :].split(".", 1)[0]
-            idx = _as_int(head)
-            if idx is not None:
-                indices.add(idx)
-    return len(indices)
+    return _flattened_index_count(attrs, RETRIEVAL_DOCUMENTS)
+
+
+def _embedding_count(attrs: Dict[str, Any]) -> Optional[int]:
+    """Count embeddings: a list-valued attr, else the FLATTENED indexed form.
+
+    Real OpenInference instrumentors emit ``embedding.embeddings.{i}.embedding.vector``
+    — OTel attributes cannot carry a list of nested objects — so counting only the
+    list form leaves ``embedding_count`` absent on virtually every real span (D4).
+    This mirrors the proven :func:`_retrieval_doc_count` approach.
+
+    Returns None (=> OMIT the key) when the span carries no embeddings attribute at
+    all: unlike a retriever, where "no document keys" is a real measured zero, an
+    embedding span with no embeddings attribute is one whose count is UNKNOWN — the
+    instrumentor simply may not record it. Reporting 0 there would assert something
+    the span does not support.
+    """
+    embeddings = attrs.get(EMBEDDING_EMBEDDINGS)
+    if isinstance(embeddings, (list, tuple)):
+        return len(embeddings)
+    count = _flattened_index_count(attrs, EMBEDDING_EMBEDDINGS)
+    return count or None
 
 
 def normalize_llm_span(record: Dict[str, Any], *, capture_content: bool) -> Dict[str, Any]:
@@ -313,9 +386,9 @@ def normalize_embedding_span(record: Dict[str, Any], *, capture_content: bool) -
     payload["model"] = model_name
     # No llm.system fallback here (unlike an LLM span) — mirrors the Go contract.
     payload["provider"] = _safe_str(attrs.get(LLM_PROVIDER) or "unknown", limit=200)
-    embeddings = attrs.get(EMBEDDING_EMBEDDINGS)
-    if isinstance(embeddings, (list, tuple)):
-        payload["embedding_count"] = len(embeddings)
+    count = _embedding_count(attrs)
+    if count is not None:
+        payload["embedding_count"] = count
     pt = _as_int(attrs.get(LLM_TOKEN_PROMPT))
     if pt is not None:
         payload["input_tokens"] = pt
@@ -342,9 +415,10 @@ def normalize_tool_span(record: Dict[str, Any], *, capture_content: bool) -> Dic
             _safe_str(attrs[TOOL_DESCRIPTION], limit=400),
             capture_content=capture_content,
         )
-    params = (
-        attrs.get(TOOL_PARAMETERS) if attrs.get(TOOL_PARAMETERS) is not None else attrs.get(INPUT_VALUE)
-    )
+    # First-NON-EMPTY, not first-present (D3, Go parity): a present-but-empty
+    # tool.parameters must fall through to input.value rather than shadow it —
+    # an ``is not None`` test emits input='' and LOSES the real tool input.
+    params = _first_non_empty(attrs, TOOL_PARAMETERS, INPUT_VALUE)
     if params is not None:
         _set_if_capturing(payload, "input", _safe_str(params), capture_content=capture_content)
     if attrs.get(OUTPUT_VALUE) is not None:

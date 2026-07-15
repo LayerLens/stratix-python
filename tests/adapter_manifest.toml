@@ -340,6 +340,7 @@ live_id = "a2ui"
 [adapters.dspy]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_dspy.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_dspy_recorded.py" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_dspy_floor.py", pattern = "TestRedactionFloor" }
 error_paths = { path = "tests/instrument/adapters/frameworks/test_dspy_floor.py", pattern = "TestRealErrorShape" }
 attestation = { path = "tests/instrument/adapters/frameworks/test_dspy_floor.py", pattern = "TestAttestationOffline" }
@@ -350,6 +351,7 @@ matrix_row = "dspy"
 [adapters.instructor]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_instructor.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_instructor_recorded.py" }
 async = { path = "tests/instrument/adapters/frameworks/test_instructor.py", pattern = "TestAsync" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_instructor_floor.py", pattern = "TestRedactionFloor" }
 error_paths = { path = "tests/instrument/adapters/frameworks/test_instructor_floor.py", pattern = "TestRealErrorShape" }
@@ -361,6 +363,7 @@ matrix_row = "instructor"
 [adapters.marvin]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_marvin.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_marvin_recorded.py" }
 async = { path = "tests/instrument/adapters/frameworks/test_marvin.py", pattern = "TestAsyncSurface" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_marvin_floor.py", pattern = "TestRedactionFloor" }
 error_paths = { path = "tests/instrument/adapters/frameworks/test_marvin_floor.py", pattern = "TestRealErrorShape" }
@@ -374,6 +377,7 @@ matrix_row = "marvin"
 [adapters.mirascope]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_mirascope.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_mirascope_recorded.py" }
 async = { path = "tests/instrument/adapters/frameworks/test_mirascope.py", pattern = "TestAsyncAndContext" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_mirascope_floor.py", pattern = "TestRedactionFloor" }
 error_paths = { path = "tests/instrument/adapters/frameworks/test_mirascope_floor.py", pattern = "TestRealErrorShape" }
@@ -385,6 +389,7 @@ matrix_row = "mirascope"
 [adapters.browser_use]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_browser_use.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_browser_use_recorded.py" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_browser_use_floor.py", pattern = "TestRedactionFloor" }
 error_paths = { path = "tests/instrument/adapters/frameworks/test_browser_use_floor.py", pattern = "TestRealErrorShape" }
 attestation = { path = "tests/instrument/adapters/frameworks/test_browser_use_floor.py", pattern = "TestAttestationOffline" }
@@ -395,6 +400,7 @@ matrix_row = "browser_use"
 [adapters.openinference]
 family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_openinference.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_openinference_recorded.py" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_openinference_floor.py", pattern = "TestRedaction" }
 error_paths = { path = "tests/instrument/adapters/frameworks/test_openinference_floor.py", pattern = "TestError" }
 attestation = { path = "tests/instrument/adapters/frameworks/test_openinference_floor.py", pattern = "TestAttestation" }
@@ -405,6 +411,7 @@ matrix_row = "openinference"
 [adapters.openrouter]
 family = "provider"
 unit = { path = "tests/instrument/adapters/providers/test_openrouter.py" }
+recorded = { path = "tests/instrument/adapters/providers/test_openrouter_recorded.py" }
 streaming = { path = "tests/instrument/adapters/providers/test_openrouter.py", pattern = "TestStreaming" }
 redaction = { path = "tests/instrument/adapters/providers/test_openrouter_floor.py", pattern = "TestRedactionFloor" }
 error_paths = { path = "tests/instrument/adapters/providers/test_openrouter_floor.py", pattern = "TestRealErrorShape" }

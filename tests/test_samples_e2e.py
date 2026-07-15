@@ -121,6 +121,14 @@ INDUSTRY_SAMPLES = [
     "healthcare_onprem_medsafety_ollama",
     "salesforce_agentforce_order_status",
     "salesforce_agentforce_billing_escalation",
+    # ADP-PORT — the seven adapters ported from the ateam reference SDK.
+    "education_dspy_tutor",
+    "legal_instructor_contract_extract",
+    "realestate_marvin_listing_extract",
+    "insurance_mirascope_fnol_intake",
+    "travel_browseruse_research",
+    "saas_openrouter_cost_routing",
+    "retail_openinference_support",
 ]
 
 COWORK_SAMPLES = [
@@ -2286,10 +2294,17 @@ class TestSampleCompleteness:
         )
         assert os.path.isfile(script), f"Missing: {script}"
 
-    def test_all_54_samples_covered(self):
-        """Verify ALL_SAMPLE_PATHS contains exactly 66 entries."""
-        assert len(ALL_SAMPLE_PATHS) == 117, (
-            f"Expected 117 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
+    def test_every_sample_path_is_covered(self):
+        """Verify ALL_SAMPLE_PATHS contains exactly the expected number of entries.
+
+        The count is a tripwire against a sample being added to disk but never
+        wired into the mocked/e2e lists (the set-equality tests above catch the
+        reverse). Bump it deliberately when a wave lands samples — the name is
+        kept number-free because the literal drifted two waves behind the
+        assertion (it read 54/66 while asserting 117).
+        """
+        assert len(ALL_SAMPLE_PATHS) == 124, (
+            f"Expected 124 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
         )
 
     def test_all_sample_paths_exist(self):
@@ -2302,7 +2317,7 @@ class TestSampleCompleteness:
         assert not missing, f"Sample files not found: {missing}"
 
     def test_mocked_samples_cover_all(self):
-        """ALL_MOCKED_SAMPLES should produce exactly 66 entries."""
-        assert len(ALL_MOCKED_SAMPLES) == 117, (
-            f"Expected 117 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
+        """ALL_MOCKED_SAMPLES should produce one entry per sample on disk."""
+        assert len(ALL_MOCKED_SAMPLES) == 124, (
+            f"Expected 124 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
         )

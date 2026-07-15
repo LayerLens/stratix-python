@@ -169,6 +169,7 @@ install = ["dspy==3.2.1", "litellm==1.90.2", "openai"]
 tests = [
     "tests/instrument/adapters/frameworks/test_dspy.py",
     "tests/instrument/adapters/frameworks/test_dspy_floor.py",
+    "tests/instrument/adapters/frameworks/test_dspy_recorded.py",
 ]
 
 [frameworks.instructor]
@@ -177,6 +178,7 @@ install = ["instructor==1.15.4", "openai"]
 tests = [
     "tests/instrument/adapters/frameworks/test_instructor.py",
     "tests/instrument/adapters/frameworks/test_instructor_floor.py",
+    "tests/instrument/adapters/frameworks/test_instructor_recorded.py",
 ]
 
 [frameworks.marvin]
@@ -189,6 +191,7 @@ install = ["marvin==3.2.7", "pydantic-ai==1.94.0", "openai"]
 tests = [
     "tests/instrument/adapters/frameworks/test_marvin.py",
     "tests/instrument/adapters/frameworks/test_marvin_floor.py",
+    "tests/instrument/adapters/frameworks/test_marvin_recorded.py",
 ]
 
 [frameworks.mirascope]
@@ -199,6 +202,7 @@ install = ["mirascope[openai]==2.5.0"]
 tests = [
     "tests/instrument/adapters/frameworks/test_mirascope.py",
     "tests/instrument/adapters/frameworks/test_mirascope_floor.py",
+    "tests/instrument/adapters/frameworks/test_mirascope_recorded.py",
 ]
 
 [frameworks.browser_use]
@@ -209,6 +213,7 @@ install = ["browser-use==0.13.4"]
 tests = [
     "tests/instrument/adapters/frameworks/test_browser_use.py",
     "tests/instrument/adapters/frameworks/test_browser_use_floor.py",
+    "tests/instrument/adapters/frameworks/test_browser_use_recorded.py",
 ]
 
 [frameworks.openinference]
@@ -219,4 +224,9 @@ install = ["openinference-semantic-conventions==0.1.30", "opentelemetry-sdk==1.4
 tests = [
     "tests/instrument/adapters/frameworks/test_openinference.py",
     "tests/instrument/adapters/frameworks/test_openinference_floor.py",
+    "tests/instrument/adapters/frameworks/test_openinference_recorded.py",
+    # The cross-language drift gate: the span->event mapping also exists in Go
+    # (atlas otlp-ingest). This pins the Python half against an oracle generated
+    # from the real Go bridge; the Go half guards the other direction.
+    "tests/instrument/adapters/frameworks/test_openinference_conformance.py",
 ]
