@@ -45,7 +45,11 @@ _AGUI_EVENT_MAP: dict[str, dict[str, str]] = {
     # data/payload) is stripped under capture_content=False (LAY-3578).
     "RUN_STARTED": {"stratix_event": "protocol.stream.event", "category": "lifecycle"},
     "RUN_FINISHED": {"stratix_event": "protocol.stream.event", "category": "lifecycle"},
-    "RUN_ERROR": {"stratix_event": "protocol.stream.event", "category": "lifecycle"},
+    # RUN_ERROR is a run FAILURE, not ordinary lifecycle telemetry: route it to
+    # agent.error (via build_run_error_payload) so the trace's derived status is
+    # error, not silently completed — a generic protocol.stream.event is read by
+    # no downstream engine (mirrors how a2a/mcp surface failures).
+    "RUN_ERROR": {"stratix_event": "agent.error", "category": "lifecycle"},
     "TEXT_MESSAGE_START": {
         "stratix_event": "protocol.stream.event",
         "category": "text",
@@ -71,12 +75,35 @@ _AGUI_EVENT_MAP: dict[str, dict[str, str]] = {
 }
 
 
+#: Fallback error_type for a RUN_ERROR that arrives without an explicit code.
+AGUI_RUN_ERROR_TYPE = "agui_run_error"
+
+
 def map_agui_to_stratix(agui_event_type: str) -> dict[str, Any]:
     """Return the ``{stratix_event, category}`` mapping for an AG-UI type."""
     return _AGUI_EVENT_MAP.get(
         agui_event_type,
         {"stratix_event": "protocol.stream.event", "category": "unknown"},
     )
+
+
+def build_run_error_payload(message: Any, code: Any) -> dict[str, Any]:
+    """Canonical ``agent.error`` payload for an AG-UI ``RUN_ERROR`` event.
+
+    Mirrors how the a2a / mcp adapters surface failures (``{error_type, status,
+    error}`` + a ``source`` discriminator) so the trace's derived status is
+    ``error`` and not silently ``completed``. ``code`` becomes ``error_type``
+    when present; otherwise a generic honest type is used (never a fabricated
+    one). ``message`` is carried verbatim as ``error`` when present.
+    """
+    payload: dict[str, Any] = {
+        "source": "agui",
+        "error_type": str(code) if code else AGUI_RUN_ERROR_TYPE,
+        "status": "error",
+    }
+    if message is not None:
+        payload["error"] = str(message)
+    return payload
 
 
 def get_all_agui_event_types() -> list[str]:

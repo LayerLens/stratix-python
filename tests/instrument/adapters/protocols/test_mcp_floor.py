@@ -55,7 +55,9 @@ from mcp.shared.exceptions import McpError  # noqa: E402
 
 from layerlens.instrument import trace  # noqa: E402
 from layerlens.attestation._verify import verify_chain  # noqa: E402
+from layerlens.instrument._context import _current_span_id, _current_collector  # noqa: E402
 from layerlens.attestation._envelope import HashScope, AttestationEnvelope  # noqa: E402
+from layerlens.instrument._collector import TraceCollector  # noqa: E402
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.protocols.mcp.adapter import MCPProtocolAdapter  # noqa: E402
 
@@ -348,3 +350,99 @@ class TestSamplingCost:
         assert cost.get("cost_usd") is not None and cost["cost_usd"] > 0, (
             "central chokepoint did not price the sampling cost.record"
         )
+
+
+# ---------------------------------------------------------------------------
+# Concurrent async-task keying isolation ([D] fix)
+# ---------------------------------------------------------------------------
+class TestConcurrentAsyncTaskIsolation:
+    """Two INTERLEAVED concurrent tool calls under ONE span each keep a distinct
+    async_task lifecycle — no keying collision, no synthetic None-fallback.
+
+    The bug: ``_emit_async_task_start`` used the originating ``parent_span_id``
+    (== ``_current_span_id`` when a span is active) as BOTH the emitted
+    ``async_task_id`` AND the ``AsyncTaskTracker`` dict key. Two concurrent tool
+    calls under one span therefore collide: the second ``create()`` overwrites the
+    first's ``_TaskState``, the first's ``end`` pops it, and the second's ``end``
+    ``update()`` returns ``None`` → the synthetic fallback loses
+    ``originating_span_id`` and every event shares one colliding ``async_task_id``.
+
+    Per the ateam contract (``AsyncTaskEvent``: a UNIQUE ``async_task_id`` per
+    async task, distinct from the ``originating_tool_call_span_id``) each call must
+    get its own unique id while keeping the span as the originating id.
+    """
+
+    def _drive_interleaved(self) -> tuple[list, str]:
+        adapter = MCPProtocolAdapter(capture_config=CaptureConfig.full())
+
+        # Force interleaving: BOTH tool bodies enter (so BOTH `start` events are
+        # already emitted by the wrapper's `_before`) before EITHER returns (so
+        # neither `end` runs first) — the exact ordering that triggers the
+        # collision. Sequential calls would clean up cleanly and hide the bug.
+        a_in_body = anyio.Event()
+        b_in_body = anyio.Event()
+
+        async def call_tool(name: str, arguments: Any = None, **kw: Any) -> types.CallToolResult:
+            if name == "tool_a":
+                a_in_body.set()
+                await b_in_body.wait()
+                return call_tool_result({"a": 1})
+            b_in_body.set()
+            await a_in_body.wait()
+            return call_tool_result({"b": 2})
+
+        session = _session()
+        session.call_tool = call_tool  # type: ignore[method-assign]
+        adapter.connect(target=session)
+
+        span = "one-shared-span-000001"
+        collector = TraceCollector(object(), CaptureConfig.full())
+
+        async def body() -> None:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(session.call_tool, "tool_a", {})
+                tg.start_soon(session.call_tool, "tool_b", {})
+
+        async def wrapped() -> None:
+            ct = _current_collector.set(collector)
+            st = _current_span_id.set(span)
+            try:
+                await body()
+            finally:
+                _current_span_id.reset(st)
+                _current_collector.reset(ct)
+
+        anyio.run(wrapped)
+        return collector.events, span
+
+    def test_concurrent_tool_calls_keep_distinct_async_tasks(self) -> None:
+        events, span = self._drive_interleaved()
+        tasks = [e["payload"] for e in find_events(events, "mcp.async_task")]
+
+        # Two calls × (start + end) — both lifecycles emitted.
+        assert len(tasks) == 4, f"expected 4 async_task events for 2 interleaved calls, saw {tasks}"
+
+        ids = {p["async_task_id"] for p in tasks}
+        # Collision check: two concurrent calls under one span → TWO distinct ids.
+        assert len(ids) == 2, f"async_task keying COLLISION: {len(ids)} distinct id(s) for 2 concurrent calls: {tasks}"
+
+        # The async_task_id is a UNIQUE task id, not the originating span (ateam
+        # contract: async_task_id is distinct from originating_tool_call_span_id).
+        assert span not in ids, f"async_task_id reused the originating span id (collision-prone): {ids}"
+
+        # No synthetic None-fallback: every lifecycle event keeps its originating
+        # span. The bug drops originating_span_id on the second call's end event.
+        for p in tasks:
+            assert p.get("originating_span_id") == span, (
+                f"async_task lost originating_span_id (None-fallback collision): {p}"
+            )
+
+        # Each unique id owns a full start(running) → end(completed) lifecycle.
+        for tid in ids:
+            lifecycle = [p for p in tasks if p["async_task_id"] == tid]
+            phases = {p["phase"] for p in lifecycle}
+            assert phases == {"start", "end"}, f"async_task {tid} has an incomplete lifecycle: {lifecycle}"
+            start = next(p for p in lifecycle if p["phase"] == "start")
+            end = next(p for p in lifecycle if p["phase"] == "end")
+            assert start["status"] == "running", f"start not running: {start}"
+            assert end["status"] == "completed", f"end not completed: {end}"

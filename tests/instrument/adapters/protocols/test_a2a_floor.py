@@ -47,6 +47,11 @@ import pytest
 
 pytest.importorskip("a2a")
 
+from a2a.types import (
+    Task as A2ATask,  # noqa: E402
+    Message as A2AMessage,  # noqa: E402
+    StreamResponse as A2AStreamResponse,  # noqa: E402
+)
 from a2a.client.errors import A2AClientTimeoutError  # noqa: E402
 
 from layerlens.attestation._verify import verify_chain  # noqa: E402
@@ -242,3 +247,132 @@ class TestRedactionFloor:
         created = _events_of(capture_trace, "a2a.task.created")
         assert created, "no a2a.task.created emitted"
         assert "request" not in created[0], "a2a.task.created leaked the content 'request' summary under no-content"
+
+
+# ---------------------------------------------------------------------------
+# Client-side task correlation over a REAL a2a-sdk send_message(message=Message)
+# ---------------------------------------------------------------------------
+# The delegation lifecycle above passes task_id explicitly (the duck-typed
+# send_task helper), so it never exercises the send_message correlation gap. A
+# real a2a-sdk send_message carries a protobuf ``Message`` and NO task_id kwarg,
+# and the server assigns the Task.id in the RESPONSE. This floor drives that real
+# shape end-to-end through the collector/upload seam and pins the correlation
+# contract ateam's normalizer depends on (a single a2a.task.id):
+#   * a2a.task.created carries a NON-random id derived from the Message (the
+#     Message's own task id when CONTINUING, else its messageId) + request_id.
+#   * a2a.task.updated carries the SERVER-assigned Task.id from the response, with
+#     request_id bridging back to created.
+# BITE (proven by reverting only adapter.py): on the buggy code the created id is
+# a random uuid4().hex[:16] and the updated id is that same random id — never the
+# server Task.id — so every assertion below goes RED.
+
+# Real, human-legible ids (NOT 16-hex uuids) so a random-uuid fallback can never
+# accidentally match, and created (client-derived) vs updated (server) differ.
+CLIENT_MESSAGE_ID = "msg-client-abc123"
+SERVER_TASK_ID = "srv-task-9f2b1d"
+CLIENT_MESSAGE_ID_2 = "msg-client-def456"
+CONTINUING_TASK_ID = "task-prior-7a1c"
+SERVER_TASK_ID_2 = "srv-task-c4e8aa"
+
+
+def _send_message_new_task(config: CaptureConfig) -> Tuple[Any, Callable[[], None]]:
+    """A REAL a2a-sdk ``send_message(message=Message)`` for a NEW task.
+
+    The client knows no server id yet (the Message carries only a messageId); the
+    response is a bare a2a ``Task`` carrying the server-assigned id (exercises the
+    ``result.id`` extraction branch).
+    """
+    adapter = A2AProtocolAdapter(capture_config=config)
+    msg = A2AMessage(message_id=CLIENT_MESSAGE_ID)
+    server_task = A2ATask(id=SERVER_TASK_ID)
+    target = type("Cli", (), {"send_message": staticmethod(lambda message: server_task)})()
+    adapter.connect(target=target)
+
+    def go() -> None:
+        target.send_message(message=msg)
+
+    return adapter, go
+
+
+def _send_message_continuing_task(config: CaptureConfig) -> Tuple[Any, Callable[[], None]]:
+    """A REAL ``send_message`` CONTINUING an existing task.
+
+    The Message carries its OWN task id (it is a follow-up turn on a live server
+    task); the response is a ``StreamResponse`` wrapping a Task (the shape the real
+    client yields — exercises the ``result.task.id`` extraction branch).
+    """
+    adapter = A2AProtocolAdapter(capture_config=config)
+    msg = A2AMessage(message_id=CLIENT_MESSAGE_ID_2, task_id=CONTINUING_TASK_ID)
+    server_resp = A2AStreamResponse(task=A2ATask(id=SERVER_TASK_ID_2))
+    target = type("Cli", (), {"send_message": staticmethod(lambda message: server_resp)})()
+    adapter.connect(target=target)
+
+    def go() -> None:
+        target.send_message(message=msg)
+
+    return adapter, go
+
+
+class TestClientSendMessageCorrelation:
+    def test_new_task_derives_message_id_and_reconciles_server_id(self, mock_client, capture_trace):
+        # Sanity: the test is only meaningful if the three ids are distinct.
+        assert CLIENT_MESSAGE_ID != SERVER_TASK_ID
+
+        _drive(mock_client, _send_message_new_task, CaptureConfig.full())
+
+        created = _events_of(capture_trace, "a2a.task.created")
+        assert created, "send_message(message=Message) emitted no a2a.task.created"
+        c = created[0]
+        # The provisional id is DERIVED from the Message (its messageId for a new
+        # task), NEVER a random uuid4 (the bug: no task_id kwarg → random id).
+        assert c["task_id"] == CLIENT_MESSAGE_ID, (
+            f"created.task_id={c['task_id']!r} is not the message-derived id — the "
+            "client-side correlation fell back to a random uuid (the correlation bug)"
+        )
+        # request_id (the messageId) is stamped so created↔updated can bridge.
+        assert c.get("request_id") == CLIENT_MESSAGE_ID, (
+            "a2a.task.created did not stamp request_id=<messageId> (created↔updated bridge missing)"
+        )
+
+        updated = _events_of(capture_trace, "a2a.task.updated")
+        assert updated, "send_message emitted no a2a.task.updated"
+        u = updated[-1]
+        # The terminal event carries the SERVER-assigned Task.id from the response,
+        # so the client trace correlates with the server trace (ateam keys on a
+        # single a2a.task.id). BITE: buggy code emits the random provisional id here.
+        assert u["task_id"] == SERVER_TASK_ID, (
+            f"updated.task_id={u['task_id']!r} is not the server Task.id — the terminal "
+            "event never carried the server-assigned id (client↔server correlation gap)"
+        )
+        # request_id bridges the (server-id) updated event back to the created event.
+        assert u.get("request_id") == CLIENT_MESSAGE_ID, (
+            "a2a.task.updated did not carry request_id bridging back to created"
+        )
+        # And the two events legitimately carry DIFFERENT task ids (provisional vs
+        # server) — reconciliation actually happened, it is not a no-op coincidence.
+        assert c["task_id"] != u["task_id"]
+
+    def test_continuing_task_prefers_message_task_id(self, mock_client, capture_trace):
+        assert CONTINUING_TASK_ID != SERVER_TASK_ID_2 != CLIENT_MESSAGE_ID_2
+
+        _drive(mock_client, _send_message_continuing_task, CaptureConfig.full())
+
+        created = _events_of(capture_trace, "a2a.task.created")
+        assert created, "send_message emitted no a2a.task.created"
+        c = created[0]
+        # CONTINUING a task: the Message's OWN task id is the provisional id (a new
+        # random uuid would break the follow-up turn's correlation to its own task).
+        assert c["task_id"] == CONTINUING_TASK_ID, (
+            f"created.task_id={c['task_id']!r} did not prefer the Message's own task_id "
+            "when continuing an existing server task"
+        )
+        assert c.get("request_id") == CLIENT_MESSAGE_ID_2
+
+        updated = _events_of(capture_trace, "a2a.task.updated")
+        assert updated, "send_message emitted no a2a.task.updated"
+        u = updated[-1]
+        # Server id pulled from result.task.id (StreamResponse wrap).
+        assert u["task_id"] == SERVER_TASK_ID_2, (
+            f"updated.task_id={u['task_id']!r} is not the server Task.id from result.task.id"
+        )
+        assert u.get("request_id") == CLIENT_MESSAGE_ID_2

@@ -136,6 +136,36 @@ def _sentinel_transport(sentinel: str) -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
+def _streaming_transport(*, model: str = "gpt-4o-mini-2024-07-18") -> httpx.MockTransport:
+    """A real OpenAI chat-completions *streaming* body: several content-delta
+    chunks (each carrying the model id, no usage) followed by a terminal usage
+    chunk — exactly the shape SK's ``invoke_stream`` consumes. SK forces
+    ``stream_options={"include_usage": True}``, so the real token usage rides the
+    final (empty-choices) chunk while every content fragment carries only the
+    ``ai_model_id``."""
+    chunks = [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}]},
+        {"choices": [{"index": 0, "delta": {"content": "po"}, "finish_reason": None}]},
+        {"choices": [{"index": 0, "delta": {"content": "ng"}, "finish_reason": None}]},
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+        {"choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 2, "total_tokens": 14}},
+    ]
+    base = {"id": "chatcmpl-stream", "object": "chat.completion.chunk", "created": 1700000000, "model": model}
+    body = "".join(f"data: {json.dumps({**base, **c})}\n\n" for c in chunks) + "data: [DONE]\n\n"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body.encode("utf-8"), headers={"content-type": "text/event-stream"})
+
+    return httpx.MockTransport(handler)
+
+
+def _drain_stream(agent: ChatCompletionAgent, *, prompt: str = "Reply with exactly: pong"):
+    async def run():
+        return [item async for item in agent.invoke_stream(messages=prompt)]
+
+    return asyncio.run(run())
+
+
 def _drive(mock_client, transport, config, *, prompt: str = "Reply with exactly: pong"):
     """Instrument the real agent, run one ``invoke`` to completion, return the
     captured trace + result. ``instrument_chat`` (not ``connect``) is the proven
@@ -315,3 +345,69 @@ class TestCostFloor:
         invoke = find_event(events, "model.invoke")["payload"]
         assert invoke["model"] == _MODEL
         assert invoke["provider"] == "openai"
+
+
+# ---------------------------------------------------------------------------
+# Streaming multiplicity floor — one model.invoke / cost.record per real call
+# ---------------------------------------------------------------------------
+class TestStreamingModelInvokeMultiplicity:
+    """A REAL ``invoke_stream`` run must emit exactly ONE ``model.invoke`` and
+    ONE ``cost.record`` for the single underlying model call.
+
+    SK's ``ChatCompletionAgent.invoke_stream`` yields many partial
+    ``StreamingChatMessageContent`` chunks per model call — each carrying the
+    same ``ai_model_id`` but no usage — followed by a terminal chunk carrying the
+    real ``CompletionUsage`` (SK forces ``stream_options={"include_usage":
+    True}``). The adapter's wrapper processes every yielded chunk, so the
+    model-alone ``model.invoke`` branch used to fire once per fragment: N
+    token-less ``model.invoke`` events plus one token-bearing one — inflating the
+    model-call count and shipping phantom tokens-less invocations on every
+    streamed run. The honest accounting is a single ``model.invoke`` carrying the
+    model id AND the real token counts (the non-streaming ``invoke`` path, one
+    consolidated message, was always single — this proves the streamed path now
+    matches it). Bite: on the pre-fix adapter ``model.invoke`` count is N+1 > 1.
+    """
+
+    def test_stream_emits_single_priced_model_invoke(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        agent = _agent_over_transport(_streaming_transport())
+        adapter = MSAgentFrameworkAdapter(mock_client, capture_config=CaptureConfig(capture_content=False))
+        adapter.instrument_chat(agent)
+        result = _drain_stream(agent)
+        adapter.disconnect()
+
+        # Sanity: the streamed deltas reconstruct the real assistant reply, so the
+        # multiple partial chunks the adapter processed are genuine stream fragments
+        # (not a single consolidated message masquerading as a stream).
+        assert len(result) >= 2, "the streamed body must yield multiple partial chunks"
+        text = "".join(str(item.message.content) for item in result)
+        assert "pong" in text
+
+        events = uploaded["events"]
+
+        # BITE: the fragments must collapse to a SINGLE model.invoke. On the
+        # pre-fix adapter each streamed chunk emitted its own model.invoke
+        # (N token-less fragments + 1 token-bearing terminal), so this is > 1.
+        invokes = find_events(events, "model.invoke")
+        assert len(invokes) == 1, (
+            f"expected exactly one model.invoke for one streamed model call, saw "
+            f"{len(invokes)}: {[i['payload'] for i in invokes]}"
+        )
+        invoke = invokes[0]["payload"]
+        # The surviving model.invoke is the complete accounting — the model id AND
+        # the real token counts off the terminal usage chunk, not a phantom
+        # tokens-less fragment.
+        assert invoke["model"] == _MODEL
+        assert invoke["provider"] == "openai"
+        assert invoke["tokens_prompt"] == 12
+        assert invoke["tokens_completion"] == 2
+        assert invoke["tokens_total"] == 14
+
+        # cost.record was already single (only the terminal usage chunk carries
+        # usage) — lock it so the fix can't regress it into per-fragment
+        # duplicates, and confirm it is still priced by the shared hook.
+        costs = find_events(events, "cost.record")
+        assert len(costs) == 1, f"expected exactly one cost.record, saw {len(costs)}"
+        assert costs[0]["payload"]["model"] == _MODEL
+        assert costs[0]["payload"].get("cost_usd") is not None
+        assert costs[0]["payload"]["cost_usd"] > 0

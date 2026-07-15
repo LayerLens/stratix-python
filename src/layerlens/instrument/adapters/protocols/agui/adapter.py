@@ -14,8 +14,8 @@ import uuid
 import logging
 from typing import Any, Dict, Callable, Iterator, AsyncIterator
 
-from ...._events import AGUI_STATE, AGUI_MESSAGE, AGUI_TOOL_CALL, PROTOCOL_STREAM_EVENT
-from .event_mapper import map_agui_to_stratix
+from ...._events import AGUI_STATE, AGENT_ERROR, AGUI_MESSAGE, AGUI_TOOL_CALL, PROTOCOL_STREAM_EVENT
+from .event_mapper import map_agui_to_stratix, build_run_error_payload
 from .state_handler import StateDeltaHandler
 from .._base_protocol import BaseProtocolAdapter
 
@@ -112,6 +112,16 @@ class AGUIProtocolAdapter(BaseProtocolAdapter):
                     "before_hash": before_hash,
                     "after_hash": after_hash,
                 },
+            )
+            return
+        if etype == "RUN_ERROR":
+            # A run failure surfaces as agent.error (not lifecycle stream
+            # telemetry) so the trace's derived status is error, not completed.
+            self.emit(
+                AGENT_ERROR,
+                build_run_error_payload(
+                    _event_field(event, "message"), _event_field(event, "code")
+                ),
             )
             return
         if etype == "STATE_DELTA":

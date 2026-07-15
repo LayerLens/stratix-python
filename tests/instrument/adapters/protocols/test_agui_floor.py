@@ -36,13 +36,14 @@ The only mock is the trace-upload client (the network boundary); every AG-UI
 event, the adapter's stream observer, the state handler, and the attestation
 hash chain are real.
 
-NOTE — two OFFLINE cells stay open as source-bug held findings (NOT asserted
-here, because the honest assertion is RED on current code and this floor may
-contain only green-on-current-code assertions):
-  * ``error`` — ``RUN_ERROR`` maps to a generic ``protocol.stream.event``
-    (``event_mapper.py:48``); it emits no ``agent.error`` / ``payload.error``.
-  * state ``replace`` on a MISSING path silently creates it (``state_handler.py:51``
-    delegates ``replace`` to ``_patch_add``) — an RFC-6902 violation.
+Two former source-bug held findings are now FIXED and asserted here (they were
+previously RED on the shipped code):
+  * ``error`` — ``RUN_ERROR`` now surfaces as ``agent.error``
+    ({error_type, status:"error", error}) instead of a generic
+    ``protocol.stream.event`` (``TestRunErrorSurfacesAsAgentError``).
+  * state ``replace`` on a MISSING path is now a no-create honest failure
+    (``StateDeltaHandler._patch_replace``), per RFC-6902
+    (``TestReplaceOnMissingPathDoesNotCreate``).
 """
 
 from __future__ import annotations
@@ -311,3 +312,85 @@ class TestStateDeltaHash:
         assert snap["after_hash"] == _expected_state_hash({"cart": {"items": 0}})
         assert delta["before_hash"] == snap["after_hash"], "state hash chain broke across SNAPSHOT -> DELTA"
         assert delta["after_hash"] == _expected_state_hash({"cart": {"items": 3}})
+
+
+# ---------------------------------------------------------------------------
+# RUN_ERROR surfaces as agent.error (not ordinary lifecycle stream telemetry)
+# ---------------------------------------------------------------------------
+class TestRunErrorSurfacesAsAgentError:
+    def test_run_error_emits_agent_error_with_error_fields(self, mock_client) -> None:
+        # A streamed RUN_ERROR is a run FAILURE. It must surface as agent.error
+        # {error_type, status:"error", error} — matching how a2a/mcp surface
+        # failures — so the trace's derived status is error, not completed.
+        events = _collect_sync(
+            _FULL,
+            [
+                {"type": "RUN_STARTED"},
+                {"type": "RUN_ERROR", "message": "model provider timed out", "code": "PROVIDER_TIMEOUT"},
+            ],
+        )
+        errors = _by_type(events, "agent.error")
+        assert len(errors) == 1, f"expected exactly 1 agent.error for RUN_ERROR, got {len(errors)}"
+        err = errors[0]
+        assert err["status"] == "error", "agent.error must carry status='error'"
+        assert err["error_type"] == "PROVIDER_TIMEOUT", "error_type must reflect the AG-UI error code"
+        assert err["error"] == "model provider timed out", "error must reflect the AG-UI error message"
+
+        # Bite: RUN_ERROR must NOT leak through as a generic protocol.stream.event
+        # (the old lifecycle mapping) — a run failure carried as ordinary stream
+        # telemetry is read by no downstream engine and mislabels the trace.
+        leaked = [
+            p for p in _by_type(events, "protocol.stream.event") if p.get("agui_event") == "RUN_ERROR"
+        ]
+        assert not leaked, "RUN_ERROR still emitted as protocol.stream.event lifecycle telemetry"
+
+    def test_run_error_without_code_uses_honest_default_type(self, mock_client) -> None:
+        # No AG-UI error code on the wire -> an honest generic error_type, never a
+        # fabricated one; the message still flows through as error.
+        events = _collect_sync(
+            _FULL,
+            [{"type": "RUN_ERROR", "message": "boom"}],
+        )
+        errors = _by_type(events, "agent.error")
+        assert len(errors) == 1
+        assert errors[0]["error_type"] == "agui_run_error"
+        assert errors[0]["error"] == "boom"
+        assert errors[0]["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# RFC-6902 replace requires the target to already exist (must NOT create)
+# ---------------------------------------------------------------------------
+class TestReplaceOnMissingPathDoesNotCreate:
+    def test_replace_on_missing_top_level_path_does_not_create(self, mock_client) -> None:
+        handler = StateDeltaHandler()
+        handler.apply_snapshot({"cart": {"items": 1}})
+        before = handler.current_state
+
+        # RFC-6902 'replace' requires the target location to already exist. A
+        # replace on an absent path is an error, NOT an implicit add — it must
+        # leave the state untouched, not silently materialize the key.
+        handler.apply_delta([{"op": "replace", "path": "/wishlist", "value": ["sku-9"]}])
+        assert "wishlist" not in handler.current_state, (
+            "replace on a nonexistent top-level path silently created it (RFC-6902 violation)"
+        )
+        assert handler.current_state == before, "a failed replace must not perturb existing state"
+
+    def test_replace_on_missing_nested_path_does_not_create(self, mock_client) -> None:
+        handler = StateDeltaHandler()
+        handler.apply_snapshot({"cart": {"items": 1}})
+        before = handler.current_state
+
+        handler.apply_delta([{"op": "replace", "path": "/cart/color", "value": "red"}])
+        assert "color" not in handler.current_state["cart"], (
+            "replace on a nonexistent nested path silently created it (RFC-6902 violation)"
+        )
+        assert handler.current_state == before
+
+    def test_replace_on_existing_path_still_replaces(self, mock_client) -> None:
+        # Guard: the no-create fix must NOT break a legitimate replace of an
+        # existing target.
+        handler = StateDeltaHandler()
+        handler.apply_snapshot({"cart": {"items": 1}})
+        handler.apply_delta([{"op": "replace", "path": "/cart/items", "value": 9}])
+        assert handler.current_state == {"cart": {"items": 9}}

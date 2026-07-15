@@ -54,6 +54,7 @@ import pytest
 agno = pytest.importorskip("agno")
 
 from agno.metrics import RunMetrics  # noqa: E402
+from agno.run.agent import RunContentEvent, RunCompletedEvent  # noqa: E402
 from agno.team.team import Team  # noqa: E402
 from agno.agent.agent import Agent  # noqa: E402
 from agno.models.base import Model  # noqa: E402
@@ -464,6 +465,143 @@ def _collect_separate_traces(mock_client):
 
     mock_client.traces.upload.side_effect = _capture
     return traces
+
+
+# ---------------------------------------------------------------------------
+# Streaming-run floor — agent.run(stream=True) / arun(stream=True) return a lazy
+# RunOutputEvent generator. The run's telemetry must be emitted once the CALLER
+# drains the stream (accumulated content + a priced cost.record), never read off
+# the generator itself before consumption — which records a BLANK run (empty
+# agent.output, no model.invoke, no cost.record) because .content/.metrics are
+# read off the generator object, not the aggregated RunOutput.
+# ---------------------------------------------------------------------------
+_STREAM_SSE = (
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,'
+    '"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}\n\n'
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,'
+    '"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"pong"},"finish_reason":null}]}\n\n'
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,'
+    '"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,'
+    '"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":1,"total_tokens":13}}\n\n'
+    "data: [DONE]\n\n"
+)
+
+
+def _streaming_openai_agent() -> Agent:
+    """A real agno Agent + OpenAIChat whose streaming call is served the recorded
+    SSE above (real chunk deltas + a real ``usage`` chunk) over MockTransport — so
+    the run's real ``RunCompletedEvent`` carries a real ``RunMetrics`` 12/1/13, no
+    network."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, content=_STREAM_SSE.encode()
+        )
+
+    model = OpenAIChat(
+        id="gpt-4o-mini",
+        api_key="test-key",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    return Agent(model=model, name="stream_agent", telemetry=False)
+
+
+class TestStreamingRun:
+    def test_streamed_run_emits_output_and_priced_cost(self, mock_client):
+        # A REAL agno streaming run: agent.run(stream=True) returns a lazy
+        # RunOutputEvent generator the caller drains. stream_events=True surfaces
+        # the terminal RunCompletedEvent carrying the aggregated content + token
+        # metrics (agno gates that event behind stream_events — it is how an
+        # observability-instrumented streaming customer sees the run totals).
+        agent = _streaming_openai_agent()
+        uploaded = capture_framework_trace(mock_client)
+        adapter = AgnoAdapter(mock_client, capture_config=CaptureConfig.full())
+        agent = adapter.connect(target=agent)
+
+        stream = agent.run("ping", stream=True, stream_events=True)
+        events_seen = list(stream)  # drain -> the proxy accumulates + emits on exhaustion
+        adapter.disconnect()
+        shutdown_uploads(10.0)
+
+        # Transparency: the proxy yielded every source event unchanged.
+        assert any(getattr(e, "event", None) == "RunCompleted" for e in events_seen), (
+            "the streamed generator must reach the caller unchanged"
+        )
+        assert any(getattr(e, "content", None) == "pong" for e in events_seen)
+
+        events = uploaded["events"]
+        # BITE: today _wrap_sync passes the generator to _on_run_end BEFORE the
+        # caller consumes it, so agent.output carries no output and there is no
+        # model.invoke / cost.record (the streamed run records blank).
+        out = find_event(events, "agent.output")
+        assert out is not None and out["payload"].get("output") == "pong", (
+            "streamed run recorded a BLANK agent.output"
+        )
+        assert find_event(events, "model.invoke") is not None, "streamed run emitted no model.invoke"
+        cost = find_event(events, "cost.record")
+        assert cost is not None, "streamed run emitted no cost.record"
+        assert cost["payload"]["tokens_total"] == 13
+        assert cost["payload"]["model"] == "gpt-4o-mini"
+        # cost_usd is priced from the streamed run's real token counts.
+        assert "cost_usd" in cost["payload"], "streamed cost.record carries no cost_usd"
+        expected = calculate_cost(
+            "gpt-4o-mini",
+            NormalizedTokenUsage(prompt_tokens=12, completion_tokens=1, total_tokens=13),
+            PRICING,
+        )
+        assert expected is not None and expected > 0
+        assert cost["payload"]["cost_usd"] == expected
+
+    def test_streamed_arun_emits_output_and_priced_cost(self, mock_client):
+        # The async streaming path (arun(stream=True) -> async generator) shares
+        # the same root cause and today additionally CRASHES (the wrapper awaits an
+        # async_generator). Inject a REAL agno RunOutputEvent async-stream (real
+        # RunContent deltas + a terminal RunCompletedEvent carrying a real
+        # RunMetrics) — the exact event shape a live arun(stream=True) yields — and
+        # prove the async proxy accumulates content + emits a priced cost.record
+        # once the caller drains it.
+        agent = _agent(name="astream_agent")  # model id gpt-4o-mini
+
+        async def _fake_astream(*a: Any, **kw: Any):
+            yield RunContentEvent(content="po")
+            yield RunContentEvent(content="ng")
+            yield RunCompletedEvent(
+                content="pong",
+                metrics=RunMetrics(input_tokens=12, output_tokens=1, total_tokens=13),
+            )
+
+        uploaded = capture_framework_trace(mock_client)
+        adapter = AgnoAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=agent)
+        adapter._unwrap_agent(agent)
+        adapter._originals.pop(id(agent), None)
+        agent.arun = _fake_astream
+        adapter._instrument_agent(agent)
+
+        async def _drive():
+            seen = []
+            async for ev in agent.arun("ping", stream=True):
+                seen.append(ev)
+            return seen
+
+        seen = asyncio.run(_drive())
+        adapter.disconnect()
+        shutdown_uploads(10.0)
+
+        assert any(getattr(e, "event", None) == "RunCompleted" for e in seen), (
+            "the streamed async generator must reach the caller unchanged"
+        )
+        events = uploaded["events"]
+        out = find_event(events, "agent.output")
+        assert out is not None and out["payload"].get("output") == "pong", (
+            "streamed arun recorded a BLANK agent.output"
+        )
+        cost = find_event(events, "cost.record")
+        assert cost is not None, "streamed arun emitted no cost.record"
+        assert cost["payload"]["tokens_total"] == 13
+        assert cost["payload"]["model"] == "gpt-4o-mini"
+        assert "cost_usd" in cost["payload"], "streamed arun cost.record carries no cost_usd"
 
 
 class TestConcurrencyIsolation:

@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import os
 import json
+import asyncio
 from dataclasses import dataclass
 
 import pytest
@@ -312,6 +313,71 @@ class TestDepsPrivacyFloor:
         # Field NAMES and TYPES only — never the values.
         assert summary.get("fields") == {"api_token": "str", "user_id": "int"}
         assert SENTINEL not in json.dumps(summary)
+
+
+# ---------------------------------------------------------------------------
+# Streamed agent.output content floor (real StreamedRunResult, offline TestModel)
+# ---------------------------------------------------------------------------
+class TestStreamingOutputFloor:
+    """A streamed run must emit ``agent.output`` WITH the run's real resolved
+    output content under ``capture_content=True`` — and stay HONEST (no ``output``
+    key, no content leak) under ``capture_content=False``.
+
+    pydantic-ai's ``StreamedRunResult`` exposes its result ONLY via the
+    ``await get_output()`` coroutine — it has no ``.output`` attribute the way the
+    non-streaming ``AgentRunResult`` does. So a run wrapper that reads ``.output``
+    drops the streamed output entirely. This floor drives the REAL agent loop over
+    the offline ``TestModel`` (no key, no network) and, crucially, the consumer
+    here consumes only the text stream and does NOT itself call ``get_output()`` —
+    so the resolved content can only reach ``agent.output`` if the *wrapper*
+    awaits it. A ``capture_content=False`` control proves the same path stays
+    redacted (structural ``streaming=True`` event, no ``output``, no SENTINEL).
+    """
+
+    @staticmethod
+    def _run_stream(mock_client, config: CaptureConfig):
+        uploaded = capture_framework_trace(mock_client)
+        agent = Agent(model=TestModel(custom_output_text=f"streamed {SENTINEL}"), name="stream_out_agent")
+        adapter = PydanticAIAdapter(mock_client, capture_config=config)
+        adapter.connect(target=agent)
+
+        async def _go() -> None:
+            # Consume the text stream the way a production caller would, but do
+            # NOT call get_output() here — the wrapper must resolve it itself.
+            async with agent.run_stream("stream me") as stream:
+                async for _ in stream.stream_text(delta=True):
+                    pass
+
+        asyncio.get_event_loop().run_until_complete(_go())
+        adapter.disconnect()
+        return uploaded["events"]
+
+    def test_streamed_output_carries_resolved_content(self, mock_client):
+        events = self._run_stream(mock_client, CaptureConfig.full())
+        out = find_event(events, "agent.output")
+        assert out["payload"]["status"] == "ok"
+        assert out["payload"]["streaming"] is True
+        # The heart of the floor: the streamed output content must be present and
+        # be the run's REAL resolved output (from await get_output()), not dropped.
+        assert "output" in out["payload"], (
+            "streamed agent.output dropped the resolved output content "
+            "(StreamedRunResult has no .output attr — the wrapper must await get_output())"
+        )
+        assert out["payload"]["output"] == f"streamed {SENTINEL}"
+        # And the content genuinely reaches the stored trace.
+        assert SENTINEL in json.dumps(events), "resolved streamed output never reached the trace"
+
+    def test_streamed_output_honest_when_not_capturing(self, mock_client):
+        events = self._run_stream(mock_client, CaptureConfig(capture_content=False))
+        out = find_event(events, "agent.output")
+        # Structural event survives and is still marked streamed…
+        assert out["payload"]["streaming"] is True
+        assert out["payload"]["status"] == "ok"
+        # …but resolving the output for cost/usage must NOT leak it into the trace.
+        assert "output" not in out["payload"], (
+            "streamed agent.output leaked 'output' under capture_content=False"
+        )
+        assert SENTINEL not in json.dumps(events), "PRIVACY LEAK: streamed output SENTINEL survived redaction"
 
 
 # ---------------------------------------------------------------------------

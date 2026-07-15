@@ -48,8 +48,9 @@ class StateDeltaHandler:
                 elif op_type == "remove":
                     self._patch_remove(path)
                 elif op_type == "replace":
-                    self._patch_add(path, value)
+                    self._patch_replace(path, value)
                 else:
+                    # move / copy / test remain unimplemented (see module docstring).
                     log.debug("Unsupported JSON Patch op: %s", op_type)
             except Exception as exc:
                 log.warning("JSON Patch %s @ %s failed: %s", op_type, path, exc)
@@ -72,6 +73,27 @@ class StateDeltaHandler:
             if not isinstance(nxt, dict):
                 return
             target = nxt
+        target[keys[-1]] = value
+
+    def _patch_replace(self, path: str, value: Any) -> None:
+        # RFC 6902: "The target location MUST exist for the operation to be
+        # successful." Unlike ``add``, ``replace`` never creates the target (or
+        # its parents) — a replace on a missing path is an honest failure
+        # (raised here, caught + logged by ``apply_delta``), never a silent add.
+        keys = self._parse_path(path)
+        if not keys:
+            # Whole-document replace: the root document always exists.
+            if isinstance(value, dict):
+                self._current_state = dict(value)
+            return
+        target = self._current_state
+        for key in keys[:-1]:
+            nxt = target.get(key)
+            if not isinstance(nxt, dict):
+                raise KeyError(f"replace target parent does not exist: {path}")
+            target = nxt
+        if keys[-1] not in target:
+            raise KeyError(f"replace target does not exist: {path}")
         target[keys[-1]] = value
 
     def _patch_remove(self, path: str) -> None:

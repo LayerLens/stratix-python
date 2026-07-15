@@ -243,7 +243,20 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
         # model.invoke only, so usage stranded on cost.record alone leaves the
         # column blank (G5). model/provider are omitted honestly when the framework
         # doesn't surface a model id.
-        if model or tokens:
+        #
+        # Streaming caveat: ``invoke_stream`` yields many partial
+        # ``StreamingChatMessageContent`` chunks per real model call — each
+        # carrying the same ``ai_model_id`` but no usage — then a terminal chunk
+        # carrying the ``CompletionUsage`` (SK forces
+        # ``stream_options={"include_usage": True}``). The model-alone branch would
+        # otherwise fire once per fragment, inflating model.invoke to N+1 per call
+        # with N phantom tokens-less events. A token-less streaming fragment is not
+        # a complete call to report — the terminal usage chunk (model + tokens) is
+        # the single honest accounting — so suppress the model-alone emission for
+        # streaming fragments. Non-streaming ``invoke`` yields one consolidated
+        # ``ChatMessageContent`` (not a fragment), so the G5 model-only path is
+        # unchanged for it.
+        if tokens or (model and not _is_streaming_message(message)):
             payload = self._payload()
             if model:
                 payload["model"] = str(model)
@@ -296,6 +309,25 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
             payload["termination_strategy"] = type(term).__name__
 
         self._emit("environment.config", payload)
+
+
+def _is_streaming_message(message: Any) -> bool:
+    """True when ``message`` is (or wraps) a partial streamed chunk.
+
+    ``invoke_stream`` yields ``AgentResponseItem`` objects whose inner
+    ``.message`` is a ``StreamingChatMessageContent`` (SK's per-chunk type),
+    whereas the non-streaming ``invoke`` yields items whose inner ``.message`` is
+    a plain ``ChatMessageContent``. The unit/e2e doubles pass a raw
+    ``SimpleNamespace``/``ChatMessageContent`` with no ``.message`` attribute, so
+    we fall back to the object itself — neither is a streaming type, keeping the
+    G5 model-only path intact for them. Detected by class name to avoid a hard
+    ``semantic_kernel`` import (mirrors the ``"FunctionCall" in item_type`` style
+    in ``_process_message_item``).
+    """
+    if message is None:
+        return False
+    inner = getattr(message, "message", message)
+    return "Streaming" in type(inner).__name__
 
 
 def _message_model_id(message: Any) -> Optional[str]:

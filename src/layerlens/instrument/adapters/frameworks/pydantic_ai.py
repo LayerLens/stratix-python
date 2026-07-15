@@ -51,6 +51,11 @@ except ImportError:
 #: Agent entry points wrapped on the instance during connect().
 _RUN_METHODS = ("run", "run_sync", "run_stream")
 
+#: Sentinel distinguishing "no pre-resolved output supplied" (read it off the
+#: result) from a genuine ``None`` output — the streaming path resolves the
+#: output itself via ``await get_output()`` and hands it in.
+_UNRESOLVED = object()
+
 
 class PydanticAIAdapter(FrameworkAdapter):
     """PydanticAI adapter — see module docstring for the instrumentation model."""
@@ -181,7 +186,22 @@ class PydanticAIAdapter(FrameworkAdapter):
             self._finish_run_error(exc)
             raise
         else:
-            self._finish_run_ok(stream_result, streaming=True)
+            # StreamedRunResult exposes its result ONLY via ``await get_output()``
+            # (no ``.output`` attribute) — resolve it here, in async context,
+            # AFTER the consumer's ``async with`` body has run (stream consumed or
+            # abandoned). Guard it: a caller that abandoned the stream (or a
+            # transport that cannot replay it) must not turn a successful run into
+            # a crash — fall back to the honest "no output" instead.
+            resolved: Any = _UNRESOLVED
+            try:
+                resolved = await stream_result.get_output()
+            except BaseException:
+                log.debug(
+                    "layerlens: could not resolve streamed pydantic-ai output; "
+                    "emitting agent.output without content",
+                    exc_info=True,
+                )
+            self._finish_run_ok(stream_result, streaming=True, resolved_output=resolved)
         finally:
             self._in_run.reset(token)
 
@@ -236,13 +256,19 @@ class PydanticAIAdapter(FrameworkAdapter):
         )
         self._start_timer("run")
 
-    def _finish_run_ok(self, result: Any, streaming: bool = False) -> None:
+    def _finish_run_ok(self, result: Any, streaming: bool = False, resolved_output: Any = _UNRESOLVED) -> None:
         latency_ms = self._stop_timer("run")
         root = self._get_root_span()
         agent_name = self._agent_display_name(self._target)
         model_name = self._model_display_name(self._target)
 
-        output = self._extract_output(result)
+        # Streaming resolves its output out-of-band (``await get_output()`` — the
+        # StreamedRunResult has no ``.output`` attr for ``_extract_output`` to read);
+        # honor the pre-resolved value when supplied, else read it off the result.
+        if resolved_output is _UNRESOLVED:
+            output = self._extract_output(result)
+        else:
+            output = safe_serialize(resolved_output) if resolved_output is not None else None
         usage = self._extract_usage(result)
 
         payload = self._payload(status="ok")
