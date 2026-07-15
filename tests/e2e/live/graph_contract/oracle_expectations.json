@@ -238,5 +238,151 @@
       "intake-coordinator"
     ],
     "guarded_column": "multi-agent"
+  },
+  "a2a-s1": {
+    "lane": "a2a-s1",
+    "shipped_nodes": [
+      "billing-specialist",
+      "dispute-orchestrator"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "billing-specialist",
+      "dispute-orchestrator"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "a2a-s2": {
+    "lane": "a2a-s2",
+    "shipped_nodes": [
+      "billing-specialist",
+      "dispute-orchestrator",
+      "ledger-adjuster"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "billing-specialist",
+      "dispute-orchestrator",
+      "ledger-adjuster"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "agui-s1": {
+    "lane": "agui-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "mcp-s1": {
+    "lane": "mcp-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "litellm-s1": {
+    "lane": "litellm-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "ollama-s1": {
+    "lane": "ollama-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "google_vertex-s1": {
+    "lane": "google_vertex-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "agentforce-s1": {
+    "lane": "agentforce-s1",
+    "shipped_nodes": [
+      "Agentforce_Employee_Agent"
+    ],
+    "shipped_column": "Agentforce_Employee_Agent",
+    "guarded_nodes": [
+      "Agentforce_Employee_Agent"
+    ],
+    "guarded_column": "Agentforce_Employee_Agent"
+  },
+  "embedding-s1": {
+    "lane": "embedding-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "haystack-s1": {
+    "lane": "haystack-s1",
+    "shipped_nodes": [
+      "llm"
+    ],
+    "shipped_column": "llm",
+    "guarded_nodes": [
+      "llm"
+    ],
+    "guarded_column": "llm"
+  },
+  "ms_agent_framework-s1": {
+    "lane": "ms_agent_framework-s1",
+    "shipped_nodes": [
+      "replay_agent"
+    ],
+    "shipped_column": "replay_agent",
+    "guarded_nodes": [
+      "replay_agent"
+    ],
+    "guarded_column": "replay_agent"
+  },
+  "openai_agents-s1": {
+    "lane": "openai_agents-s1",
+    "shipped_nodes": [
+      "pong_agent"
+    ],
+    "shipped_column": "pong_agent",
+    "guarded_nodes": [
+      "pong_agent"
+    ],
+    "guarded_column": "pong_agent"
+  },
+  "semantic_kernel-s1": {
+    "lane": "semantic_kernel-s1",
+    "shipped_nodes": [
+      "replay"
+    ],
+    "shipped_column": "replay",
+    "guarded_nodes": [
+      "replay"
+    ],
+    "guarded_column": "replay"
+  },
+  "vector_store-s1": {
+    "lane": "vector_store-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "llamaindex-s1": {
+    "lane": "llamaindex-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
+  },
+  "langchain-s1": {
+    "lane": "langchain-s1",
+    "shipped_nodes": [],
+    "shipped_column": "",
+    "guarded_nodes": [],
+    "guarded_column": ""
   }
 }

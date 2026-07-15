@@ -5667,5 +5667,1754 @@
       "hash": "sha256:5592fa15b72a0a533eb84eaa596fe844498be94275bbf5e0a4d9763387b01bb1",
       "previous_hash": "sha256:63b2fefe15f719722549aac3fe20262f78a2b8be84eb793278dddd6ff098795a"
     }
+  ],
+  "a2a-s1": [
+    {
+      "event_type": "a2a.agent.discovered",
+      "trace_id": "1e703678ff4749be",
+      "span_id": "8504b59b379a479b",
+      "parent_span_id": "6b2c5116a509483d",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1784077516586453000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "agent_id": "billing-specialist",
+        "name": "billing-specialist",
+        "skills": [
+          "process_refund"
+        ],
+        "authScheme": null,
+        "protocolVersion": null,
+        "signature_present": true,
+        "signature_count": 1,
+        "signature_fp": "sha256:9eaf8da71eefd890870e45b2722e85861943b9306b1a1640139d3db34057b132"
+      },
+      "hash": "sha256:c8bc781fa5890b5187873679b6203a39e3e9ebf93802e3f19870cb94749fe8a0",
+      "previous_hash": null
+    },
+    {
+      "event_type": "a2a.task.created",
+      "trace_id": "1e703678ff4749be",
+      "span_id": "20e3bd3a24b3484d",
+      "parent_span_id": "6b2c5116a509483d",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1784077516586790000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "task_id": "task-refund-580f3549",
+        "method": "send_task",
+        "request": {
+          "skill": "process_refund",
+          "skill_description": "Customer ACME-4471 disputes a DUPLICATE $79.99 charge on invoice INV-20260712 (charged twice on 2026-07-12). Verify the duplicate and issue a refund to the original payment method.",
+          "task_id": "task-refund-580f3549"
+        },
+        "submitter_agent_id": "dispute-orchestrator"
+      },
+      "hash": "sha256:e364452bc51a3a7dba5deb6c49f4cb7900f0067f2116e8a5690d516e8179b2e4",
+      "previous_hash": "sha256:c8bc781fa5890b5187873679b6203a39e3e9ebf93802e3f19870cb94749fe8a0"
+    },
+    {
+      "event_type": "a2a.delegation",
+      "trace_id": "1e703678ff4749be",
+      "span_id": "503160beb12d42bd",
+      "parent_span_id": "6b2c5116a509483d",
+      "span_name": null,
+      "sequence_id": 3,
+      "timestamp_ns": 1784077516586892000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "task_id": "task-refund-580f3549",
+        "target_agent": "billing-specialist",
+        "to_agent": "billing-specialist",
+        "delegation_fp": "sha256:7bbfae75ca6c497e8819801f8ff87e6c42b06260fbcb42c93c8df0f7a3f1e0d8",
+        "from_agent": "dispute-orchestrator",
+        "skill_description": "Customer ACME-4471 disputes a DUPLICATE $79.99 charge on invoice INV-20260712 (charged twice on 2026-07-12). Verify the duplicate and issue a refund to the original payment method."
+      },
+      "hash": "sha256:7dca7537abca1d220d7221a393421e87af73923fb9f3290f9cf54ab4ca1d087f",
+      "previous_hash": "sha256:e364452bc51a3a7dba5deb6c49f4cb7900f0067f2116e8a5690d516e8179b2e4"
+    },
+    {
+      "event_type": "a2a.task.updated",
+      "trace_id": "1e703678ff4749be",
+      "span_id": "a7043d605275479e",
+      "parent_span_id": "6b2c5116a509483d",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1784077516586956000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "task_id": "task-refund-580f3549",
+        "status": "completed",
+        "latency_ms": 0.21719932556152344
+      },
+      "hash": "sha256:c8c8346a96f1e7574c7fbd0d9c4517836ccf7fbe8803045c1790f9d5824fdc47",
+      "previous_hash": "sha256:7dca7537abca1d220d7221a393421e87af73923fb9f3290f9cf54ab4ca1d087f"
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "1e703678ff4749be",
+      "span_id": "503160beb12d42bd",
+      "parent_span_id": "6b2c5116a509483d",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1784077516586994000,
+      "payload": {
+        "agent_name": "dispute-orchestrator",
+        "source": "handoff",
+        "framework": "a2a"
+      },
+      "hash": "sha256:5693a3d0b4955cfe7066a2e8533969cf651eb5d27e1907a8ec1827b35f402731",
+      "previous_hash": "sha256:c8c8346a96f1e7574c7fbd0d9c4517836ccf7fbe8803045c1790f9d5824fdc47"
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "1e703678ff4749be",
+      "span_id": "6b2c5116a509483d",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 6,
+      "timestamp_ns": 1784077516587008000,
+      "payload": {
+        "synthesized": true
+      },
+      "hash": "sha256:45700fc300644b73dc798d5a7ab864f1b7ebab70d5f6e4aa10909a075c37b0f4",
+      "previous_hash": "sha256:5693a3d0b4955cfe7066a2e8533969cf651eb5d27e1907a8ec1827b35f402731"
+    }
+  ],
+  "a2a-s2": [
+    {
+      "event_type": "a2a.agent.discovered",
+      "trace_id": "b6643a8781a14184",
+      "span_id": "e3022691cbf74c72",
+      "parent_span_id": "4d72ecc719e74d03",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1784077516587487000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "agent_id": "billing-specialist",
+        "name": "billing-specialist",
+        "skills": [
+          "process_refund"
+        ],
+        "authScheme": null,
+        "protocolVersion": null,
+        "signature_present": true,
+        "signature_count": 1,
+        "signature_fp": "sha256:c1cbfec6ed2b66dba482b85d0a34ad6aec008d20d0054503dae8f1857781670a"
+      },
+      "hash": "sha256:c72cbc54c4437bba7cf83caeae1b45bae09ba31f97e82a12c1263bc2a3687640",
+      "previous_hash": null
+    },
+    {
+      "event_type": "a2a.task.created",
+      "trace_id": "b6643a8781a14184",
+      "span_id": "1890ef0759264b1a",
+      "parent_span_id": "4d72ecc719e74d03",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1784077516587565000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "task_id": "task-refund-fad430a6",
+        "method": "send_task",
+        "request": {
+          "skill": "process_refund",
+          "skill_description": "Customer ACME-4471 disputes a DUPLICATE $79.99 charge on invoice INV-20260712. Verify the duplicate and issue a refund.",
+          "task_id": "task-refund-fad430a6"
+        },
+        "submitter_agent_id": "dispute-orchestrator"
+      },
+      "hash": "sha256:f2ba9177ff658c8fabec33a82ac8bc5fabb84c8c216cbe95997985e0186cda1e",
+      "previous_hash": "sha256:c72cbc54c4437bba7cf83caeae1b45bae09ba31f97e82a12c1263bc2a3687640"
+    },
+    {
+      "event_type": "a2a.delegation",
+      "trace_id": "b6643a8781a14184",
+      "span_id": "0364a64ccd2c4141",
+      "parent_span_id": "4d72ecc719e74d03",
+      "span_name": null,
+      "sequence_id": 3,
+      "timestamp_ns": 1784077516587645000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "task_id": "task-refund-fad430a6",
+        "target_agent": "billing-specialist",
+        "to_agent": "billing-specialist",
+        "delegation_fp": "sha256:78927934355ac4fa23a9a6b02968d15e68d203078bf5b3675fd7f21d186cdb9f",
+        "from_agent": "dispute-orchestrator",
+        "skill_description": "Customer ACME-4471 disputes a DUPLICATE $79.99 charge on invoice INV-20260712. Verify the duplicate and issue a refund."
+      },
+      "hash": "sha256:b1a92a88baf72de7c3472e7173de22cefabd94d091160b3ff451727907085b07",
+      "previous_hash": "sha256:f2ba9177ff658c8fabec33a82ac8bc5fabb84c8c216cbe95997985e0186cda1e"
+    },
+    {
+      "event_type": "a2a.task.updated",
+      "trace_id": "b6643a8781a14184",
+      "span_id": "900fbce50ca44c76",
+      "parent_span_id": "4d72ecc719e74d03",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1784077516587691000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "task_id": "task-refund-fad430a6",
+        "status": "completed",
+        "latency_ms": 0.16117095947265625
+      },
+      "hash": "sha256:4d0a65283901bbb4626125158edef9fb0979fc64fc49844e5e3e4d180246acf8",
+      "previous_hash": "sha256:b1a92a88baf72de7c3472e7173de22cefabd94d091160b3ff451727907085b07"
+    },
+    {
+      "event_type": "a2a.task.created",
+      "trace_id": "b6643a8781a14184",
+      "span_id": "f788d53fb94c4176",
+      "parent_span_id": "4d72ecc719e74d03",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1784077516587768000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "task_id": "task-ledger-03cf610f",
+        "method": "send_task",
+        "request": {
+          "skill": "post_credit_adjustment",
+          "skill_description": "Post a $79.99 CREDIT adjustment to account ACME-4471's ledger for the approved duplicate-charge refund on invoice INV-20260712 (GL 4200-refunds).",
+          "task_id": "task-ledger-03cf610f"
+        },
+        "submitter_agent_id": "billing-specialist"
+      },
+      "hash": "sha256:c00ec046589799b16170425ada6f6a196349ad2122cf0e7443f7e3adc90a5840",
+      "previous_hash": "sha256:4d0a65283901bbb4626125158edef9fb0979fc64fc49844e5e3e4d180246acf8"
+    },
+    {
+      "event_type": "a2a.delegation",
+      "trace_id": "b6643a8781a14184",
+      "span_id": "fc565d55088e4706",
+      "parent_span_id": "4d72ecc719e74d03",
+      "span_name": null,
+      "sequence_id": 6,
+      "timestamp_ns": 1784077516587848000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "task_id": "task-ledger-03cf610f",
+        "target_agent": "ledger-adjuster",
+        "to_agent": "ledger-adjuster",
+        "delegation_fp": "sha256:72f0c7e43002ad631980493efac386122c4134950bb15eedbd5d272298a38cb2",
+        "from_agent": "billing-specialist",
+        "skill_description": "Post a $79.99 CREDIT adjustment to account ACME-4471's ledger for the approved duplicate-charge refund on invoice INV-20260712 (GL 4200-refunds)."
+      },
+      "hash": "sha256:63db34a13dc0ccf85418424566323b004721136d355727fc3e3b32f8160e9b6e",
+      "previous_hash": "sha256:c00ec046589799b16170425ada6f6a196349ad2122cf0e7443f7e3adc90a5840"
+    },
+    {
+      "event_type": "a2a.task.updated",
+      "trace_id": "b6643a8781a14184",
+      "span_id": "77e4a1c1b7334cae",
+      "parent_span_id": "4d72ecc719e74d03",
+      "span_name": null,
+      "sequence_id": 7,
+      "timestamp_ns": 1784077516587883000,
+      "payload": {
+        "protocol": "a2a",
+        "framework": "a2a",
+        "task_id": "task-ledger-03cf610f",
+        "status": "completed",
+        "latency_ms": 0.15997886657714844
+      },
+      "hash": "sha256:55c09c436b018d90f59ced38eb8887c436a78646ab76d7d51bd5f1e3f07f13a6",
+      "previous_hash": "sha256:63db34a13dc0ccf85418424566323b004721136d355727fc3e3b32f8160e9b6e"
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "b6643a8781a14184",
+      "span_id": "0364a64ccd2c4141",
+      "parent_span_id": "4d72ecc719e74d03",
+      "span_name": null,
+      "sequence_id": 8,
+      "timestamp_ns": 1784077516587908000,
+      "payload": {
+        "agent_name": "dispute-orchestrator",
+        "source": "handoff",
+        "framework": "a2a"
+      },
+      "hash": "sha256:f7987d6bc96a628453e4b119299a847c51ad7d094d460263ce8608b7da82bb2f",
+      "previous_hash": "sha256:55c09c436b018d90f59ced38eb8887c436a78646ab76d7d51bd5f1e3f07f13a6"
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "b6643a8781a14184",
+      "span_id": "4d72ecc719e74d03",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 9,
+      "timestamp_ns": 1784077516587920000,
+      "payload": {
+        "synthesized": true
+      },
+      "hash": "sha256:1147741d2c5ea84815c02ba316d762951b4a84d04e2d305c3309d0f23a54fdcc",
+      "previous_hash": "sha256:f7987d6bc96a628453e4b119299a847c51ad7d094d460263ce8608b7da82bb2f"
+    }
+  ],
+  "agui-s1": [
+    {
+      "event_type": "protocol.stream.event",
+      "trace_id": "20f22ff7ee7846ac",
+      "span_id": "a7f79a4205f24875",
+      "parent_span_id": "4dd7b65e36af441d",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1784076833116281000,
+      "payload": {
+        "protocol": "agui",
+        "framework": "agui",
+        "agui_event": "RUN_STARTED",
+        "category": "lifecycle",
+        "payload": {
+          "type": "RUN_STARTED",
+          "threadId": "th-shop-1",
+          "runId": "run-1"
+        }
+      },
+      "hash": "sha256:64783d342805c9cf66eb99ec78c9b78ed0176b871a18be46e6a2bd4f8d7fc8c1",
+      "previous_hash": null
+    },
+    {
+      "event_type": "protocol.stream.event",
+      "trace_id": "20f22ff7ee7846ac",
+      "span_id": "995afe8cb7dd475f",
+      "parent_span_id": "4dd7b65e36af441d",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1784076833118454000,
+      "payload": {
+        "protocol": "agui",
+        "framework": "agui",
+        "agui_event": "TEXT_MESSAGE_START",
+        "category": "text",
+        "payload": {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "m1",
+          "role": "assistant"
+        }
+      },
+      "hash": "sha256:92c218c967b34929bda9344e91aa25d18e5af54833a4ed77a1fb4cf401b1978e",
+      "previous_hash": "sha256:64783d342805c9cf66eb99ec78c9b78ed0176b871a18be46e6a2bd4f8d7fc8c1"
+    },
+    {
+      "event_type": "agui.message",
+      "trace_id": "20f22ff7ee7846ac",
+      "span_id": "89c7a0ac8d3340f3",
+      "parent_span_id": "4dd7b65e36af441d",
+      "span_name": null,
+      "sequence_id": 3,
+      "timestamp_ns": 1784076833118584000,
+      "payload": {
+        "protocol": "agui",
+        "framework": "agui",
+        "text": "Let me find wireless headphones under $200 for you."
+      },
+      "hash": "sha256:afea052c4578d9488218b3dac9a84ebf47465a801d04048f5d8fe1c01c2dbaab",
+      "previous_hash": "sha256:92c218c967b34929bda9344e91aa25d18e5af54833a4ed77a1fb4cf401b1978e"
+    },
+    {
+      "event_type": "agui.tool_call",
+      "trace_id": "20f22ff7ee7846ac",
+      "span_id": "5339ae8e0e4e41bd",
+      "parent_span_id": "4dd7b65e36af441d",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1784076833118714000,
+      "payload": {
+        "protocol": "agui",
+        "framework": "agui",
+        "tool_name": "product_lookup",
+        "arguments": {
+          "category": "audio",
+          "query": "wireless headphones",
+          "max_price": 200
+        }
+      },
+      "hash": "sha256:80486d583a391d000fe12c18768c109f771d27b564282c9d70df88dfcaaccb41",
+      "previous_hash": "sha256:afea052c4578d9488218b3dac9a84ebf47465a801d04048f5d8fe1c01c2dbaab"
+    },
+    {
+      "event_type": "tool.call",
+      "trace_id": "20f22ff7ee7846ac",
+      "span_id": "3b201b7c094e493d",
+      "parent_span_id": "4dd7b65e36af441d",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1784076833118949000,
+      "payload": {
+        "protocol": "agui",
+        "framework": "agui",
+        "agui_event": "TOOL_CALL_RESULT",
+        "category": "tool",
+        "payload": {
+          "type": "TOOL_CALL_RESULT",
+          "toolCallId": "tc1",
+          "content": "[{\"sku\": \"sony-wh-ch720n\", \"name\": \"Sony WH-CH720N\", \"price\": 149.0, \"anc\": true}, {\"sku\": \"anker-q30\", \"name\": \"Anker Soundcore Q30\", \"price\": 79.0, \"anc\": true}, {\"sku\": \"jbl-760nc\", \"name\": \"JBL Tune 760NC\", \"price\": 129.0, \"anc\": true}]"
+        }
+      },
+      "hash": "sha256:509ce0e363d43cd456491792d1b164d812ab7fd51efd4c0b87292a11d974d128",
+      "previous_hash": "sha256:80486d583a391d000fe12c18768c109f771d27b564282c9d70df88dfcaaccb41"
+    },
+    {
+      "event_type": "protocol.stream.event",
+      "trace_id": "20f22ff7ee7846ac",
+      "span_id": "b7007a5edc5a4507",
+      "parent_span_id": "4dd7b65e36af441d",
+      "span_name": null,
+      "sequence_id": 6,
+      "timestamp_ns": 1784076833119056000,
+      "payload": {
+        "protocol": "agui",
+        "framework": "agui",
+        "agui_event": "TEXT_MESSAGE_START",
+        "category": "text",
+        "payload": {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "m2",
+          "role": "assistant"
+        }
+      },
+      "hash": "sha256:b42b2aa1ade12cae87a27c3a912479775fa3e914afa9e92697a538cc0d07348e",
+      "previous_hash": "sha256:509ce0e363d43cd456491792d1b164d812ab7fd51efd4c0b87292a11d974d128"
+    },
+    {
+      "event_type": "agui.message",
+      "trace_id": "20f22ff7ee7846ac",
+      "span_id": "1f961a259150493c",
+      "parent_span_id": "4dd7b65e36af441d",
+      "span_name": null,
+      "sequence_id": 7,
+      "timestamp_ns": 1784076833120175000,
+      "payload": {
+        "protocol": "agui",
+        "framework": "agui",
+        "text": "I found three great options: the Sony WH-CH720N ($149), Anker Soundcore Q30 ($79), and JBL Tune 760NC ($129) \u2014 all with active noise cancellation."
+      },
+      "hash": "sha256:fe69e22d61e6034f7cc1783274e7bbb1679a0b016e2a3ff3703245040d320c93",
+      "previous_hash": "sha256:b42b2aa1ade12cae87a27c3a912479775fa3e914afa9e92697a538cc0d07348e"
+    },
+    {
+      "event_type": "protocol.stream.event",
+      "trace_id": "20f22ff7ee7846ac",
+      "span_id": "b66f98317fbc4eff",
+      "parent_span_id": "4dd7b65e36af441d",
+      "span_name": null,
+      "sequence_id": 8,
+      "timestamp_ns": 1784076833120340000,
+      "payload": {
+        "protocol": "agui",
+        "framework": "agui",
+        "agui_event": "RUN_FINISHED",
+        "category": "lifecycle",
+        "payload": {
+          "type": "RUN_FINISHED",
+          "threadId": "th-shop-1",
+          "runId": "run-1"
+        }
+      },
+      "hash": "sha256:637836e80e836f9ddbe784c0edd65878b1adb47eb30007566214eb313d43fb25",
+      "previous_hash": "sha256:fe69e22d61e6034f7cc1783274e7bbb1679a0b016e2a3ff3703245040d320c93"
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "20f22ff7ee7846ac",
+      "span_id": "4dd7b65e36af441d",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 9,
+      "timestamp_ns": 1784076833120711000,
+      "payload": {
+        "synthesized": true
+      },
+      "hash": "sha256:567ec43a7a3848a8ab272a9c2d3b74ca319520a51cf2942e70d00abcf66b91b0",
+      "previous_hash": "sha256:637836e80e836f9ddbe784c0edd65878b1adb47eb30007566214eb313d43fb25"
+    }
+  ],
+  "mcp-s1": [
+    {
+      "event_type": "mcp.server.connected",
+      "trace_id": "8d3335e7947f4301",
+      "span_id": "bc45007f2e7745d9",
+      "parent_span_id": "199abba79cdc4ed4",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1784076975270116000,
+      "payload": {
+        "protocol": "mcp",
+        "framework": "mcp",
+        "server_name": "clinical-records-mcp",
+        "server_version": "2.4.0",
+        "protocol_version": "2025-11-25"
+      },
+      "hash": "sha256:e3d45414275e4646ead9c3a9b8b3a2f6acf4ded7d10eb96c08b1173fe4035693",
+      "previous_hash": null
+    },
+    {
+      "event_type": "mcp.tools.listed",
+      "trace_id": "8d3335e7947f4301",
+      "span_id": "1c57ef9e180e4839",
+      "parent_span_id": "199abba79cdc4ed4",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1784076975270718000,
+      "payload": {
+        "protocol": "mcp",
+        "framework": "mcp",
+        "tool_count": 2,
+        "tool_names": [
+          "get_patient_record",
+          "list_medications"
+        ]
+      },
+      "hash": "sha256:a4c518c02661a8b425536627a9ce0a231d664775c000f2687c29fce7445ad464",
+      "previous_hash": "sha256:e3d45414275e4646ead9c3a9b8b3a2f6acf4ded7d10eb96c08b1173fe4035693"
+    },
+    {
+      "event_type": "mcp.async_task",
+      "trace_id": "8d3335e7947f4301",
+      "span_id": "ddb421490d8e42c1",
+      "parent_span_id": "199abba79cdc4ed4",
+      "span_name": null,
+      "sequence_id": 3,
+      "timestamp_ns": 1784076975270786000,
+      "payload": {
+        "protocol": "mcp",
+        "framework": "mcp",
+        "tool_name": "get_patient_record",
+        "phase": "start",
+        "async_task_id": "199abba79cdc4ed4",
+        "status": "running",
+        "originating_span_id": "199abba79cdc4ed4",
+        "progress_pct": null,
+        "timeout_ms": 300000,
+        "elapsed_ms": 0.0024170149117708206
+      },
+      "hash": "sha256:f132829407b1d7bb1b01e76d33372dcf6407fbb47d6c7cafce26656917b61449",
+      "previous_hash": "sha256:a4c518c02661a8b425536627a9ce0a231d664775c000f2687c29fce7445ad464"
+    },
+    {
+      "event_type": "mcp.tool.call",
+      "trace_id": "8d3335e7947f4301",
+      "span_id": "a2d8589db1ff40b6",
+      "parent_span_id": "199abba79cdc4ed4",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1784076975270841000,
+      "payload": {
+        "protocol": "mcp",
+        "framework": "mcp",
+        "tool_name": "get_patient_record",
+        "arguments": {
+          "patient_id": "PT-8842"
+        },
+        "result": {
+          "content_items": 1
+        },
+        "latency_ms": 0.07915496826171875
+      },
+      "hash": "sha256:6542672b5b74f24aa5c93b724502e5ee5a7c9f4e5570182ae42a78e2cce6da65",
+      "previous_hash": "sha256:f132829407b1d7bb1b01e76d33372dcf6407fbb47d6c7cafce26656917b61449"
+    },
+    {
+      "event_type": "mcp.structured_output",
+      "trace_id": "8d3335e7947f4301",
+      "span_id": "838e263a12c244c6",
+      "parent_span_id": "199abba79cdc4ed4",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1784076975271525000,
+      "payload": {
+        "protocol": "mcp",
+        "framework": "mcp",
+        "tool_name": "get_patient_record",
+        "output_hash": "sha256:012fe8919421170b49332b9edd16a249fed5e0d07f07a949b45741e5c1871ae5",
+        "schema_hash": "sha256:ca2dcf138fd22de4cb12dd14eea455b790fa8e1da95ca429835cbd7076ca8e7e",
+        "validation_passed": true
+      },
+      "hash": "sha256:cca67a05fe64821cbbdd3cc8dcbccbd3bafefb6dc9bd262b46535e9bf06d061b",
+      "previous_hash": "sha256:6542672b5b74f24aa5c93b724502e5ee5a7c9f4e5570182ae42a78e2cce6da65"
+    },
+    {
+      "event_type": "mcp.async_task",
+      "trace_id": "8d3335e7947f4301",
+      "span_id": "ee452e8cdbeb4519",
+      "parent_span_id": "199abba79cdc4ed4",
+      "span_name": null,
+      "sequence_id": 6,
+      "timestamp_ns": 1784076975273113000,
+      "payload": {
+        "protocol": "mcp",
+        "framework": "mcp",
+        "async_task_id": "199abba79cdc4ed4",
+        "status": "completed",
+        "originating_span_id": "199abba79cdc4ed4",
+        "progress_pct": null,
+        "timeout_ms": 300000,
+        "elapsed_ms": 2.31912502204068,
+        "tool_name": "get_patient_record",
+        "phase": "end"
+      },
+      "hash": "sha256:5bd9c9ee088cded6690d816a7e42c414b171e788348b4f7bec81cf2fcfb0d105",
+      "previous_hash": "sha256:cca67a05fe64821cbbdd3cc8dcbccbd3bafefb6dc9bd262b46535e9bf06d061b"
+    },
+    {
+      "event_type": "mcp.elicitation",
+      "trace_id": "8d3335e7947f4301",
+      "span_id": "48796a2a079d4970",
+      "parent_span_id": "199abba79cdc4ed4",
+      "span_name": null,
+      "sequence_id": 7,
+      "timestamp_ns": 1784076975273242000,
+      "payload": {
+        "protocol": "mcp",
+        "framework": "mcp",
+        "elicitation_id": "ae5564959b5c4126bda589a7dbdd4c04",
+        "phase": "request",
+        "mode": "form",
+        "schema_hash": "sha256:e37b4517d913e320835a0ba45b96739a8a8d6d8a990cf7d6c385c2b46bed7176",
+        "message": "Clinician consent required to access PHI for PT-8842 (treatment purpose). Confirm?",
+        "title": "Clinician consent required to access PHI for PT-8842 (treatment purpose). Confirm?"
+      },
+      "hash": "sha256:b3f6a35cb4ad61b3a03bd3d633c6f99c09b41194b9009ceabc1dce402b535c97",
+      "previous_hash": "sha256:5bd9c9ee088cded6690d816a7e42c414b171e788348b4f7bec81cf2fcfb0d105"
+    },
+    {
+      "event_type": "mcp.elicitation",
+      "trace_id": "8d3335e7947f4301",
+      "span_id": "dc43ff16ecbb4e89",
+      "parent_span_id": "199abba79cdc4ed4",
+      "span_name": null,
+      "sequence_id": 8,
+      "timestamp_ns": 1784076975274240000,
+      "payload": {
+        "protocol": "mcp",
+        "framework": "mcp",
+        "elicitation_id": "ae5564959b5c4126bda589a7dbdd4c04",
+        "phase": "response",
+        "mode": "form",
+        "action": "accept",
+        "latency_ms": 0.9929160005412996,
+        "content_hash": "sha256:f8c9f5fa928885554e275aef542931f02961fb73673abad9602c08199e07eecd"
+      },
+      "hash": "sha256:8eedae6cdfd280f42a107f5ca717c3ca43d72cfdab5bb4616f1af7452b0461b6",
+      "previous_hash": "sha256:b3f6a35cb4ad61b3a03bd3d633c6f99c09b41194b9009ceabc1dce402b535c97"
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "8d3335e7947f4301",
+      "span_id": "199abba79cdc4ed4",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 9,
+      "timestamp_ns": 1784076975274534000,
+      "payload": {
+        "synthesized": true
+      },
+      "hash": "sha256:f21414c6d235ce9a3c7dba47078e9ae340e00911e4741bfd90811bfdc8b3301d",
+      "previous_hash": "sha256:8eedae6cdfd280f42a107f5ca717c3ca43d72cfdab5bb4616f1af7452b0461b6"
+    }
+  ],
+  "litellm-s1": [
+    {
+      "event_type": "model.invoke",
+      "trace_id": "4f54431a4a8a427f",
+      "span_id": "8ccc33c6530b442f",
+      "parent_span_id": "b3bab2cd82594ffd",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1784077068013335000,
+      "payload": {
+        "name": "litellm.completion",
+        "model": "gpt-4o-mini-2024-07-18",
+        "latency_ms": 2254.5008659362793,
+        "parameters": {
+          "max_tokens": 250,
+          "model": "gpt-4o-mini",
+          "temperature": 0.2
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the customer-support assistant for Northwind Outfitters, an online outdoor-gear retailer. Answer the shopper's question clearly and concisely (under 120 words). State the relevant policy (returns, exchanges, shipping, warranty, order tracking) accurately and end with one clear next step."
+          },
+          {
+            "role": "user",
+            "content": "I ordered a rain jacket 10 days ago but it arrived a size too small. What are my options for exchanging it, and will I have to pay return shipping?"
+          }
+        ],
+        "output_message": {
+          "role": "assistant",
+          "content": "You can exchange your rain jacket for a different size within 30 days of receiving your order. To initiate the exchange, please contact our customer support team, and they will provide you with a prepaid return shipping label, so you won't have to pay for return shipping. Once we receive the jacket, we\u2019ll send out the new size promptly. \n\nPlease reach out to our customer support to start the exchange process."
+        },
+        "otel_gen_ai": {
+          "gen_ai.system": "openai",
+          "gen_ai.operation.name": "text_completion",
+          "gen_ai.request.max_tokens": 250,
+          "gen_ai.request.model": "gpt-4o-mini",
+          "gen_ai.request.temperature": 0.2,
+          "gen_ai.response.model": "gpt-4o-mini-2024-07-18",
+          "gen_ai.response.id": "chatcmpl-E1iEVfR4d3VhqRUcnoauzTAD8mKSw",
+          "gen_ai.response.finish_reasons": [
+            "stop"
+          ],
+          "gen_ai.openai.response.system_fingerprint": "fp_330ce8a4ae",
+          "gen_ai.openai.response.service_tier": "default",
+          "gen_ai.usage.input_tokens": 105,
+          "gen_ai.usage.output_tokens": 82,
+          "gen_ai.usage.cache_read_input_tokens": 0
+        },
+        "framework": "litellm",
+        "usage": {
+          "prompt_tokens": 105,
+          "completion_tokens": 82,
+          "total_tokens": 187,
+          "cached_tokens": 0,
+          "reasoning_tokens": 0
+        },
+        "response_model": "gpt-4o-mini-2024-07-18",
+        "response_id": "chatcmpl-E1iEVfR4d3VhqRUcnoauzTAD8mKSw",
+        "system_fingerprint": "fp_330ce8a4ae",
+        "service_tier": "default",
+        "finish_reason": "stop",
+        "prompt_tokens": 105,
+        "completion_tokens": 82,
+        "total_tokens": 187
+      },
+      "hash": "sha256:8ffe80e20704adaf84ca342789f7f1f531c313f6fa5728327309258c2d4d0c73",
+      "previous_hash": null
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "4f54431a4a8a427f",
+      "span_id": "8ccc33c6530b442f",
+      "parent_span_id": "b3bab2cd82594ffd",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1784077068013498000,
+      "payload": {
+        "provider": "openai",
+        "model": "gpt-4o-mini-2024-07-18",
+        "cost_usd": 6.495e-05,
+        "prompt_tokens": 105,
+        "completion_tokens": 82,
+        "total_tokens": 187,
+        "cached_tokens": 0,
+        "reasoning_tokens": 0,
+        "framework": "litellm",
+        "service_tier": "default"
+      },
+      "hash": "sha256:36cb4b467dc4aa28fa97c15cc95b7dcbb1eff706e96f02b92f49c5aa9470c9a4",
+      "previous_hash": "sha256:8ffe80e20704adaf84ca342789f7f1f531c313f6fa5728327309258c2d4d0c73"
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "4f54431a4a8a427f",
+      "span_id": "b3bab2cd82594ffd",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 3,
+      "timestamp_ns": 1784077068013585000,
+      "payload": {
+        "synthesized": true
+      },
+      "hash": "sha256:af374321df86e4b6a8e6f8a0907911a5a247b293403ed6f7c9408e15da84c1cf",
+      "previous_hash": "sha256:36cb4b467dc4aa28fa97c15cc95b7dcbb1eff706e96f02b92f49c5aa9470c9a4"
+    }
+  ],
+  "ollama-s1": [
+    {
+      "event_type": "model.invoke",
+      "trace_id": "9163c2b8a3b44fef",
+      "span_id": "e32f0446b08e4d00",
+      "parent_span_id": "b194ce19dd144513",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1784076924371288000,
+      "payload": {
+        "name": "ollama.chat",
+        "model": "llama3:8b",
+        "latency_ms": 4576.406955718994,
+        "parameters": {
+          "model": "llama3:8b"
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an on-premise clinical decision-support assistant running entirely inside the hospital network \u2014 no patient data leaves the building. You support licensed clinicians and are not a substitute for clinical judgement. Answer concisely (under 150 words)."
+          },
+          {
+            "role": "user",
+            "content": "A 68-year-old outpatient is diagnosed with community-acquired pneumonia (CURB-65 score 1), has no drug allergies, normal renal and hepatic function, and has not been hospitalized or on antibiotics in the last 90 days. Suggest a reasonable first-line oral antibiotic regimen and the two most important things to monitor or counsel the patient on."
+          }
+        ],
+        "output_message": {
+          "role": "assistant",
+          "content": "For this outpatient with community-acquired pneumonia, I recommend a first-line oral antibiotic regimen of azithromycin (500mg PO qd for 5-7 days) or doxycycline (100mg PO bid for 7-10 days).\n\nTwo important things to monitor or counsel the patient on:\n\n1. Monitor for signs of worsening infection, such as increased fever, chest pain, or shortness of breath. If these symptoms occur, consider adjusting therapy or hospitalizing the patient.\n2. Educate the patient on the importance of completing the full course of antibiotics and not sharing their medication with others to prevent antibiotic resistance."
+        },
+        "otel_gen_ai": {
+          "gen_ai.system": "ollama",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.request.model": "llama3:8b",
+          "gen_ai.response.model": "llama3:8b",
+          "gen_ai.response.finish_reasons": [
+            "stop"
+          ],
+          "gen_ai.usage.input_tokens": 134,
+          "gen_ai.usage.output_tokens": 130
+        },
+        "framework": "ollama",
+        "response_model": "llama3:8b",
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 134,
+          "completion_tokens": 130,
+          "total_tokens": 264
+        },
+        "duration_ms": 4563.138041,
+        "endpoint": "http://localhost:11434",
+        "prompt_tokens": 134,
+        "completion_tokens": 130,
+        "total_tokens": 264
+      },
+      "hash": "sha256:b500910c3ff26f336ac18e69c40fc05a4a3a5e50c9e522eedb3861158ae4bf73",
+      "previous_hash": null
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "9163c2b8a3b44fef",
+      "span_id": "e32f0446b08e4d00",
+      "parent_span_id": "b194ce19dd144513",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1784076924373217000,
+      "payload": {
+        "provider": "ollama",
+        "model": "llama3:8b",
+        "cost_usd": null,
+        "prompt_tokens": 134,
+        "completion_tokens": 130,
+        "total_tokens": 264,
+        "framework": "ollama"
+      },
+      "hash": "sha256:facbc666d4238eec029b6a1dbb91a79fb814cf3ffa156ba7ce2150cdab2dc830",
+      "previous_hash": "sha256:b500910c3ff26f336ac18e69c40fc05a4a3a5e50c9e522eedb3861158ae4bf73"
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "9163c2b8a3b44fef",
+      "span_id": "b194ce19dd144513",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 3,
+      "timestamp_ns": 1784076924373670000,
+      "payload": {
+        "synthesized": true
+      },
+      "hash": "sha256:7861044f917430fe4d3443fd02eb9b29118e5dc19cb116fb014dbf129d8022f0",
+      "previous_hash": "sha256:facbc666d4238eec029b6a1dbb91a79fb814cf3ffa156ba7ce2150cdab2dc830"
+    }
+  ],
+  "google_vertex-s1": [
+    {
+      "event_type": "model.invoke",
+      "trace_id": "91df20ef4645479b",
+      "span_id": "c994edb601dd4dbb",
+      "parent_span_id": "1fe93ccf22314d21",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1784077027334447000,
+      "payload": {
+        "name": "google_vertex.generate_content",
+        "model": "gemini-1.5-flash-002",
+        "latency_ms": 0.00095367431640625,
+        "parameters": {
+          "temperature": 0.2
+        },
+        "messages": null,
+        "output_message": {
+          "role": "model",
+          "content": "Based on your household size (3) and income, here are the programs you most likely qualify for in Wisconsin \u2014 these are general estimates, not official determinations:\n\n1. FoodShare (SNAP): A household of 3 has a gross monthly income limit around $2,700, so ~$1,850/month is well within range. Likely eligible.\n2. BadgerCare Plus (Medicaid): Covers parents and children in low-income households; children in particular are very likely eligible. Apply for the whole family.\n3. Wisconsin Shares (child care subsidy): Available to working parents under the income limit \u2014 helpful given part-time work and two young children.\n4. Wisconsin Home Energy Assistance (WHEAP): Seasonal help with heating (natural gas) costs; you appear within the income guidelines.\n\nDocuments to gather: photo ID, Social Security numbers for all household members, proof of income (recent pay stubs), your lease and a recent gas/utility bill, and proof of any other benefits.\n\nFirst step: file one combined application through ACCESS Wisconsin (access.wisconsin.gov), which screens you for FoodShare, BadgerCare Plus, and Wisconsin Shares at once. For WHEAP, contact your local energy-assistance agency. Official eligibility is decided after the agency verifies your documents."
+        },
+        "otel_gen_ai": {
+          "gen_ai.system": "gcp.vertex_ai",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.request.temperature": 0.2,
+          "gen_ai.response.model": "gemini-1.5-flash-002",
+          "gen_ai.response.finish_reasons": [
+            "STOP"
+          ],
+          "gen_ai.usage.input_tokens": 232,
+          "gen_ai.usage.output_tokens": 286
+        },
+        "framework": "google_vertex",
+        "usage": {
+          "prompt_tokens": 232,
+          "completion_tokens": 286,
+          "total_tokens": 518,
+          "reasoning_tokens": 0
+        },
+        "finish_reason": "STOP",
+        "response_model": "gemini-1.5-flash-002",
+        "prompt_tokens": 232,
+        "completion_tokens": 286,
+        "total_tokens": 518
+      },
+      "hash": "sha256:cf5b7eccd2ae7f0690c3ee26b6592ece4f6e07d23345112d154f907050d936cd",
+      "previous_hash": null
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "91df20ef4645479b",
+      "span_id": "c994edb601dd4dbb",
+      "parent_span_id": "1fe93ccf22314d21",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1784077027334911000,
+      "payload": {
+        "provider": "google_vertex",
+        "model": "gemini-1.5-flash-002",
+        "cost_usd": 0.0001032,
+        "prompt_tokens": 232,
+        "completion_tokens": 286,
+        "total_tokens": 518,
+        "reasoning_tokens": 0,
+        "framework": "google_vertex"
+      },
+      "hash": "sha256:59bfd09fd90ea3ef1617772b97031f7acf7ca0d6c5f70c69904a7c75cfce2208",
+      "previous_hash": "sha256:cf5b7eccd2ae7f0690c3ee26b6592ece4f6e07d23345112d154f907050d936cd"
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "91df20ef4645479b",
+      "span_id": "1fe93ccf22314d21",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 3,
+      "timestamp_ns": 1784077027335129000,
+      "payload": {
+        "synthesized": true
+      },
+      "hash": "sha256:cd01e776d4c8355e6c527ae110dfe96ec36844ff4708f4ee693cd3932f73ca14",
+      "previous_hash": "sha256:59bfd09fd90ea3ef1617772b97031f7acf7ca0d6c5f70c69904a7c75cfce2208"
+    }
+  ],
+  "agentforce-s1": [
+    {
+      "event_type": "agent.lifecycle",
+      "trace_id": "c08059d597ed4bf2",
+      "span_id": "b15ca8cfdd5146ad",
+      "parent_span_id": "cc2e8216bd44456b",
+      "span_name": "session_start",
+      "sequence_id": 1,
+      "timestamp_ns": 1783960926459867000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed365-eb7b-73f6-bb95-15e93f8ed2f0",
+        "lifecycle_action": "start",
+        "agent_name": "Agentforce_Employee_Agent"
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "c08059d597ed4bf2",
+      "span_id": "cc2e8216bd44456b",
+      "parent_span_id": "cc2e8216bd44456b",
+      "span_name": "session",
+      "sequence_id": 2,
+      "timestamp_ns": 1783960926460720000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed365-eb7b-73f6-bb95-15e93f8ed2f0",
+        "agent_name": "Agentforce_Employee_Agent",
+        "agent_version": "v1",
+        "agent_type": "AgentforceEmployeeAgent",
+        "participant_id": "005fj00000Gz7jJAAR",
+        "channel": "Builder",
+        "start_time": "2026-06-17T02:25:33.251+0000"
+      }
+    },
+    {
+      "event_type": "agent.interaction",
+      "trace_id": "c08059d597ed4bf2",
+      "span_id": "51095e3226e544bb",
+      "parent_span_id": "cc2e8216bd44456b",
+      "span_name": "GeneralFAQ_16jfj000001nP7x",
+      "sequence_id": 3,
+      "timestamp_ns": 1783960926460854000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed365-eb7b-73f6-bb95-15e93f8ed2f0",
+        "interaction_id": "4c47dd00-390a-4173-9b22-bc476d894bff",
+        "topic": "GeneralFAQ_16jfj000001nP7x",
+        "step_type": "TOPIC_STEP",
+        "step_name": "GeneralFAQ_16jfj000001nP7x"
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "c08059d597ed4bf2",
+      "span_id": "ec9594cfd4ff4e5b",
+      "parent_span_id": "cc2e8216bd44456b",
+      "span_name": "AiCopilot__ReactInitialPrompt",
+      "sequence_id": 4,
+      "timestamp_ns": 1783960926460993000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed365-eb7b-73f6-bb95-15e93f8ed2f0",
+        "interaction_id": "4c47dd00-390a-4173-9b22-bc476d894bff",
+        "topic": "GeneralFAQ_16jfj000001nP7x",
+        "step_name": "AiCopilot__ReactInitialPrompt",
+        "generation_id": "1bb3b25e-fba3-4354-8fdf-d8af222cf4ba",
+        "gateway_request_id": "565a8546-2d03-bb39-a3e9-8366d4da4a0e",
+        "gateway_response_id": "chatcmpl-DraGFq8eIFanQilvIKczlQtMSlzTC",
+        "response_id": "1bb3b25e-fba3-4354-8fdf-d8af222cf4ba"
+      }
+    },
+    {
+      "event_type": "agent.interaction",
+      "trace_id": "c08059d597ed4bf2",
+      "span_id": "d448114626f84ada",
+      "parent_span_id": "cc2e8216bd44456b",
+      "span_name": "message",
+      "sequence_id": 5,
+      "timestamp_ns": 1783960926461073000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed365-eb7b-73f6-bb95-15e93f8ed2f0",
+        "interaction_id": "4c47dd00-390a-4173-9b22-bc476d894bff",
+        "role": "user",
+        "message_type": "Input"
+      }
+    },
+    {
+      "event_type": "agent.interaction",
+      "trace_id": "c08059d597ed4bf2",
+      "span_id": "c3b7143846ec45ed",
+      "parent_span_id": "cc2e8216bd44456b",
+      "span_name": "message",
+      "sequence_id": 6,
+      "timestamp_ns": 1783960926461141000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed365-eb7b-73f6-bb95-15e93f8ed2f0",
+        "interaction_id": "4c47dd00-390a-4173-9b22-bc476d894bff",
+        "role": "agent",
+        "message_type": "Output"
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "c08059d597ed4bf2",
+      "span_id": "97ce3683cf4546ff",
+      "parent_span_id": "cc2e8216bd44456b",
+      "span_name": "session_end",
+      "sequence_id": 7,
+      "timestamp_ns": 1783960926461193000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed365-eb7b-73f6-bb95-15e93f8ed2f0"
+      }
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "c08059d597ed4bf2",
+      "span_id": "b15ca8cfdd5146ad",
+      "parent_span_id": "cc2e8216bd44456b",
+      "span_name": null,
+      "sequence_id": 8,
+      "timestamp_ns": 1783960926461242000,
+      "payload": {
+        "agent_name": "Agentforce_Employee_Agent",
+        "source": "framework",
+        "framework": "agentforce"
+      }
+    },
+    {
+      "event_type": "agent.lifecycle",
+      "trace_id": "da2ef327e14541ac",
+      "span_id": "38ad3f3588a8471a",
+      "parent_span_id": "23833905e90e485f",
+      "span_name": "session_start",
+      "sequence_id": 1,
+      "timestamp_ns": 1783960926463457000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed362-6b20-785f-893c-5727929c5365",
+        "lifecycle_action": "start",
+        "agent_name": "Agentforce_Employee_Agent"
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "da2ef327e14541ac",
+      "span_id": "23833905e90e485f",
+      "parent_span_id": "23833905e90e485f",
+      "span_name": "session",
+      "sequence_id": 2,
+      "timestamp_ns": 1783960926463565000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed362-6b20-785f-893c-5727929c5365",
+        "agent_name": "Agentforce_Employee_Agent",
+        "agent_version": "v1",
+        "agent_type": "AgentforceEmployeeAgent",
+        "participant_id": "005fj00000Gz7jJAAR",
+        "channel": "Builder",
+        "start_time": "2026-06-17T02:21:43.988+0000"
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "da2ef327e14541ac",
+      "span_id": "5f1fddaab444493f",
+      "parent_span_id": "23833905e90e485f",
+      "span_name": "session_end",
+      "sequence_id": 3,
+      "timestamp_ns": 1783960926463622000,
+      "payload": {
+        "framework": "agentforce",
+        "session_id": "019ed362-6b20-785f-893c-5727929c5365"
+      }
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "da2ef327e14541ac",
+      "span_id": "38ad3f3588a8471a",
+      "parent_span_id": "23833905e90e485f",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1783960926463653000,
+      "payload": {
+        "agent_name": "Agentforce_Employee_Agent",
+        "source": "framework",
+        "framework": "agentforce"
+      }
+    }
+  ],
+  "embedding-s1": [
+    {
+      "event_type": "embedding.create",
+      "trace_id": "2a91631ee2e2450c",
+      "span_id": "653bed8873e6402e",
+      "parent_span_id": "a883fbe41ae343ab",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1783960961709479000,
+      "payload": {
+        "framework": "embedding",
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "batch_size": 1,
+        "dimensions": 1536,
+        "total_tokens": 2,
+        "latency_ms": 32.33
+      }
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "2a91631ee2e2450c",
+      "span_id": "a883fbe41ae343ab",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 2,
+      "timestamp_ns": 1783960961709853000,
+      "payload": {
+        "synthesized": true
+      }
+    }
+  ],
+  "haystack-s1": [
+    {
+      "event_type": "model.invoke",
+      "trace_id": "418736d8971a4d08",
+      "span_id": "52c6f1be82564196",
+      "parent_span_id": "64935dac7cb24fa6",
+      "span_name": "component:llm",
+      "sequence_id": 1,
+      "timestamp_ns": 1783960916461170000,
+      "payload": {
+        "framework": "haystack",
+        "component_type": "OpenAIGenerator",
+        "latency_ms": 306.721,
+        "component_name": "llm",
+        "component_class": "OpenAIGenerator",
+        "model": "gpt-4o-mini-2024-07-18",
+        "finish_reason": "stop",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "418736d8971a4d08",
+      "span_id": "1254bb1182d04001",
+      "parent_span_id": "52c6f1be82564196",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1783960916461363000,
+      "payload": {
+        "framework": "haystack",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13,
+        "model": "gpt-4o-mini-2024-07-18",
+        "cost_usd": 2.4e-06
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "418736d8971a4d08",
+      "span_id": "64935dac7cb24fa6",
+      "parent_span_id": "64935dac7cb24fa6",
+      "span_name": "haystack:pipeline",
+      "sequence_id": 3,
+      "timestamp_ns": 1783960916461565000,
+      "payload": {
+        "framework": "haystack",
+        "max_runs_per_component": 100
+      }
+    },
+    {
+      "event_type": "environment.config",
+      "trace_id": "418736d8971a4d08",
+      "span_id": "64935dac7cb24fa6",
+      "parent_span_id": "64935dac7cb24fa6",
+      "span_name": "haystack:pipeline",
+      "sequence_id": 4,
+      "timestamp_ns": 1783960916461595000,
+      "payload": {
+        "framework": "haystack",
+        "components": [
+          {
+            "name": "llm",
+            "component_class": "OpenAIGenerator"
+          }
+        ]
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "418736d8971a4d08",
+      "span_id": "64935dac7cb24fa6",
+      "parent_span_id": "64935dac7cb24fa6",
+      "span_name": "haystack:pipeline",
+      "sequence_id": 5,
+      "timestamp_ns": 1783960916461620000,
+      "payload": {
+        "framework": "haystack",
+        "latency_ms": 307.38
+      }
+    }
+  ],
+  "ms_agent_framework-s1": [
+    {
+      "event_type": "environment.config",
+      "trace_id": "422d1c5268e74a56",
+      "span_id": "f39c778325694562",
+      "parent_span_id": "5164d6b2fdd9423c",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1783960922413561000,
+      "payload": {
+        "framework": "ms_agent_framework",
+        "chat_name": "replay_agent",
+        "chat_type": "ChatCompletionAgent"
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "422d1c5268e74a56",
+      "span_id": "dfabeddfb2e84ba6",
+      "parent_span_id": "5164d6b2fdd9423c",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1783960922413620000,
+      "payload": {
+        "framework": "ms_agent_framework",
+        "agent_name": "replay_agent",
+        "chat_name": "replay_agent"
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "422d1c5268e74a56",
+      "span_id": "bec7eb171a7d40b8",
+      "parent_span_id": "5164d6b2fdd9423c",
+      "span_name": null,
+      "sequence_id": 3,
+      "timestamp_ns": 1783960922441599000,
+      "payload": {
+        "framework": "ms_agent_framework",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "422d1c5268e74a56",
+      "span_id": "dc471334b06c4eca",
+      "parent_span_id": "5164d6b2fdd9423c",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1783960922441679000,
+      "payload": {
+        "framework": "ms_agent_framework",
+        "model": null,
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "422d1c5268e74a56",
+      "span_id": "09267e27bedc4dd7",
+      "parent_span_id": "5164d6b2fdd9423c",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1783960922441834000,
+      "payload": {
+        "framework": "ms_agent_framework",
+        "agent_name": "replay_agent",
+        "chat_name": "replay_agent",
+        "latency_ms": 28.196
+      }
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "422d1c5268e74a56",
+      "span_id": "dfabeddfb2e84ba6",
+      "parent_span_id": "5164d6b2fdd9423c",
+      "span_name": null,
+      "sequence_id": 6,
+      "timestamp_ns": 1783960922441865000,
+      "payload": {
+        "agent_name": "replay_agent",
+        "source": "framework",
+        "framework": "ms_agent_framework"
+      }
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "422d1c5268e74a56",
+      "span_id": "5164d6b2fdd9423c",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 7,
+      "timestamp_ns": 1783960922441876000,
+      "payload": {
+        "synthesized": true
+      }
+    }
+  ],
+  "openai_agents-s1": [
+    {
+      "event_type": "model.invoke",
+      "trace_id": "f059a3171dc943a8",
+      "span_id": "span_11e9dd868a1f4b4fa7f6f124",
+      "parent_span_id": "span_6b9626602d094677add6b115",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1783960924383116000,
+      "payload": {
+        "framework": "openai-agents",
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13,
+        "latency_ms": 381.13599999999997,
+        "model_config": {
+          "temperature": null,
+          "top_p": null,
+          "frequency_penalty": null,
+          "presence_penalty": null,
+          "tool_choice": null,
+          "parallel_tool_calls": null,
+          "truncation": null,
+          "max_tokens": null,
+          "reasoning": null,
+          "verbosity": null,
+          "metadata": null,
+          "store": null,
+          "include_usage": null,
+          "response_include": null,
+          "top_logprobs": null,
+          "extra_query": null,
+          "extra_body": null,
+          "extra_headers": null,
+          "extra_args": null,
+          "base_url": "https://api.openai.com/v1/"
+        }
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "f059a3171dc943a8",
+      "span_id": "span_11e9dd868a1f4b4fa7f6f124",
+      "parent_span_id": "span_6b9626602d094677add6b115",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1783960924383219000,
+      "payload": {
+        "framework": "openai-agents",
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13,
+        "cost_usd": 2.4e-06
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "f059a3171dc943a8",
+      "span_id": "span_6b9626602d094677add6b115",
+      "parent_span_id": "e2d14880a9124ccd",
+      "span_name": "agent:pong_agent",
+      "sequence_id": 3,
+      "timestamp_ns": 1783960924383755000,
+      "payload": {
+        "framework": "openai-agents",
+        "agent_name": "pong_agent",
+        "output_type": "str"
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "f059a3171dc943a8",
+      "span_id": "span_6b9626602d094677add6b115",
+      "parent_span_id": "e2d14880a9124ccd",
+      "span_name": "agent:pong_agent",
+      "sequence_id": 4,
+      "timestamp_ns": 1783960924383823000,
+      "payload": {
+        "framework": "openai-agents",
+        "agent_name": "pong_agent",
+        "status": "ok",
+        "duration_ms": 383.356
+      }
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "f059a3171dc943a8",
+      "span_id": "span_6b9626602d094677add6b115",
+      "parent_span_id": "e2d14880a9124ccd",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1783960924383889000,
+      "payload": {
+        "agent_name": "pong_agent",
+        "source": "framework",
+        "framework": "openai-agents"
+      }
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "f059a3171dc943a8",
+      "span_id": "e2d14880a9124ccd",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 6,
+      "timestamp_ns": 1783960924383904000,
+      "payload": {
+        "synthesized": true
+      }
+    }
+  ],
+  "semantic_kernel-s1": [
+    {
+      "event_type": "environment.config",
+      "trace_id": "938eb00f826e4ce8",
+      "span_id": "45017175ef3f412d",
+      "parent_span_id": "c1b274891e1845de",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1783960922447543000,
+      "payload": {
+        "framework": "semantic_kernel",
+        "plugin_name": "replay",
+        "event_subtype": "plugin_registered"
+      }
+    },
+    {
+      "event_type": "tool.call",
+      "trace_id": "938eb00f826e4ce8",
+      "span_id": "2589894bfee5452a",
+      "parent_span_id": "c1b274891e1845de",
+      "span_name": "sk:replay.say",
+      "sequence_id": 2,
+      "timestamp_ns": 1783960922447600000,
+      "payload": {
+        "framework": "semantic_kernel",
+        "tool_name": "replay.say",
+        "plugin_name": "replay",
+        "function_name": "say"
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "938eb00f826e4ce8",
+      "span_id": "9b2aef2416774c26",
+      "parent_span_id": "c1b274891e1845de",
+      "span_name": null,
+      "sequence_id": 3,
+      "timestamp_ns": 1783960922449343000,
+      "payload": {
+        "framework": "semantic_kernel",
+        "model": "gpt-4o-mini",
+        "latency_ms": 1.133,
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "938eb00f826e4ce8",
+      "span_id": "9b2aef2416774c26",
+      "parent_span_id": "c1b274891e1845de",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1783960922449407000,
+      "payload": {
+        "framework": "semantic_kernel",
+        "model": "gpt-4o-mini",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13,
+        "cost_usd": 2.4e-06
+      }
+    },
+    {
+      "event_type": "tool.result",
+      "trace_id": "938eb00f826e4ce8",
+      "span_id": "2589894bfee5452a",
+      "parent_span_id": "c1b274891e1845de",
+      "span_name": "sk:replay.say",
+      "sequence_id": 5,
+      "timestamp_ns": 1783960922449469000,
+      "payload": {
+        "framework": "semantic_kernel",
+        "tool_name": "replay.say",
+        "status": "ok",
+        "latency_ms": 1.857
+      }
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "938eb00f826e4ce8",
+      "span_id": "c1b274891e1845de",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 6,
+      "timestamp_ns": 1783960922449495000,
+      "payload": {
+        "synthesized": true
+      }
+    }
+  ],
+  "vector_store-s1": [
+    {
+      "event_type": "retrieval.query",
+      "trace_id": "4410182c29e3498a",
+      "span_id": "3c2d1199b8484af4",
+      "parent_span_id": "163ce46a8742498e",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1783960963514413000,
+      "payload": {
+        "framework": "vector_store",
+        "provider": "chroma",
+        "n_results": 2,
+        "has_filter": false,
+        "result_count": 2,
+        "latency_ms": 2.71,
+        "distance_min": 0.0,
+        "distance_max": 1.0,
+        "distance_mean": 0.5
+      }
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "4410182c29e3498a",
+      "span_id": "163ce46a8742498e",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 2,
+      "timestamp_ns": 1783960963514779000,
+      "payload": {
+        "synthesized": true
+      }
+    }
+  ],
+  "llamaindex-s1": [
+    {
+      "event_type": "model.invoke",
+      "trace_id": "02f26c2cd0cd4868",
+      "span_id": "OpenAI.chat-f074",
+      "parent_span_id": null,
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1783960919611861000,
+      "payload": {
+        "framework": "llamaindex",
+        "model": "gpt-4o-mini-2024-07-18",
+        "response_id": "chatcmpl-Dthma5CfxIAxTYGXy1mHGSQut004t",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13,
+        "latency_ms": 304.0173053741455
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "02f26c2cd0cd4868",
+      "span_id": "OpenAI.chat-f074",
+      "parent_span_id": null,
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1783960919612009000,
+      "payload": {
+        "framework": "llamaindex",
+        "model": "gpt-4o-mini-2024-07-18",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13,
+        "cost_usd": 2.4e-06
+      }
+    }
+  ],
+  "langchain-s1": [
+    {
+      "event_type": "agent.input",
+      "trace_id": "50e1154879514081",
+      "span_id": "6998f876b56e45d1",
+      "parent_span_id": "1d723bb5916e47a5",
+      "span_name": null,
+      "sequence_id": 1,
+      "timestamp_ns": 1783960914877702000,
+      "payload": {
+        "framework": "langchain",
+        "name": "unknown"
+      }
+    },
+    {
+      "event_type": "agent.input",
+      "trace_id": "50e1154879514081",
+      "span_id": "56a504a131c744b7",
+      "parent_span_id": "6998f876b56e45d1",
+      "span_name": null,
+      "sequence_id": 2,
+      "timestamp_ns": 1783960914878169000,
+      "payload": {
+        "framework": "langchain",
+        "name": "ChatPromptTemplate"
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "50e1154879514081",
+      "span_id": "56a504a131c744b7",
+      "parent_span_id": "6998f876b56e45d1",
+      "span_name": null,
+      "sequence_id": 3,
+      "timestamp_ns": 1783960914878380000,
+      "payload": {
+        "framework": "langchain",
+        "status": "ok"
+      }
+    },
+    {
+      "event_type": "model.invoke",
+      "trace_id": "50e1154879514081",
+      "span_id": "c6b5da509d084273",
+      "parent_span_id": "6998f876b56e45d1",
+      "span_name": null,
+      "sequence_id": 4,
+      "timestamp_ns": 1783960914897995000,
+      "payload": {
+        "framework": "langchain",
+        "name": "ChatOpenAI",
+        "model": "gpt-4o-mini-2024-07-18",
+        "latency_ms": 19.27,
+        "finish_reason": "stop",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13
+      }
+    },
+    {
+      "event_type": "cost.record",
+      "trace_id": "50e1154879514081",
+      "span_id": "c6b5da509d084273",
+      "parent_span_id": "6998f876b56e45d1",
+      "span_name": null,
+      "sequence_id": 5,
+      "timestamp_ns": 1783960914898113000,
+      "payload": {
+        "framework": "langchain",
+        "model": "gpt-4o-mini-2024-07-18",
+        "tokens_prompt": 12,
+        "tokens_completion": 1,
+        "tokens_total": 13,
+        "cost_usd": 2.4e-06
+      }
+    },
+    {
+      "event_type": "agent.output",
+      "trace_id": "50e1154879514081",
+      "span_id": "6998f876b56e45d1",
+      "parent_span_id": "1d723bb5916e47a5",
+      "span_name": null,
+      "sequence_id": 6,
+      "timestamp_ns": 1783960914898240000,
+      "payload": {
+        "framework": "langchain",
+        "status": "ok"
+      }
+    },
+    {
+      "event_type": "agent.identity",
+      "trace_id": "50e1154879514081",
+      "span_id": "56a504a131c744b7",
+      "parent_span_id": "6998f876b56e45d1",
+      "span_name": null,
+      "sequence_id": 7,
+      "timestamp_ns": 1783960914898282000,
+      "payload": {
+        "source": "framework",
+        "framework": "langchain"
+      }
+    },
+    {
+      "event_type": "trace.root",
+      "trace_id": "50e1154879514081",
+      "span_id": "1d723bb5916e47a5",
+      "parent_span_id": null,
+      "span_name": "trace",
+      "sequence_id": 8,
+      "timestamp_ns": 1783960914898301000,
+      "payload": {
+        "synthesized": true
+      }
+    }
   ]
 }
