@@ -18,11 +18,14 @@ Two facts about the REAL SK shape this proves (and the doubles never modelled):
   a plain dict, so the object branch was never exercised against a real provider
   shape. The token counts asserted below are read off that real object.
 * Real SK ``metadata`` carries **no** ``model`` / ``model_id`` key (the model id
-  lives on ``inner_content.model`` and ``ai_model_id``), so the metadata-driven
-  ``model.invoke`` path does *not* fire and ``cost.record.model`` is ``None`` on a
-  real run — the synthetic ``metadata={"model": "gpt-4o"}`` doubles masked this.
-  We assert the honest real-shape outcome (no ``model.invoke``; ``model is None``)
-  rather than the fictional one the doubles asserted.
+  lives on ``message.ai_model_id`` and ``inner_content.model``), so the adapter
+  must recover it FROM THE MESSAGE — otherwise ``model.invoke`` / ``cost.record``
+  ship ``model=None`` and the shared price-on-emit hook cannot compute
+  ``cost_usd`` (a tokens-only ``cost.record``). The synthetic
+  ``metadata={"model": "gpt-4o"}`` doubles masked this stranded-id shape
+  entirely. We assert the recovered real-shape outcome — ``model ==
+  "gpt-4o-mini"`` off ``ai_model_id``, with a priced ``cost_usd`` — proving the
+  recovery fires on the real provider shape the doubles never reach.
 
 Content capture is disabled via the public ``capture_config=`` constructor seam:
 on a real run the yielded ``AgentResponseItem`` carries a live
@@ -105,15 +108,17 @@ class TestMSAgentFrameworkRecorded:
         assert cost["payload"]["tokens_completion"] == 1
         assert cost["payload"]["tokens_total"] == 13
 
-        # Real SK metadata carries no model key, so cost.record's model is None.
-        # (The synthetic doubles injected metadata={"model": ...} and masked this.)
-        assert cost["payload"]["model"] is None
-        # S22/G5: token telemetry is preserved even when the provider omits a
-        # model id — a model.invoke still fires carrying the real token counts
-        # (model None), so tokens are not silently dropped on such providers.
+        # Real SK strands the model id on message.ai_model_id (metadata carries
+        # no model key); the adapter recovers it, so cost.record carries the real
+        # model id and the shared price-on-emit hook computes a real cost_usd.
+        assert cost["payload"]["model"] == "gpt-4o-mini"
+        assert cost["payload"].get("cost_usd") is not None
+        assert cost["payload"]["cost_usd"] > 0
+        # S22/G5: token telemetry is preserved and a single model.invoke fires,
+        # now carrying the recovered model id alongside the real token counts.
         invokes = find_events(events, "model.invoke")
         assert len(invokes) == 1
-        assert invokes[0]["payload"].get("model") is None
+        assert invokes[0]["payload"].get("model") == "gpt-4o-mini"
         assert invokes[0]["payload"]["tokens_prompt"] == 12
         assert invokes[0]["payload"]["tokens_completion"] == 1
         assert invokes[0]["payload"]["tokens_total"] == 13

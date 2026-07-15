@@ -356,3 +356,115 @@ class TestCaptureLevelParams:
         # Cost + state always flow (spend accounting + lifecycle must survive gating).
         assert len(find_events(events, "cost.record")) == 1
         assert len(find_events(events, "agent.state.change")) == 1
+
+
+# ---------------------------------------------------------------------------
+# Error fidelity — an ERROR-level observation must surface as agent.error
+# ---------------------------------------------------------------------------
+class TestErrorFloor:
+    def test_error_level_generation_emits_agent_error(self, mock_client):
+        """A Langfuse generation flagged ``level == "ERROR"`` (with a statusMessage)
+        is a FAILED LLM call. It must import as a distinct ``agent.error`` carrying
+        the real error text + a real error_type — not silently as a healthy
+        model.invoke. Bite: drop the level read and no agent.error is emitted."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter, http = _connected_adapter(mock_client, CaptureConfig.full())
+        err_gen = {
+            "id": "gen-err",
+            "type": "GENERATION",
+            "name": "moderation-llm",
+            "model": "gpt-4",
+            "level": "ERROR",
+            "statusMessage": "RateLimitError: 429 quota exceeded",
+            "input": "q",
+            "output": None,
+            "usage": {"promptTokens": 100, "completionTokens": 0, "totalTokens": 100},
+        }
+        _import_one(adapter, http, _trace([err_gen]))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        errors = find_events(events, "agent.error")
+        assert len(errors) == 1, (
+            f"ERROR-level Langfuse generation emitted no agent.error; types={[e['event_type'] for e in events]}"
+        )
+        assert "429 quota exceeded" in errors[0]["payload"].get("error", "")
+        assert errors[0]["payload"].get("status") == "error"
+        # A real error_type is recovered from the statusMessage exception prefix.
+        assert errors[0]["payload"].get("error_type") == "RateLimitError"
+
+    def test_error_content_redacted_but_status_survives(self, mock_client):
+        """The free-text error message is content (stripped under
+        capture_content=False), but the structural error signal — the agent.error
+        event, its status, level and error_type — must SURVIVE redaction so a
+        failure is never silently downgraded to a success."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter, http = _connected_adapter(mock_client, CaptureConfig(capture_content=False))
+        err_gen = {
+            "id": "gen-err",
+            "type": "GENERATION",
+            "name": "moderation-llm",
+            "model": "gpt-4",
+            "level": "ERROR",
+            "statusMessage": f"RateLimitError: {SENTINEL}",
+            "usage": {"promptTokens": 10, "completionTokens": 0, "totalTokens": 10},
+        }
+        _import_one(adapter, http, _trace([err_gen]))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        errors = find_events(events, "agent.error")
+        assert len(errors) == 1, "the structural agent.error must survive redaction"
+        assert SENTINEL not in json.dumps(events), "PRIVACY LEAK: error message survived capture_content=False"
+        assert "error" not in errors[0]["payload"], "agent.error leaked the free-text 'error' under redaction"
+        assert errors[0]["payload"].get("status") == "error"
+        assert errors[0]["payload"].get("level") == "ERROR"
+        assert errors[0]["payload"].get("error_type") == "RateLimitError"
+
+
+# ---------------------------------------------------------------------------
+# Nesting fidelity — parentObservationId must resolve to the emitted span
+# ---------------------------------------------------------------------------
+class TestNestingFloor:
+    def test_parent_observation_id_resolves_to_emitted_span(self, mock_client):
+        """A child observation's ``parentObservationId`` must resolve to the SAME
+        span_id the parent observation emits under — otherwise the child is
+        orphaned onto a random phantom span and the retriever->LLM causal edge is
+        lost. Bite: mint a fresh span for the parent ref and the child no longer
+        nests under its real parent."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter, http = _connected_adapter(mock_client, CaptureConfig.full())
+        parent_span = {
+            "id": "obs-parent",
+            "type": "SPAN",
+            "name": "retriever-chain",
+            "input": "lookup",
+            "output": "docs",
+        }
+        child_gen = {
+            "id": "obs-child",
+            "type": "GENERATION",
+            "name": "moderation-llm",
+            "model": "gpt-4",
+            "parentObservationId": "obs-parent",
+            "input": "q",
+            "output": "a",
+            "usage": {"promptTokens": 10, "completionTokens": 5, "totalTokens": 15},
+        }
+        _import_one(adapter, http, _trace([parent_span, child_gen]))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        parent_evt = find_event(events, "tool.call")  # the parent SPAN import
+        child_evt = find_event(events, "model.invoke")  # the child GENERATION import
+
+        # The child must nest UNDER the parent's emitted span, not a phantom.
+        assert child_evt["parent_span_id"] == parent_evt["span_id"], (
+            f"orphaned nesting: child parent_span_id={child_evt['parent_span_id']} "
+            f"!= parent span_id={parent_evt['span_id']}"
+        )
+        # The resolved parent must be a REAL emitted span in this trace.
+        emitted_span_ids = {e["span_id"] for e in events}
+        assert child_evt["parent_span_id"] in emitted_span_ids, "child references a span no event emits"
+        # The generation's own cost.record must share the child's span (unchanged).
+        assert find_event(events, "cost.record")["span_id"] == child_evt["span_id"]

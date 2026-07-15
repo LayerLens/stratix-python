@@ -282,6 +282,56 @@ class TestRealErrorShape:
 
 
 # ---------------------------------------------------------------------------
+# Swallowed-provider-error floor — agno does NOT raise a real model error out of
+# Agent.run(); it returns RunOutput.status == RunStatus.error with the error text
+# in .content. The adapter must record that as a FAILED run, not a healthy output.
+# ---------------------------------------------------------------------------
+class TestSwallowedProviderError:
+    def test_real_provider_error_surfaces_on_output(self, mock_client):
+        # A REAL 404 from the OpenAI SDK (over MockTransport). agno swallows the
+        # exception into RunStatus.error and returns normally — the run wrapper
+        # never sees a raised exception, so only result.status marks the failure.
+        model = OpenAIChat(
+            id="gpt-4o-mini-ghost",
+            api_key="test-key",
+            max_retries=0,
+            http_client=httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda r: httpx.Response(
+                        404,
+                        json={
+                            "error": {
+                                "message": "The model `gpt-4o-mini-ghost` does not exist",
+                                "type": "invalid_request_error",
+                                "code": "model_not_found",
+                            }
+                        },
+                    )
+                )
+            ),
+        )
+        agent = Agent(model=model, name="err_agent", telemetry=False)
+        uploaded = capture_framework_trace(mock_client)
+        adapter = AgnoAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=agent)
+        result = agent.run("hi")  # agno swallows -> RunStatus.error, returns normally
+        adapter.disconnect()
+
+        # Sanity: agno DID mark the run failed (and did NOT raise).
+        assert str(result.status).endswith("error")
+
+        out = find_event(uploaded["events"], "agent.output")
+        # BITE: a failed run must carry status=error + an honest error_type, not
+        # be recorded as an ordinary successful output (both keys absent today).
+        assert out["payload"].get("status") == "error"
+        assert out["payload"].get("error_type") is not None
+        # The provider error text is surfaced on `error` — not silently stashed in
+        # `output` as though it were the agent's answer.
+        assert "does not exist" in out["payload"].get("error", "")
+        assert "output" not in out["payload"]
+
+
+# ---------------------------------------------------------------------------
 # Offline attestation-chain verification over a real agno run
 # ---------------------------------------------------------------------------
 class TestAttestationOffline:

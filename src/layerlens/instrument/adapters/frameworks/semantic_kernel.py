@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -92,6 +93,9 @@ class SemanticKernelAdapter(FrameworkAdapter):
         self._filter_ids: List[tuple] = []  # (FilterTypes, filter_id) for removal
         self._seen_plugins: set = set()
         self._patched_services: Dict[str, Any] = {}  # service_id -> original method
+        # Streaming completions take a separate SK code path; the streaming inner
+        # method is shadow-wrapped independently and restored on disconnect.
+        self._patched_streaming_services: Dict[str, Any] = {}  # service_id -> original streaming method
         # AgentGroupChat (multi-agent) instrumentation: the chat instance and the
         # original bound methods we shadow-wrapped (restored on disconnect).
         self._group_chat: Any = None
@@ -386,8 +390,107 @@ class SemanticKernelAdapter(FrameworkAdapter):
             service._inner_get_chat_message_contents = _traced_inner
             self._patched_services[service_id] = original
 
+            # Streaming completions travel a SEPARATE SK path
+            # (get_streaming_chat_message_contents -> the inner streaming method),
+            # consumed lazily by KernelFunction.invoke_stream AFTER the
+            # function-invocation filter's run has already closed — so wrapping only
+            # the non-streaming inner method above loses ALL model + cost telemetry
+            # for a streaming customer. Shadow-wrap the streaming inner method too so
+            # a streaming LLM call is attributed exactly like the non-streaming one.
+            if hasattr(service, "_inner_get_streaming_chat_message_contents"):
+                stream_original = service._inner_get_streaming_chat_message_contents
+                service._inner_get_streaming_chat_message_contents = self._make_traced_streaming_inner(
+                    stream_original, service
+                )
+                self._patched_streaming_services[service_id] = stream_original
+
+    def _make_traced_streaming_inner(self, original: Any, service: Any) -> Any:
+        """Shadow-wrap ``_inner_get_streaming_chat_message_contents``.
+
+        SK yields the streamed chat completion lazily: the async generator this
+        returns is consumed by ``KernelFunction.invoke_stream`` *after* the
+        function-invocation filter has run ``_end_run`` (flushing the trace), so no
+        ambient collector exists at consumption time. We therefore accumulate the
+        streamed chunks' usage as they pass through and, once the stream is
+        exhausted, emit ``model.invoke`` + a priced ``cost.record`` (or
+        ``agent.error`` on a mid-stream failure) via :meth:`_emit_streaming_model_call`
+        — the same attribution the non-streaming path produces, so a streaming
+        trace is never model-less / tokens-only."""
+        adapter = self
+
+        async def _traced_streaming_inner(
+            chat_history: Any,
+            settings: Any,
+            *args: Any,
+            **kwargs: Any,
+        ) -> Any:
+            span_id = adapter._new_span_id()
+            model_name = getattr(service, "ai_model_id", None)
+            # Timed with the wall clock (not _start_timer) because no RunState is
+            # active while the stream is consumed.
+            start_ns = time.time_ns()
+            tokens: Dict[str, Any] = {}
+            error: Optional[BaseException] = None
+            try:
+                async for messages in original(chat_history, settings, *args, **kwargs):
+                    # Usage rides the final streamed chunk; keep the latest non-empty.
+                    chunk_tokens = adapter._extract_usage_from_response(messages)
+                    if chunk_tokens:
+                        tokens = chunk_tokens
+                    yield messages
+            except Exception as exc:
+                error = exc
+                raise
+            finally:
+                latency_ms = (time.time_ns() - start_ns) / 1_000_000
+                adapter._emit_streaming_model_call(model_name, tokens, latency_ms, span_id, error)
+
+        return _traced_streaming_inner
+
+    def _emit_streaming_model_call(
+        self,
+        model_name: Optional[str],
+        tokens: Dict[str, Any],
+        latency_ms: float,
+        span_id: str,
+        error: Optional[BaseException],
+    ) -> None:
+        """Emit a consumed streaming LLM call's telemetry.
+
+        Runs after the streamed generator is exhausted, when SK has already torn
+        down the function-filter run — so we open a run of our own. If an outer
+        ``trace_context`` IS active (e.g. an AgentGroupChat turn or a user ``@trace``),
+        ``_begin_run`` reuses its collector and the events join that trace; otherwise
+        a dedicated run is flushed. A failed stream is recorded honestly as
+        ``agent.error`` (never a phantom successful ``model.invoke``)."""
+        self._begin_run()
+        try:
+            if error is not None:
+                err_payload = self._payload(error=str(error), error_type=type(error).__name__)
+                if model_name:
+                    err_payload["model"] = model_name
+                err_payload["latency_ms"] = latency_ms
+                self._emit("agent.error", err_payload, span_id=span_id)
+                return
+
+            payload = self._payload()
+            if model_name:
+                payload["model"] = model_name
+            payload["latency_ms"] = latency_ms
+            payload.update(tokens)
+            self._emit("model.invoke", payload, span_id=span_id)
+
+            if tokens:
+                cost_payload = self._payload()
+                if model_name:
+                    cost_payload["model"] = model_name
+                cost_payload.update(tokens)
+                self._emit("cost.record", cost_payload, span_id=span_id)
+        finally:
+            self._end_run()
+
     def _unpatch_chat_services(self) -> None:
-        """Restore original _inner_get_chat_message_contents on all patched services."""
+        """Restore original (streaming + non-streaming) inner methods on all patched services."""
         if self._kernel is not None:
             services = getattr(self._kernel, "services", {})
             for service_id, original in self._patched_services.items():
@@ -400,7 +503,18 @@ class SemanticKernelAdapter(FrameworkAdapter):
                             "layerlens: could not restore SK chat service %s",
                             service_id,
                         )
+            for service_id, stream_original in self._patched_streaming_services.items():
+                service = services.get(service_id)
+                if service is not None:
+                    try:
+                        service._inner_get_streaming_chat_message_contents = stream_original
+                    except Exception:
+                        log.debug(
+                            "layerlens: could not restore SK streaming chat service %s",
+                            service_id,
+                        )
         self._patched_services.clear()
+        self._patched_streaming_services.clear()
 
     def _extract_usage_from_response(self, result: Any) -> Dict[str, Any]:
         """Extract token usage from ChatMessageContent list returned by _inner_get_chat_message_contents."""

@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import os
 import json
+from dataclasses import dataclass
 
 import pytest
 
@@ -267,6 +268,50 @@ class TestRedactionFloor:
             assert "input" not in e["payload"], "tool.call leaked 'input' under capture_content=False"
         for e in find_events(events, "tool.result"):
             assert "output" not in e["payload"], "tool.result leaked 'output' under capture_content=False"
+
+
+# ---------------------------------------------------------------------------
+# Deps privacy — deps_summary must be SHAPE-ONLY, never raw dependency values
+# ---------------------------------------------------------------------------
+class TestDepsPrivacyFloor:
+    def test_deps_values_never_leak_shape_only(self, mock_client):
+        """Dependencies are request-scoped secrets (tokens, db handles). Under
+        capture_content=True the adapter records a deps *shape* summary — key
+        names + value TYPES — and must NEVER store a raw dependency value, even
+        when ``safe_serialize(deps)`` falls back to ``str(deps)`` (the dataclass /
+        arbitrary-object case, whose repr embeds the values verbatim)."""
+        os.environ.pop("OPENAI_API_KEY", None)
+        fixture = load_recorded("openai", "default")
+        uploaded = capture_framework_trace(mock_client)
+
+        @dataclass
+        class _Deps:
+            api_token: str
+            user_id: int
+
+        transport, _ = mock_transport(fixture)
+        provider = OpenAIProvider(api_key="test-key", http_client=httpx.AsyncClient(transport=transport))
+        agent = Agent(OpenAIModel("gpt-4o-mini", provider=provider), name="deps_agent", deps_type=_Deps)
+        adapter = PydanticAIAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=agent)
+        agent.run_sync("Reply with exactly: pong", deps=_Deps(api_token=SENTINEL, user_id=7))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        # 1) The raw secret must not appear ANYWHERE in the stored trace.
+        assert SENTINEL not in json.dumps(events), "deps_summary leaked a raw dependency value"
+
+        # 2) deps_summary is captured and is a SHAPE-ONLY dict (never the raw repr string).
+        inp = find_event(events, "agent.input")["payload"]
+        assert "deps_summary" in inp, "deps_summary should be captured (shape-only) under capture_content=True"
+        summary = inp["deps_summary"]
+        assert isinstance(summary, dict), (
+            f"deps_summary must be a shape-only dict, got {type(summary).__name__}: {summary!r}"
+        )
+        assert summary.get("type") == "_Deps"
+        # Field NAMES and TYPES only — never the values.
+        assert summary.get("fields") == {"api_token": "str", "user_id": "int"}
+        assert SENTINEL not in json.dumps(summary)
 
 
 # ---------------------------------------------------------------------------

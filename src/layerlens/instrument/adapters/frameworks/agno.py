@@ -31,6 +31,21 @@ def _model_id(agent: Any) -> Optional[str]:
     return getattr(model, "id", None) or str(model)
 
 
+def _run_errored(result: Any) -> bool:
+    """True if agno marked this ``RunOutput`` as failed (``RunStatus.error``).
+
+    Agno does NOT raise a real provider/model error out of ``Agent.run()`` — it
+    swallows it into ``result.status == RunStatus.error`` and returns normally,
+    stashing the error text in ``result.content``. Read the status by value
+    (rather than importing ``RunStatus``) so the check needs no hard agno import
+    and tolerates a plain-string status."""
+    status = getattr(result, "status", None)
+    if status is None:
+        return False
+    value = getattr(status, "value", status)
+    return isinstance(value, str) and value.upper() == "ERROR"
+
+
 def _extract_tokens(result: Any) -> Dict[str, int]:
     metrics = getattr(result, "metrics", None)
     if metrics is None:
@@ -325,6 +340,16 @@ class AgnoAdapter(FrameworkAdapter):
         if error:
             payload["error"] = str(error)
             payload["error_type"] = type(error).__name__
+        elif _run_errored(result):
+            # agno swallows a real provider/model error into RunStatus.error and
+            # returns normally (Agent.run does not raise), stashing the error text
+            # in result.content. Record it as a FAILED run — not a healthy output
+            # — so the trace doesn't render the error string as the agent's answer.
+            payload["status"] = "error"
+            payload["error_type"] = "AgnoRunError"
+            if output is not None:
+                payload["error"] = safe_serialize(output)
+            output = None  # the content IS the error, not a real output
         self._set_if_capturing(payload, "output", safe_serialize(output))
         self._emit(
             "agent.output",

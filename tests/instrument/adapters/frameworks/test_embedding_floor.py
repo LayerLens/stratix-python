@@ -23,11 +23,16 @@ plain CI with no credentials and no network:
                 allowlist of metadata keys; an extra call kwarg (``user=``,
                 carrying a secret) never leaks into the payload or the trace.
 * Error-paths — a REAL ``openai.AuthenticationError`` (401 over a mocked
-                transport) and a REAL ``chromadb`` query error propagate through
-                the wrapper *verbatim* and produce **zero** telemetry — the
-                wrapper is transparent (does not swallow the exception, does not
-                emit a partial/fake success event). See the held finding below
-                on the absence of an ``agent.error`` emission.
+                transport) propagates through the embedding wrapper *verbatim*
+                (never swallowed) and never yields a partial/fake success event;
+                the failure is now recorded honestly as an ``agent.error``
+                carrying the real ``error_type``/``status`` (and, under content
+                capture, the error text). The paired ``VectorStoreAdapter`` still
+                propagates a REAL ``chromadb`` query error transparently with no
+                ``agent.error`` (that separate adapter's gap is out of scope here).
+* Cost        — a REAL priced embedding (``text-embedding-3-small``, 2 tokens)
+                now carries a non-None ``cost_usd`` on ``embedding.create`` and
+                emits a paired priced ``cost.record`` for the platform rollup.
 * Attestation — a real embed->retrieve trace (2 real events + the synthesized
                 ``trace.root``) flushes an attestation chain that
                 ``verify_chain`` reconstructs and accepts, with a tamper control
@@ -37,15 +42,16 @@ The only mock is the network boundary (``httpx.MockTransport`` for the real
 openai embeddings SDK); every openai/chroma object, the in-process Chroma engine,
 and the adapters' own parsers are real.
 
-HELD (source-bug PING checkpoint — deliberately NOT asserted here):
-  * error cell — on a real SDK exception these wrappers emit NO ``agent.error``
-    (they call ``original(*args, **kwargs)`` with no try/except). A W1-parity
-    "real exception -> agent.error with honest error_type" assertion is RED on
-    current code and is reported as a held finding, not committed.
-  * cost cell (na) — ``embedding.create`` carries ``total_tokens`` but no
-    ``cost_usd`` and there is no ``cost.record`` event; a ``cost_usd``-present
-    assertion is RED and is reported as a held finding (Group-B adjudication),
-    not committed.
+CLOSED (were held source-bug PINGs; now fixed + asserted, user-approved):
+  * error cell — the embedding wrapper wraps ``original(...)`` in try/except and
+    emits an honest ``agent.error`` (error_type/status, plus the error text under
+    content capture) before re-raising — see
+    ``TestRealErrorShape.test_embedding_real_openai_error_emits_agent_error`` and
+    the default-config sibling. (The ``VectorStoreAdapter`` wrappers still have
+    the same latent gap; that is a separate adapter, out of scope for this file.)
+  * cost cell — ``embedding.create`` now carries a priced ``cost_usd`` and emits a
+    paired priced ``cost.record`` (OpenAI embedding rates added to the provider
+    PRICING table) — see ``TestCostFloor.test_embedding_create_carries_cost_usd``.
 """
 
 from __future__ import annotations
@@ -83,6 +89,11 @@ _EMBEDDING_ALLOWED = {
     "dimensions",
     "total_tokens",
     "latency_ms",
+    # A priced embedding call now carries its own ``cost_usd`` (a computed float,
+    # never a secret) alongside emitting a paired ``cost.record`` — see
+    # ``TestCostFloor``. Added to the allowlist so the metadata-only bite below
+    # still fires on any *other* non-allowlisted key.
+    "cost_usd",
 }
 
 
@@ -256,12 +267,15 @@ class TestParamsAllowlist:
 class TestRealErrorShape:
     def test_embedding_real_openai_error_propagates_no_partial_event(self, mock_client):
         """A REAL openai 401 error raised by the real SDK propagates through the
-        wrapper unchanged, and the failed call emits NO event (no partial/fake
-        ``embedding.create``, no ``agent.error``). Bite: a wrapper that swallowed
-        the exception or emitted a misleading success event fails here.
+        wrapper unchanged, and the failed call emits NO partial/fake
+        ``embedding.create`` success event. Bite: a wrapper that swallowed the
+        exception or emitted a misleading success event fails here.
 
-        (The absence of an ``agent.error`` is a deliberate held finding — see the
-        module docstring — not asserted as desired behavior.)"""
+        Under the DEFAULT config (``capture_content=False``) the wrapper still
+        records the failure as an ``agent.error``, but only the surviving CATEGORY
+        (``error_type``/``status``) is present — the free-text ``error`` is stripped
+        by the redaction backstop. The full-content variant that asserts the error
+        text survives is the sibling ``test_embedding_real_openai_error_emits_agent_error``."""
         uploaded = capture_framework_trace(mock_client)
         client = _error_openai_client(status=401)
         adapter = EmbeddingAdapter(mock_client)
@@ -280,7 +294,43 @@ class TestRealErrorShape:
 
         events = uploaded["events"]
         assert not find_events(events, "embedding.create"), "a failed embed must not emit a partial event"
-        assert not find_events(events, "agent.error"), "wrapper unexpectedly emitted agent.error (held finding says it does not)"
+        # The failure is recorded honestly as an agent.error carrying the surviving
+        # category, but NOT a fake success — and the free-text error is redacted
+        # away under capture_content=False.
+        err = find_event(events, "agent.error")
+        assert err["payload"]["error_type"] == "AuthenticationError"
+        assert err["payload"]["status"] == "error"
+        assert "error" not in err["payload"], "free-text error must be stripped under capture_content=False"
+
+    def test_embedding_real_openai_error_emits_agent_error(self, mock_client):
+        """W1-parity: a REAL openai 401 raised by the real SDK propagates verbatim
+        AND the wrapper emits an honest ``agent.error`` carrying the real
+        ``error_type``/``status`` and — under content capture — the error text
+        (with the 401), so a failed embed is not silently lost. Bite: reverting
+        the wrapper's try/except (no emit) drops the agent.error and this fails on
+        the empty trace.
+
+        Runs under ``CaptureConfig.full()`` so the free-text ``error`` survives the
+        content-redaction backstop (which strips ``error`` under
+        ``capture_content=False`` — see the sibling default-config test below,
+        where only the category survives)."""
+        uploaded = capture_framework_trace(mock_client)
+        client = _error_openai_client(status=401)
+        adapter = EmbeddingAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=client)
+        try:
+            with trace_context(mock_client, capture_config=CaptureConfig.full()):
+                with pytest.raises(openai.AuthenticationError):
+                    client.embeddings.create(model="text-embedding-3-small", input="hi")
+        finally:
+            adapter.disconnect()
+
+        # No partial success event survives a failure.
+        assert not find_events(uploaded["events"], "embedding.create")
+        err = find_event(uploaded["events"], "agent.error")
+        assert err["payload"]["error_type"] == "AuthenticationError"
+        assert "401" in err["payload"]["error"]
+        assert err["payload"]["status"] == "error"
 
     def test_vector_store_real_error_propagates_no_partial_event(self, mock_client):
         """A REAL chromadb query error (dimension mismatch) propagates through the
@@ -305,6 +355,39 @@ class TestRealErrorShape:
         events = uploaded["events"]
         assert not find_events(events, "retrieval.query"), "a failed query must not emit a partial event"
         assert not find_events(events, "agent.error")
+
+
+# ---------------------------------------------------------------------------
+# Cost — a real priced embedding carries cost_usd + a paired priced cost.record
+# ---------------------------------------------------------------------------
+class TestCostFloor:
+    def test_embedding_create_carries_cost_usd(self, mock_client):
+        """A real ``text-embedding-3-small`` call (recorded usage: 2 prompt
+        tokens) must be priced: ``embedding.create`` carries a non-None
+        ``cost_usd`` and a paired ``cost.record`` (also priced) is emitted for the
+        platform cost rollup. Bite: with embedding pricing removed / the record
+        not emitted, cost_usd is absent (None) and this fails."""
+        uploaded = capture_framework_trace(mock_client)
+        client = _recorded_openai_client()
+        adapter = EmbeddingAdapter(mock_client)
+        adapter.connect(target=client)
+        try:
+            with trace_context(mock_client):
+                client.embeddings.create(model="text-embedding-3-small", input="hello world")
+        finally:
+            adapter.disconnect()
+
+        events = uploaded["events"]
+        evt = find_event(events, "embedding.create")
+        assert evt["payload"]["total_tokens"] == 2
+        assert evt["payload"].get("cost_usd") is not None
+        assert evt["payload"]["cost_usd"] > 0
+
+        # The paired cost.record the platform rollup sums is present and priced.
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["model"] == "text-embedding-3-small"
+        assert cost["payload"].get("cost_usd") is not None
+        assert cost["payload"]["cost_usd"] == evt["payload"]["cost_usd"]
 
 
 # ---------------------------------------------------------------------------

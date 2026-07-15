@@ -76,6 +76,12 @@ PRICING: dict[str, dict[str, float]] = {
     # Mistral
     "mistral-large": {"input": 0.002, "output": 0.006},
     "mistral-small": {"input": 0.0002, "output": 0.0006},
+    # OpenAI embeddings — input-only (no completion tokens); per-1K USD. The
+    # embedding adapter emits a priced cost.record for these; without a rate here
+    # a real embedding call shipped tokens-only (no cost_usd / no rollup).
+    "text-embedding-3-small": {"input": 0.00002, "output": 0.0},
+    "text-embedding-3-large": {"input": 0.00013, "output": 0.0},
+    "text-embedding-ada-002": {"input": 0.0001, "output": 0.0},
 }
 
 AZURE_PRICING: dict[str, dict[str, float]] = {

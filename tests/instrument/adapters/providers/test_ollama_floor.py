@@ -45,7 +45,7 @@ import json
 from typing import Any
 from unittest.mock import Mock
 
-from ollama import ChatResponse, ResponseError, GenerateResponse
+from ollama import ChatResponse, EmbedResponse, ResponseError, GenerateResponse
 
 from layerlens.instrument import trace
 from layerlens.instrument._capture_config import CaptureConfig
@@ -327,3 +327,67 @@ class TestCostRecord:
         assert cost["payload"]["provider"] == "ollama"
         # The token shape that priced the (free) call is still recorded honestly.
         assert cost["payload"]["total_tokens"] == 17
+
+    def test_infra_cost_usd_present_for_object_response(self, mock_client, capture_trace):
+        """``cost_per_second`` must attribute compute time as ``infra_cost_usd`` on
+        the model.invoke even when the client returns the MODERN pydantic
+        ``ChatResponse`` OBJECT (not the old plain dict). The infra-cost branch in
+        ``meta_with_extras`` guarded ``isinstance(response, dict)`` on the RAW
+        object, so eval_duration/prompt_eval_duration were ignored on every real
+        invoke (LAY-3614 object-vs-dict masking class). Bites: absent key -> None.
+        """
+        client = Mock()
+        # eval_duration 5s + prompt_eval_duration 1s = 6s of compute.
+        cr = ChatResponse(
+            model="llama3",
+            message={"role": "assistant", "content": "pong"},
+            done=True,
+            done_reason="stop",
+            prompt_eval_count=15,
+            eval_count=2,
+            eval_duration=5_000_000_000,
+            prompt_eval_duration=1_000_000_000,
+            total_duration=6_000_000_000,
+        )
+        client.chat = Mock(return_value=cr)
+        provider = OllamaProvider(cost_per_second=0.0001)
+        provider.connect(client)
+
+        @trace(mock_client, capture_config=CaptureConfig.full())
+        def my_agent() -> str:
+            client.chat(model="llama3", messages=[{"role": "user", "content": "hi"}])
+            return "done"
+
+        my_agent()
+        model_invoke = find_event(capture_trace["events"], "model.invoke")
+        # 6s total compute * $0.0001/s = $0.0006, attributed as an infra cost.
+        assert model_invoke["payload"]["infra_cost_usd"] == 0.0006
+
+
+# ---------------------------------------------------------------------------
+# Embed output-message floor — modern ``EmbedResponse`` (plural ``embeddings``)
+# ---------------------------------------------------------------------------
+class TestEmbedOutput:
+    def test_embed_object_output_message_captured(self, mock_client, capture_trace):
+        """``connect()`` wraps the modern ``embed`` method, whose ``EmbedResponse``
+        carries the PLURAL ``embeddings`` key (a list of vectors). ``extract_output``
+        only matched the singular ``embedding`` key from the legacy ``embeddings()``
+        API, so a real ``embed`` invoke shipped ``output_message=None`` (no
+        dim/type). Bites: None != the shape-only summary.
+        """
+        client = Mock()
+        er = EmbedResponse(model="nomic-embed-text", embeddings=[[0.1, 0.2, 0.3, 0.4]])
+        client.embed = Mock(return_value=er)
+        provider = OllamaProvider()
+        provider.connect(client)
+
+        @trace(mock_client, capture_config=CaptureConfig.full())
+        def my_agent() -> str:
+            client.embed(model="nomic-embed-text", input="hi")
+            return "done"
+
+        my_agent()
+        model_invoke = find_event(capture_trace["events"], "model.invoke")
+        assert model_invoke["payload"]["name"] == "ollama.embed"
+        # Shape-only summary (never the raw vector): type + dimensionality.
+        assert model_invoke["payload"]["output_message"] == {"type": "embedding", "dim": 4}

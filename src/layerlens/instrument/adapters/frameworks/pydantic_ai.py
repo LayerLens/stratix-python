@@ -218,11 +218,14 @@ class PydanticAIAdapter(FrameworkAdapter):
         if deps_type is not None:
             payload["deps_type"] = _describe_type(deps_type)
         # Record the deps instance (not raw — key/type summary only) so
-        # result-injection-driven runs can be differentiated.
+        # result-injection-driven runs can be differentiated. Deps are
+        # request-scoped secrets (tokens, db handles); _summarize_deps captures
+        # names + value TYPES only. NEVER serialize deps to a string — for a
+        # dataclass/arbitrary object safe_serialize() falls back to str(deps),
+        # whose repr embeds the raw values verbatim (a privacy leak).
         deps = kwargs.get("deps")
         if deps is not None and self._config.capture_content:
-            serialized = safe_serialize(deps)
-            payload["deps_summary"] = serialized[:500] if isinstance(serialized, str) else _summarize_deps(deps)
+            payload["deps_summary"] = _summarize_deps(deps)
 
         self._emit(
             "agent.input",

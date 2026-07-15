@@ -38,11 +38,15 @@ The single-agent kernel path is exercised end-to-end here; the multi-agent
 ``AgentGroupChat`` honest-graph path already has strong unit coverage in
 ``test_semantic_kernel.py::TestHonestGraphContract``.
 
-Known offline gaps NOT closed here (see the W2 held findings): SK *streaming*
-chat completions are uninstrumented (the adapter patches only the non-streaming
-``_inner_get_chat_message_contents``), so a streaming run emits no
-``model.invoke`` / ``cost.record`` — a source-level gap, PINGed, not papered over
-with a green assertion.
+* Streaming     — a real ``kernel.invoke_stream`` over the recorded *streaming*
+                 body attributes the LLM call (``model.invoke`` + a priced
+                 ``cost.record``) exactly like the non-streaming path. SK consumes
+                 the stream lazily *after* the function-invocation filter's run has
+                 already closed, so the adapter shadow-wraps
+                 ``_inner_get_streaming_chat_message_contents`` and emits the
+                 accumulated usage into a run of its own — closing the former
+                 streaming gap where a streaming run emitted no model + cost
+                 telemetry at all.
 """
 
 from __future__ import annotations
@@ -296,3 +300,59 @@ class TestCostFloor:
         # gpt-4o-mini: input 0.00015/1k, output 0.0006/1k over 12/1 tokens.
         expected = 12 / 1000 * 0.00015 + 1 / 1000 * 0.0006
         assert abs(cost_usd - expected) < 1e-9, f"cost_usd {cost_usd} != expected {expected}"
+
+
+# ---------------------------------------------------------------------------
+# Streaming attribution floor — a real ``kernel.invoke_stream`` LLM call must
+# carry model.invoke + a priced cost.record, exactly like the non-streaming path
+# ---------------------------------------------------------------------------
+class TestStreamingCostFloor:
+    def test_streaming_llm_call_is_attributed(self, mock_client):
+        """A real ``kernel.invoke_stream`` over the recorded *streaming* body must
+        attribute the LLM call — ``model.invoke`` + a priced ``cost.record`` — just
+        like the non-streaming path.
+
+        SK streams the response lazily: ``get_streaming_chat_message_contents ->
+        _inner_get_streaming_chat_message_contents`` is consumed by
+        ``KernelFunction.invoke_stream`` *after* the function-invocation filter's
+        run boundary has already closed and flushed. An adapter that patches only
+        the non-streaming ``_inner_get_chat_message_contents`` therefore drops ALL
+        model + cost telemetry for a streaming customer (spend under-reported).
+        Bite: RED (0 model.invoke / 0 cost.record) until the streaming inner method
+        is shadow-wrapped and the accumulated usage emitted."""
+        fixture = load_recorded("openai", "stream")
+        transport, _ = mock_transport(fixture)
+        uploaded = capture_framework_trace(mock_client)
+        kernel = _kernel_over_transport(transport)
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=kernel)
+        fn = _add_prompt_fn(kernel, prompt="Q: {{$question}}")
+
+        async def _consume():
+            async for _ in kernel.invoke_stream(fn, question="stream please"):
+                pass
+
+        asyncio.run(_consume())
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        # A streaming LLM call must be attributed exactly like the non-streaming one.
+        assert len(find_events(events, "model.invoke")) >= 1, "streaming LLM call emitted no model.invoke"
+        assert len(find_events(events, "cost.record")) >= 1, "streaming LLM call emitted no cost.record"
+
+        # Stronger bite: the REAL streamed token triple (12/1/13 off the recorded
+        # usage chunk) flows through, attributed to the configured model, and the
+        # shared framework price-on-emit hook fills a non-None cost_usd — so a
+        # streaming trace is never model-less or tokens-only.
+        mi = find_event(events, "model.invoke")
+        assert mi["payload"]["model"] == _MODEL
+        assert mi["payload"]["framework"] == "semantic_kernel"
+
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["tokens_prompt"] == 12
+        assert cost["payload"]["tokens_completion"] == 1
+        assert cost["payload"]["tokens_total"] == 13
+        assert cost["payload"]["model"] == _MODEL
+        cost_usd = cost["payload"].get("cost_usd")
+        assert cost_usd is not None, "streaming cost.record shipped tokens-only (no cost_usd)"
+        assert cost_usd > 0

@@ -33,15 +33,17 @@ credentials and no network:
                  ``capture_content=True`` vacuity control proving the same path DOES
                  carry the content otherwise.
 
-Known offline gap NOT closed here (see the W2 held findings, reported to the
-orchestrator — NOT papered over with a green assertion): on a REAL SK run the
-model id is stranded on ``message.ai_model_id`` / ``message.inner_content.model``
-while the adapter's ``_emit_model_metadata`` reads only the (empty) message-level
-``metadata["model"]`` — so ``model.invoke`` / ``cost.record`` carry ``model=None``
-and the shared framework price-on-emit hook cannot compute ``cost_usd`` (a
-``cost.record`` is tokens-only on real runs). The sibling ``SemanticKernelAdapter``
-reads the configured ``ai_model_id`` and DOES price, so this is a source-level
-divergence PINGed for adjudication, not an intrinsic limitation of the trace.
+Cost fidelity (closed by ``TestCostFloor`` below): on a REAL SK run the model id
+is stranded on ``message.ai_model_id`` / ``message.inner_content.model`` while the
+message-level ``metadata`` dict carries no ``model`` key — the adapter's
+``_emit_model_metadata`` used to read only that empty ``metadata["model"]``, so
+``model.invoke`` / ``cost.record`` shipped ``model=None`` and the shared framework
+price-on-emit hook short-circuited (a tokens-only ``cost.record``). The adapter
+now recovers the model id from the message (``ai_model_id`` first, then
+``inner_content.model``), so the real model id reaches ``model.invoke`` /
+``cost.record`` and the hook computes a real ``cost_usd`` — matching the sibling
+``SemanticKernelAdapter``, which reads the configured ``ai_model_id`` and prices
+the same way.
 
 Note: ``test_ms_agent_framework_recorded.py`` disables content capture citing a
 ``ChatHistoryAgentThread`` that ``safe_serialize`` "would raise inside
@@ -271,3 +273,45 @@ class TestRedactionFloor:
         assert SENTINEL not in json.dumps(events), "PRIVACY LEAK: SENTINEL survived capture_content=False"
         # 2) The content key is absent from the payload that would carry it.
         assert "output" not in find_event(events, "agent.output")["payload"], "agent.output leaked 'output'"
+
+
+# ---------------------------------------------------------------------------
+# Cost floor — a REAL SK run must attribute AND price the model call
+# ---------------------------------------------------------------------------
+class TestCostFloor:
+    """On a REAL ``ChatCompletionAgent`` run the model id is stranded on
+    ``message.ai_model_id`` (the message-level ``metadata`` dict carries no
+    ``model``/``model_id`` key — see the recorded-shape probe), so the adapter
+    must recover it from the message to attribute and price the call. Without
+    that recovery ``model.invoke`` / ``cost.record`` ship ``model=None`` and the
+    shared price-on-emit hook (``_price_cost_record``) short-circuits on the
+    falsy model, silently under-reporting spend on every real run. The sibling
+    ``SemanticKernelAdapter`` reads the configured ``ai_model_id`` and DOES
+    price, so this was a source-level divergence, not an intrinsic limitation of
+    the trace."""
+
+    def test_real_run_prices_model_invoke_and_cost(self, mock_client):
+        uploaded, result = _drive(mock_client, _recorded_transport(), CaptureConfig.full())
+        # Sanity: the real provider response flowed through SK end to end.
+        assert str(result[0].message.content) == "pong"
+
+        events = uploaded["events"]
+
+        # The configured model id (stranded on the message, absent from metadata)
+        # must reach cost.record AND be priced by the shared hook — bite: lost if
+        # the adapter reads only the empty message-level metadata model key, which
+        # leaves model=None and cost_usd absent (a tokens-only cost.record).
+        cost = find_event(events, "cost.record")["payload"]
+        assert cost["model"] == _MODEL, f"cost.record model not recovered: {cost.get('model')!r}"
+        assert cost.get("cost_usd") is not None, "cost.record shipped tokens-only (no cost_usd)"
+        assert cost["cost_usd"] > 0
+        # Token telemetry off the real CompletionUsage object is preserved.
+        assert cost["tokens_prompt"] == 12
+        assert cost["tokens_completion"] == 1
+        assert cost["tokens_total"] == 13
+
+        # model.invoke carries the same recovered model id + detected provider so
+        # the model column fills honestly (not None) on a real run.
+        invoke = find_event(events, "model.invoke")["payload"]
+        assert invoke["model"] == _MODEL
+        assert invoke["provider"] == "openai"

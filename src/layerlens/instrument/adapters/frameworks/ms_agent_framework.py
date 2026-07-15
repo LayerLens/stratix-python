@@ -215,7 +215,7 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
 
             metadata = getattr(message, "metadata", None)
             if isinstance(metadata, dict):
-                self._emit_model_metadata(metadata)
+                self._emit_model_metadata(metadata, message)
         except Exception:
             log.debug("layerlens.ms_agent_framework: error processing message", exc_info=True)
 
@@ -231,8 +231,12 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
             self._set_if_capturing(payload, "output", safe_serialize(getattr(item, "result", None)))
             self._emit("tool.result", payload)
 
-    def _emit_model_metadata(self, metadata: Dict[str, Any]) -> None:
-        model = metadata.get("model") or metadata.get("model_id")
+    def _emit_model_metadata(self, metadata: Dict[str, Any], message: Any = None) -> None:
+        # Real SK strands the model id on the message (``ai_model_id`` /
+        # ``inner_content.model``), NOT in the message-level ``metadata`` dict —
+        # so fall back to the message when metadata lacks it, otherwise model
+        # stays None and the shared price-on-emit hook can't compute cost_usd.
+        model = metadata.get("model") or metadata.get("model_id") or _message_model_id(message)
         tokens = self._normalize_tokens(metadata.get("usage"))
         # Emit model.invoke whenever there is a real model call to report — a model
         # id OR measured token usage. Both ateam and atlas read tokens_total from
@@ -292,6 +296,31 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
             payload["termination_strategy"] = type(term).__name__
 
         self._emit("environment.config", payload)
+
+
+def _message_model_id(message: Any) -> Optional[str]:
+    """Recover the model id real SK strands on the message, not in metadata.
+
+    On a real ``ChatCompletionAgent`` run the message-level ``metadata`` dict
+    carries no ``model``/``model_id`` key — the configured model id lives on
+    ``message.ai_model_id`` and the provider's response model on
+    ``message.inner_content.model``. Prefer ``ai_model_id`` (the canonical,
+    priceable id, e.g. ``gpt-4o-mini`` rather than the dated response variant);
+    fall back to ``inner_content.model``. Returns ``None`` for synthetic
+    messages that expose neither, leaving the honest "no model id" path
+    unchanged.
+    """
+    if message is None:
+        return None
+    model = getattr(message, "ai_model_id", None)
+    if model:
+        return str(model)
+    inner = getattr(message, "inner_content", None)
+    if inner is not None:
+        inner_model = getattr(inner, "model", None)
+        if inner_model:
+            return str(inner_model)
+    return None
 
 
 _PROVIDER_PATTERNS = (
