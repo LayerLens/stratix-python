@@ -100,6 +100,27 @@ INDUSTRY_SAMPLES = [
     "media_smolagents_research_team",
     "manufacturing_strands_qa",
     "manufacturing_strands_defect_swarm",
+    # ADP-W2 Family-B wave B — providers / protocols / embedding / observability / blocked-sealed
+    "financial_a2a_refund",
+    "financial_a2a_dispute_delegation",
+    "retail_agui_shopping",
+    "retail_agui_cart",
+    "insurance_policy_retrieval",
+    "insurance_policy_rag",
+    "travel_adk_concierge",
+    "travel_adk_planner",
+    "government_vertex_triage",
+    "government_vertex_permit_tooluse",
+    "media_langfuse_moderation",
+    "media_langfuse_moderation_pipeline",
+    "retail_litellm_chat",
+    "retail_litellm_gateway",
+    "healthcare_mcp_clinical",
+    "financial_mcp_payment",
+    "healthcare_onprem_clinical_ollama",
+    "healthcare_onprem_medsafety_ollama",
+    "salesforce_agentforce_order_status",
+    "salesforce_agentforce_billing_escalation",
 ]
 
 COWORK_SAMPLES = [
@@ -2267,8 +2288,8 @@ class TestSampleCompleteness:
 
     def test_all_54_samples_covered(self):
         """Verify ALL_SAMPLE_PATHS contains exactly 66 entries."""
-        assert len(ALL_SAMPLE_PATHS) == 97, (
-            f"Expected 97 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
+        assert len(ALL_SAMPLE_PATHS) == 117, (
+            f"Expected 117 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
         )
 
     def test_all_sample_paths_exist(self):
@@ -2282,6 +2303,6 @@ class TestSampleCompleteness:
 
     def test_mocked_samples_cover_all(self):
         """ALL_MOCKED_SAMPLES should produce exactly 66 entries."""
-        assert len(ALL_MOCKED_SAMPLES) == 97, (
-            f"Expected 97 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
+        assert len(ALL_MOCKED_SAMPLES) == 117, (
+            f"Expected 117 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
         )

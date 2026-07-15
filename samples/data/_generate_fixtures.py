@@ -2279,8 +2279,15 @@ def main() -> None:
     if HERE not in sys.path:
         sys.path.insert(0, HERE)
     _W2_ADAPTERS = (
+        # wave A — frameworks/platforms
         "agno", "autogen", "bedrock_agents", "haystack", "ms_agent_framework",
         "openai_agents", "pydantic_ai", "semantic_kernel", "smolagents", "strands",
+        # wave B — providers / protocols / embedding / observability / blocked-sealed.
+        # google_vertex + salesforce_agentforce ship SEALED fixtures (no live creds);
+        # their generators build structurally-real events over a recorded/mocked
+        # transport and self-skip when the live path is unavailable.
+        "a2a", "agui", "embedding", "google_adk", "google_vertex",
+        "langfuse", "litellm", "mcp_extensions", "ollama", "salesforce_agentforce",
     )
     for _name in _W2_ADAPTERS:
         try:
