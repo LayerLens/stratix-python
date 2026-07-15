@@ -149,5 +149,94 @@
       "contract-intake"
     ],
     "guarded_column": "multi-agent"
+  },
+  "agno-s2": {
+    "lane": "agno-s2",
+    "shipped_nodes": [
+      "compliance-checker",
+      "risk-analyst",
+      "underwriting-team"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "compliance-checker",
+      "risk-analyst",
+      "underwriting-team"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "ms_agent_framework-s2": {
+    "lane": "ms_agent_framework-s2",
+    "shipped_nodes": [
+      "AgentGroupChat",
+      "dispatch-optimizer",
+      "grid-load-forecaster",
+      "reliability-auditor"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "dispatch-optimizer",
+      "grid-load-forecaster",
+      "reliability-auditor"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "openai_agents-s2": {
+    "lane": "openai_agents-s2",
+    "shipped_nodes": [
+      "returns-specialist",
+      "triage-agent"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "returns-specialist",
+      "triage-agent"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "semantic_kernel-s2": {
+    "lane": "semantic_kernel-s2",
+    "shipped_nodes": [
+      "attending-physician",
+      "clinical-pharmacist",
+      "triage-nurse"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "attending-physician",
+      "clinical-pharmacist",
+      "triage-nurse"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "smolagents-s2": {
+    "lane": "smolagents-s2",
+    "shipped_nodes": [
+      "newsroom_editor",
+      "research_agent",
+      "story_writer"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "newsroom_editor",
+      "research_agent",
+      "story_writer"
+    ],
+    "guarded_column": "multi-agent"
+  },
+  "strands-s2": {
+    "lane": "strands-s2",
+    "shipped_nodes": [
+      "corrective-action-engineer",
+      "defect-analyst",
+      "intake-coordinator"
+    ],
+    "shipped_column": "multi-agent",
+    "guarded_nodes": [
+      "corrective-action-engineer",
+      "defect-analyst",
+      "intake-coordinator"
+    ],
+    "guarded_column": "multi-agent"
   }
 }
