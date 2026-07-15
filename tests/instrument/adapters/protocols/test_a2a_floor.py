@@ -50,6 +50,8 @@ pytest.importorskip("a2a")
 from a2a.types import (
     Task as A2ATask,  # noqa: E402
     Message as A2AMessage,  # noqa: E402
+    TaskState as A2ATaskState,  # noqa: E402
+    TaskStatus as A2ATaskStatus,  # noqa: E402
     StreamResponse as A2AStreamResponse,  # noqa: E402
 )
 from a2a.client.errors import A2AClientTimeoutError  # noqa: E402
@@ -59,7 +61,10 @@ from layerlens.instrument._context import _current_collector  # noqa: E402
 from layerlens.attestation._envelope import HashScope, AttestationEnvelope  # noqa: E402
 from layerlens.instrument._collector import TraceCollector  # noqa: E402
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
-from layerlens.instrument.adapters.protocols.a2a.adapter import A2AProtocolAdapter  # noqa: E402
+from layerlens.instrument.adapters.protocols.a2a.adapter import (  # noqa: E402
+    A2AProtocolAdapter,
+    _task_status,
+)
 
 SENTINEL = "LL-SENTINEL-7f3a9c2e"
 # The free-text skill description carries the SENTINEL (content -> must be stripped).
@@ -376,3 +381,51 @@ class TestClientSendMessageCorrelation:
             f"updated.task_id={u['task_id']!r} is not the server Task.id from result.task.id"
         )
         assert u.get("request_id") == CLIENT_MESSAGE_ID_2
+
+
+def _send_message_completed(config: CaptureConfig) -> Tuple[Any, Callable[[], None]]:
+    """A REAL ``send_message`` whose response Task carries a real protobuf
+    ``TaskStatus(state=TASK_STATE_COMPLETED)`` — the shape a real a2a server
+    returns. On protobuf, ``status.state`` is the INT enum ``3``, not a string."""
+    adapter = A2AProtocolAdapter(capture_config=config)
+    msg = A2AMessage(message_id=CLIENT_MESSAGE_ID)
+    server_task = A2ATask(id=SERVER_TASK_ID, status=A2ATaskStatus(state=A2ATaskState.TASK_STATE_COMPLETED))
+    target = type("Cli", (), {"send_message": staticmethod(lambda message: server_task)})()
+    adapter.connect(target=target)
+
+    def go() -> None:
+        target.send_message(message=msg)
+
+    return adapter, go
+
+
+class TestProtobufTaskStatusMapping:
+    """A real a2a-sdk Task is protobuf: ``status.state`` is an INT enum (e.g. 3),
+    which ``str()`` turned into the meaningless ``"3"`` — a real run emitted
+    ``a2a.task.updated.status == "3"`` (never matching the ``completed``/``failed``
+    the FSM + downstream readers expect). The duck-typed doubles (string statuses)
+    masked it. The adapter must map the protobuf enum to the canonical status."""
+
+    def test_task_status_maps_protobuf_enum_to_canonical_string(self) -> None:
+        # The exact real shape: TaskStatus(state=<int enum>). Bite: str(3) == "3".
+        completed = A2ATask(id="t", status=A2ATaskStatus(state=A2ATaskState.TASK_STATE_COMPLETED))
+        assert _task_status(completed) == "completed", (
+            f"protobuf TASK_STATE_COMPLETED must map to 'completed', got "
+            f"{_task_status(completed)!r} (the raw int-enum string is the bug)"
+        )
+        failed = A2ATask(id="t", status=A2ATaskStatus(state=A2ATaskState.TASK_STATE_FAILED))
+        assert _task_status(failed) == "failed", f"got {_task_status(failed)!r}"
+        working = A2ATask(id="t", status=A2ATaskStatus(state=A2ATaskState.TASK_STATE_WORKING))
+        assert _task_status(working) == "working", f"got {_task_status(working)!r}"
+
+    def test_send_message_emits_canonical_terminal_status(self, mock_client, capture_trace):
+        """End-to-end: a completed real-protobuf Task response yields
+        ``a2a.task.updated.status == "completed"`` (not ``"3"``)."""
+        _drive(mock_client, _send_message_completed, CaptureConfig.full())
+        updated = _events_of(capture_trace, "a2a.task.updated")
+        assert updated, "send_message emitted no a2a.task.updated"
+        u = updated[-1]
+        assert u["status"] == "completed", (
+            f"a2a.task.updated.status={u['status']!r} — a real protobuf Task's int "
+            "enum leaked as a raw string instead of the canonical 'completed'"
+        )

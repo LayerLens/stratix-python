@@ -403,6 +403,37 @@ def _extract_skills(card: Any) -> list[str]:
     return []
 
 
+def _coerce_state(state: Any) -> str:
+    """Normalize an a2a task state to the canonical status string.
+
+    A str-Enum (the adapter's ``TaskState``) exposes ``.value`` directly. The REAL
+    a2a-sdk is protobuf: ``TaskStatus.state`` is an INT enum (e.g. ``3``) with no
+    ``.value`` — a bare ``str()`` would emit the meaningless ``"3"`` (which the FSM
+    rejects as an unknown state and downstream readers never match to
+    ``completed``/``failed``). Map the int back to the spec string via the
+    protobuf enum name (``TASK_STATE_COMPLETED`` -> ``completed``; the
+    ``*_REQUIRED`` states hyphenate to match ``TaskState``; ``UNSPECIFIED`` ->
+    ``unknown``). A plain string passes through.
+    """
+    val = getattr(state, "value", None)
+    if isinstance(val, str):
+        return val
+    if isinstance(state, bool):  # bool is an int subclass — never an enum here
+        return str(state)
+    if isinstance(state, int):
+        try:
+            from a2a.types import TaskState as _PBTaskState  # function-local: a2a is present when the adapter runs
+
+            name = _PBTaskState.Name(state)
+        except Exception:
+            return str(state)
+        canon = name.replace("TASK_STATE_", "").lower().replace("_", "-")
+        return TaskState.UNKNOWN.value if canon in ("unspecified", "") else canon
+    if isinstance(state, str):
+        return state
+    return str(state)
+
+
 def _task_status(result: Any) -> str:
     """Read the terminal status from a task/result. Defaults to UNKNOWN (NOT
     completed) so a result with no parseable status is never mislabeled as a
@@ -410,14 +441,15 @@ def _task_status(result: Any) -> str:
     status = getattr(result, "status", None)
     if status is None and isinstance(result, dict):
         status = result.get("status")
-    # a2a Task: status is a TaskStatus with a .state (an enum or a string).
+    # a2a Task: status is a TaskStatus with a .state (a protobuf INT enum, a
+    # str-Enum, or a string) — _coerce_state normalizes all three.
     state = getattr(status, "state", None)
     if state is not None:
-        return getattr(state, "value", str(state))
+        return _coerce_state(state)
     if isinstance(status, dict):
         state = status.get("state")
         if state is not None:
-            return getattr(state, "value", str(state))
+            return _coerce_state(state)
     if isinstance(status, str):
         return status
     return TaskState.UNKNOWN.value
