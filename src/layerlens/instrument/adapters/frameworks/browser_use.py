@@ -90,6 +90,21 @@ class BrowserUseAdapter(FrameworkAdapter):
     name = "browser_use"
     package = "browser-use"
 
+    def _check_dependency(self, available: bool) -> None:
+        """Point at the standalone install, NOT a ``layerlens[browser-use]`` extra.
+
+        browser-use pins ``openai==2.16.0`` exactly, which is incompatible with
+        the ``openai>=2.31.0`` the rest of the SDK needs, so it can't be a
+        co-installable extra of this package. It runs in its own environment; the
+        adapter itself has no import-time dependency on it.
+        """
+        if not available:
+            raise ImportError(
+                "The 'browser-use' package is required for browser_use instrumentation. "
+                "It pins an older openai than the rest of the SDK, so install it in a "
+                "dedicated environment: pip install browser-use"
+            )
+
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)
         # id(agent) -> weakref. The wrapper (and the original bound method, via

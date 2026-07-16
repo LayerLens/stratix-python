@@ -42,6 +42,7 @@ from browser_use.tokens.views import UsageSummary  # noqa: E402
 from browser_use.agent.service import Agent  # noqa: E402
 from browser_use.browser.views import BrowserStateHistory  # noqa: E402
 from browser_use.tools.service import Tools  # noqa: E402
+from browser_use.browser.profile import BrowserProfile  # noqa: E402
 from browser_use.llm.openai.chat import ChatOpenAI  # noqa: E402
 
 from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
@@ -172,8 +173,19 @@ def _default_history():
 
 def _make_agent(task="find the install command", llm=None):
     """A REAL browser_use.Agent, constructed offline (no browser is started
-    until run(), and we never let the real run() execute)."""
-    return Agent(task=task, llm=llm or ChatOpenAI(model="gpt-4o"))
+    until run(), and we never let the real run() execute).
+
+    ``headless`` is set EXPLICITLY: browser_use leaves it ``None`` by default and
+    resolves it at profile build time to "headful if a display is available", so
+    an unset value is False on a developer machine and True on a headless CI
+    runner. Pinning it makes the config-read assertion deterministic AND stronger
+    — it proves the adapter reads the profile's real value, not the ambient default.
+    """
+    return Agent(
+        task=task,
+        llm=llm or ChatOpenAI(model="gpt-4o"),
+        browser_profile=BrowserProfile(headless=False),
+    )
 
 
 def _stub_run(agent, history=None, error=None):

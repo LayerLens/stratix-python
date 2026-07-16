@@ -15,6 +15,7 @@ ag-ui-protocol==0.1.16
 aiohappyeyeballs==2.6.1
     # via aiohttp
 aiohttp==3.13.5
+    # via instructor
     # via litellm
 aiosignal==1.4.0
     # via aiohttp
@@ -70,7 +71,6 @@ coverage==7.10.2
     # via pytest-cov
 cryptography==46.0.5
     # via google-auth
-    # via secretstorage
 distro==1.9.0
     # via anthropic
     # via groq
@@ -78,6 +78,7 @@ distro==1.9.0
 docstring-parser==0.18.0
     # via anthropic
     # via google-cloud-aiplatform
+    # via instructor
 docutils==0.22
     # via readme-renderer
 eval-type-backport==0.3.1
@@ -170,6 +171,7 @@ httpx==0.28.1
     # via google-genai
     # via groq
     # via huggingface-hub
+    # via langgraph-sdk
     # via langsmith
     # via layerlens
     # via litellm
@@ -196,6 +198,8 @@ importlib-metadata==8.7.0
     # via twine
 iniconfig==2.1.0
     # via pytest
+instructor==1.15.4
+    # via layerlens
 invoke==2.2.1
     # via mistralai
 jaraco-classes==3.4.0
@@ -204,13 +208,12 @@ jaraco-context==6.0.1
     # via keyring
 jaraco-functools==4.2.1
     # via keyring
-jeepney==0.9.0
-    # via keyring
-    # via secretstorage
 jinja2==3.1.6
+    # via instructor
     # via litellm
 jiter==0.14.0
     # via anthropic
+    # via instructor
     # via openai
 jmespath==1.1.0
     # via boto3
@@ -226,7 +229,19 @@ jsonschema-specifications==2025.9.1
 keyring==25.6.0
     # via twine
 langchain-core==0.3.84
+    # via langgraph
+    # via langgraph-checkpoint
+    # via langgraph-prebuilt
     # via layerlens
+langgraph==0.6.11
+    # via layerlens
+langgraph-checkpoint==2.1.2
+    # via langgraph
+    # via langgraph-prebuilt
+langgraph-prebuilt==0.6.5
+    # via langgraph
+langgraph-sdk==0.2.9
+    # via langgraph
 langsmith==0.4.37
     # via langchain-core
 litellm==1.83.0
@@ -260,6 +275,7 @@ nodeenv==1.9.1
 ollama==0.6.1
     # via layerlens
 openai==2.32.0
+    # via instructor
     # via layerlens
     # via litellm
     # via openai-agents
@@ -286,7 +302,10 @@ opentelemetry-semantic-conventions==0.59b0
     # via mistralai
     # via opentelemetry-sdk
 orjson==3.11.5
+    # via langgraph-sdk
     # via langsmith
+ormsgpack==1.11.0
+    # via langgraph-checkpoint
 packaging==25.0
     # via build
     # via google-cloud-aiplatform
@@ -334,7 +353,9 @@ pydantic==2.11.7
     # via google-cloud-aiplatform
     # via google-genai
     # via groq
+    # via instructor
     # via langchain-core
+    # via langgraph
     # via langsmith
     # via layerlens
     # via litellm
@@ -352,6 +373,7 @@ pydantic-ai-slim==0.8.1
     # via pydantic-evals
 pydantic-core==2.33.2
     # via cohere
+    # via instructor
     # via pydantic
 pydantic-evals==0.8.1
     # via pydantic-ai-slim
@@ -395,6 +417,7 @@ requests==2.32.5
     # via google-cloud-storage
     # via google-genai
     # via id
+    # via instructor
     # via langsmith
     # via openai-agents
     # via opentelemetry-exporter-otlp-proto-http
@@ -408,6 +431,7 @@ requests-toolbelt==1.0.0
 rfc3986==2.0.0
     # via twine
 rich==14.1.0
+    # via instructor
     # via pydantic-ai-slim
     # via pydantic-evals
     # via twine
@@ -418,8 +442,6 @@ rpds-py==0.27.1
 ruff==0.12.7
 s3transfer==0.16.0
     # via boto3
-secretstorage==3.3.3
-    # via keyring
 shellingham==1.5.4
     # via typer
 six==1.17.0
@@ -435,6 +457,7 @@ temporalio==1.16.0
     # via pydantic-ai-slim
 tenacity==9.1.2
     # via google-genai
+    # via instructor
     # via langchain-core
     # via pydantic-ai-slim
 tiktoken==0.12.0
@@ -453,6 +476,7 @@ tqdm==4.67.3
 twine==6.1.0
 typer==0.23.2
     # via huggingface-hub
+    # via instructor
 types-protobuf==6.32.1.20251210
     # via temporalio
 types-requests==2.31.0.6
@@ -504,6 +528,8 @@ wcwidth==0.6.0
     # via prompt-toolkit
 websockets==15.0.1
     # via google-genai
+xxhash==3.8.1
+    # via langgraph
 yarl==1.22.0
     # via aiohttp
 zipp==3.23.0

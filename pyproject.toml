@@ -90,7 +90,13 @@ marvin = [
 # to ``mirascope.llm.call``; the adapter targets v2, so exclude the v1 line
 # rather than silently no-op against it.
 mirascope = ["mirascope[openai]>=2.0,<3; python_version >= '3.10'"]
-browser-use = ["browser-use>=0.13; python_version >= '3.11'"]
+# NB: no ``browser-use`` extra. browser-use 0.13.x hard-pins openai==2.16.0,
+# which is incompatible with the openai>=2.31.0 the rest of the SDK requires (the
+# Responses-API path), so it cannot be a co-installable feature of this package —
+# an all-features lock resolution has no solution. The adapter has no import-time
+# dependency on it; install browser-use in its own environment
+# (``pip install browser-use``) and instrument as usual. It is tested against a
+# pinned browser-use in its isolated matrix venv, not the shared dev lock.
 # Ingestion tier: no runtime dependency. The OpenInference semantic conventions
 # are attribute-key strings the producer already stamped, so the importer reads
 # exported spans with nothing installed. Mirrors the empty ``agui`` extra.
