@@ -143,6 +143,9 @@ _CORE_PATTERNS = re.compile(
 _ROW_ALIASES = {
     "vector_store": ["vector_store", "chromadb"],
     "semantic_kernel": ["semantic_kernel", "ms_agent_framework"],
+    # The embedding floor exercises the vector_store adapter too, so a
+    # vector_store.py source change must also run the embedding row.
+    "embedding": ["embedding", "vector_store"],
 }
 
 

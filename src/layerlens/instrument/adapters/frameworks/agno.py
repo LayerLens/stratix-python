@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import inspect
 import logging
+import threading
 from typing import Any, Dict, List, Optional
+from contextlib import contextmanager
 
 from ._utils import safe_serialize
+from ..._context import _current_run, _current_collector
 from ..._identity import _s, _is_generic
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -29,6 +33,21 @@ def _model_id(agent: Any) -> Optional[str]:
     if model is None:
         return None
     return getattr(model, "id", None) or str(model)
+
+
+def _run_errored(result: Any) -> bool:
+    """True if agno marked this ``RunOutput`` as failed (``RunStatus.error``).
+
+    Agno does NOT raise a real provider/model error out of ``Agent.run()`` — it
+    swallows it into ``result.status == RunStatus.error`` and returns normally,
+    stashing the error text in ``result.content``. Read the status by value
+    (rather than importing ``RunStatus``) so the check needs no hard agno import
+    and tolerates a plain-string status."""
+    status = getattr(result, "status", None)
+    if status is None:
+        return False
+    value = getattr(status, "value", status)
+    return isinstance(value, str) and value.upper() == "ERROR"
 
 
 def _extract_tokens(result: Any) -> Dict[str, int]:
@@ -200,18 +219,27 @@ class AgnoAdapter(FrameworkAdapter):
             if not adapter._connected:
                 return original(*args, **kwargs)
             input_data = kwargs.get("message") or (args[0] if args else None)
-            adapter._begin_run()
+            run = adapter._begin_run()
             adapter._start_timer("run")
             adapter._on_run_start(agent, input_data)
-            error: Optional[Exception] = None
-            result = None
             try:
                 result = original(*args, **kwargs)
             except Exception as exc:
-                error = exc
+                adapter._on_run_end(agent, None, exc)
+                adapter._end_run()
                 raise
+            if inspect.isgenerator(result):
+                # agent.run(stream=True) returns a lazy RunOutputEvent generator;
+                # the aggregated content + token metrics ride the terminal
+                # RunCompletedEvent the CALLER drains. Reading .content/.metrics off
+                # the generator now records a blank run — proxy it and emit the
+                # run's telemetry once the stream is exhausted.
+                proxy = _AgnoStreamProxy(adapter, agent, run, result, run._col_token is not None)
+                adapter._end_run(flush=False)  # detach ContextVars; the proxy flushes on drain
+                return proxy
+            try:
+                adapter._on_run_end(agent, result, None)
             finally:
-                adapter._on_run_end(agent, result, error)
                 adapter._end_run()
             return result
 
@@ -221,24 +249,46 @@ class AgnoAdapter(FrameworkAdapter):
     def _wrap_async(self, agent: Any, original: Any) -> Any:
         adapter = self
 
-        async def _traced_arun(*args: Any, **kwargs: Any) -> Any:
-            if not adapter._connected:
-                return await original(*args, **kwargs)
-            input_data = kwargs.get("message") or (args[0] if args else None)
+        async def _await_and_emit(coro: Any, input_data: Any) -> Any:
+            # The non-streaming lifecycle runs INSIDE the awaited coroutine so
+            # ``_begin_run`` executes in the awaiting asyncio.Task — preserving the
+            # per-Task ContextVar isolation two interleaved arun() runs rely on.
             adapter._begin_run()
             adapter._start_timer("run")
             adapter._on_run_start(agent, input_data)
-            error: Optional[Exception] = None
-            result = None
             try:
-                result = await original(*args, **kwargs)
+                result = await coro
             except Exception as exc:
-                error = exc
+                adapter._on_run_end(agent, None, exc)
+                adapter._end_run()
                 raise
+            try:
+                adapter._on_run_end(agent, result, None)
             finally:
-                adapter._on_run_end(agent, result, error)
                 adapter._end_run()
             return result
+
+        def _traced_arun(*args: Any, **kwargs: Any) -> Any:
+            # A plain def (mirrors agno's overloaded arun): arun() returns a
+            # coroutine to await, arun(stream=True) returns an async generator to
+            # ``async for`` — an ``async def`` wrapper would wrongly coerce the
+            # streaming case into a coroutine.
+            if not adapter._connected:
+                return original(*args, **kwargs)
+            input_data = kwargs.get("message") or (args[0] if args else None)
+            raw = original(*args, **kwargs)
+            if inspect.isasyncgen(raw):
+                # arun(stream=True) returns an async RunOutputEvent generator; defer
+                # emission to drain exactly like the sync path. begin_run/on_run_start
+                # run synchronously here (emitting agent.input) and detach before the
+                # proxy is returned, so the run stays self-contained per call.
+                run = adapter._begin_run()
+                adapter._start_timer("run")
+                adapter._on_run_start(agent, input_data)
+                proxy = _AgnoStreamProxy(adapter, agent, run, raw, run._col_token is not None)
+                adapter._end_run(flush=False)
+                return proxy
+            return _await_and_emit(raw, input_data)
 
         _traced_arun._layerlens_original = original  # type: ignore[attr-defined]
         return _traced_arun
@@ -325,6 +375,16 @@ class AgnoAdapter(FrameworkAdapter):
         if error:
             payload["error"] = str(error)
             payload["error_type"] = type(error).__name__
+        elif _run_errored(result):
+            # agno swallows a real provider/model error into RunStatus.error and
+            # returns normally (Agent.run does not raise), stashing the error text
+            # in result.content. Record it as a FAILED run — not a healthy output
+            # — so the trace doesn't render the error string as the agent's answer.
+            payload["status"] = "error"
+            payload["error_type"] = "AgnoRunError"
+            if output is not None:
+                payload["error"] = safe_serialize(output)
+            output = None  # the content IS the error, not a real output
         self._set_if_capturing(payload, "output", safe_serialize(output))
         self._emit(
             "agent.output",
@@ -486,3 +546,142 @@ def _parse_handoff_target(args: Any) -> Optional[str]:
             if isinstance(val, str) and val.strip():
                 return val.strip()
     return None
+
+
+# ------------------------------------------------------------------
+# Streamed-run event proxy
+# ------------------------------------------------------------------
+
+
+class _StreamFallback:
+    """A ``RunOutput``-shaped stand-in for a streamed run whose terminal
+    ``RunCompletedEvent`` was not yielded (plain ``stream=True`` yields only
+    content deltas). Carries the joined delta content so ``agent.output`` is not
+    blank, and no metrics — an honest tokens-less run beats a fabricated cost."""
+
+    __slots__ = ("content", "metrics", "tools", "status")
+
+    def __init__(self, content: Optional[str]) -> None:
+        self.content = content
+        self.metrics = None
+        self.tools = None
+        self.status = None
+
+
+class _AgnoStreamProxy:
+    """Transparent proxy over a streamed agno run (``agent.run(stream=True)`` /
+    ``agent.arun(stream=True)``).
+
+    Streaming returns a lazy generator of ``RunOutputEvent`` objects that the
+    caller consumes; the fully-aggregated content + token metrics ride the
+    terminal ``RunCompletedEvent`` (a ``RunOutput``-shaped object). Emitting the
+    run's telemetry when the generator is first returned would read
+    ``.content`` / ``.metrics`` off the generator itself (a blank run). Instead we
+    yield every source event to the caller unchanged while capturing that terminal
+    aggregate, then — once the stream is exhausted — emit the run's
+    ``agent.output`` / ``model.invoke`` / ``cost.record`` from it via the adapter's
+    normal ``_on_run_end`` path (mirrors the semantic_kernel streaming shadow-wrap:
+    emit once the stream is done, flushing our own run when no ambient collector
+    owns it). The captured run's ContextVars are re-established only for the
+    duration of emission, so it works whichever thread / task drains the stream.
+    """
+
+    def __init__(
+        self,
+        adapter: "AgnoAdapter",
+        agent: Any,
+        run: Any,
+        source: Any,
+        owns_collector: bool,
+    ) -> None:
+        self._adapter = adapter
+        self._agent = agent
+        self._run = run
+        self._source = source
+        self._owns_collector = owns_collector
+        self._final: Any = None  # terminal RunCompletedEvent / yielded RunOutput
+        self._deltas: List[str] = []  # RunContent deltas (content fallback)
+        self._error: Optional[BaseException] = None
+        self._lock = threading.Lock()
+        self._done = False
+
+    # -- iteration (transparency) --
+
+    def __iter__(self) -> Any:
+        try:
+            for event in self._source:
+                self._observe(event)
+                yield event
+        except Exception as exc:  # a genuine mid-stream failure
+            self._error = exc
+            raise  # transparency: the customer sees the same exception
+        finally:
+            self.finish()
+
+    async def __aiter__(self) -> Any:
+        try:
+            async for event in self._source:
+                self._observe(event)
+                yield event
+        except Exception as exc:
+            self._error = exc
+            raise
+        finally:
+            self.finish()
+
+    def close(self) -> None:
+        """Flush the trace, then close the underlying generator."""
+        self.finish()
+        src_close = getattr(self._source, "close", None)
+        if callable(src_close):
+            src_close()
+
+    # -- observation (never breaks the customer stream) --
+
+    def _observe(self, event: Any) -> None:
+        try:
+            et = str(getattr(event, "event", "") or "")
+            # RunCompleted (and a yielded bare RunOutput) carry the aggregated run:
+            # a non-None RunMetrics is the reliable discriminator.
+            if getattr(event, "metrics", None) is not None or et == "RunCompleted":
+                self._final = event
+            elif et == "RunContent":
+                content = getattr(event, "content", None)
+                if isinstance(content, str) and content:
+                    self._deltas.append(content)
+        except Exception:
+            log.warning("layerlens: error observing agno stream event", exc_info=True)
+
+    # -- context re-establishment for emission --
+
+    @contextmanager
+    def _active(self) -> Any:
+        run_token = _current_run.set(self._run)
+        col_token = _current_collector.set(self._run.collector)
+        try:
+            yield
+        finally:
+            _current_collector.reset(col_token)
+            _current_run.reset(run_token)
+
+    def finish(self) -> None:
+        with self._lock:
+            if self._done:
+                return
+            self._done = True
+        try:
+            with self._active():
+                result = self._final if self._final is not None else self._fallback_result()
+                self._adapter._on_run_end(self._agent, result, self._error)
+        except Exception:
+            log.warning("layerlens: error finishing agno stream trace", exc_info=True)
+        finally:
+            if self._owns_collector:
+                try:
+                    self._run.collector.flush()
+                except Exception:
+                    log.warning("layerlens: error flushing agno stream trace", exc_info=True)
+
+    def _fallback_result(self) -> _StreamFallback:
+        content = "".join(self._deltas) if self._deltas else None
+        return _StreamFallback(content)

@@ -123,23 +123,33 @@ class EmbeddingAdapter(FrameworkAdapter):
             input_data = kwargs.get("input", args[0] if args else [])
             batch_size = len(input_data) if isinstance(input_data, list) else 1
             start = time.monotonic()
-            result = original(*args, **kwargs)
+            try:
+                result = original(*args, **kwargs)
+            except BaseException as exc:
+                adapter._emit_embedding_error(exc, (time.monotonic() - start) * 1000, provider="openai", model=model)
+                raise
             latency_ms = (time.monotonic() - start) * 1000
 
             dimensions = _extract_dimensions_openai(result)
-            tokens = _extract_total_tokens(result)
+            prompt_tokens, total_tokens = _extract_openai_usage(result)
 
-            adapter._emit(
-                "embedding.create",
-                adapter._payload(
-                    provider="openai",
-                    model=model,
-                    batch_size=batch_size,
-                    dimensions=dimensions,
-                    total_tokens=tokens,
-                    latency_ms=round(latency_ms, 2),
-                ),
+            payload = adapter._payload(
+                provider="openai",
+                model=model,
+                batch_size=batch_size,
+                dimensions=dimensions,
+                total_tokens=total_tokens,
+                latency_ms=round(latency_ms, 2),
             )
+            # Price the call: embeddings bill every token at the input rate, so
+            # the embedding.create carries its own cost_usd and a paired
+            # cost.record is emitted for the platform cost rollup.
+            cost_record = adapter._embedding_cost_record("openai", model, prompt_tokens, total_tokens)
+            if cost_record is not None and cost_record.get("cost_usd") is not None:
+                payload["cost_usd"] = cost_record["cost_usd"]
+            adapter._emit("embedding.create", payload)
+            if cost_record is not None:
+                adapter._emit("cost.record", cost_record)
             return result
 
         return wrapper
@@ -154,7 +164,11 @@ class EmbeddingAdapter(FrameworkAdapter):
             texts = kwargs.get("texts", args[0] if args else [])
             batch_size = len(texts) if isinstance(texts, list) else 1
             start = time.monotonic()
-            result = original(*args, **kwargs)
+            try:
+                result = original(*args, **kwargs)
+            except BaseException as exc:
+                adapter._emit_embedding_error(exc, (time.monotonic() - start) * 1000, provider="cohere", model=model)
+                raise
             latency_ms = (time.monotonic() - start) * 1000
 
             dimensions = _extract_dimensions_cohere(result)
@@ -182,7 +196,17 @@ class EmbeddingAdapter(FrameworkAdapter):
             sentences = args[0] if args else kwargs.get("sentences", [])
             batch_size = len(sentences) if isinstance(sentences, list) else 1
             start = time.monotonic()
-            result = original(*args, **kwargs)
+            try:
+                result = original(*args, **kwargs)
+            except BaseException as exc:
+                model_id = _st_model_id(getattr(original, "__self__", None))
+                adapter._emit_embedding_error(
+                    exc,
+                    (time.monotonic() - start) * 1000,
+                    provider="sentence_transformers",
+                    model=model_id,
+                )
+                raise
             latency_ms = (time.monotonic() - start) * 1000
 
             dimensions = _extract_dimensions_st(result)
@@ -203,6 +227,57 @@ class EmbeddingAdapter(FrameworkAdapter):
             return result
 
         return wrapper
+
+    # ------------------------------------------------------------------
+    # Error + cost helpers
+    # ------------------------------------------------------------------
+
+    def _emit_embedding_error(
+        self, error: BaseException, latency_ms: float, *, provider: str, model: Optional[str] = None
+    ) -> None:
+        """Emit an ``agent.error`` for a failed embedding/vector call.
+
+        The wrapped SDK exception still propagates verbatim (the caller re-raises);
+        this records the failure so it is not silently lost. The free-text error is
+        secret-scrubbed at the collector chokepoint; ``error_type``/``status`` are
+        the surviving category the schema lock requires.
+        """
+        payload = self._payload(
+            provider=provider,
+            error=str(error),
+            error_type=type(error).__name__,
+            status="error",
+            latency_ms=round(latency_ms, 2),
+        )
+        if model:
+            payload["model"] = model
+        self._emit("agent.error", payload)
+
+    def _embedding_cost_record(
+        self, provider: str, model: Optional[str], prompt_tokens: Optional[int], total_tokens: Optional[int]
+    ) -> Optional[Dict[str, Any]]:
+        """Build a priced ``cost.record`` payload for an embedding call, or ``None``.
+
+        Embeddings bill every token at the model's input rate, so the billable
+        count is the prompt/total token usage. Returns ``None`` when there is
+        nothing to price (no model id, or no token usage — e.g. local encoders).
+        ``_price_cost_record`` fills ``cost_usd`` from PRICING when the model
+        resolves to a rate (unpriced/local models stay tokens-only).
+        """
+        if not model:
+            return None
+        billable = prompt_tokens if prompt_tokens is not None else total_tokens
+        if billable is None:
+            return None
+        total = total_tokens if total_tokens is not None else billable
+        payload = self._payload(
+            provider=provider,
+            model=model,
+            prompt_tokens=int(billable),
+            total_tokens=int(total),
+        )
+        self._price_cost_record(payload)
+        return payload
 
 
 def _extract_dimensions_openai(result: Any) -> Optional[int]:
@@ -266,14 +341,17 @@ def _st_model_id(model: Any) -> Optional[str]:
     return None
 
 
-def _extract_total_tokens(result: Any) -> Optional[int]:
-    try:
-        usage = getattr(result, "usage", None)
-        if usage is None:
-            return None
-        total = getattr(usage, "total_tokens", None)
-        if isinstance(total, int):
-            return total
-    except AttributeError:
-        pass
-    return None
+def _extract_openai_usage(result: Any) -> Tuple[Optional[int], Optional[int]]:
+    """``(prompt_tokens, total_tokens)`` from an OpenAI embeddings response usage.
+
+    For embeddings the two are equal (all tokens are input tokens); either may be
+    absent depending on the response shape, so both are returned independently.
+    """
+    usage = getattr(result, "usage", None)
+    if usage is None:
+        return None, None
+    prompt = getattr(usage, "prompt_tokens", None)
+    total = getattr(usage, "total_tokens", None)
+    prompt = prompt if isinstance(prompt, int) else None
+    total = total if isinstance(total, int) else None
+    return prompt, total

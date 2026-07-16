@@ -142,8 +142,32 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
         adapter = self
 
         def wrapped(*args: Any, **kwargs: Any) -> Any:
-            task_id = kwargs.get("task_id") or (args[0] if args else None) or uuid.uuid4().hex[:16]
-            task_id = str(task_id)
+            # Client-side task correlation. A real a2a ``send_message(message=Message)``
+            # carries NO ``task_id`` kwarg, so the old ``kwargs.get("task_id") or
+            # args[0] or uuid4`` fell to a RANDOM id and the emitted events never
+            # carried the server-assigned Task.id — the client trace could not
+            # correlate with the server trace. Derive a PROVISIONAL id from the
+            # Message (its own task id when CONTINUING a server task, else its
+            # messageId) and remember the messageId as ``request_id``, the stable
+            # bridge to the server Task.id reconciled from the response below. The
+            # legacy explicit ``send_task(task_id=...)`` / positional path is
+            # preserved (a truthy explicit task_id still wins).
+            message = kwargs.get("message")
+            if message is None:
+                message = kwargs.get("request")
+            if message is None and args:
+                message = args[0]
+            provisional_from_msg, request_id = _message_correlation_ids(message)
+
+            explicit_task_id = kwargs.get("task_id")
+            if explicit_task_id:
+                task_id = str(explicit_task_id)
+            elif provisional_from_msg is not None:
+                task_id = provisional_from_msg
+            elif args and args[0]:
+                task_id = str(args[0])
+            else:
+                task_id = uuid.uuid4().hex[:16]
             parent = _current_span_id.get() or uuid.uuid4().hex[:16]
             start = time.time()
             if is_send:
@@ -154,6 +178,11 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                     "method": method,
                     "request": _summarize(kwargs),
                 }
+                # request_id (the messageId) bridges this provisional created event
+                # to the server-reconciled updated event. Opaque correlation id, not
+                # content — it survives redaction (not a _CONTENT_KEYS entry).
+                if request_id is not None:
+                    created_payload["request_id"] = request_id
                 # Node-identity parity with A2AClientWrapper.send_task (client.py):
                 # stamp the submitter when the caller declared one (S13/F6). It is
                 # topology, not content — omitted honestly when absent.
@@ -169,17 +198,18 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                 result = original(*args, **kwargs)
             except Exception as exc:
                 if is_send:
+                    # No server response to reconcile with — the error path keeps the
+                    # PROVISIONAL id (the FSM is keyed under it) + request_id bridge.
                     adapter._record_transition(task_id, TaskState.FAILED)
-                    adapter.emit(
-                        A2A_TASK_UPDATED,
-                        {
-                            "task_id": task_id,
-                            "status": TaskState.FAILED.value,
-                            "error": str(exc),
-                            "latency_ms": (time.time() - start) * 1000,
-                        },
-                        parent_span_id=parent,
-                    )
+                    error_payload: Dict[str, Any] = {
+                        "task_id": task_id,
+                        "status": TaskState.FAILED.value,
+                        "error": str(exc),
+                        "latency_ms": (time.time() - start) * 1000,
+                    }
+                    if request_id is not None:
+                        error_payload["request_id"] = request_id
+                    adapter.emit(A2A_TASK_UPDATED, error_payload, parent_span_id=parent)
                     _maybe_emit_task_error(
                         adapter,
                         task_id,
@@ -191,17 +221,32 @@ class A2AProtocolAdapter(BaseProtocolAdapter):
                 raise
             if is_send:
                 status = _task_status(result)
-                adapter._record_transition(task_id, status)
-                adapter.emit(
-                    A2A_TASK_UPDATED,
-                    {
-                        "task_id": task_id,
-                        "status": status,
-                        "latency_ms": (time.time() - start) * 1000,
-                    },
-                    parent_span_id=parent,
-                )
-                _maybe_emit_task_error(adapter, task_id, status, parent=parent)
+                # Reconcile the provisional id with the SERVER-assigned Task.id from
+                # the response so the terminal event carries the id the server trace
+                # is keyed on (ateam's normalizer correlates on a single a2a.task.id).
+                server_task_id = _server_task_id(result)
+                updated_task_id = server_task_id or task_id
+                # Re-key the FSM / _tasks from the provisional id to the server id so
+                # the terminal transition still resolves and doesn't orphan.
+                if server_task_id is not None and server_task_id != task_id:
+                    fsm = adapter._task_fsms.pop(task_id, None)
+                    if fsm is not None:
+                        fsm.task_id = server_task_id
+                        adapter._task_fsms[server_task_id] = fsm
+                    if task_id in adapter._tasks:
+                        adapter._tasks[server_task_id] = adapter._tasks.pop(task_id)
+                adapter._record_transition(updated_task_id, status)
+                updated_payload: Dict[str, Any] = {
+                    "task_id": updated_task_id,
+                    "status": status,
+                    "latency_ms": (time.time() - start) * 1000,
+                }
+                # request_id (messageId) bridges back to the created event even when
+                # the task_id changed from provisional → server id.
+                if request_id is not None:
+                    updated_payload["request_id"] = request_id
+                adapter.emit(A2A_TASK_UPDATED, updated_payload, parent_span_id=parent)
+                _maybe_emit_task_error(adapter, updated_task_id, status, parent=parent)
             return result
 
         return wrapped
@@ -358,6 +403,37 @@ def _extract_skills(card: Any) -> list[str]:
     return []
 
 
+def _coerce_state(state: Any) -> str:
+    """Normalize an a2a task state to the canonical status string.
+
+    A str-Enum (the adapter's ``TaskState``) exposes ``.value`` directly. The REAL
+    a2a-sdk is protobuf: ``TaskStatus.state`` is an INT enum (e.g. ``3``) with no
+    ``.value`` — a bare ``str()`` would emit the meaningless ``"3"`` (which the FSM
+    rejects as an unknown state and downstream readers never match to
+    ``completed``/``failed``). Map the int back to the spec string via the
+    protobuf enum name (``TASK_STATE_COMPLETED`` -> ``completed``; the
+    ``*_REQUIRED`` states hyphenate to match ``TaskState``; ``UNSPECIFIED`` ->
+    ``unknown``). A plain string passes through.
+    """
+    val = getattr(state, "value", None)
+    if isinstance(val, str):
+        return val
+    if isinstance(state, bool):  # bool is an int subclass — never an enum here
+        return str(state)
+    if isinstance(state, int):
+        try:
+            from a2a.types import TaskState as _PBTaskState  # function-local: a2a is present when the adapter runs
+
+            name = _PBTaskState.Name(state)
+        except Exception:
+            return str(state)
+        canon = name.replace("TASK_STATE_", "").lower().replace("_", "-")
+        return TaskState.UNKNOWN.value if canon in ("unspecified", "") else canon
+    if isinstance(state, str):
+        return state
+    return str(state)
+
+
 def _task_status(result: Any) -> str:
     """Read the terminal status from a task/result. Defaults to UNKNOWN (NOT
     completed) so a result with no parseable status is never mislabeled as a
@@ -365,17 +441,89 @@ def _task_status(result: Any) -> str:
     status = getattr(result, "status", None)
     if status is None and isinstance(result, dict):
         status = result.get("status")
-    # a2a Task: status is a TaskStatus with a .state (an enum or a string).
+    # a2a Task: status is a TaskStatus with a .state (a protobuf INT enum, a
+    # str-Enum, or a string) — _coerce_state normalizes all three.
     state = getattr(status, "state", None)
     if state is not None:
-        return getattr(state, "value", str(state))
+        return _coerce_state(state)
     if isinstance(status, dict):
         state = status.get("state")
         if state is not None:
-            return getattr(state, "value", str(state))
+            return _coerce_state(state)
     if isinstance(status, str):
         return status
     return TaskState.UNKNOWN.value
+
+
+def _read_id(obj: Any, *names: str) -> str | None:
+    """Read the first present, NON-EMPTY id among *names* from *obj*, defensively.
+
+    Works for a real a2a-sdk protobuf message (snake_case attrs where an UNSET
+    scalar reads back as ``""`` — treated as absent), a camelCase test double, and
+    a plain dict. Returns ``None`` when no non-empty id is found.
+    """
+    for name in names:
+        val = getattr(obj, name, None)
+        if val:
+            return str(val)
+    if isinstance(obj, dict):
+        for name in names:
+            val = obj.get(name)
+            if val:
+                return str(val)
+    return None
+
+
+def _message_correlation_ids(candidate: Any) -> tuple[str | None, str | None]:
+    """Derive ``(provisional_task_id, request_id)`` from a send call's Message.
+
+    A real a2a ``send_message`` carries a ``Message`` (directly, or wrapped in a
+    ``SendMessageRequest.message``) and NO ``task_id`` kwarg. Correlation prefers
+    the Message's OWN task id (``message.task_id`` / ``message.taskId`` — it is
+    CONTINUING a server task) and otherwise falls back to the messageId; the
+    ``request_id`` is ALWAYS the messageId, the stable bridge between the
+    provisional ``a2a.task.created`` id (server id not yet known) and the
+    server-reconciled ``a2a.task.updated`` id. Returns ``(None, None)`` when
+    *candidate* is not a Message (e.g. a bare task-id string), so the legacy
+    explicit/positional ``task_id`` path is left untouched.
+    """
+    if candidate is None:
+        return None, None
+    msg = candidate
+    # Unwrap a SendMessageRequest-shaped wrapper whose real Message is under .message.
+    inner = getattr(candidate, "message", None)
+    if inner is None and isinstance(candidate, dict):
+        inner = candidate.get("message")
+    if inner is not None:
+        msg = inner
+    message_id = _read_id(msg, "message_id", "messageId")
+    continuing_task_id = _read_id(msg, "task_id", "taskId")
+    if message_id is None and continuing_task_id is None:
+        return None, None
+    return (continuing_task_id or message_id), message_id
+
+
+def _server_task_id(result: Any) -> str | None:
+    """Extract the SERVER-assigned ``Task.id`` from a send response, defensively.
+
+    Handles a bare a2a ``Task`` (``result.id``), a response WRAPPING a Task
+    (``result.task.id`` — ``SendMessageResponse`` / ``StreamResponse``), and the
+    dict forms of both. Returns ``None`` when no server id is parseable (an UNSET
+    protobuf ``.task`` reads back as an empty Task with ``id == ""`` → treated as
+    absent), so the caller stays honest and falls back to the provisional id
+    rather than fabricating one.
+    """
+    if result is None:
+        return None
+    direct = _read_id(result, "id")
+    if direct is not None:
+        return direct
+    task = getattr(result, "task", None)
+    if task is None and isinstance(result, dict):
+        task = result.get("task")
+    if task is not None:
+        return _read_id(task, "id")
+    return None
 
 
 def _task_id_from(task: Any) -> str:

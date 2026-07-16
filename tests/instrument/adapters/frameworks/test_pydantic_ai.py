@@ -219,16 +219,18 @@ class TestStreaming:
     ``ttft_ms`` / ``streaming_duration_ms`` here, and the adapter does NOT
     aggregate per-chunk content (aggregation_added=false).
 
-    NO-OUTPUT-CONTENT LIMITATION: ``_finish_run_ok`` runs ``_extract_output``
-    against the *streamed* result, but pydantic-ai's ``StreamedRunResult``
-    exposes its result only via the ``await get_output()`` coroutine — it has
-    no ``.output`` attribute the way the non-streaming ``AgentRunResult`` does.
-    So the streamed ``agent.output`` legitimately carries NO ``output`` key
-    today. We pin that current contract rather than refactor the adapter to
-    await the streamed output (which would be a larger/risky change).
+    STREAMED OUTPUT CONTENT: pydantic-ai's ``StreamedRunResult`` exposes its
+    result only via the ``await get_output()`` coroutine — it has no ``.output``
+    attribute the way the non-streaming ``AgentRunResult`` does. The streaming
+    run wrapper (already async) awaits ``get_output()`` after the consumer's
+    ``async with`` body has run and hands the resolved value into
+    ``_finish_run_ok``, so the streamed ``agent.output`` carries the run's real
+    ``output`` under capture_content=True — same contract as the non-streaming
+    path. (Resolution is guarded: a consumer that abandons the stream falls back
+    to the honest "no output" rather than crashing the run.)
 
-    We assert exactly the current contract: a ``streaming=True`` ``model.invoke``
-    is emitted and ``agent.output`` carries ``streaming=True`` (no ``output``).
+    We assert: a ``streaming=True`` ``model.invoke`` is emitted and
+    ``agent.output`` carries ``streaming=True`` with the resolved ``output``.
     """
 
     @staticmethod
@@ -288,11 +290,11 @@ class TestStreaming:
         out = find_event(events, "agent.output")
         assert out["payload"]["status"] == "ok"
         assert out["payload"]["streaming"] is True
-        # NO-OUTPUT-CONTENT LIMITATION (see class docstring): StreamedRunResult
-        # has no ``.output`` attribute, so the streamed agent.output carries no
-        # ``output`` key. Pin this so a future fix that awaits get_output()
-        # has to update the assertion deliberately.
-        assert "output" not in out["payload"]
+        # STREAMED OUTPUT CONTENT (see class docstring): the run wrapper resolves
+        # the StreamedRunResult via ``await get_output()`` (it has no ``.output``
+        # attribute), so the streamed agent.output carries the run's real output
+        # content under capture_content=True — same as the non-streaming path.
+        assert out["payload"]["output"] == "Streamed hello"
 
     def test_run_stream_records_usage_and_cost(self, mock_client):
         # A streamed run still resolves usage from the StreamedRunResult once

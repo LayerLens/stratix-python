@@ -24,6 +24,11 @@ _LIBRARY_DIRS = {"judges", "lib", "components", "hooks"}
 _SKIP_DIRS = {
     "node_modules",
     ".next",
+    # ``samples/data/generators/`` holds the record-real-once fixture generators
+    # (dev tooling that reuses the ``_generate_fixtures.py`` capture seam), not
+    # customer samples — exclude it from sample discovery like the ``_``-prefixed
+    # generator itself.
+    "generators",
     "__pycache__",
     ".venv",
     "venv",

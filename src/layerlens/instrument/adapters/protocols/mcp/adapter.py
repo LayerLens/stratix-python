@@ -135,13 +135,13 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
     # ── tool calls ──────────────────────────────────────────────────────────
 
     def _wrap_call_tool(self, original: Callable[..., Any]) -> Callable[..., Any]:
-        def _before(name: str, _arguments: Any) -> tuple[str, float]:
+        def _before(name: str, _arguments: Any) -> tuple[str, float, str]:
             parent = _current_span_id.get() or uuid.uuid4().hex[:16]
             start = time.time()
-            self._emit_async_task_start(name, parent)
-            return parent, start
+            task_id = self._emit_async_task_start(name, parent)
+            return parent, start, task_id
 
-        def _on_error(name: str, arguments: Any, parent: str, start: float, exc: Exception) -> None:
+        def _on_error(name: str, arguments: Any, parent: str, start: float, task_id: str, exc: Exception) -> None:
             self.emit(
                 MCP_TOOL_CALL,
                 {
@@ -167,9 +167,9 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
                 },
                 parent_span_id=parent,
             )
-            self._emit_async_task_end(name, parent, error=str(exc))
+            self._emit_async_task_end(name, parent, task_id, error=str(exc))
 
-        def _after(name: str, arguments: Any, parent: str, start: float, result: Any) -> None:
+        def _after(name: str, arguments: Any, parent: str, start: float, task_id: str, result: Any) -> None:
             latency_ms = (time.time() - start) * 1000
             self.emit(
                 MCP_TOOL_CALL,
@@ -182,30 +182,30 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
                 parent_span_id=parent,
             )
             self._emit_structured_output(name, result, parent)
-            self._emit_async_task_end(name, parent)
+            self._emit_async_task_end(name, parent, task_id)
 
         if _is_awaitable(original):
 
             async def wrapped_async(name: str, arguments: Any = None, **kwargs: Any) -> Any:
-                parent, start = _before(name, arguments)
+                parent, start, task_id = _before(name, arguments)
                 try:
                     result = await original(name, arguments, **kwargs)
                 except Exception as exc:
-                    _on_error(name, arguments, parent, start, exc)
+                    _on_error(name, arguments, parent, start, task_id, exc)
                     raise
-                _after(name, arguments, parent, start, result)
+                _after(name, arguments, parent, start, task_id, result)
                 return result
 
             return wrapped_async
 
         def wrapped_sync(name: str, arguments: Any = None, **kwargs: Any) -> Any:
-            parent, start = _before(name, arguments)
+            parent, start, task_id = _before(name, arguments)
             try:
                 result = original(name, arguments, **kwargs)
             except Exception as exc:
-                _on_error(name, arguments, parent, start, exc)
+                _on_error(name, arguments, parent, start, task_id, exc)
                 raise
-            _after(name, arguments, parent, start, result)
+            _after(name, arguments, parent, start, task_id, result)
             return result
 
         return wrapped_sync
@@ -544,10 +544,17 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
 
     # ── async task lifecycle ──────────────────────────────────────────────────
 
-    def _emit_async_task_start(self, name: str, parent_span_id: str) -> None:
-        self._async_tasks.create(parent_span_id, originating_span_id=parent_span_id)
-        payload = self._async_tasks.update(parent_span_id, status="running") or {
-            "async_task_id": parent_span_id,
+    def _emit_async_task_start(self, name: str, parent_span_id: str) -> str:
+        # ateam contract (AsyncTaskEvent): a UNIQUE async_task_id per async task,
+        # DISTINCT from the originating tool.call span. Key the tracker on a fresh
+        # unique id — NOT the span — so two concurrent tool calls under ONE span do
+        # not collide (the second create() would otherwise overwrite the first's
+        # state, and the first's end pop it, orphaning the second). The span is kept
+        # as the originating_span_id. The id is threaded to _emit_async_task_end.
+        task_id = uuid.uuid4().hex
+        self._async_tasks.create(task_id, originating_span_id=parent_span_id)
+        payload = self._async_tasks.update(task_id, status="running") or {
+            "async_task_id": task_id,
             "status": "running",
         }
         self.emit(
@@ -555,11 +562,12 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
             {"tool_name": name, "phase": "start", **payload},
             parent_span_id=parent_span_id,
         )
+        return task_id
 
-    def _emit_async_task_end(self, name: str, parent_span_id: str, *, error: str | None = None) -> None:
+    def _emit_async_task_end(self, name: str, parent_span_id: str, task_id: str, *, error: str | None = None) -> None:
         status = "failed" if error else "completed"
-        payload = self._async_tasks.update(parent_span_id, status=status) or {
-            "async_task_id": parent_span_id,
+        payload = self._async_tasks.update(task_id, status=status) or {
+            "async_task_id": task_id,
             "status": status,
         }
         payload["tool_name"] = name

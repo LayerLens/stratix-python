@@ -77,11 +77,22 @@ class OllamaProvider(MonkeyPatchProvider):
             # ``generate`` returns {"response": "..."}
             if "response" in response:
                 return {"role": "assistant", "content": response.get("response", "")}
-            # ``embeddings`` returns {"embedding": [...]}
+            # Legacy ``embeddings()`` returns {"embedding": [...]}.
             if "embedding" in response:
                 return {
                     "type": "embedding",
                     "dim": len(response.get("embedding") or []),
+                }
+            # Modern ``embed()`` returns an ``EmbedResponse`` whose dump carries
+            # the PLURAL ``embeddings`` key: a list of vectors (one per input).
+            # Report the dimensionality of the first vector (shape-only, never
+            # the raw floats) so the wrapped ``embed`` method is not output-less.
+            if "embeddings" in response:
+                vectors = response.get("embeddings") or []
+                first = vectors[0] if vectors else []
+                return {
+                    "type": "embedding",
+                    "dim": len(first),
                 }
         return None
 
@@ -167,10 +178,16 @@ class OllamaProvider(MonkeyPatchProvider):
             meta = base_meta(response)
             if endpoint:
                 meta["endpoint"] = endpoint
-            if cost_per_second is not None and isinstance(response, dict):
-                total_ns = int(response.get("eval_duration") or 0) + int(response.get("prompt_eval_duration") or 0)
-                if total_ns > 0:
-                    meta["infra_cost_usd"] = round((total_ns / _NS_PER_SECOND) * cost_per_second, 8)
+            if cost_per_second is not None:
+                # Coerce first: modern ollama returns a pydantic ChatResponse/
+                # GenerateResponse OBJECT (not the old plain dict), so the
+                # eval_duration fields must be read off the coerced dump or the
+                # infra cost is silently dropped on every real invoke (LAY-3614).
+                coerced = _as_dict(response)
+                if isinstance(coerced, dict):
+                    total_ns = int(coerced.get("eval_duration") or 0) + int(coerced.get("prompt_eval_duration") or 0)
+                    if total_ns > 0:
+                        meta["infra_cost_usd"] = round((total_ns / _NS_PER_SECOND) * cost_per_second, 8)
             return meta
 
         return MonkeyPatchProvider._Extractors(

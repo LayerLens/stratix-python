@@ -222,9 +222,18 @@ class LangfuseAdapter(FrameworkAdapter):
 
         # Process observations (generations, spans, events)
         observations = trace.get("observations", [])
+        # Pre-assign a stable span id per observation id so a child's
+        # ``parentObservationId`` resolves to the SAME span its parent observation
+        # emits under. Minting the parent span fresh at read time (the old
+        # behaviour) orphaned every nested observation onto a phantom span.
+        span_id_map: Dict[str, str] = {}
+        for obs in observations:
+            oid = obs.get("id")
+            if oid is not None and oid not in span_id_map:
+                span_id_map[oid] = new_span_id()
         for obs in observations:
             try:
-                self._import_observation(collector, obs, root_span_id)
+                self._import_observation(collector, obs, root_span_id, span_id_map)
             except Exception:
                 log.warning(
                     "layerlens: failed to import observation %s",
@@ -289,13 +298,19 @@ class LangfuseAdapter(FrameworkAdapter):
         collector: TraceCollector,
         obs: Dict[str, Any],
         root_span_id: str,
+        span_id_map: Dict[str, str],
     ) -> None:
         """Convert a single Langfuse observation to LayerLens event(s)."""
         obs_type = obs.get("type", "").upper()
-        obs_id = obs.get("id", new_span_id())
-        span_id = new_span_id()
+        raw_id = obs.get("id")
+        obs_id = raw_id if raw_id is not None else new_span_id()
+        # Resolve THIS observation and its parent to the span ids pre-assigned in
+        # ``_import_single_trace`` so ``parentObservationId`` nests onto the span
+        # its parent observation actually emitted under (not a phantom span).
+        span_id = span_id_map.get(raw_id) if raw_id is not None else None
+        span_id = span_id or new_span_id()
         parent_id = obs.get("parentObservationId")
-        parent_span = new_span_id() if parent_id else root_span_id
+        parent_span = span_id_map.get(parent_id, root_span_id) if parent_id else root_span_id
 
         base_payload: Dict[str, Any] = {
             "framework": "langfuse",
@@ -322,6 +337,47 @@ class LangfuseAdapter(FrameworkAdapter):
                 parent_span_id=parent_span,
                 span_name=obs.get("name"),
             )
+
+        # An ERROR/WARNING-level observation is a FAILED/degraded call. Surface it
+        # as a distinct agent.error nested UNDER the observation's own span so the
+        # failure — and its real error type — is not silently imported as a healthy
+        # model.invoke / tool.call.
+        self._maybe_emit_error(collector, obs, span_id)
+
+    def _maybe_emit_error(
+        self,
+        collector: TraceCollector,
+        obs: Dict[str, Any],
+        obs_span_id: str,
+    ) -> None:
+        """Emit an ``agent.error`` when a Langfuse observation is flagged failed.
+
+        Langfuse records a failed/degraded observation via ``level`` (``ERROR`` /
+        ``WARNING``) plus a free-text ``statusMessage``. Without this the errored
+        observation imports as a plain successful generation/span and the failure
+        is dropped. The error is co-located as a child of the failing
+        observation's span so the tree keeps the causal link.
+        """
+        level = str(obs.get("level") or "").upper()
+        if level not in _ERROR_LEVELS:
+            return
+        status_msg = obs.get("statusMessage")
+        err_payload: Dict[str, Any] = {
+            "framework": "langfuse",
+            "langfuse_observation_id": obs.get("id", ""),
+            "name": obs.get("name", ""),
+            "status": "error",
+            "level": level,
+            "error_type": _error_type_from_status(status_msg) or level,
+            "error": truncate(str(status_msg), max_len=4000) if status_msg else level,
+        }
+        collector.emit(
+            "agent.error",
+            err_payload,
+            span_id=new_span_id(),
+            parent_span_id=obs_span_id,
+            span_name=obs.get("name"),
+        )
 
     def _import_generation(
         self,
@@ -710,11 +766,34 @@ class LangfuseAdapter(FrameworkAdapter):
 # ---------------------------------------------------------------------------
 
 
+# Langfuse observation ``level`` values that denote a failed/degraded call and
+# must surface as an ``agent.error`` (Langfuse levels: DEBUG/DEFAULT/WARNING/ERROR).
+_ERROR_LEVELS = frozenset({"ERROR", "WARNING"})
+
+
 def _safe_dict(value: Any) -> Dict[str, Any]:
     """Coerce *value* to a dict, returning ``{}`` on failure."""
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _error_type_from_status(message: Optional[str]) -> Optional[str]:
+    """Best-effort recovery of a real exception type from a Langfuse
+    ``statusMessage``.
+
+    Langfuse has no dedicated error-type field, but a message that begins with a
+    Python-style ``<ExceptionName>: ...`` prefix (e.g. ``RateLimitError: 429
+    quota exceeded``) carries the genuine type. Returns ``None`` when the message
+    does not look like an exception repr, so the caller can fall back to the
+    observation ``level`` rather than fabricate a type.
+    """
+    if not message:
+        return None
+    head = str(message).split(":", 1)[0].strip()
+    if head and " " not in head and head[0].isalpha() and (head.endswith("Error") or head.endswith("Exception")):
+        return head
+    return None
 
 
 def _iso_now() -> str:

@@ -47,6 +47,7 @@ install = ["openai-agents==0.4.2", "openai==2.32.0"]
 tests = [
     "tests/instrument/adapters/frameworks/test_openai_agents.py",
     "tests/instrument/adapters/frameworks/test_openai_agents_recorded.py",
+    "tests/instrument/adapters/frameworks/test_openai_agents_floor.py",
 ]
 
 [frameworks.semantic_kernel]
@@ -54,7 +55,9 @@ python = "3.11"
 install = ["semantic-kernel==1.36.0", "openai"]
 tests = [
     "tests/instrument/adapters/frameworks/test_semantic_kernel.py",
+    "tests/instrument/adapters/frameworks/test_semantic_kernel_floor.py",
     "tests/instrument/adapters/frameworks/test_ms_agent_framework.py",
+    "tests/instrument/adapters/frameworks/test_ms_agent_framework_floor.py",
     "tests/instrument/adapters/frameworks/test_semantic_kernel_recorded.py",
     "tests/instrument/adapters/frameworks/test_ms_agent_framework_recorded.py",
 ]
@@ -66,17 +69,25 @@ tests = [
     "tests/instrument/adapters/frameworks/test_pydantic_ai.py",
     "tests/instrument/adapters/frameworks/test_concurrency.py",
     "tests/instrument/adapters/frameworks/test_pydantic_ai_recorded.py",
+    "tests/instrument/adapters/frameworks/test_pydantic_ai_floor.py",
 ]
 
 [frameworks.google_adk]
 python = "3.11"
 install = ["google-adk==2.2.0"]
-tests = ["tests/instrument/adapters/frameworks/test_google_adk.py"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_google_adk.py",
+    "tests/instrument/adapters/frameworks/test_google_adk_floor.py",
+]
 
 [frameworks.strands]
 python = "3.11"
-install = ["strands-agents==1.42.0"]
-tests = ["tests/instrument/adapters/frameworks/test_strands.py"]
+install = ["strands-agents==1.42.0", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_strands.py",
+    "tests/instrument/adapters/frameworks/test_strands_recorded.py",
+    "tests/instrument/adapters/frameworks/test_strands_floor.py",
+]
 
 [frameworks.smolagents]
 python = "3.11"
@@ -84,6 +95,7 @@ install = ["smolagents==1.26.0", "openai"]
 tests = [
     "tests/instrument/adapters/frameworks/test_smolagents.py",
     "tests/instrument/adapters/frameworks/test_smolagents_recorded.py",
+    "tests/instrument/adapters/frameworks/test_smolagents_floor.py",
 ]
 
 [frameworks.llamaindex]
@@ -103,6 +115,7 @@ install = ["haystack-ai==2.30.1", "openai"]
 tests = [
     "tests/instrument/adapters/frameworks/test_haystack.py",
     "tests/instrument/adapters/frameworks/test_haystack_recorded.py",
+    "tests/instrument/adapters/frameworks/test_haystack_floor.py",
 ]
 
 [frameworks.autogen]
@@ -111,6 +124,8 @@ install = ["autogen-core==0.7.5", "autogen-agentchat==0.7.5", "autogen-ext[opena
 tests = [
     "tests/instrument/adapters/frameworks/test_autogen.py",
     "tests/instrument/adapters/frameworks/test_autogen_recorded.py",
+    "tests/instrument/adapters/frameworks/test_autogen_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_autogen.py",
 ]
 
 [frameworks.agno]
@@ -119,6 +134,20 @@ install = ["agno==2.6.12", "openai"]
 tests = [
     "tests/instrument/adapters/frameworks/test_agno.py",
     "tests/instrument/adapters/frameworks/test_agno_recorded.py",
+    "tests/instrument/adapters/frameworks/test_agno_floor.py",
+]
+
+[frameworks.embedding]
+python = "3.11"
+# The paired metadata-only adapters (embedding.py -> embedding.create,
+# vector_store.py -> retrieval.query). The floor exercises both, so both deps
+# are pinned; the unit + recorded suites (previously py3.9-base only) are gated
+# here too.
+install = ["openai", "chromadb==1.5.9"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_embedding.py",
+    "tests/instrument/adapters/frameworks/test_embedding_recorded.py",
+    "tests/instrument/adapters/frameworks/test_embedding_floor.py",
 ]
 
 [frameworks.vector_store]

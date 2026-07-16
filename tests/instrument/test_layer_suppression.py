@@ -52,7 +52,11 @@ def test_minimal_suppresses_stream_and_tool_protocol_content(event_type: str) ->
 
 @pytest.mark.parametrize(
     "agui_type",
-    ["RUN_STARTED", "RUN_FINISHED", "RUN_ERROR", "STATE_SNAPSHOT", "STATE_DELTA", "MESSAGES_SNAPSHOT"],
+    # RUN_ERROR is deliberately excluded: a run FAILURE now surfaces as the
+    # always-enabled agent.error (never suppressible — errors must always be
+    # surfaced), asserted separately below. The remaining run/state events are
+    # ordinary telemetry and MUST stay suppressible.
+    ["RUN_STARTED", "RUN_FINISHED", "STATE_SNAPSHOT", "STATE_DELTA", "MESSAGES_SNAPSHOT"],
 )
 def test_agui_lifecycle_state_events_are_suppressible(agui_type: str) -> None:
     """AG-UI run/state events must NOT ride the ALWAYS-ENABLED agent.state.change
@@ -65,6 +69,21 @@ def test_agui_lifecycle_state_events_are_suppressible(agui_type: str) -> None:
     collector = TraceCollector(object(), CaptureConfig.minimal())
     collector.emit(stratix_event, {"marker": 1}, span_id="s")
     assert not collector.events, f"{agui_type} -> {stratix_event} not suppressed by minimal()"
+
+
+def test_agui_run_error_is_always_surfaced_not_suppressible() -> None:
+    """A RUN_ERROR is a run FAILURE, not ordinary lifecycle telemetry: it maps to
+    agent.error (always-enabled) so no layer toggle / minimal() can hide a
+    failure. Complements (does not weaken) the suppressibility guarantee above —
+    errors are the deliberate exception to L6b suppression."""
+    from layerlens.instrument.adapters.protocols.agui.event_mapper import map_agui_to_stratix
+
+    stratix_event = map_agui_to_stratix("RUN_ERROR")["stratix_event"]
+    assert stratix_event == "agent.error", f"RUN_ERROR must map to agent.error, got {stratix_event}"
+    assert stratix_event in _ALWAYS_ENABLED, "agent.error must be always-enabled so failures are never suppressed"
+    collector = TraceCollector(object(), CaptureConfig.minimal())
+    collector.emit(stratix_event, {"marker": 1, "status": "error", "error_type": "X"}, span_id="s")
+    assert collector.events, "minimal() must NOT suppress a run failure (agent.error)"
 
 
 def test_agui_state_snapshot_same_type_on_both_paths() -> None:
