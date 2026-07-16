@@ -1,0 +1,8 @@
+# Runtime deps for the instrumented vendor-fork console reference. Install into a
+# venv that also ships `layerlens` (e.g. the SDK .venv, or the langchain audit venv).
+langgraph>=1.2
+langchain>=1.3
+langchain-core>=1.4
+langchain-openai>=1.3
+# layerlens (private preview SDK) provides LangGraphCallbackHandler — installed
+# editable from this repo.

@@ -1,0 +1,47 @@
+Vendor fork — provenance
+========================
+
+KIND
+  Instrumented vendor fork: a genuine fork of an upstream framework's own example
+  app, instrumented NON-INVASIVELY with the LayerLens `layerlens` SDK adapter. The
+  upstream graph logic is unmodified except for the model wiring (below); the
+  LayerLens instrumentation lives entirely in a separate `run_instrumented.py`.
+
+UPSTREAM TUTORIAL
+  LangChain / LangGraph — "Build customer support with handoffs"
+  https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs-customer-support
+  Source: github.com/langchain-ai/langgraph (docs tutorial "customer-support")
+  License: MIT (langchain-ai/langgraph)
+
+LAYERLENS FORK (this reference is ported from it)
+  Repo:   github.com/LayerLens/langgraph-customer-support-with-handoffs
+  Commit: 6e5f25fce2df61246150ae00167d36b349555435
+  Retrieved: 2026-07-16
+  The LayerLens fork wraps the tutorial in a full-stack CopilotKit UX (Next.js
+  frontend + FastAPI AG-UI backend). THIS SDK reference ports only the CONSOLE
+  surface — the forked graph (`app.py`) and the instrumentation harness
+  (`run_instrumented.py`) — which is the honest, self-contained instrumented
+  sample. For the full-stack UX see the fork repo above.
+
+WHAT WE CHANGED VS UPSTREAM
+  1. Explicit named agent nodes. The topology is an explicit langgraph StateGraph
+     `triage -> (billing|technical|returns)_specialist -> closer` with distinctly
+     named nodes, so agent-to-agent transitions are real graph-node transitions
+     the LayerLens adapter reports as `agent.handoff` events.
+  2. Model wiring. Upstream called a provider SDK directly. The fork routes the
+     model through OpenRouter (`langchain_openai.ChatOpenAI(base_url=...)`). This
+     SDK reference keeps OpenRouter as the primary path but adds an OpenAI
+     fallback selected by `VENDOR_MODEL_BACKEND` — because no OpenRouter
+     credential is available in the SDK test environment (the provided key is
+     dead). Both use the SAME `ChatOpenAI` class; only base_url/key/model differ.
+  3. LayerLens instrumentation. `run_instrumented.py` attaches the
+     `LangGraphCallbackHandler` from the `layerlens` SDK non-invasively (a
+     `config={"callbacks": [handler]}` on `graph.invoke`), runs REAL conversations,
+     uploads each captured trace with a real `Stratix()` client (LayerLens key
+     only), and reads the SERVER-computed agent DAG back — no fabricated success.
+
+INSTRUMENTATION SEAM (non-invasive)
+  from layerlens import Stratix
+  from layerlens.instrument.adapters.frameworks import LangGraphCallbackHandler
+  handler = LangGraphCallbackHandler(Stratix())
+  graph.invoke(state, config={"callbacks": [handler]})

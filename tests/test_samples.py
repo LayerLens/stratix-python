@@ -13,8 +13,13 @@ import pytest
 
 SAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples")
 
-# Directories containing library/support modules (not standalone samples)
-_LIBRARY_DIRS = {"judges", "lib", "components", "hooks"}
+# Directories containing library/support modules (not standalone samples).
+# ``vendor`` holds instrumented vendor forks (genuine forks of an upstream
+# framework's own example app, e.g. samples/vendor/langgraph/...): the graph
+# module (``app.py``) has no ``main()`` / ``layerlens`` import — the runnable
+# instrumentation lives in ``run_instrumented.py`` — so the standalone-sample
+# contract does not apply. Parse/docstring/no-invalid-import checks still run.
+_LIBRARY_DIRS = {"judges", "lib", "components", "hooks", "vendor"}
 
 # Directories to skip entirely during sample discovery. The CopilotKit
 # sample ships a Next.js app under ``app/frontend``; once a developer runs
