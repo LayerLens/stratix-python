@@ -73,11 +73,7 @@ class TestOpenInferenceRecorded:
         auto-instrumentor. If this corpus were ever swapped for hand-authored
         spans, the instrumentation scope would not survive."""
         fixture = load_recorded("openinference", "default")
-        scopes = {
-            ss["scope"]["name"]
-            for rs in fixture["otlp"]["resourceSpans"]
-            for ss in rs["scopeSpans"]
-        }
+        scopes = {ss["scope"]["name"] for rs in fixture["otlp"]["resourceSpans"] for ss in rs["scopeSpans"]}
         assert "openinference.instrumentation.openai" in scopes
         assert fixture["provenance"]["provider"] == "openinference"
 

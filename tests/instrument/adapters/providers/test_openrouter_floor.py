@@ -155,10 +155,7 @@ class TestRedactionFloor:
 class TestRealErrorShape:
     def test_real_authentication_error_scrubs_the_openrouter_key(self, mock_client, capture_trace):
         # OpenRouter 401 bodies echo the offending key back verbatim.
-        raw = (
-            "Error code: 401 - {'error': {'message': 'No auth credentials found: "
-            f"{_API_KEY}', 'code': 401}}}}"
-        )
+        raw = f"Error code: 401 - {{'error': {{'message': 'No auth credentials found: {_API_KEY}', 'code': 401}}}}"
         response = httpx.Response(401, request=httpx.Request("POST", f"{OPENROUTER_BASE_URL}/chat/completions"))
         err = AuthenticationError(raw, response=response, body=None)
         client = _erroring_client(err)

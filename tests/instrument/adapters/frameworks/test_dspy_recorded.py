@@ -73,8 +73,7 @@ _NOTES = [
         "note_id": "STAT101-W3-N3",
         "title": "Degrees of freedom and Bessel's correction",
         "text": (
-            "The n-1 divisor is known as Bessel's correction, and n-1 is the degrees of "
-            "freedom of the sample variance."
+            "The n-1 divisor is known as Bessel's correction, and n-1 is the degrees of freedom of the sample variance."
         ),
     },
 ]
@@ -115,9 +114,7 @@ class TutorRAG(dspy.Module):
             query: The student's question or a search phrase.
             k: How many excerpts to return.
         """
-        return "\n\n".join(
-            "[%s] %s\n%s" % (n["note_id"], n["title"], n["text"]) for n in self._notes[:k]
-        )
+        return "\n\n".join("[%s] %s\n%s" % (n["note_id"], n["title"], n["text"]) for n in self._notes[:k])
 
     def forward(self, question: str) -> Any:
         material = self.search_course_material(query=question, k=3)
@@ -209,9 +206,7 @@ class TestDSPyRecorded:
         identity = find_event(events, "agent.identity")
         assert identity["payload"]["agent_name"] == "TutorRAG"
         named = {
-            (e.get("payload") or {}).get("agent_name")
-            for e in events
-            if (e.get("payload") or {}).get("agent_name")
+            (e.get("payload") or {}).get("agent_name") for e in events if (e.get("payload") or {}).get("agent_name")
         }
         assert named == {"TutorRAG"}, (
             "a dspy framework primitive (ChainOfThought/Predict) or the synthesized "
@@ -219,10 +214,7 @@ class TestDSPyRecorded:
         )
 
         # --- the real nested module boundary: TutorRAG -> ChainOfThought -> Predict ---
-        modules = {
-            (e.get("payload") or {}).get("module_type")
-            for e in find_events(events, "agent.input")
-        }
+        modules = {(e.get("payload") or {}).get("module_type") for e in find_events(events, "agent.input")}
         assert modules == {"TutorRAG", "ChainOfThought", "Predict"}
 
         # --- the real dspy.Tool retrieval crossed the callback bus ---
@@ -234,8 +226,7 @@ class TestDSPyRecorded:
 
         # --- the outer module's output carries the parsed real prediction ---
         outs = [
-            e for e in find_events(events, "agent.output")
-            if (e.get("payload") or {}).get("module_type") == "TutorRAG"
+            e for e in find_events(events, "agent.output") if (e.get("payload") or {}).get("module_type") == "TutorRAG"
         ]
         assert len(outs) == 1
         assert "error_type" not in outs[0]["payload"]
@@ -243,8 +234,7 @@ class TestDSPyRecorded:
 
         # --- environment.config describes the real signature it really ran ---
         cfgs = {
-            (e.get("payload") or {}).get("module_type"): e["payload"]
-            for e in find_events(events, "environment.config")
+            (e.get("payload") or {}).get("module_type"): e["payload"] for e in find_events(events, "environment.config")
         }
         assert cfgs["TutorRAG"]["predictor_count"] == 1
         assert cfgs["Predict"]["input_fields"] == ["course_material", "question"]

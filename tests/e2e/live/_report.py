@@ -49,7 +49,6 @@ def ui_link(row: Dict[str, Any]) -> str:
     return f"{base}/traces/{trace_id}"
 
 
-
 def _cost_cell(row: Dict[str, Any]) -> str:
     """Render spend, distinguishing "no price is knowable" from "it was free".
 

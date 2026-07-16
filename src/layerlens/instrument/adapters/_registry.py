@@ -148,9 +148,7 @@ _FRAMEWORK_ADAPTERS: Dict[str, Tuple[str, str]] = {
 # in ``_FRAMEWORK_ADAPTERS``; users instantiate them explicitly with a target.
 # (bedrock_agents is probed via bare ``boto3``, so attempting it on every
 # ``auto()`` call previously logged a WARNING + traceback for every AWS user.)
-_TARGET_REQUIRED_ADAPTERS: FrozenSet[str] = frozenset(
-    {"pydantic_ai", "bedrock_agents", "instructor", "browser_use"}
-)
+_TARGET_REQUIRED_ADAPTERS: FrozenSet[str] = frozenset({"pydantic_ai", "bedrock_agents", "instructor", "browser_use"})
 
 
 def register(name: str, adapter: BaseAdapter) -> None:

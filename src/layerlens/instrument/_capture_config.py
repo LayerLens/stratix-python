@@ -335,9 +335,7 @@ _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     # ``output``/``error``: browser_use + dspy + openinference fold the action's
     # extracted page text and the failure text onto the single tool.call rather
     # than a paired tool.result.
-    "tool.call": frozenset(
-        {"arguments", "input", "args", "result", "payload", "data", "url", "output", "error"}
-    ),
+    "tool.call": frozenset({"arguments", "input", "args", "result", "payload", "data", "url", "output", "error"}),
     "tool.result": frozenset({"result", "output", "content", "error"}),
     "retrieval.query": frozenset({"query", "input"}),
     # ``result``: an OpenInference EVALUATOR span's output.value — the judged
@@ -407,9 +405,7 @@ _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     # ``output``: a triggered OpenInference GUARDRAIL span's output.value — the
     # blocked text itself. The violation CATEGORY + guardrail name survive, so a
     # block stays auditable without republishing what was blocked.
-    "policy.violation": frozenset(
-        {"reason", "detail", "amount", "merchant", "merchant_name", "output"}
-    ),
+    "policy.violation": frozenset({"reason", "detail", "amount", "merchant", "merchant_name", "output"}),
     "commerce.supplier_discovered": frozenset({"name"}),
     "commerce.catalog.browsed": frozenset({"query"}),
     # Commerce checkout/start PII (A15 / UCP-Q2 fail-open, user-approved

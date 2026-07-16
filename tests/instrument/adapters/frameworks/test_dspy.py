@@ -671,7 +671,9 @@ class TestSwappedClassNeverReachesTheAgentColumn:
         events = uploaded["events"]
         assert events
         for event in events:
-            assert "agent_name" not in event["payload"], f"fabricated agent on {event['event_type']}: {event['payload']}"
+            assert "agent_name" not in event["payload"], (
+                f"fabricated agent on {event['event_type']}: {event['payload']}"
+            )
             assert "agent_id" not in event["payload"], f"fabricated agent on {event['event_type']}: {event['payload']}"
         assert find_events(events, "agent.identity") == [], (
             "a bare Predict has no honest agent — the Agent column must stay '—'"

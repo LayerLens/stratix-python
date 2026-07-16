@@ -236,9 +236,7 @@ class TestPayloadContract:
 
     def test_tool_input_omitted_when_both_sources_are_empty(self) -> None:
         """D3 honesty: nothing to report stays omitted, never an empty string."""
-        rec = _record(
-            "TOOL", "t", attributes={"tool.name": "t", "tool.parameters": "", "input.value": ""}
-        )
+        rec = _record("TOOL", "t", attributes={"tool.name": "t", "tool.parameters": "", "input.value": ""})
         assert "input" not in span_to_events(rec, capture_content=True)[0][1]
 
     def test_reranker_fields(self) -> None:
@@ -405,9 +403,7 @@ class TestHonestySkips:
         """D2 keeps the content-free literal fallback when the status is ERROR
         but the producer left the message empty."""
         assert (
-            span_to_events(_record("LLM", status="ERROR", status_message=""), capture_content=True)[
-                0
-            ][1]["error"]
+            span_to_events(_record("LLM", status="ERROR", status_message=""), capture_content=True)[0][1]["error"]
             == "span status ERROR"
         )
 
@@ -500,9 +496,7 @@ class TestRealOpenTelemetry:
         provider.add_span_processor(BatchSpanProcessor(_NoopExporter()))
         provider.add_span_processor(adapter.span_processor())
         tracer = provider.get_tracer(__name__)
-        with tracer.start_as_current_span(
-            "retrieve", attributes={"openinference.span.kind": "RETRIEVER"}
-        ):
+        with tracer.start_as_current_span("retrieve", attributes={"openinference.span.kind": "RETRIEVER"}):
             pass
         provider.shutdown()
         adapter.flush()
@@ -540,9 +534,7 @@ class TestRealOpenTelemetry:
         provider.add_span_processor(adapter.span_processor())
         tracer = provider.get_tracer(__name__)
 
-        with tracer.start_as_current_span(
-            "guard", attributes={"openinference.span.kind": "GUARDRAIL"}
-        ) as span:
+        with tracer.start_as_current_span("guard", attributes={"openinference.span.kind": "GUARDRAIL"}) as span:
             span.set_status(Status(StatusCode.ERROR, "blocked: policy hit"))
         provider.shutdown()
         adapter.flush()
@@ -571,9 +563,7 @@ class TestRealOpenTelemetry:
         tracer = provider.get_tracer(__name__)
 
         for name in ("first", "second"):
-            with tracer.start_as_current_span(
-                name, attributes={"openinference.span.kind": "AGENT"}
-            ):
+            with tracer.start_as_current_span(name, attributes={"openinference.span.kind": "AGENT"}):
                 pass
         provider.shutdown()
         adapter.flush()

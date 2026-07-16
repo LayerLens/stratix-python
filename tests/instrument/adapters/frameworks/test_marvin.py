@@ -405,7 +405,7 @@ class TestAgentIdentity:
         )
 
     def test_bare_primitive_has_no_agent_name(self, mock_client, monkeypatch):
-        """"marvin.classify" is an API-method label, not an agent — an honest "—"."""
+        """ "marvin.classify" is an API-method label, not an agent — an honest "—"."""
         stub = _StubMarvin(model="openai:gpt-4o")
         a = MarvinAdapter(mock_client, capture_config=CaptureConfig.full())
         a.connect(target=stub)

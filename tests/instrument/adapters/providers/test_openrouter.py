@@ -268,7 +268,9 @@ class TestProviderTagging:
         — coupling who-gets-billed to a cosmetic naming choice. Handed the
         inherited openai event name, the call is still OpenRouter's.
         """
-        assert OpenRouterProvider.classify_provider("openai.chat.completions.create", {"model": "gpt-4o"}) == "openrouter"
+        assert (
+            OpenRouterProvider.classify_provider("openai.chat.completions.create", {"model": "gpt-4o"}) == "openrouter"
+        )
         assert OpenRouterProvider.classify_provider("openrouter.embeddings.create", {}) == "openrouter"
 
     def test_adapter_info(self):
@@ -343,7 +345,12 @@ class TestProviderCost:
         from layerlens.instrument.adapters.providers.token_usage import NormalizedTokenUsage
 
         # Pin the premise: this model is priceable, so the danger is real.
-        assert calculate_cost("gpt-4o", NormalizedTokenUsage(prompt_tokens=14, completion_tokens=7, total_tokens=21), PRICING) is not None
+        assert (
+            calculate_cost(
+                "gpt-4o", NormalizedTokenUsage(prompt_tokens=14, completion_tokens=7, total_tokens=21), PRICING
+            )
+            is not None
+        )
 
         client, _ = _make_client(_chat_json(model="gpt-4o", cost=None))
         OpenRouterProvider().connect(client)

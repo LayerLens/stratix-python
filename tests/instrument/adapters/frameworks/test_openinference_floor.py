@@ -247,8 +247,7 @@ class TestRedaction:
         blob = json.dumps(uploaded)
         for sentinel in ALL_SENTINELS:
             assert sentinel in blob, (
-                f"{sentinel} absent even with capture_content=True — the redaction "
-                "test would pass vacuously"
+                f"{sentinel} absent even with capture_content=True — the redaction test would pass vacuously"
             )
 
     def test_metadata_is_gated(self, mock_client: Mock) -> None:
@@ -311,9 +310,7 @@ class TestError:
         adapter.flush()
         return find_event(uploaded["events"], "model.invoke")["payload"]
 
-    def test_errored_model_invoke_is_distinguishable_from_a_clean_one_by_DEFAULT(
-        self, mock_client: Mock
-    ) -> None:
+    def test_errored_model_invoke_is_distinguishable_from_a_clean_one_by_DEFAULT(self, mock_client: Mock) -> None:
         """A failed LLM call must not look identical to a successful one under the DEFAULT config.
 
         Every other test in this class runs ``CaptureConfig.full()``, which is NOT
@@ -340,9 +337,7 @@ class TestError:
         # Redaction still holds: the producer's free text never survives.
         assert "RateLimitError" not in json.dumps(errored)
 
-    def test_errored_agent_output_keeps_a_failure_signal_under_the_DEFAULT_config(
-        self, mock_client: Mock
-    ) -> None:
+    def test_errored_agent_output_keeps_a_failure_signal_under_the_DEFAULT_config(self, mock_client: Mock) -> None:
         """``agent.output`` strips ``error`` too — its paired agent.input does not.
 
         That asymmetry (agent.input KEEPS error='span status ERROR' while its own
@@ -355,9 +350,7 @@ class TestError:
         provider = TracerProvider()
         provider.add_span_processor(adapter.span_processor())
         tracer = provider.get_tracer(__name__)
-        with tracer.start_as_current_span(
-            "assistant", attributes={"openinference.span.kind": "AGENT"}
-        ) as span:
+        with tracer.start_as_current_span("assistant", attributes={"openinference.span.kind": "AGENT"}) as span:
             span.set_status(Status(StatusCode.ERROR, "ToolExecutionError: boom"))
         provider.shutdown()
         adapter.flush()
@@ -367,9 +360,7 @@ class TestError:
         assert find_event(events, "agent.output")["payload"]["status"] == "ERROR"
         assert "ToolExecutionError" not in json.dumps(events)
 
-    def test_status_is_never_fabricated_when_the_span_declares_none(
-        self, mock_client: Mock
-    ) -> None:
+    def test_status_is_never_fabricated_when_the_span_declares_none(self, mock_client: Mock) -> None:
         # An honest omission: a span that never set a status must not be reported
         # as OK. OTel's own default for an unset status is UNSET, which is what a
         # real TracerProvider stamps — never a guessed "OK".
@@ -417,9 +408,7 @@ class TestError:
                 "traceId": "0af7651916cd43dd8448eb211c80319c",
                 "spanId": "00f067aa0ba902b7",
                 "status": {"code": 2, "message": "blocked"},
-                "attributes": [
-                    {"key": "openinference.span.kind", "value": {"stringValue": "GUARDRAIL"}}
-                ],
+                "attributes": [{"key": "openinference.span.kind", "value": {"stringValue": "GUARDRAIL"}}],
             }
         )
         adapter.flush()
@@ -431,9 +420,7 @@ class TestError:
         assert not find_events(events, "tool.call")
         assert find_event(events, "policy.violation")["payload"]["error"] == "blocked"
 
-    @pytest.mark.parametrize(
-        "status", [{"code": 2}, {"code": "STATUS_CODE_ERROR"}, {"code": "ERROR"}, "ERROR", 2]
-    )
+    @pytest.mark.parametrize("status", [{"code": 2}, {"code": "STATUS_CODE_ERROR"}, {"code": "ERROR"}, "ERROR", 2])
     def test_every_error_status_spelling_resolves(self, mock_client: Mock, status: Any) -> None:
         adapter = OpenInferenceAdapter(mock_client)
         rec = adapter._extract_record(
@@ -462,9 +449,7 @@ class TestAttestation:
         chain = (uploaded["attestation"] or {}).get("chain") or {}
         raw = chain.get("events") or []
         envelopes = [
-            AttestationEnvelope(
-                hash=e["hash"], scope=HashScope(e["scope"]), previous_hash=e.get("previous_hash")
-            )
+            AttestationEnvelope(hash=e["hash"], scope=HashScope(e["scope"]), previous_hash=e.get("previous_hash"))
             for e in raw
         ]
         assert envelopes, "no attestation envelopes captured"
@@ -483,9 +468,7 @@ class TestAttestation:
         raw = ((uploaded["attestation"] or {}).get("chain") or {}).get("events") or []
         assert len(raw) > 1, "need >1 event to break a link"
         envelopes = [
-            AttestationEnvelope(
-                hash=e["hash"], scope=HashScope(e["scope"]), previous_hash=e.get("previous_hash")
-            )
+            AttestationEnvelope(hash=e["hash"], scope=HashScope(e["scope"]), previous_hash=e.get("previous_hash"))
             for e in raw
         ]
         tampered = list(envelopes)

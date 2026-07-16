@@ -289,9 +289,7 @@ def _known_cost(cost_records: List[Dict[str, Any]]) -> Optional[float]:
     indistinguishable from a genuinely free local run.
     """
     priced = [
-        _payload(cr).get("cost_usd")
-        for cr in cost_records
-        if isinstance(_payload(cr).get("cost_usd"), (int, float))
+        _payload(cr).get("cost_usd") for cr in cost_records if isinstance(_payload(cr).get("cost_usd"), (int, float))
     ]
     if not priced:
         return None

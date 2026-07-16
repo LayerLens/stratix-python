@@ -50,8 +50,8 @@ KNOWN DIVERGENCES (deliberate, encoded as named exceptions in the conformance la
 Usage::
 
     adapter = instrument_openinference(client)
-    provider.add_span_processor(adapter.span_processor())   # live
-    adapter.ingest_spans(exported_spans)                    # offline
+    provider.add_span_processor(adapter.span_processor())  # live
+    adapter.ingest_spans(exported_spans)  # offline
     adapter.flush()
 """
 
@@ -154,9 +154,7 @@ def _as_int(value: Any) -> Optional[int]:
         return None
 
 
-def _set_if_capturing(
-    payload: Dict[str, Any], key: str, value: Any, *, capture_content: bool
-) -> None:
+def _set_if_capturing(payload: Dict[str, Any], key: str, value: Any, *, capture_content: bool) -> None:
     """Set ``payload[key] = value`` only when content capture is enabled.
 
     The module-level twin of ``FrameworkAdapter._set_if_capturing`` — identical
@@ -245,9 +243,7 @@ def _common(record: Dict[str, Any], *, capture_content: bool) -> Dict[str, Any]:
     # ``metadata`` is an arbitrary producer-supplied blob (routinely user/session
     # /prompt context), so it is content — ateam leaves it ungated on every event.
     if attrs.get(METADATA) is not None:
-        _set_if_capturing(
-            payload, "metadata", _safe_str(attrs[METADATA], limit=1000), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "metadata", _safe_str(attrs[METADATA], limit=1000), capture_content=capture_content)
     # latency_ms is the canonical duration field; ateam's redundant companion
     # ``duration_ns`` carries the same measurement and is schema drift here.
     # Omitted entirely (not clamped) unless BOTH bounds are ints and end >= start
@@ -339,9 +335,7 @@ def normalize_llm_span(record: Dict[str, Any], *, capture_content: bool) -> Dict
     # declared-unknown — the model is never guessed or inferred from elsewhere.
     payload["model_name"] = model_name
     payload["model"] = model_name
-    payload["provider"] = _safe_str(
-        attrs.get(LLM_PROVIDER) or attrs.get(LLM_SYSTEM) or "unknown", limit=200
-    )
+    payload["provider"] = _safe_str(attrs.get(LLM_PROVIDER) or attrs.get(LLM_SYSTEM) or "unknown", limit=200)
     # Token canon: flat prompt_tokens/completion_tokens (+ total_tokens) with
     # input_tokens/output_tokens dual-written. The tokens_prompt/tokens_completion
     # names ``_normalize_tokens`` produces are NOT used here — they would break the
@@ -368,13 +362,9 @@ def normalize_llm_span(record: Dict[str, Any], *, capture_content: bool) -> Dict
             capture_content=capture_content,
         )
     if attrs.get(INPUT_VALUE) is not None:
-        _set_if_capturing(
-            payload, "prompt", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "prompt", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content)
     if attrs.get(OUTPUT_VALUE) is not None:
-        _set_if_capturing(
-            payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content)
     return payload
 
 
@@ -394,18 +384,14 @@ def normalize_embedding_span(record: Dict[str, Any], *, capture_content: bool) -
         payload["input_tokens"] = pt
         payload["prompt_tokens"] = pt
     if attrs.get(INPUT_VALUE) is not None:
-        _set_if_capturing(
-            payload, "input", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "input", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content)
     return payload
 
 
 def normalize_tool_span(record: Dict[str, Any], *, capture_content: bool) -> Dict[str, Any]:
     attrs = record.get("attributes") or {}
     payload = _common(record, capture_content=capture_content)
-    payload["tool_name"] = _safe_str(
-        attrs.get(TOOL_NAME) or record.get("name") or "unknown", limit=200
-    )
+    payload["tool_name"] = _safe_str(attrs.get(TOOL_NAME) or record.get("name") or "unknown", limit=200)
     # A tool description is free-text natural language the caller authored —
     # content by the same rule that strips tool JSON-Schemas from params (#17).
     if attrs.get(TOOL_DESCRIPTION):
@@ -422,9 +408,7 @@ def normalize_tool_span(record: Dict[str, Any], *, capture_content: bool) -> Dic
     if params is not None:
         _set_if_capturing(payload, "input", _safe_str(params), capture_content=capture_content)
     if attrs.get(OUTPUT_VALUE) is not None:
-        _set_if_capturing(
-            payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content)
     return payload
 
 
@@ -432,18 +416,14 @@ def normalize_reranker_span(record: Dict[str, Any], *, capture_content: bool) ->
     attrs = record.get("attributes") or {}
     payload = _common(record, capture_content=capture_content)
     payload["subtype"] = "reranker"
-    payload["tool_name"] = _safe_str(
-        attrs.get(RERANKER_MODEL_NAME) or record.get("name") or "reranker", limit=200
-    )
+    payload["tool_name"] = _safe_str(attrs.get(RERANKER_MODEL_NAME) or record.get("name") or "reranker", limit=200)
     top_k = _as_int(attrs.get(RERANKER_TOP_K))
     if top_k is not None:
         payload["top_k"] = top_k
     # A reranker deliberately emits no ``output``: its output.value is the
     # reranked document list (corpus text), which is not modelled.
     if attrs.get(RERANKER_QUERY) is not None:
-        _set_if_capturing(
-            payload, "input", _safe_str(attrs[RERANKER_QUERY]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "input", _safe_str(attrs[RERANKER_QUERY]), capture_content=capture_content)
     return payload
 
 
@@ -452,9 +432,7 @@ def normalize_retriever_span(record: Dict[str, Any], *, capture_content: bool) -
     payload = _common(record, capture_content=capture_content)
     payload["document_count"] = _retrieval_doc_count(attrs)
     if attrs.get(INPUT_VALUE) is not None:
-        _set_if_capturing(
-            payload, "query", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "query", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content)
     return payload
 
 
@@ -471,15 +449,11 @@ def normalize_evaluator_span(record: Dict[str, Any], *, capture_content: bool) -
     payload = _common(record, capture_content=capture_content)
     payload["evaluator_name"] = _safe_str(record.get("name") or "evaluator", limit=200)
     if attrs.get(OUTPUT_VALUE) is not None:
-        _set_if_capturing(
-            payload, "result", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "result", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content)
     return payload
 
 
-def _agent_input_output(
-    record: Dict[str, Any], *, capture_content: bool
-) -> List[Tuple[str, Dict[str, Any]]]:
+def _agent_input_output(record: Dict[str, Any], *, capture_content: bool) -> List[Tuple[str, Dict[str, Any]]]:
     """An AGENT/CHAIN span carries both input and output; emit a pair.
 
     ``agent_id`` is the span name — the only identity an OpenInference AGENT span
@@ -504,18 +478,14 @@ def _agent_input_output(
     in_payload["agent_id"] = agent_id
     in_payload["input_text"] = _safe_str(in_text) if in_text is not None else ""
     if attrs.get(INPUT_VALUE) is not None:
-        _set_if_capturing(
-            in_payload, "input", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(in_payload, "input", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content)
 
     out_payload = _common(record, capture_content=capture_content)
     out_payload["operation"] = operation
     out_payload["agent_id"] = agent_id
     out_payload["output_text"] = _safe_str(out_text) if out_text is not None else ""
     if attrs.get(OUTPUT_VALUE) is not None:
-        _set_if_capturing(
-            out_payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(out_payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content)
     # The output happened when the span ENDED — stamping it at span start
     # reverses the turn's chronology in the replay timeline.
     end_ns = record.get("end_ns")
@@ -524,9 +494,7 @@ def _agent_input_output(
     return [("agent.input", in_payload), ("agent.output", out_payload)]
 
 
-def _guardrail_events(
-    record: Dict[str, Any], *, capture_content: bool
-) -> List[Tuple[str, Dict[str, Any]]]:
+def _guardrail_events(record: Dict[str, Any], *, capture_content: bool) -> List[Tuple[str, Dict[str, Any]]]:
     """A GUARDRAIL span: a violation when it triggered, else an ordinary tool.call.
 
     "Triggered" is inferred solely from the span status being ERROR — OpenInference
@@ -541,9 +509,7 @@ def _guardrail_events(
     guardrail_name = _safe_str(record.get("name") or "guardrail", limit=200)
     payload["guardrail_name"] = guardrail_name
     if attrs.get(OUTPUT_VALUE) is not None:
-        _set_if_capturing(
-            payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content)
     if triggered:
         # policy.violation is schema-required to carry policy_id + violation_type;
         # without them the event is rejected and the violation is LOST. Both are
@@ -560,19 +526,13 @@ def normalize_interaction_span(record: Dict[str, Any], *, capture_content: bool)
     attrs = record.get("attributes") or {}
     payload = _common(record, capture_content=capture_content)
     if attrs.get(INPUT_VALUE) is not None:
-        _set_if_capturing(
-            payload, "input", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "input", _safe_str(attrs[INPUT_VALUE]), capture_content=capture_content)
     if attrs.get(OUTPUT_VALUE) is not None:
-        _set_if_capturing(
-            payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content
-        )
+        _set_if_capturing(payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content)
     return payload
 
 
-def span_to_events(
-    record: Dict[str, Any], *, capture_content: bool = True
-) -> List[Tuple[str, Dict[str, Any]]]:
+def span_to_events(record: Dict[str, Any], *, capture_content: bool = True) -> List[Tuple[str, Dict[str, Any]]]:
     """Map one OpenInference SpanRecord to ``(event_type, payload)`` pairs.
 
     An unknown — or entirely absent — span kind maps to ``agent.interaction``
@@ -591,28 +551,20 @@ def span_to_events(
     if kind == SPAN_KIND_LLM:
         return [("model.invoke", normalize_llm_span(record, capture_content=capture_content))]
     if kind == SPAN_KIND_EMBEDDING:
-        return [
-            ("embedding.create", normalize_embedding_span(record, capture_content=capture_content))
-        ]
+        return [("embedding.create", normalize_embedding_span(record, capture_content=capture_content))]
     if kind == SPAN_KIND_TOOL:
         return [("tool.call", normalize_tool_span(record, capture_content=capture_content))]
     if kind == SPAN_KIND_RERANKER:
         return [("tool.call", normalize_reranker_span(record, capture_content=capture_content))]
     if kind == SPAN_KIND_RETRIEVER:
-        return [
-            ("retrieval.query", normalize_retriever_span(record, capture_content=capture_content))
-        ]
+        return [("retrieval.query", normalize_retriever_span(record, capture_content=capture_content))]
     if kind == SPAN_KIND_EVALUATOR:
-        return [
-            ("evaluation.result", normalize_evaluator_span(record, capture_content=capture_content))
-        ]
+        return [("evaluation.result", normalize_evaluator_span(record, capture_content=capture_content))]
     if kind in (SPAN_KIND_AGENT, SPAN_KIND_CHAIN):
         return _agent_input_output(record, capture_content=capture_content)
     if kind == SPAN_KIND_GUARDRAIL:
         return _guardrail_events(record, capture_content=capture_content)
-    return [
-        ("agent.interaction", normalize_interaction_span(record, capture_content=capture_content))
-    ]
+    return [("agent.interaction", normalize_interaction_span(record, capture_content=capture_content))]
 
 
 # --- Version / availability probes ---------------------------------------
@@ -1008,9 +960,7 @@ class OpenInferenceAdapter(FrameworkAdapter):
             "attributes": attrs,
             "trace_id": _coerce_id(span.get("trace_id") or span.get("traceId"), width=32),
             "span_id": _coerce_id(span.get("span_id") or span.get("spanId"), width=16),
-            "parent_span_id": _coerce_id(
-                span.get("parent_span_id") or span.get("parentSpanId"), width=16
-            ),
+            "parent_span_id": _coerce_id(span.get("parent_span_id") or span.get("parentSpanId"), width=16),
             "start_ns": _first_ns(span, ("start_ns", "startTimeUnixNano"), ("start_time",)),
             "end_ns": _first_ns(span, ("end_ns", "endTimeUnixNano"), ("end_time",)),
             "status": status_code,
@@ -1078,9 +1028,7 @@ class OpenInferenceAdapter(FrameworkAdapter):
         return _coerce_status(status)
 
 
-def _first_ns(
-    span: Dict[str, Any], declared_keys: Tuple[str, ...], undeclared_keys: Tuple[str, ...]
-) -> Optional[int]:
+def _first_ns(span: Dict[str, Any], declared_keys: Tuple[str, ...], undeclared_keys: Tuple[str, ...]) -> Optional[int]:
     """First present timestamp among *declared_keys* (trusted as ns), else
     *undeclared_keys* (magnitude-detected / ISO-parsed)."""
     for key in declared_keys:
@@ -1138,9 +1086,7 @@ class _OpenInferenceSpanProcessor:
         return True
 
 
-def instrument_openinference(
-    client: Any, *, capture_config: Optional[CaptureConfig] = None
-) -> OpenInferenceAdapter:
+def instrument_openinference(client: Any, *, capture_config: Optional[CaptureConfig] = None) -> OpenInferenceAdapter:
     """Build and connect an :class:`OpenInferenceAdapter`.
 
     Wraps nothing, so the returned adapter is the handle the caller wires up::

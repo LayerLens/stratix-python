@@ -703,8 +703,7 @@ class MarvinAdapter(FrameworkAdapter):
             # model is required at ingest and a placeholder would be a FABRICATED
             # model name. The call is still traced by the tool.call above.
             log.debug(
-                "layerlens: no real model discoverable for marvin.%s — skipping model.invoke "
-                "(tool.call still emitted)",
+                "layerlens: no real model discoverable for marvin.%s — skipping model.invoke (tool.call still emitted)",
                 ctx.fn_name,
             )
             return
@@ -737,11 +736,7 @@ class MarvinAdapter(FrameworkAdapter):
         self._set_if_capturing(
             payload,
             "kwargs",
-            {
-                k: truncate(safe_serialize(v), _ARG_LIMIT)
-                for k, v in ctx.kwargs.items()
-                if k not in _EXCLUDED_KWARGS
-            },
+            {k: truncate(safe_serialize(v), _ARG_LIMIT) for k, v in ctx.kwargs.items() if k not in _EXCLUDED_KWARGS},
         )
         if response is not None:
             self._set_if_capturing(payload, "response", truncate(safe_serialize(response), _RESPONSE_LIMIT))

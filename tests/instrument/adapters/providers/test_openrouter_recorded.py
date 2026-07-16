@@ -72,9 +72,7 @@ class TestOpenRouterRecorded:
         def agent():
             r = client.chat.completions.create(
                 model="meta-llama/llama-3-8b-instruct:free",
-                messages=[
-                    {"role": "user", "content": "What is the ingest rate limit on the Growth plan?"}
-                ],
+                messages=[{"role": "user", "content": "What is the ingest rate limit on the Growth plan?"}],
                 extra_body={"usage": {"include": True}},
             )
             return r.choices[0].message.content

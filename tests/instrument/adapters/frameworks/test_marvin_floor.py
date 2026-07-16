@@ -294,9 +294,7 @@ class TestCostOmission:
             mock_client,
             CaptureConfig.full(),
             # No agent= -> the model resolves from marvin.defaults (a PRICED model).
-            lambda: marvin.classify(
-                "great", labels=["positive", "negative"], agent=marvin.Agent(model=TestModel())
-            ),
+            lambda: marvin.classify("great", labels=["positive", "negative"], agent=marvin.Agent(model=TestModel())),
         )
 
         assert find_events(uploaded["events"], "cost.record") == [], (
