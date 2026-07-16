@@ -35,8 +35,9 @@ WHAT IS REAL HERE (and what is local) — read this before trusting the fixture
 -----------------------------------------------------------------------------
 Everything in the recorded trace is genuine:
 
-* a REAL headless Chromium (the playwright-cached ``chromium-1217`` build)
-  is launched and driven over REAL CDP by browser-use itself;
+* a REAL headless Chromium (resolved by ``_resolve_chrome`` — a playwright-cached
+  build, a system Chrome, or browser-use's own managed browser) is launched and
+  driven over REAL CDP by browser-use itself;
 * the page is fetched over a REAL HTTP request and parsed into a REAL DOM,
   which browser-use serializes and feeds to the model;
 * the model is a REAL ``gpt-4o-mini`` call — every action the agent takes is
@@ -87,6 +88,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import functools
+import glob
 import http.server
 import importlib.metadata
 import importlib.util
@@ -96,12 +98,13 @@ import socketserver
 import sys
 import tempfile
 import threading
+from typing import Optional
 
 # Reuse the record-real-once seam from the sibling ``_generate_fixtures`` module
 # (single source of truth for the fixture writer + capture config + model name).
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_DATA = os.path.dirname(_HERE)        # samples/data
-_SAMPLES = os.path.dirname(_DATA)     # samples
+_DATA = os.path.dirname(_HERE)  # samples/data
+_SAMPLES = os.path.dirname(_DATA)  # samples
 _REPO = os.path.dirname(_SAMPLES)
 for _p in (os.path.join(_REPO, "src"), _SAMPLES, _DATA):
     if _p not in sys.path:
@@ -132,15 +135,54 @@ _CORPUS = os.path.join(_REPO, "tests", "fixtures", "recorded", "browser_use")
 #: Loopback port for the throwaway board server. Bound only for the run.
 _PORT = int(os.environ.get("BROWSER_USE_SAMPLE_PORT", "8731"))
 
-#: The real headless Chromium browser-use drives over CDP. Overridable so the
-#: recorder is not welded to one machine's playwright cache.
-_CHROME = os.environ.get(
-    "BROWSER_USE_SAMPLE_CHROME",
-    os.path.expanduser(
-        "~/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/"
-        "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-    ),
-)
+
+def _resolve_chrome() -> Optional[str]:
+    """Find a Chromium/Chrome for the recorder WITHOUT welding to one machine.
+
+    This module is the dev-only record-once tool (CI and customers upload the
+    sealed fixture and never launch a browser), but it should still record on any
+    developer's box. Resolution order:
+
+    1. ``BROWSER_USE_SAMPLE_CHROME`` — an explicit override always wins.
+    2. Any playwright-cached Chromium (macOS or Linux, newest build, incl. the
+       headless shell) — not pinned to one version.
+    3. A common system Chrome/Chromium install.
+    4. ``None`` — hand the choice to browser-use, which manages its own browser.
+       Returning None (not a stale path) means a missing browser surfaces as
+       browser-use's own actionable "install a browser" error, never a silent
+       launch against a path that does not exist.
+    """
+    override = os.environ.get("BROWSER_USE_SAMPLE_CHROME")
+    if override:
+        return override
+    cache_roots = (
+        os.path.expanduser("~/Library/Caches/ms-playwright"),  # macOS
+        os.path.expanduser("~/.cache/ms-playwright"),  # Linux
+    )
+    cache_patterns = (
+        "chromium-*/chrome-*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "chromium-*/chrome-*/Chromium.app/Contents/MacOS/Chromium",
+        "chromium-*/chrome-*/chrome",  # linux
+        "chromium_headless_shell-*/chrome-*/headless_shell",
+    )
+    for root in cache_roots:
+        for pattern in cache_patterns:
+            hits = sorted(glob.glob(os.path.join(root, pattern)))
+            if hits:
+                return hits[-1]  # newest cached build
+    for candidate in (
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ):
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+#: Resolved once at import; None => browser-use launches its own managed browser.
+_CHROME = _resolve_chrome()
 
 
 # --------------------------------------------------------------------------
@@ -283,9 +325,7 @@ def _seal_corpus(history) -> str:
             "sdk_version": "browser-use %s" % (_browser_use_version() or "unknown"),
             "model": OPENAI_MODEL,
             "scenario": "travel_research",
-            "captured_at": datetime.datetime.now(datetime.timezone.utc)
-            .replace(microsecond=0)
-            .isoformat(),
+            "captured_at": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat(),
             "note": (
                 "The real AgentHistoryList from a REAL headless-chromium browser-use run "
                 "(see samples/data/generators/browser_use.py) — the same run that produced "
@@ -371,6 +411,10 @@ def generate_browser_use_single(client: Stratix) -> dict:
     There is no ``_multi``: browser-use drives ONE browser agent per run and
     declares no multi-agent topology, so a second agent would have to be invented.
     """
+    print(
+        "  browser: %s"
+        % (_CHROME or "browser-use managed (no local Chromium found; set BROWSER_USE_SAMPLE_CHROME to override)")
+    )
     server = _serve_board()
     url = "http://127.0.0.1:%d/index.html" % _PORT
     try:
@@ -388,18 +432,13 @@ def generate_browser_use_single(client: Stratix) -> dict:
     ]
 
     events = payload.get("events", [])
-    tools = [
-        (e.get("payload") or {}).get("tool_name")
-        for e in events
-        if e.get("event_type") == "tool.call"
-    ]
+    tools = [(e.get("payload") or {}).get("tool_name") for e in events if e.get("event_type") == "tool.call"]
     mi = [e for e in events if e.get("event_type") == "model.invoke"]
     cr = [e for e in events if e.get("event_type") == "cost.record"]
     out = next((e for e in events if e.get("event_type") == "agent.output"), None)
     print(
         "  browser_use (trip-research-agent, real headless browse)  "
-        "events=%d actions=%s model.invoke=%d cost.record=%d"
-        % (len(events), tools, len(mi), len(cr))
+        "events=%d actions=%s model.invoke=%d cost.record=%d" % (len(events), tools, len(mi), len(cr))
     )
     if mi:
         p = mi[0]["payload"]
