@@ -33,6 +33,14 @@ if sys.version_info < (3, 10):
 
 dspy = pytest.importorskip("dspy", reason="dspy not installed")
 
+from importlib.metadata import version as _pkg_version  # noqa: E402
+
+if int(_pkg_version("dspy").split(".")[0]) < 3:
+    pytest.skip(
+        "dspy adapter targets dspy >= 3 (the pinned matrix venv tests 3.x)",
+        allow_module_level=True,
+    )
+
 from dspy.utils.dummies import DummyLM  # noqa: E402
 from dspy.utils.exceptions import AdapterParseError  # noqa: E402
 

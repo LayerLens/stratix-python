@@ -47,6 +47,14 @@ import pytest
 pytest.importorskip("dspy")  # skips in the base venv (not installed there)
 pytest.importorskip("litellm")
 
+# The adapter targets dspy >= 3; the unified dev env resolves an older dspy (2.6.x)
+# that can't co-resolve with the rest of the all-features set. The pinned matrix
+# venv (dspy==3.2.1) is the authoritative lane.
+from importlib.metadata import version as _pkg_version  # noqa: E402
+
+if int(_pkg_version("dspy").split(".")[0]) < 3:
+    pytest.skip("dspy adapter targets dspy >= 3", allow_module_level=True)
+
 import dspy  # noqa: E402
 from litellm.llms.custom_httpx.http_handler import HTTPHandler  # noqa: E402
 
