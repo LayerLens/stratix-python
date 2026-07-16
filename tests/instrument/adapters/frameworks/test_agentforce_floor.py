@@ -212,8 +212,12 @@ def _sentinel_conn() -> Mock:
         participants=[_participant_row()],
         interactions=[_interaction_row()],
         steps=[
-            _step_row("LLM_STEP", "generate_response", inp=f"model in {SENTINEL}", out=f"model out {SENTINEL}", gen_ids=True),
-            _step_row("ACTION_STEP", "get_weather", inp=f"tool in {SENTINEL}", out=f"tool out {SENTINEL}", gen_ids=False),
+            _step_row(
+                "LLM_STEP", "generate_response", inp=f"model in {SENTINEL}", out=f"model out {SENTINEL}", gen_ids=True
+            ),
+            _step_row(
+                "ACTION_STEP", "get_weather", inp=f"tool in {SENTINEL}", out=f"tool out {SENTINEL}", gen_ids=False
+            ),
             _step_row("Escalation", "escalate_to_human", inp=f"handoff reason {SENTINEL}", out=None, gen_ids=False),
             _step_row("TOPIC_STEP", "topic_route", inp=f"unk in {SENTINEL}", out=f"unk out {SENTINEL}", gen_ids=False),
         ],

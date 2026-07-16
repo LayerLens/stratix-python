@@ -185,13 +185,9 @@ class OllamaProvider(MonkeyPatchProvider):
                 # infra cost is silently dropped on every real invoke (LAY-3614).
                 coerced = _as_dict(response)
                 if isinstance(coerced, dict):
-                    total_ns = int(coerced.get("eval_duration") or 0) + int(
-                        coerced.get("prompt_eval_duration") or 0
-                    )
+                    total_ns = int(coerced.get("eval_duration") or 0) + int(coerced.get("prompt_eval_duration") or 0)
                     if total_ns > 0:
-                        meta["infra_cost_usd"] = round(
-                            (total_ns / _NS_PER_SECOND) * cost_per_second, 8
-                        )
+                        meta["infra_cost_usd"] = round((total_ns / _NS_PER_SECOND) * cost_per_second, 8)
             return meta
 
         return MonkeyPatchProvider._Extractors(

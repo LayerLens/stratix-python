@@ -495,9 +495,7 @@ def _streaming_openai_agent() -> Agent:
     network."""
 
     def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200, headers={"content-type": "text/event-stream"}, content=_STREAM_SSE.encode()
-        )
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=_STREAM_SSE.encode())
 
     model = OpenAIChat(
         id="gpt-4o-mini",
@@ -535,9 +533,7 @@ class TestStreamingRun:
         # caller consumes it, so agent.output carries no output and there is no
         # model.invoke / cost.record (the streamed run records blank).
         out = find_event(events, "agent.output")
-        assert out is not None and out["payload"].get("output") == "pong", (
-            "streamed run recorded a BLANK agent.output"
-        )
+        assert out is not None and out["payload"].get("output") == "pong", "streamed run recorded a BLANK agent.output"
         assert find_event(events, "model.invoke") is not None, "streamed run emitted no model.invoke"
         cost = find_event(events, "cost.record")
         assert cost is not None, "streamed run emitted no cost.record"
@@ -594,9 +590,7 @@ class TestStreamingRun:
         )
         events = uploaded["events"]
         out = find_event(events, "agent.output")
-        assert out is not None and out["payload"].get("output") == "pong", (
-            "streamed arun recorded a BLANK agent.output"
-        )
+        assert out is not None and out["payload"].get("output") == "pong", "streamed arun recorded a BLANK agent.output"
         cost = find_event(events, "cost.record")
         assert cost is not None, "streamed arun emitted no cost.record"
         assert cost["payload"]["tokens_total"] == 13

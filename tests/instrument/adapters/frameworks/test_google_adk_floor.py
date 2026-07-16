@@ -135,9 +135,7 @@ def _error_transport(status: int, message: str) -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
-async def _drive_runner_failing(
-    adapter: GoogleADKAdapter, transport: httpx.MockTransport
-) -> BaseException:
+async def _drive_runner_failing(adapter: GoogleADKAdapter, transport: httpx.MockTransport) -> BaseException:
     """Run a real ``Runner`` whose model call fails. ADK re-raises the model
     error out of ``run_async`` BEFORE its Step-4 ``after_run`` callback, so the
     run never auto-flushes — we drive the same real plugin ``after_run_callback``

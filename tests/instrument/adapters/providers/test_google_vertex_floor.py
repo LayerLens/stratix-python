@@ -157,7 +157,9 @@ class _VertexModel:
         return self._response
 
 
-def _run(model: _VertexModel, mock_client: Any, config: CaptureConfig, *, prompt: str = "Hi", **call_kwargs: Any) -> Any:
+def _run(
+    model: _VertexModel, mock_client: Any, config: CaptureConfig, *, prompt: str = "Hi", **call_kwargs: Any
+) -> Any:
     """Drive the REAL provider over the model double under an active trace."""
     provider = GoogleVertexProvider()
     provider.connect(model)

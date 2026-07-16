@@ -564,9 +564,7 @@ class MCPProtocolAdapter(BaseProtocolAdapter):
         )
         return task_id
 
-    def _emit_async_task_end(
-        self, name: str, parent_span_id: str, task_id: str, *, error: str | None = None
-    ) -> None:
+    def _emit_async_task_end(self, name: str, parent_span_id: str, task_id: str, *, error: str | None = None) -> None:
         status = "failed" if error else "completed"
         payload = self._async_tasks.update(task_id, status=status) or {
             "async_task_id": task_id,

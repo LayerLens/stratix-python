@@ -270,9 +270,9 @@ class TestRealErrorShape:
         assert any(p.get("status") == "error" and p.get("tool_name") == "charge" for p in tool_calls), (
             "the failing tool.call was not recorded status=error"
         )
-        assert any(
-            e["payload"].get("status") == "failed" for e in find_events(events, "mcp.async_task")
-        ), "the async-task lifecycle did not record the failure"
+        assert any(e["payload"].get("status") == "failed" for e in find_events(events, "mcp.async_task")), (
+            "the async-task lifecycle did not record the failure"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -322,9 +322,7 @@ class TestRedactionFloor:
 
         # 3) Redact without going blind: metadata + the money/consent structure survive.
         assert any(p.get("tool_name") == "weather" for p in calls), "tool_name metadata over-stripped"
-        resp = [
-            e["payload"] for e in find_events(events, "mcp.elicitation") if e["payload"].get("phase") == "response"
-        ]
+        resp = [e["payload"] for e in find_events(events, "mcp.elicitation") if e["payload"].get("phase") == "response"]
         assert resp and resp[0].get("action") == "accept", "consent action over-stripped"
         assert resp[0].get("elicitation_id"), "elicitation_id over-stripped"
         assert find_events(events, "cost.record"), "cost.record over-suppressed under no-content"

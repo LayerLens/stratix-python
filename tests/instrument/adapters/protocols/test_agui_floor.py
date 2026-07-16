@@ -339,9 +339,7 @@ class TestRunErrorSurfacesAsAgentError:
         # Bite: RUN_ERROR must NOT leak through as a generic protocol.stream.event
         # (the old lifecycle mapping) — a run failure carried as ordinary stream
         # telemetry is read by no downstream engine and mislabels the trace.
-        leaked = [
-            p for p in _by_type(events, "protocol.stream.event") if p.get("agui_event") == "RUN_ERROR"
-        ]
+        leaked = [p for p in _by_type(events, "protocol.stream.event") if p.get("agui_event") == "RUN_ERROR"]
         assert not leaked, "RUN_ERROR still emitted as protocol.stream.event lifecycle telemetry"
 
     def test_run_error_without_code_uses_honest_default_type(self, mock_client) -> None:

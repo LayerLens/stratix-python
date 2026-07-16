@@ -181,9 +181,7 @@ class TestRealErrorShape:
 
     def test_real_response_error_400_emits_agent_error(self, mock_client, capture_trace):
         # Shape of prodready_errors/ollama_badjson_400.json.
-        err = ResponseError(
-            "invalid character 'n' looking for beginning of object key string", 400
-        )
+        err = ResponseError("invalid character 'n' looking for beginning of object key string", 400)
         client = Mock()
         client.chat = Mock(side_effect=err)
         provider = OllamaProvider()
@@ -213,9 +211,7 @@ class TestAttestationOffline:
 
         raw = (capture_trace["attestation"].get("chain") or {}).get("events") or []
         return [
-            AttestationEnvelope(
-                hash=e["hash"], scope=HashScope(e["scope"]), previous_hash=e.get("previous_hash")
-            )
+            AttestationEnvelope(hash=e["hash"], scope=HashScope(e["scope"]), previous_hash=e.get("previous_hash"))
             for e in raw
         ]
 

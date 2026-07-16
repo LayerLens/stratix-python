@@ -212,7 +212,13 @@ class TestRedactionFloor:
         the SENTINEL and the content keys it rides on."""
         uploaded = capture_framework_trace(mock_client)
         adapter, http = _connected_adapter(mock_client, CaptureConfig(capture_content=True))
-        span = {"id": "sp", "type": "SPAN", "name": "retriever", "input": f"lookup {SENTINEL}", "output": f"docs {SENTINEL}"}
+        span = {
+            "id": "sp",
+            "type": "SPAN",
+            "name": "retriever",
+            "input": f"lookup {SENTINEL}",
+            "output": f"docs {SENTINEL}",
+        }
         _import_one(
             adapter,
             http,
@@ -234,7 +240,13 @@ class TestRedactionFloor:
         content slot — and the SENTINEL — out of the stored trace."""
         uploaded = capture_framework_trace(mock_client)
         adapter, http = _connected_adapter(mock_client, CaptureConfig(capture_content=False))
-        span = {"id": "sp", "type": "SPAN", "name": "retriever", "input": f"lookup {SENTINEL}", "output": f"docs {SENTINEL}"}
+        span = {
+            "id": "sp",
+            "type": "SPAN",
+            "name": "retriever",
+            "input": f"lookup {SENTINEL}",
+            "output": f"docs {SENTINEL}",
+        }
         _import_one(
             adapter,
             http,
@@ -302,7 +314,9 @@ class TestCostFloor:
             PRICING,
         )
         assert expected, "PRICING table must price gpt-4 for this floor to bite"
-        assert cost["payload"].get("cost_usd") == expected, "langfuse did not locally price a no-upstream-cost generation"
+        assert cost["payload"].get("cost_usd") == expected, (
+            "langfuse did not locally price a no-upstream-cost generation"
+        )
 
 
 # ---------------------------------------------------------------------------

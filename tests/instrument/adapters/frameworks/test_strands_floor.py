@@ -185,7 +185,9 @@ class TestRealErrorShape:
         adapter.connect()
         raised: BaseException | None = None
         try:
-            agent = Agent(model=_error_model(404, body, model_id="gpt-4o-mini-ghost"), hooks=[adapter], name="err_agent")
+            agent = Agent(
+                model=_error_model(404, body, model_id="gpt-4o-mini-ghost"), hooks=[adapter], name="err_agent"
+            )
             try:
                 agent("hello")
             except Exception as exc:  # the real model error propagates out of the run

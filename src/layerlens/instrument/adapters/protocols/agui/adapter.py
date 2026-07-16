@@ -119,9 +119,7 @@ class AGUIProtocolAdapter(BaseProtocolAdapter):
             # telemetry) so the trace's derived status is error, not completed.
             self.emit(
                 AGENT_ERROR,
-                build_run_error_payload(
-                    _event_field(event, "message"), _event_field(event, "code")
-                ),
+                build_run_error_payload(_event_field(event, "message"), _event_field(event, "code")),
             )
             return
         if etype == "STATE_DELTA":

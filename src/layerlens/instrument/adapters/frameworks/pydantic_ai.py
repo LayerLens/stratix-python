@@ -197,8 +197,7 @@ class PydanticAIAdapter(FrameworkAdapter):
                 resolved = await stream_result.get_output()
             except BaseException:
                 log.debug(
-                    "layerlens: could not resolve streamed pydantic-ai output; "
-                    "emitting agent.output without content",
+                    "layerlens: could not resolve streamed pydantic-ai output; emitting agent.output without content",
                     exc_info=True,
                 )
             self._finish_run_ok(stream_result, streaming=True, resolved_output=resolved)

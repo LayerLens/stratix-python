@@ -126,9 +126,7 @@ class EmbeddingAdapter(FrameworkAdapter):
             try:
                 result = original(*args, **kwargs)
             except BaseException as exc:
-                adapter._emit_embedding_error(
-                    exc, (time.monotonic() - start) * 1000, provider="openai", model=model
-                )
+                adapter._emit_embedding_error(exc, (time.monotonic() - start) * 1000, provider="openai", model=model)
                 raise
             latency_ms = (time.monotonic() - start) * 1000
 
@@ -169,9 +167,7 @@ class EmbeddingAdapter(FrameworkAdapter):
             try:
                 result = original(*args, **kwargs)
             except BaseException as exc:
-                adapter._emit_embedding_error(
-                    exc, (time.monotonic() - start) * 1000, provider="cohere", model=model
-                )
+                adapter._emit_embedding_error(exc, (time.monotonic() - start) * 1000, provider="cohere", model=model)
                 raise
             latency_ms = (time.monotonic() - start) * 1000
 
@@ -205,8 +201,10 @@ class EmbeddingAdapter(FrameworkAdapter):
             except BaseException as exc:
                 model_id = _st_model_id(getattr(original, "__self__", None))
                 adapter._emit_embedding_error(
-                    exc, (time.monotonic() - start) * 1000,
-                    provider="sentence_transformers", model=model_id,
+                    exc,
+                    (time.monotonic() - start) * 1000,
+                    provider="sentence_transformers",
+                    model=model_id,
                 )
                 raise
             latency_ms = (time.monotonic() - start) * 1000

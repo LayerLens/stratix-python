@@ -135,9 +135,7 @@ def _chroma_collection() -> Any:
     regression that started capturing any of them would leak it.
     """
     client = chromadb.EphemeralClient()
-    col = client.create_collection(
-        name=f"floor_{uuid.uuid4().hex[:8]}", metadata={"hnsw:space": "l2"}
-    )
+    col = client.create_collection(name=f"floor_{uuid.uuid4().hex[:8]}", metadata={"hnsw:space": "l2"})
     col.add(
         ids=[f"id-{SENTINEL}", "b", "c"],
         embeddings=[[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],

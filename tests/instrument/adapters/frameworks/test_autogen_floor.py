@@ -186,7 +186,9 @@ class TestRealErrorShape:
 
         events = uploaded["events"]
         errors = find_events(events, "agent.error")
-        assert len(errors) == 3, f"all 3 real error events must surface as agent.error, saw {[e['payload'] for e in errors]}"
+        assert len(errors) == 3, (
+            f"all 3 real error events must surface as agent.error, saw {[e['payload'] for e in errors]}"
+        )
         # Uniform agent.error shape across all 3 paths (bite: lost if any path
         # stops classifying status or stops tagging the framework).
         assert all(e["payload"]["status"] == "error" for e in errors)
@@ -366,9 +368,7 @@ class TestCostFloor:
         adapter = AutoGenAdapter(mock_client)
         adapter.connect()
         try:
-            result = asyncio.run(
-                client.create([UserMessage(content="Reply with exactly: pong", source="user")])
-            )
+            result = asyncio.run(client.create([UserMessage(content="Reply with exactly: pong", source="user")]))
         finally:
             adapter.disconnect()
 

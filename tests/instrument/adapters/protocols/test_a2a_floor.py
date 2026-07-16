@@ -79,7 +79,9 @@ DELEGATEE = "billing-agent-7"
 # the trace passes through the real upload seam. The ``capture_trace`` fixture
 # (root conftest) captures the uploaded payload (events + attestation).
 # ---------------------------------------------------------------------------
-def _drive(mock_client: Any, build: Callable[[CaptureConfig], Tuple[Any, Callable[[], None]]], config: CaptureConfig) -> None:
+def _drive(
+    mock_client: Any, build: Callable[[CaptureConfig], Tuple[Any, Callable[[], None]]], config: CaptureConfig
+) -> None:
     _adapter, go = build(config)
     collector = TraceCollector(mock_client, config)
     token = _current_collector.set(collector)
@@ -191,7 +193,9 @@ class TestRealErrorShape:
         _drive(mock_client, build, CaptureConfig.full())
 
         errors = _events_of(capture_trace, "agent.error")
-        assert len(errors) == 1, f"expected exactly one agent.error, saw {[e['event_type'] for e in capture_trace['events']]}"
+        assert len(errors) == 1, (
+            f"expected exactly one agent.error, saw {[e['event_type'] for e in capture_trace['events']]}"
+        )
         payload = errors[0]
         # source stamps the protocol so the atlas 'error' derivation lights up (S12/F4).
         assert payload["source"] == "a2a"
@@ -234,7 +238,9 @@ class TestRedactionFloor:
 
         # 1) SENTINEL sweep over the serialized trace (rides skill_description in
         #    both a2a.task.created.request and a2a.delegation).
-        assert SENTINEL not in json.dumps(events), "PRIVACY LEAK: skill description SENTINEL survived capture_content=False"
+        assert SENTINEL not in json.dumps(events), (
+            "PRIVACY LEAK: skill description SENTINEL survived capture_content=False"
+        )
 
         # 2) The free-text skill description key is gone from the delegation payload.
         deleg = _events_of(capture_trace, "a2a.delegation")

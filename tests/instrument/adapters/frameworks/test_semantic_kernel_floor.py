@@ -168,7 +168,9 @@ class TestRealErrorShape:
         # The LLM-level failure is the one carrying the model (the tool-level wrap
         # carries SK's FunctionExecutionException and has no model).
         llm_errors = [e for e in errors if "model" in e["payload"]]
-        assert len(llm_errors) == 1, f"expected exactly one model-bearing agent.error, saw {[e['payload'] for e in errors]}"
+        assert len(llm_errors) == 1, (
+            f"expected exactly one model-bearing agent.error, saw {[e['payload'] for e in errors]}"
+        )
         payload = llm_errors[0]["payload"]
 
         # Honest real-SDK classification — bite: lost if the adapter stops emitting
@@ -252,9 +254,7 @@ class TestRedactionFloor:
     def test_content_absent_when_not_capturing(self, mock_client):
         """capture_content=False keeps the structural events but strips the tool
         arguments, the rendered prompt, the tool output — and the SENTINEL."""
-        uploaded, _ = _drive_prompt(
-            mock_client, _recorded_transport(), _CONTENT_OFF, question=f"Remember {SENTINEL}"
-        )
+        uploaded, _ = _drive_prompt(mock_client, _recorded_transport(), _CONTENT_OFF, question=f"Remember {SENTINEL}")
         events = uploaded["events"]
         assert events, "the lifecycle must still emit structural events without content"
 

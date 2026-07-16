@@ -187,9 +187,7 @@ class TestRealErrorShape:
         # A genuine openai SDK exception — the kind a tool that calls an LLM
         # actually raises. Its str() is what the real SDK stores in the tool
         # SpanError's data["error"].
-        response = httpx.Response(
-            429, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
-        )
+        response = httpx.Response(429, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"))
         underlying = openai.RateLimitError(
             "Error code: 429 - {'error': {'message': 'Rate limit reached for gpt-4o', "
             "'type': 'rate_limit_error', 'code': 'rate_limit_exceeded'}}",

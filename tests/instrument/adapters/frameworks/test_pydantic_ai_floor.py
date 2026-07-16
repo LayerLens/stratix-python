@@ -130,8 +130,7 @@ class TestRealErrorShape:
         # ``_InstrumentedModel.request`` stops emitting on failure, this drops to 0.
         model_level = [e for e in errors if "agent_name" not in e["payload"]]
         assert len(model_level) == 1, (
-            "expected exactly one model-level agent.error from _emit_model_error; "
-            f"saw {[e['payload'] for e in errors]}"
+            f"expected exactly one model-level agent.error from _emit_model_error; saw {[e['payload'] for e in errors]}"
         )
         payload = model_level[0]["payload"]
 
@@ -374,9 +373,7 @@ class TestStreamingOutputFloor:
         assert out["payload"]["streaming"] is True
         assert out["payload"]["status"] == "ok"
         # …but resolving the output for cost/usage must NOT leak it into the trace.
-        assert "output" not in out["payload"], (
-            "streamed agent.output leaked 'output' under capture_content=False"
-        )
+        assert "output" not in out["payload"], "streamed agent.output leaked 'output' under capture_content=False"
         assert SENTINEL not in json.dumps(events), "PRIVACY LEAK: streamed output SENTINEL survived redaction"
 
 
