@@ -1,0 +1,862 @@
+{
+  "provenance": {
+    "provider": "openinference",
+    "sdk_version": "openinference-instrumentation-openai 0.1.52",
+    "model": "gpt-4o-mini",
+    "scenario": "team",
+    "captured_at": "2026-07-16T18:28:32+00:00"
+  },
+  "transport": "object",
+  "sdk": "openinference",
+  "note": "REAL OpenInference/OTel spans exported from one real instrumented retail-support run (openinference-instrumentation-openai auto-instrumenting real openai gpt-4o-mini calls, plus OITracer app-level AGENT/TOOL/RETRIEVER spans), encoded to OTLP/JSON by the real OTel OTLP encoder. This is the adapter's upstream INPUT.",
+  "otlp": {
+    "resourceSpans": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "telemetry.sdk.language",
+              "value": {
+                "stringValue": "python"
+              }
+            },
+            {
+              "key": "telemetry.sdk.name",
+              "value": {
+                "stringValue": "opentelemetry"
+              }
+            },
+            {
+              "key": "telemetry.sdk.version",
+              "value": {
+                "stringValue": "1.43.0"
+              }
+            },
+            {
+              "key": "service.instance.id",
+              "value": {
+                "stringValue": "a4bec29d-f65a-4c88-8d3c-83f51d64845e"
+              }
+            },
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "unknown_service"
+              }
+            }
+          ]
+        },
+        "scopeSpans": [
+          {
+            "scope": {
+              "name": "retail.support.triage"
+            },
+            "spans": [
+              {
+                "traceId": "ec06bfaafecb328ab768c22a5b2850e5",
+                "spanId": "89d03c9a37cb3e39",
+                "parentSpanId": "f4c141125f299ad6",
+                "name": "warranty_policy_lookup",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784226505939078000",
+                "endTimeUnixNano": "1784226505939162000",
+                "attributes": [
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "split seam manufacturing defect warranty coverage refund return shipping"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.content",
+                    "value": {
+                      "stringValue": "Manufacturing defects such as split seams, delamination, or sole separation are covered for 12 months from the delivery date. Covered defects are replaced or refunded regardless of the 30-day return window, and are not treated as ordinary wear and tear."
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.id",
+                    "value": {
+                      "stringValue": "POL-WAR-04"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.metadata",
+                    "value": {
+                      "stringValue": "{\"title\": \"Footwear Defect Warranty\"}"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.score",
+                    "value": {
+                      "doubleValue": 9.0
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.content",
+                    "value": {
+                      "stringValue": "Return shipping is free for items that arrive damaged, incorrect, or that fail under warranty. For all other returns a $6.99 prepaid label fee is deducted from the refund."
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.id",
+                    "value": {
+                      "stringValue": "POL-RET-03"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.metadata",
+                    "value": {
+                      "stringValue": "{\"title\": \"Return Shipping Costs\"}"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.score",
+                    "value": {
+                      "doubleValue": 7.0
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.content",
+                    "value": {
+                      "stringValue": "Unworn items in original packaging may be returned within 30 days of delivery for a full refund to the original payment method. Items marked final sale are not returnable."
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.id",
+                    "value": {
+                      "stringValue": "POL-RET-01"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.metadata",
+                    "value": {
+                      "stringValue": "{\"title\": \"Returns & Refunds\"}"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.score",
+                    "value": {
+                      "doubleValue": 5.0
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "RETRIEVER"
+                    }
+                  }
+                ],
+                "status": {},
+                "flags": 256
+              },
+              {
+                "traceId": "ec06bfaafecb328ab768c22a5b2850e5",
+                "spanId": "f4c141125f299ad6",
+                "parentSpanId": "97bc475b7061315d",
+                "name": "warranty-specialist",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784226505939046000",
+                "endTimeUnixNano": "1784226509074544000",
+                "attributes": [
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "split seam manufacturing defect warranty coverage refund return shipping"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "output.value",
+                    "value": {
+                      "stringValue": "Yes, the split seam qualifies as a manufacturing defect covered under [POL-WAR-04], allowing for a refund despite the 30-day return window. Since the item failed under warranty, return shipping is free as stated in [POL-RET-03]."
+                    }
+                  },
+                  {
+                    "key": "output.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "AGENT"
+                    }
+                  }
+                ],
+                "status": {},
+                "flags": 256
+              },
+              {
+                "traceId": "ec06bfaafecb328ab768c22a5b2850e5",
+                "spanId": "1cd350b690e06367",
+                "parentSpanId": "00f19a1bb1f46153",
+                "name": "returns_policy_lookup",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784226509075490000",
+                "endTimeUnixNano": "1784226509075647000",
+                "attributes": [
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "30 day return window refund return shipping cost final sale"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.content",
+                    "value": {
+                      "stringValue": "Unworn items in original packaging may be returned within 30 days of delivery for a full refund to the original payment method. Items marked final sale are not returnable."
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.id",
+                    "value": {
+                      "stringValue": "POL-RET-01"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.metadata",
+                    "value": {
+                      "stringValue": "{\"title\": \"Returns & Refunds\"}"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.score",
+                    "value": {
+                      "doubleValue": 10.0
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.content",
+                    "value": {
+                      "stringValue": "Return shipping is free for items that arrive damaged, incorrect, or that fail under warranty. For all other returns a $6.99 prepaid label fee is deducted from the refund."
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.id",
+                    "value": {
+                      "stringValue": "POL-RET-03"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.metadata",
+                    "value": {
+                      "stringValue": "{\"title\": \"Return Shipping Costs\"}"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.score",
+                    "value": {
+                      "doubleValue": 10.0
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.content",
+                    "value": {
+                      "stringValue": "Manufacturing defects such as split seams, delamination, or sole separation are covered for 12 months from the delivery date. Covered defects are replaced or refunded regardless of the 30-day return window, and are not treated as ordinary wear and tear."
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.id",
+                    "value": {
+                      "stringValue": "POL-WAR-04"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.metadata",
+                    "value": {
+                      "stringValue": "{\"title\": \"Footwear Defect Warranty\"}"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.score",
+                    "value": {
+                      "doubleValue": 4.0
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "RETRIEVER"
+                    }
+                  }
+                ],
+                "status": {},
+                "flags": 256
+              },
+              {
+                "traceId": "ec06bfaafecb328ab768c22a5b2850e5",
+                "spanId": "00f19a1bb1f46153",
+                "parentSpanId": "97bc475b7061315d",
+                "name": "returns-specialist",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784226509075376000",
+                "endTimeUnixNano": "1784226510713075000",
+                "attributes": [
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "30 day return window refund return shipping cost final sale"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "output.value",
+                    "value": {
+                      "stringValue": "The 30-day return window does not apply to your order, as it is covered by the Footwear Defect Warranty, allowing returns beyond that period for defects. Since the item is defective, you will not have to pay for return shipping; return shipping is free for items that fail under warranty [POL-RET-01], [POL-WAR-04], [POL-RET-03]."
+                    }
+                  },
+                  {
+                    "key": "output.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "AGENT"
+                    }
+                  }
+                ],
+                "status": {},
+                "flags": 256
+              },
+              {
+                "traceId": "ec06bfaafecb328ab768c22a5b2850e5",
+                "spanId": "97bc475b7061315d",
+                "name": "support-triage-supervisor",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784226505938988000",
+                "endTimeUnixNano": "1784226512415910000",
+                "attributes": [
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "I ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "output.value",
+                    "value": {
+                      "stringValue": "Yes, you are eligible for a refund due to the manufacturing defect in your Summit Trail boots, even though the order is beyond the 30-day return window, as covered by [POL-WAR-04]. Additionally, return shipping is free since this defect falls under warranty, as stated in [POL-RET-03]. You do not need to pay for return shipping."
+                    }
+                  },
+                  {
+                    "key": "output.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "AGENT"
+                    }
+                  }
+                ],
+                "status": {},
+                "flags": 256
+              }
+            ]
+          },
+          {
+            "scope": {
+              "name": "openinference.instrumentation.openai",
+              "version": "0.1.52"
+            },
+            "spans": [
+              {
+                "traceId": "ec06bfaafecb328ab768c22a5b2850e5",
+                "spanId": "bc1d39b91f606db5",
+                "parentSpanId": "f4c141125f299ad6",
+                "name": "ChatCompletion",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784226506189940000",
+                "endTimeUnixNano": "1784226509072552000",
+                "attributes": [
+                  {
+                    "key": "llm.provider",
+                    "value": {
+                      "stringValue": "openai"
+                    }
+                  },
+                  {
+                    "key": "llm.system",
+                    "value": {
+                      "stringValue": "openai"
+                    }
+                  },
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "{\"messages\": [{\"role\": \"system\", \"content\": \"You are the warranty specialist for a footwear retailer. Using ONLY the policy excerpts, decide whether the described damage is covered by the manufacturing-defect warranty and what that means for a refund and return shipping. Cite policy ids. Under 80 words.\"}, {\"role\": \"user\", \"content\": \"Order:\\n{\\\"order_id\\\": \\\"SO-884213\\\", \\\"sku\\\": \\\"SUMMIT-TRAIL-9M\\\", \\\"item\\\": \\\"Summit Trail Waterproof Hiking Boot, M9\\\", \\\"price_usd\\\": 189.0, \\\"ordered_on\\\": \\\"2026-03-14\\\", \\\"delivered_on\\\": \\\"2026-03-19\\\", \\\"final_sale\\\": false, \\\"channel\\\": \\\"web\\\", \\\"found\\\": true}\\n\\nPolicies:\\n[POL-WAR-04] Footwear Defect Warranty: Manufacturing defects such as split seams, delamination, or sole separation are covered for 12 months from the delivery date. Covered defects are replaced or refunded regardless of the 30-day return window, and are not treated as ordinary wear and tear.\\n[POL-RET-03] Return Shipping Costs: Return shipping is free for items that arrive damaged, incorrect, or that fail under warranty. For all other returns a $6.99 prepaid label fee is deducted from the refund.\\n[POL-RET-01] Returns & Refunds: Unworn items in original packaging may be returned within 30 days of delivery for a full refund to the original payment method. Items marked final sale are not returnable.\\n\\nCustomer:\\nI ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?\"}], \"model\": \"gpt-4o-mini\"}"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "application/json"
+                    }
+                  },
+                  {
+                    "key": "output.value",
+                    "value": {
+                      "stringValue": "{\"id\":\"chatcmpl-E2L6qvXXbSuBUxXzkNGwz2wWQt2a2\",\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"Yes, the split seam qualifies as a manufacturing defect covered under [POL-WAR-04], allowing for a refund despite the 30-day return window. Since the item failed under warranty, return shipping is free as stated in [POL-RET-03].\",\"refusal\":null,\"role\":\"assistant\",\"annotations\":[]}}],\"created\":1784226508,\"model\":\"gpt-4o-mini-2024-07-18\",\"object\":\"chat.completion\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_a8eb499e0d\",\"usage\":{\"completion_tokens\":52,\"prompt_tokens\":362,\"total_tokens\":414,\"completion_tokens_details\":{\"accepted_prediction_tokens\":0,\"audio_tokens\":0,\"reasoning_tokens\":0,\"rejected_prediction_tokens\":0},\"prompt_tokens_details\":{\"audio_tokens\":0,\"cached_tokens\":0}}}"
+                    }
+                  },
+                  {
+                    "key": "output.mime_type",
+                    "value": {
+                      "stringValue": "application/json"
+                    }
+                  },
+                  {
+                    "key": "llm.invocation_parameters",
+                    "value": {
+                      "stringValue": "{\"model\": \"gpt-4o-mini\"}"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.0.message.role",
+                    "value": {
+                      "stringValue": "system"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.0.message.content",
+                    "value": {
+                      "stringValue": "You are the warranty specialist for a footwear retailer. Using ONLY the policy excerpts, decide whether the described damage is covered by the manufacturing-defect warranty and what that means for a refund and return shipping. Cite policy ids. Under 80 words."
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.1.message.role",
+                    "value": {
+                      "stringValue": "user"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.1.message.content",
+                    "value": {
+                      "stringValue": "Order:\n{\"order_id\": \"SO-884213\", \"sku\": \"SUMMIT-TRAIL-9M\", \"item\": \"Summit Trail Waterproof Hiking Boot, M9\", \"price_usd\": 189.0, \"ordered_on\": \"2026-03-14\", \"delivered_on\": \"2026-03-19\", \"final_sale\": false, \"channel\": \"web\", \"found\": true}\n\nPolicies:\n[POL-WAR-04] Footwear Defect Warranty: Manufacturing defects such as split seams, delamination, or sole separation are covered for 12 months from the delivery date. Covered defects are replaced or refunded regardless of the 30-day return window, and are not treated as ordinary wear and tear.\n[POL-RET-03] Return Shipping Costs: Return shipping is free for items that arrive damaged, incorrect, or that fail under warranty. For all other returns a $6.99 prepaid label fee is deducted from the refund.\n[POL-RET-01] Returns & Refunds: Unworn items in original packaging may be returned within 30 days of delivery for a full refund to the original payment method. Items marked final sale are not returnable.\n\nCustomer:\nI ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?"
+                    }
+                  },
+                  {
+                    "key": "llm.model_name",
+                    "value": {
+                      "stringValue": "gpt-4o-mini-2024-07-18"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.total",
+                    "value": {
+                      "intValue": "414"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt",
+                    "value": {
+                      "intValue": "362"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion",
+                    "value": {
+                      "intValue": "52"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt_details.cache_read",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt_details.audio",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion_details.reasoning",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion_details.audio",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.output_messages.0.message.role",
+                    "value": {
+                      "stringValue": "assistant"
+                    }
+                  },
+                  {
+                    "key": "llm.output_messages.0.message.content",
+                    "value": {
+                      "stringValue": "Yes, the split seam qualifies as a manufacturing defect covered under [POL-WAR-04], allowing for a refund despite the 30-day return window. Since the item failed under warranty, return shipping is free as stated in [POL-RET-03]."
+                    }
+                  },
+                  {
+                    "key": "llm.finish_reason",
+                    "value": {
+                      "stringValue": "stop"
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "LLM"
+                    }
+                  }
+                ],
+                "status": {
+                  "code": "STATUS_CODE_OK"
+                },
+                "flags": 256
+              },
+              {
+                "traceId": "ec06bfaafecb328ab768c22a5b2850e5",
+                "spanId": "c75f78d58e76c749",
+                "parentSpanId": "00f19a1bb1f46153",
+                "name": "ChatCompletion",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784226509076688000",
+                "endTimeUnixNano": "1784226510711166000",
+                "attributes": [
+                  {
+                    "key": "llm.provider",
+                    "value": {
+                      "stringValue": "openai"
+                    }
+                  },
+                  {
+                    "key": "llm.system",
+                    "value": {
+                      "stringValue": "openai"
+                    }
+                  },
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "{\"messages\": [{\"role\": \"system\", \"content\": \"You are the returns specialist for a footwear retailer. Using ONLY the policy excerpts, state whether the 30-day return window still applies to this ~4-month-old order and who pays return shipping for a non-final-sale item. Cite policy ids. Under 80 words.\"}, {\"role\": \"user\", \"content\": \"Order:\\n{\\\"order_id\\\": \\\"SO-884213\\\", \\\"sku\\\": \\\"SUMMIT-TRAIL-9M\\\", \\\"item\\\": \\\"Summit Trail Waterproof Hiking Boot, M9\\\", \\\"price_usd\\\": 189.0, \\\"ordered_on\\\": \\\"2026-03-14\\\", \\\"delivered_on\\\": \\\"2026-03-19\\\", \\\"final_sale\\\": false, \\\"channel\\\": \\\"web\\\", \\\"found\\\": true}\\n\\nPolicies:\\n[POL-RET-01] Returns & Refunds: Unworn items in original packaging may be returned within 30 days of delivery for a full refund to the original payment method. Items marked final sale are not returnable.\\n[POL-RET-03] Return Shipping Costs: Return shipping is free for items that arrive damaged, incorrect, or that fail under warranty. For all other returns a $6.99 prepaid label fee is deducted from the refund.\\n[POL-WAR-04] Footwear Defect Warranty: Manufacturing defects such as split seams, delamination, or sole separation are covered for 12 months from the delivery date. Covered defects are replaced or refunded regardless of the 30-day return window, and are not treated as ordinary wear and tear.\\n\\nCustomer:\\nI ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?\"}], \"model\": \"gpt-4o-mini\"}"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "application/json"
+                    }
+                  },
+                  {
+                    "key": "output.value",
+                    "value": {
+                      "stringValue": "{\"id\":\"chatcmpl-E2L6rfAy8xaI8ggZH4r1UQk87P8W6\",\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"The 30-day return window does not apply to your order, as it is covered by the Footwear Defect Warranty, allowing returns beyond that period for defects. Since the item is defective, you will not have to pay for return shipping; return shipping is free for items that fail under warranty [POL-RET-01], [POL-WAR-04], [POL-RET-03].\",\"refusal\":null,\"role\":\"assistant\",\"annotations\":[]}}],\"created\":1784226509,\"model\":\"gpt-4o-mini-2024-07-18\",\"object\":\"chat.completion\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_db286bd4bf\",\"usage\":{\"completion_tokens\":80,\"prompt_tokens\":367,\"total_tokens\":447,\"completion_tokens_details\":{\"accepted_prediction_tokens\":0,\"audio_tokens\":0,\"reasoning_tokens\":0,\"rejected_prediction_tokens\":0},\"prompt_tokens_details\":{\"audio_tokens\":0,\"cached_tokens\":0}}}"
+                    }
+                  },
+                  {
+                    "key": "output.mime_type",
+                    "value": {
+                      "stringValue": "application/json"
+                    }
+                  },
+                  {
+                    "key": "llm.invocation_parameters",
+                    "value": {
+                      "stringValue": "{\"model\": \"gpt-4o-mini\"}"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.0.message.role",
+                    "value": {
+                      "stringValue": "system"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.0.message.content",
+                    "value": {
+                      "stringValue": "You are the returns specialist for a footwear retailer. Using ONLY the policy excerpts, state whether the 30-day return window still applies to this ~4-month-old order and who pays return shipping for a non-final-sale item. Cite policy ids. Under 80 words."
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.1.message.role",
+                    "value": {
+                      "stringValue": "user"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.1.message.content",
+                    "value": {
+                      "stringValue": "Order:\n{\"order_id\": \"SO-884213\", \"sku\": \"SUMMIT-TRAIL-9M\", \"item\": \"Summit Trail Waterproof Hiking Boot, M9\", \"price_usd\": 189.0, \"ordered_on\": \"2026-03-14\", \"delivered_on\": \"2026-03-19\", \"final_sale\": false, \"channel\": \"web\", \"found\": true}\n\nPolicies:\n[POL-RET-01] Returns & Refunds: Unworn items in original packaging may be returned within 30 days of delivery for a full refund to the original payment method. Items marked final sale are not returnable.\n[POL-RET-03] Return Shipping Costs: Return shipping is free for items that arrive damaged, incorrect, or that fail under warranty. For all other returns a $6.99 prepaid label fee is deducted from the refund.\n[POL-WAR-04] Footwear Defect Warranty: Manufacturing defects such as split seams, delamination, or sole separation are covered for 12 months from the delivery date. Covered defects are replaced or refunded regardless of the 30-day return window, and are not treated as ordinary wear and tear.\n\nCustomer:\nI ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?"
+                    }
+                  },
+                  {
+                    "key": "llm.model_name",
+                    "value": {
+                      "stringValue": "gpt-4o-mini-2024-07-18"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.total",
+                    "value": {
+                      "intValue": "447"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt",
+                    "value": {
+                      "intValue": "367"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion",
+                    "value": {
+                      "intValue": "80"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt_details.cache_read",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt_details.audio",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion_details.reasoning",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion_details.audio",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.output_messages.0.message.role",
+                    "value": {
+                      "stringValue": "assistant"
+                    }
+                  },
+                  {
+                    "key": "llm.output_messages.0.message.content",
+                    "value": {
+                      "stringValue": "The 30-day return window does not apply to your order, as it is covered by the Footwear Defect Warranty, allowing returns beyond that period for defects. Since the item is defective, you will not have to pay for return shipping; return shipping is free for items that fail under warranty [POL-RET-01], [POL-WAR-04], [POL-RET-03]."
+                    }
+                  },
+                  {
+                    "key": "llm.finish_reason",
+                    "value": {
+                      "stringValue": "stop"
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "LLM"
+                    }
+                  }
+                ],
+                "status": {
+                  "code": "STATUS_CODE_OK"
+                },
+                "flags": 256
+              },
+              {
+                "traceId": "ec06bfaafecb328ab768c22a5b2850e5",
+                "spanId": "a7e6121b29464072",
+                "parentSpanId": "97bc475b7061315d",
+                "name": "ChatCompletion",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784226510714548000",
+                "endTimeUnixNano": "1784226512414589000",
+                "attributes": [
+                  {
+                    "key": "llm.provider",
+                    "value": {
+                      "stringValue": "openai"
+                    }
+                  },
+                  {
+                    "key": "llm.system",
+                    "value": {
+                      "stringValue": "openai"
+                    }
+                  },
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "{\"messages\": [{\"role\": \"system\", \"content\": \"You are the support triage supervisor. Combine the warranty and returns specialists' findings into one clear answer for the customer: is a refund available, and who pays return shipping? Cite the policy ids the specialists relied on. Under 120 words.\"}, {\"role\": \"user\", \"content\": \"Warranty specialist:\\nYes, the split seam qualifies as a manufacturing defect covered under [POL-WAR-04], allowing for a refund despite the 30-day return window. Since the item failed under warranty, return shipping is free as stated in [POL-RET-03].\\n\\nReturns specialist:\\nThe 30-day return window does not apply to your order, as it is covered by the Footwear Defect Warranty, allowing returns beyond that period for defects. Since the item is defective, you will not have to pay for return shipping; return shipping is free for items that fail under warranty [POL-RET-01], [POL-WAR-04], [POL-RET-03].\\n\\nCustomer:\\nI ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?\"}], \"model\": \"gpt-4o-mini\"}"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "application/json"
+                    }
+                  },
+                  {
+                    "key": "output.value",
+                    "value": {
+                      "stringValue": "{\"id\":\"chatcmpl-E2L6tG9ilLuBzN5FfhhEkhFWmkbTm\",\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"Yes, you are eligible for a refund due to the manufacturing defect in your Summit Trail boots, even though the order is beyond the 30-day return window, as covered by [POL-WAR-04]. Additionally, return shipping is free since this defect falls under warranty, as stated in [POL-RET-03]. You do not need to pay for return shipping.\",\"refusal\":null,\"role\":\"assistant\",\"annotations\":[]}}],\"created\":1784226511,\"model\":\"gpt-4o-mini-2024-07-18\",\"object\":\"chat.completion\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_73ac716e3e\",\"usage\":{\"completion_tokens\":75,\"prompt_tokens\":251,\"total_tokens\":326,\"completion_tokens_details\":{\"accepted_prediction_tokens\":0,\"audio_tokens\":0,\"reasoning_tokens\":0,\"rejected_prediction_tokens\":0},\"prompt_tokens_details\":{\"audio_tokens\":0,\"cached_tokens\":0}}}"
+                    }
+                  },
+                  {
+                    "key": "output.mime_type",
+                    "value": {
+                      "stringValue": "application/json"
+                    }
+                  },
+                  {
+                    "key": "llm.invocation_parameters",
+                    "value": {
+                      "stringValue": "{\"model\": \"gpt-4o-mini\"}"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.0.message.role",
+                    "value": {
+                      "stringValue": "system"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.0.message.content",
+                    "value": {
+                      "stringValue": "You are the support triage supervisor. Combine the warranty and returns specialists' findings into one clear answer for the customer: is a refund available, and who pays return shipping? Cite the policy ids the specialists relied on. Under 120 words."
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.1.message.role",
+                    "value": {
+                      "stringValue": "user"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.1.message.content",
+                    "value": {
+                      "stringValue": "Warranty specialist:\nYes, the split seam qualifies as a manufacturing defect covered under [POL-WAR-04], allowing for a refund despite the 30-day return window. Since the item failed under warranty, return shipping is free as stated in [POL-RET-03].\n\nReturns specialist:\nThe 30-day return window does not apply to your order, as it is covered by the Footwear Defect Warranty, allowing returns beyond that period for defects. Since the item is defective, you will not have to pay for return shipping; return shipping is free for items that fail under warranty [POL-RET-01], [POL-WAR-04], [POL-RET-03].\n\nCustomer:\nI ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?"
+                    }
+                  },
+                  {
+                    "key": "llm.model_name",
+                    "value": {
+                      "stringValue": "gpt-4o-mini-2024-07-18"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.total",
+                    "value": {
+                      "intValue": "326"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt",
+                    "value": {
+                      "intValue": "251"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion",
+                    "value": {
+                      "intValue": "75"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt_details.cache_read",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt_details.audio",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion_details.reasoning",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion_details.audio",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.output_messages.0.message.role",
+                    "value": {
+                      "stringValue": "assistant"
+                    }
+                  },
+                  {
+                    "key": "llm.output_messages.0.message.content",
+                    "value": {
+                      "stringValue": "Yes, you are eligible for a refund due to the manufacturing defect in your Summit Trail boots, even though the order is beyond the 30-day return window, as covered by [POL-WAR-04]. Additionally, return shipping is free since this defect falls under warranty, as stated in [POL-RET-03]. You do not need to pay for return shipping."
+                    }
+                  },
+                  {
+                    "key": "llm.finish_reason",
+                    "value": {
+                      "stringValue": "stop"
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "LLM"
+                    }
+                  }
+                ],
+                "status": {
+                  "code": "STATUS_CODE_OK"
+                },
+                "flags": 256
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

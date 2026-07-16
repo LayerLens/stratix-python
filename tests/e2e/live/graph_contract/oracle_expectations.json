@@ -363,6 +363,21 @@
   ],
   "guarded_column": "retail_support_agent"
  },
+ "openinference-s2": {
+  "lane": "openinference-s2",
+  "shipped_nodes": [
+   "returns-specialist",
+   "support-triage-supervisor",
+   "warranty-specialist"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "returns-specialist",
+   "support-triage-supervisor",
+   "warranty-specialist"
+  ],
+  "guarded_column": "multi-agent"
+ },
  "openrouter-s1": {
   "lane": "openrouter-s1",
   "shipped_nodes": [],

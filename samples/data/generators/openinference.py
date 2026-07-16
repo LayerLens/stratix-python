@@ -68,8 +68,8 @@ from datetime import datetime, timezone
 # Reuse the record-real-once seam from the sibling ``_generate_fixtures`` module
 # (single source of truth for the fixture writer + capture config + model name).
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_DATA = os.path.dirname(_HERE)        # samples/data
-_SAMPLES = os.path.dirname(_DATA)     # samples
+_DATA = os.path.dirname(_HERE)  # samples/data
+_SAMPLES = os.path.dirname(_DATA)  # samples
 _REPO = os.path.dirname(_SAMPLES)
 for _p in (os.path.join(_REPO, "src"), _SAMPLES, _DATA):
     if _p not in sys.path:
@@ -222,32 +222,33 @@ def _iter_otlp_spans(doc: dict):
                 yield sp
 
 
-def _write_corpus(doc: dict, model: str, instrumentor_version: str) -> str:
+def _write_corpus(doc: dict, model: str, instrumentor_version: str, scenario: str = "default") -> str:
     """Seal the real spans as the recorded-corpus fixture (transport=object)."""
     fixture = {
         "provenance": {
             "provider": "openinference",
             "sdk_version": instrumentor_version,
             "model": model,
-            "scenario": "default",
+            "scenario": scenario,
             "captured_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         },
         "transport": "object",
         "sdk": "openinference",
         "note": (
             "REAL OpenInference/OTel spans exported from one real instrumented "
-            "retail-support RAG run (openinference-instrumentation-openai "
-            "auto-instrumenting a real openai gpt-4o-mini call, plus OITracer "
+            "retail-support run (openinference-instrumentation-openai "
+            "auto-instrumenting real openai gpt-4o-mini calls, plus OITracer "
             "app-level AGENT/TOOL/RETRIEVER spans), encoded to OTLP/JSON by the "
             "real OTel OTLP encoder. This is the adapter's upstream INPUT."
         ),
         "otlp": doc,
     }
-    os.makedirs(os.path.dirname(_CORPUS), exist_ok=True)
-    with open(_CORPUS, "w") as f:
+    path = os.path.join(os.path.dirname(_CORPUS), "%s.json" % scenario)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
         json.dump(fixture, f, indent=2, sort_keys=False)
         f.write("\n")
-    return _CORPUS
+    return path
 
 
 # --------------------------------------------------------------------------
@@ -292,9 +293,7 @@ def generate_openinference_single(client: Stratix) -> dict:
     try:
         # The REAL OpenInference auto-instrumentor for the openai SDK.
         instrumentor.instrument(tracer_provider=provider, skip_dep_check=True)
-        tracer = oi.OITracer(
-            provider.get_tracer("retail.support.assistant"), config=oi.TraceConfig()
-        )
+        tracer = oi.OITracer(provider.get_tracer("retail.support.assistant"), config=oi.TraceConfig())
         openai_client = OpenAI()
 
         agent_attrs = dict(
@@ -311,8 +310,7 @@ def generate_openinference_single(client: Stratix) -> dict:
                     oi.get_tool_attributes(
                         name="order_lookup",
                         description=(
-                            "Fetch a customer order record (item, order/delivery "
-                            "dates, final-sale flag) by order id."
+                            "Fetch a customer order record (item, order/delivery dates, final-sale flag) by order id."
                         ),
                         parameters={"order_id": "SO-884213"},
                     )
@@ -342,9 +340,7 @@ def generate_openinference_single(client: Stratix) -> dict:
                 )
 
             # 3) REAL LLM step — auto-instrumented by OpenInference.
-            excerpts = "\n".join(
-                "[%s] %s: %s" % (doc_id, title, body) for _s, doc_id, title, body in hits
-            )
+            excerpts = "\n".join("[%s] %s: %s" % (doc_id, title, body) for _s, doc_id, title, body in hits)
             response = openai_client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=[
@@ -363,8 +359,7 @@ def generate_openinference_single(client: Stratix) -> dict:
                         "role": "user",
                         "content": (
                             "Order record:\n%s\n\nStore policy excerpts:\n%s\n\n"
-                            "Customer message:\n%s"
-                            % (oi.safe_json_dumps(order), excerpts, _QUESTION)
+                            "Customer message:\n%s" % (oi.safe_json_dumps(order), excerpts, _QUESTION)
                         ),
                     },
                 ],
@@ -428,6 +423,187 @@ def generate_openinference_single(client: Stratix) -> dict:
     return payload
 
 
+def generate_openinference_multi(client: Stratix) -> dict:
+    """Record ONE real MULTI-AGENT OpenInference-instrumented support run.
+
+    A genuine delegation: a ``support-triage-supervisor`` routes the customer's
+    warranty-vs-return question to two REAL specialist sub-agents — a
+    ``warranty-specialist`` and a ``returns-specialist`` — each of which does its
+    own real retrieval over the real policy corpus and makes its own real
+    ``gpt-4o-mini`` call, then the supervisor synthesizes their findings in a
+    final real call. Three real AGENT spans (supervisor + two children), wired by
+    the OTel span hierarchy, so the adapter emits three agent.input/output pairs
+    with distinct ``agent_id``s and parent edges — a real multi-agent DAG, not an
+    invented one. Every AGENT/RETRIEVER span is written by the OpenInference
+    library's own helpers; every LLM span is the auto-instrumentor's; nothing is
+    hand-authored. Both shipped artifacts are two views of the SAME real spans.
+    """
+    from importlib.metadata import version
+
+    from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from openinference.instrumentation.openai import OpenAIInstrumentor
+    import openinference.instrumentation as oi
+    from openinference.semconv.trace import OpenInferenceSpanKindValues
+    from openai import OpenAI
+
+    from layerlens.instrument.adapters.frameworks.openinference import OpenInferenceAdapter
+
+    exporter = InMemorySpanExporter()
+    provider = SDKTracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    captured: dict = {}
+    set_trace_observer(lambda p: captured.setdefault("payload", p))
+    orig_upload = _collector_mod.enqueue_upload
+    _collector_mod.enqueue_upload = lambda *a, **k: None
+
+    instrumentor = OpenAIInstrumentor()
+    adapter = OpenInferenceAdapter(client, capture_config=_CAPTURE)
+    adapter.connect()
+    provider.add_span_processor(adapter.span_processor())
+
+    def _specialist(tracer, openai_client, *, name: str, brief: str, query: str) -> str:
+        """A REAL specialist sub-agent: its own AGENT span, real retrieval, real LLM."""
+        agent_attrs = dict(
+            oi.get_span_kind_attributes(OpenInferenceSpanKindValues.AGENT),
+            **oi.get_input_attributes(query),
+        )
+        with tracer.start_as_current_span(name, attributes=agent_attrs) as span:
+            with tracer.start_as_current_span(
+                "%s_policy_lookup" % name.split("-")[0],
+                attributes=oi.get_span_kind_attributes(OpenInferenceSpanKindValues.RETRIEVER),
+            ) as retr:
+                retr.set_attributes(oi.get_input_attributes(query))
+                hits = _search_policies(query)
+                retr.set_attributes(
+                    oi.get_retriever_attributes(
+                        documents=[
+                            oi.Document(id=d, content=b, score=float(s), metadata={"title": t}) for s, d, t, b in hits
+                        ]
+                    )
+                )
+            excerpts = "\n".join("[%s] %s: %s" % (d, t, b) for _s, d, t, b in hits)
+            resp = openai_client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": brief},
+                    {
+                        "role": "user",
+                        "content": "Order:\n%s\n\nPolicies:\n%s\n\nCustomer:\n%s"
+                        % (oi.safe_json_dumps(_lookup_order("SO-884213")), excerpts, _QUESTION),
+                    },
+                ],
+            )
+            finding = resp.choices[0].message.content or ""
+            span.set_attributes(oi.get_output_attributes(finding))
+            return finding
+
+    answer = ""
+    try:
+        instrumentor.instrument(tracer_provider=provider, skip_dep_check=True)
+        tracer = oi.OITracer(provider.get_tracer("retail.support.triage"), config=oi.TraceConfig())
+        openai_client = OpenAI()
+
+        sup_attrs = dict(
+            oi.get_span_kind_attributes(OpenInferenceSpanKindValues.AGENT),
+            **oi.get_input_attributes(_QUESTION),
+        )
+        with tracer.start_as_current_span("support-triage-supervisor", attributes=sup_attrs) as sup_span:
+            warranty = _specialist(
+                tracer,
+                openai_client,
+                name="warranty-specialist",
+                brief=(
+                    "You are the warranty specialist for a footwear retailer. Using ONLY the "
+                    "policy excerpts, decide whether the described damage is covered by the "
+                    "manufacturing-defect warranty and what that means for a refund and return "
+                    "shipping. Cite policy ids. Under 80 words."
+                ),
+                query="split seam manufacturing defect warranty coverage refund return shipping",
+            )
+            returns = _specialist(
+                tracer,
+                openai_client,
+                name="returns-specialist",
+                brief=(
+                    "You are the returns specialist for a footwear retailer. Using ONLY the "
+                    "policy excerpts, state whether the 30-day return window still applies to "
+                    "this ~4-month-old order and who pays return shipping for a non-final-sale "
+                    "item. Cite policy ids. Under 80 words."
+                ),
+                query="30 day return window refund return shipping cost final sale",
+            )
+            # The supervisor SYNTHESIZES the two specialists' real findings.
+            resp = openai_client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are the support triage supervisor. Combine the warranty and "
+                            "returns specialists' findings into one clear answer for the "
+                            "customer: is a refund available, and who pays return shipping? "
+                            "Cite the policy ids the specialists relied on. Under 120 words."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": "Warranty specialist:\n%s\n\nReturns specialist:\n%s\n\nCustomer:\n%s"
+                        % (warranty, returns, _QUESTION),
+                    },
+                ],
+            )
+            answer = resp.choices[0].message.content or ""
+            sup_span.set_attributes(oi.get_output_attributes(answer))
+    finally:
+        try:
+            instrumentor.uninstrument()
+        except Exception:
+            pass
+        try:
+            adapter.disconnect()
+        except Exception:
+            pass
+        set_trace_observer(None)
+        _collector_mod.enqueue_upload = orig_upload
+
+    payload = captured.get("payload")
+    if not payload:
+        raise RuntimeError("no payload captured for openinference multi-agent run")
+    payload["tags"] = [
+        "layerlens-sample",
+        "industry",
+        "retail",
+        "customer-support",
+        "multi-agent",
+        "openinference",
+    ]
+
+    spans = exporter.get_finished_spans()
+    doc = _otlp_json(spans)
+    corpus_path = _write_corpus(
+        doc,
+        model=OPENAI_MODEL,
+        instrumentor_version="openinference-instrumentation-openai %s"
+        % version("openinference-instrumentation-openai"),
+        scenario="team",
+    )
+
+    events = payload.get("events", [])
+    agents = sorted({e["payload"].get("agent_id") for e in events if e.get("event_type") == "agent.input"})
+    mi = [e for e in events if e.get("event_type") == "model.invoke"]
+    print(
+        "  openinference multi (triage supervisor + 2 specialists, real OI spans)  "
+        "spans=%d events=%d agents=%s model.invoke=%d" % (len(spans), len(events), agents, len(mi))
+    )
+    print("  ->", corpus_path)
+    print("  ->", _write([payload], "industry", "retail_openinference_support_team"), "\n")
+    return payload
+
+
 if __name__ == "__main__":  # pragma: no cover - manual regeneration entrypoint
     _client = Stratix()
     generate_openinference_single(_client)
+    generate_openinference_multi(_client)

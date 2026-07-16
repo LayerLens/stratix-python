@@ -129,6 +129,7 @@ INDUSTRY_SAMPLES = [
     "travel_browseruse_research",
     "saas_openrouter_cost_routing",
     "retail_openinference_support",
+    "retail_openinference_support_team",
 ]
 
 COWORK_SAMPLES = [
@@ -2303,8 +2304,8 @@ class TestSampleCompleteness:
         kept number-free because the literal drifted two waves behind the
         assertion (it read 54/66 while asserting 117).
         """
-        assert len(ALL_SAMPLE_PATHS) == 124, (
-            f"Expected 124 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
+        assert len(ALL_SAMPLE_PATHS) == 125, (
+            f"Expected 125 samples, got {len(ALL_SAMPLE_PATHS)}.\nPaths: {ALL_SAMPLE_PATHS}"
         )
 
     def test_all_sample_paths_exist(self):
@@ -2318,6 +2319,6 @@ class TestSampleCompleteness:
 
     def test_mocked_samples_cover_all(self):
         """ALL_MOCKED_SAMPLES should produce one entry per sample on disk."""
-        assert len(ALL_MOCKED_SAMPLES) == 124, (
-            f"Expected 124 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
+        assert len(ALL_MOCKED_SAMPLES) == 125, (
+            f"Expected 125 mocked entries, got {len(ALL_MOCKED_SAMPLES)}.\nEntries: {ALL_MOCKED_SAMPLES}"
         )
