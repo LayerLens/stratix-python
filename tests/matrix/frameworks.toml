@@ -64,7 +64,12 @@ tests = [
 
 [frameworks.pydantic_ai]
 python = "3.11"
-install = ["pydantic-ai==0.8.1"]
+# opentelemetry-api is pinned <1.44 because 1.44.0 dropped the
+# ``opentelemetry._events`` module that pydantic-ai 0.8.1's logfire path imports
+# at collection time; unpinned, the row fresh-resolves 1.44.0 and errors on
+# import. This is a pre-existing transitive drift (not part of the adapter port),
+# fixed here so the row resolves an env with the module present (1.43.0).
+install = ["pydantic-ai==0.8.1", "opentelemetry-api<1.44"]
 tests = [
     "tests/instrument/adapters/frameworks/test_pydantic_ai.py",
     "tests/instrument/adapters/frameworks/test_concurrency.py",
