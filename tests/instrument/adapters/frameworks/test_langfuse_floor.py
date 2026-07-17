@@ -147,12 +147,20 @@ def _judge_score(s: str = ""):
 
 
 def _trace(observations, scores=None, s: str = "", tid: str = "lf-media-001"):
+    # ``metadata`` is arbitrary user-supplied trace metadata — a privacy surface
+    # (it routinely holds reviewer notes, user ids, prompt fragments). The
+    # ``queue`` key is a structural label; ``reviewer_note`` carries the SENTINEL
+    # only when the test provides one, so the redaction sweep actually exercises
+    # this key instead of skipping over a fixed value.
+    metadata = {"queue": "media-moderation"}
+    if s:
+        metadata["reviewer_note"] = f"internal reviewer flagged {s}"
     return {
         "id": tid,
         "name": "content-moderation-review",
         "input": f"moderate user comment {s}",
         "output": f"final decision: allow {s}",
-        "metadata": {"queue": "media-moderation"},
+        "metadata": metadata,
         "observations": observations,
         "scores": scores or [],
     }
@@ -271,6 +279,10 @@ class TestRedactionFloor:
         assert "input" not in find_event(events, "tool.call")["payload"], "tool.call leaked 'input'"
         assert "output" not in find_event(events, "tool.call")["payload"], "tool.call leaked 'output'"
         assert "comment" not in find_event(events, "evaluation.result")["payload"], "score leaked 'comment'"
+        # The trace's arbitrary user metadata is content and must not survive.
+        assert "metadata" not in find_event(events, "agent.input")["payload"], (
+            "agent.input leaked user trace 'metadata' under capture_content=False"
+        )
 
         # 3) Non-content signal SURVIVES redaction (structure is not thrown away).
         assert mi["payload"]["model"] == "gpt-4"

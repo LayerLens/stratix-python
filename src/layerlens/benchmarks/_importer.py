@@ -116,7 +116,12 @@ class BenchmarkImporter:
         errors: List[str] = []
 
         try:
-            import datasets as hf_datasets  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
+            # ``datasets`` is an optional benchmark dep whose presence varies with
+            # the resolved env, so the ignore must cover every state mypy can see:
+            # ``import-not-found`` when it is absent, ``import-untyped`` when it is
+            # installed without stubs, and ``unused-ignore`` so whichever of those
+            # did not fire does not itself become an error under warn_unused_ignores.
+            import datasets as hf_datasets  # type: ignore[import-not-found, import-untyped, unused-ignore]  # pyright: ignore[reportMissingImports]
         except ImportError:
             return ImportResult(
                 success=False,

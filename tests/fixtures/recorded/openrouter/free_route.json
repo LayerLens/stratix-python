@@ -1,0 +1,56 @@
+{
+  "provenance": {
+    "provider": "openrouter",
+    "sdk_version": "2.45.0",
+    "model": "meta-llama/llama-3-8b-instruct:free",
+    "scenario": "free_route",
+    "captured_at": "2026-07-15T21:45:14+00:00",
+    "sealed": true,
+    "sealed_reason": "No OpenRouter API key exists (sk-or-...), so the gateway network could not be called. The bodies below are REAL model responses captured live (see real_body_source) and re-enveloped into OpenRouter's documented wire shape, then replayed through the REAL OpenRouterProvider over httpx.MockTransport. The adapter's parsing, event emission and cost handling are genuinely exercised; only the gateway hop is sealed. Deferred until an OpenRouter credential is provisioned.",
+    "real_body_source": "REAL local inference: ollama llama3:8b via its OpenAI-compatible endpoint (POST http://localhost:11434/v1/chat/completions). llama3:8b IS Meta Llama 3 8B Instruct \u2014 the same weights OpenRouter serves behind the 'meta-llama/llama-3-8b-instruct:free' slug \u2014 so the slug names the model that genuinely produced this text.",
+    "notes": "usage.cost = 0.0 is NOT invented: a ':free' OpenRouter slug genuinely bills $0.00, and the adapter deliberately KEEPS a reported zero (a zero is a fact) while rejecting bool/NaN/inf/negative. This fixture is the regression gate on that zero-kept branch. The cost/is_byok/cost_details block is the gateway's own accounting shape, added because ollama emits none; every other field is real."
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/chat/completions"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "id": "gen-sealed-no-openrouter-credential-free-0001",
+          "object": "chat.completion",
+          "created": 1784151914,
+          "model": "meta-llama/llama-3-8b-instruct:free",
+          "system_fingerprint": "fp_ollama",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "For the Growth plan, the rate limit on the Meridian events ingest API is 100 requests per minute (RPM). If you exceed this limit, you will receive a 429 Too Many Requests HTTP status code.\n\nTo avoid hitting this limit and ensure uninterrupted data ingestion, we recommend implementing a retry mechanism or using our recommended event buffering approach. If you have any questions or concerns about rate limiting or need assistance with implementation, please don't hesitate to reach out to our support team."
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 95,
+            "completion_tokens": 98,
+            "total_tokens": 193,
+            "cost": 0.0,
+            "is_byok": false,
+            "cost_details": {
+              "upstream_inference_cost": 0.0
+            }
+          }
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json"
+        }
+      }
+    }
+  ]
+}

@@ -39,6 +39,21 @@ _FRAMEWORK_PACKAGES: Dict[str, str] = {
     # detection key. Both adapters can coexist — they instrument different
     # surface areas (filters vs AgentChat wrapping).
     "ms_agent_framework": "semantic_kernel",
+    "dspy": "dspy",
+    "instructor": "instructor",
+    "marvin": "marvin",
+    "mirascope": "mirascope",
+    # pip dist is hyphenated ``browser-use``; the import name is underscored.
+    "browser_use": "browser_use",
+    # Ingestion tier: consumes OpenInference-convention OTel spans and patches
+    # nothing. Probing ``opentelemetry`` would fire for nearly every user (it is
+    # a common transitive dep — it is already in this repo's own base venv), so
+    # detection keys off the OpenInference semantic conventions, which are
+    # present only when the producer genuinely emits that convention. The
+    # adapter itself has no hard dependency on the package: the conventions are
+    # attribute-key strings, so an explicitly-wired importer still ingests plain
+    # span dicts without it.
+    "openinference": "openinference.semconv",
 }
 
 _PROVIDER_PACKAGES: Dict[str, str] = {
@@ -49,6 +64,9 @@ _PROVIDER_PACKAGES: Dict[str, str] = {
     "bedrock": "boto3",
     "ollama": "ollama",
     "litellm": "litellm",
+    # OpenRouter has no package of its own — it is an OpenAI-compatible gateway
+    # reached through the ``openai`` SDK against openrouter.ai/api/v1.
+    "openrouter": "openai",
 }
 
 # Map adapter name -> (module path, class name) for ``auto()`` instantiation.
@@ -102,6 +120,24 @@ _FRAMEWORK_ADAPTERS: Dict[str, Tuple[str, str]] = {
         "layerlens.instrument.adapters.frameworks.ms_agent_framework",
         "MSAgentFrameworkAdapter",
     ),
+    "dspy": ("layerlens.instrument.adapters.frameworks.dspy", "DSPyAdapter"),
+    "instructor": (
+        "layerlens.instrument.adapters.frameworks.instructor",
+        "InstructorAdapter",
+    ),
+    "marvin": ("layerlens.instrument.adapters.frameworks.marvin", "MarvinAdapter"),
+    "mirascope": (
+        "layerlens.instrument.adapters.frameworks.mirascope",
+        "MirascopeAdapter",
+    ),
+    "browser_use": (
+        "layerlens.instrument.adapters.frameworks.browser_use",
+        "BrowserUseAdapter",
+    ),
+    "openinference": (
+        "layerlens.instrument.adapters.frameworks.openinference",
+        "OpenInferenceAdapter",
+    ),
 }
 
 # Framework adapters that ARE detected (so ``discover_installed()`` reports
@@ -112,7 +148,7 @@ _FRAMEWORK_ADAPTERS: Dict[str, Tuple[str, str]] = {
 # in ``_FRAMEWORK_ADAPTERS``; users instantiate them explicitly with a target.
 # (bedrock_agents is probed via bare ``boto3``, so attempting it on every
 # ``auto()`` call previously logged a WARNING + traceback for every AWS user.)
-_TARGET_REQUIRED_ADAPTERS: FrozenSet[str] = frozenset({"pydantic_ai", "bedrock_agents"})
+_TARGET_REQUIRED_ADAPTERS: FrozenSet[str] = frozenset({"pydantic_ai", "bedrock_agents", "instructor", "browser_use"})
 
 
 def register(name: str, adapter: BaseAdapter) -> None:

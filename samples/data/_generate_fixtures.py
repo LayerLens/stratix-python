@@ -2288,6 +2288,12 @@ def main() -> None:
         # transport and self-skip when the live path is unavailable.
         "a2a", "agui", "embedding", "google_adk", "google_vertex",
         "langfuse", "litellm", "mcp_extensions", "ollama", "salesforce_agentforce",
+        # ADP-PORT — the seven adapters ported from the ateam reference SDK.
+        # openrouter ships a SEALED fixture (no OpenRouter key exists): its
+        # generator replays a real OpenRouter response shape through the real
+        # openai SDK rather than pretending a live call happened.
+        "browser_use", "dspy", "instructor", "marvin", "mirascope",
+        "openinference", "openrouter",
     )
     for _name in _W2_ADAPTERS:
         try:

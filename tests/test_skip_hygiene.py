@@ -56,6 +56,19 @@ KNOWN_SKIP_TARGETS = {
     "agno",
     "google.adk",
     "google.genai",
+    "dspy",
+    "instructor",
+    # instructor's retry surface — the validation-retry lane drives a REAL
+    # tenacity RetryError rather than a hand-built stand-in.
+    "tenacity",
+    "marvin",
+    # Mirascope v2's call surface. v1's ``mirascope.core`` does NOT exist on the
+    # v2 line the adapter targets, so gate on what is actually imported.
+    "mirascope.llm",
+    "browser_use",
+    # The openinference adapter ingests OTel spans; the suite builds real
+    # ReadableSpans from the OTel SDK.
+    "opentelemetry.sdk",
     # protocol / integration extras
     "copilotkit",
     "ag_ui_langgraph",

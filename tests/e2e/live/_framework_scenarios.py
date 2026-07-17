@@ -21,6 +21,8 @@ exception, and the harness asserts an ``agent.error`` event landed in the trace.
 from __future__ import annotations
 
 import os
+import glob
+from typing import Optional
 
 from layerlens.instrument._capture_config import CaptureConfig
 
@@ -683,3 +685,367 @@ def run_bedrock_agents_features(client: object) -> dict:
         traces_res.upload = orig_upload  # type: ignore[method-assign]
 
     return {"seen_types": sorted(seen_types), "trace_ids": trace_ids}
+
+
+# =========================================================================== #
+# ADP-PORT lanes — the seven adapters ported from the ateam reference SDK.
+#
+# Model choice per lane is decided by what the workload HONESTLY needs, not by
+# what is cheapest: the local ollama ``llama3:8b`` does not support tool-calling
+# (the server returns a real 400 "does not support tools"), so any lane whose
+# framework drives the model through a forced-tool / structured-output schema
+# must use a real paid provider. The lanes that only need a plain completion
+# (dspy, mirascope-in-json-mode, openinference's ingestion workload) run FREE
+# against the local model.
+# =========================================================================== #
+
+_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3:8b")
+_OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
+#: litellm (which dspy calls through) addresses a local ollama via its
+#: ``ollama_chat/`` provider prefix; the adapter's ``_split_model_id`` splits it
+#: back into model + provider.
+_DSPY_MODEL_ID = "ollama_chat/%s" % _OLLAMA_MODEL
+
+#: mirascope v2 addresses the local ollama through its own ``ollama/`` scope.
+_MIRASCOPE_MODEL_ID = "ollama/%s" % _OLLAMA_MODEL
+
+
+# --------------------------------------------------------------------------- #
+# DSPy (`pip install dspy`) — a real dspy.Module (ChainOfThought) over the FREE
+# local ollama. dspy needs no tool-calling for a plain predict, so no paid
+# provider is used. Ambient: the adapter's callback bus emits into the harness's
+# collector (DSPyAdapter reuses an ambient collector via _begin_run).
+# --------------------------------------------------------------------------- #
+def run_dspy(flow: str) -> None:
+    import dspy
+
+    from layerlens.instrument.adapters.frameworks.dspy import DSPyAdapter
+
+    class OceanAnswer(dspy.Signature):
+        """Answer a short factual question about Earth's oceans in one sentence."""
+
+        question: str = dspy.InputField(desc="The question to answer.")
+        answer: str = dspy.OutputField(desc="One short sentence.")
+
+    lm = dspy.LM(
+        _DSPY_MODEL_ID,
+        api_base=_OLLAMA_HOST,
+        api_key="",
+        # No cache: a cached hit would emit no real model.invoke, so the lane
+        # would prove nothing about the live path.
+        cache=False,
+        max_tokens=200,
+    )
+    dspy.configure(lm=lm)
+    program = dspy.ChainOfThought(OceanAnswer)
+
+    adapter = DSPyAdapter(None, capture_config=_cfg(flow))
+    adapter.connect()
+    try:
+        program(question=_PROMPT)
+    finally:
+        adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# Instructor (`pip install instructor openai`) — a real instructor-patched
+# client extracting into a real Pydantic response_model. Instructor's default
+# Mode.TOOLS drives the provider's function-calling schema, which the local
+# llama3:8b genuinely cannot do -> this lane needs OPENAI_API_KEY.
+# --------------------------------------------------------------------------- #
+def run_instructor(flow: str) -> None:
+    import instructor
+    from pydantic import Field, BaseModel
+
+    import openai
+    from layerlens.instrument.adapters.frameworks.instructor import InstructorAdapter
+
+    class OceanFacts(BaseModel):
+        """A structured record of an ocean fact."""
+
+        ocean_name: str = Field(description="The name of one of Earth's oceans.")
+        is_largest: bool = Field(description="True if this is the largest ocean on Earth.")
+
+    patched = instructor.from_openai(openai.OpenAI())
+    adapter = InstructorAdapter(None, capture_config=_cfg(flow))
+    # agent_name is the ONLY honest identity source for instructor (it declares
+    # none of its own), so the caller declares it — same seam a customer uses.
+    adapter.connect(target=patched, agent_name="ocean-facts-extractor")
+    try:
+        patched.chat.completions.create(
+            model=_OPENAI_MODEL,
+            response_model=OceanFacts,
+            max_retries=2,
+            temperature=0,
+            max_tokens=64,
+            messages=[{"role": "user", "content": f"Name the largest ocean on Earth. {SENTINEL}"}],
+        )
+    finally:
+        adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# Marvin (`pip install marvin`) — a real marvin primitive through a real, NAMED
+# marvin.Agent. Marvin 3.x rides pydantic-ai, whose structured output is an
+# output TOOL — llama3:8b cannot hold it, so this lane needs OPENAI_API_KEY.
+# --------------------------------------------------------------------------- #
+def run_marvin(flow: str) -> None:
+    # ``import marvin`` calls ensure_db_tables_exist() at MODULE scope, creating
+    # a SQLite database as an import side effect. Point it at a throwaway file
+    # BEFORE the import so a live run never touches a real Marvin database.
+    if "MARVIN_DATABASE_URL" not in os.environ:
+        import tempfile
+
+        os.environ["MARVIN_DATABASE_URL"] = "sqlite+aiosqlite:///" + os.path.join(
+            tempfile.mkdtemp(prefix="layerlens-marvin-live-"), "marvin.db"
+        )
+
+    import marvin
+    from pydantic_ai.models.openai import OpenAIChatModel
+
+    from layerlens.instrument.adapters.frameworks.marvin import MarvinAdapter
+
+    # Marvin's rich console handler renders a live panel per call — pure noise
+    # under pytest.
+    marvin.settings.enable_default_print_handler = False
+
+    # ``model=`` on the Agent is the developer's explicit, real configuration —
+    # the adapter reads it off ``Agent.model`` (no Marvin 3.x primitive takes a
+    # ``model=`` kwarg, so this is the only honest per-call seam).
+    agent = marvin.Agent(
+        name="ocean-classifier",
+        model=OpenAIChatModel(_OPENAI_MODEL),
+        instructions="You answer questions about Earth's oceans. Be terse and factual.",
+    )
+
+    adapter = MarvinAdapter(None, capture_config=_cfg(flow))
+    adapter.connect(target=marvin)
+    try:
+        marvin.cast(
+            f"The largest ocean on Earth. {SENTINEL}",
+            target=str,
+            instructions="Return only the ocean's name.",
+            agent=agent,
+        )
+    finally:
+        adapter.disconnect()
+
+
+# --------------------------------------------------------------------------- #
+# Mirascope (`pip install mirascope`) — a real ``mirascope.llm.call`` on the v2
+# API (``mirascope.core`` does NOT exist on v2). A plain call needs no tools, so
+# this lane runs FREE against the local ollama through mirascope's own
+# OllamaProvider.
+# --------------------------------------------------------------------------- #
+def run_mirascope(flow: str) -> None:
+    import mirascope.llm as llm
+    from mirascope.llm.providers.ollama import OllamaProvider
+    from mirascope.llm.providers.provider_registry import (
+        PROVIDER_REGISTRY,
+        provider_singleton,
+        reset_provider_registry,
+    )
+
+    from openai import OpenAI
+    from layerlens.instrument.adapters.frameworks.mirascope import MirascopeAdapter
+
+    # A REAL mirascope OllamaProvider pointed at the real local server. The
+    # OpenAI-compatible client is how mirascope's ollama provider really talks.
+    provider = OllamaProvider()
+    provider.client = OpenAI(api_key="ollama", base_url=_OLLAMA_HOST.rstrip("/") + "/v1/")
+    saved = dict(PROVIDER_REGISTRY)
+    llm.register_provider(provider, scope="ollama/")
+
+    adapter = MirascopeAdapter(None, capture_config=_cfg(flow))
+    adapter.connect()
+    try:
+
+        @llm.call(_MIRASCOPE_MODEL_ID)
+        def ocean_agent(question: str) -> str:
+            return f"Answer in one short sentence. {question}"
+
+        ocean_agent(_PROMPT)
+    finally:
+        adapter.disconnect()
+        reset_provider_registry()
+        PROVIDER_REGISTRY.update(saved)
+        provider_singleton.cache_clear()
+
+
+# --------------------------------------------------------------------------- #
+# BrowserUse (`pip install browser-use`) — a REAL headless-Chromium browse.
+#
+# The page is served over REAL HTTP on loopback for the duration of the lane
+# rather than fetched from a public site: a live lane that depends on a third
+# party's DOM fails for reasons that have nothing to do with the adapter. The
+# browse itself is entirely real — real Chromium over CDP, real navigation,
+# real DOM serialization, real model-chosen actions, real token usage.
+#
+# browser-use drives the browser by making the model emit a STRICT JSON action
+# schema per step against a large serialized-DOM prompt; llama3:8b does not hold
+# that schema (it flails until it runs out of steps), so this lane needs
+# OPENAI_API_KEY. It is kept to a couple of steps — ``initial_actions``
+# navigates deterministically instead of paying the model to find the URL.
+# --------------------------------------------------------------------------- #
+_BOARD_HTML = """<!doctype html>
+<html><head><title>Ocean Facts Board</title></head>
+<body>
+  <h1>Ocean Facts Board</h1>
+  <table>
+    <tr><th>Ocean</th><th>Area (million km2)</th></tr>
+    <tr><td>Pacific</td><td>165.2</td></tr>
+    <tr><td>Atlantic</td><td>85.1</td></tr>
+    <tr><td>Indian</td><td>70.6</td></tr>
+  </table>
+</body></html>
+"""
+
+#: Playwright's cached chromium builds name their binary differently across
+#: revisions/platforms ("Google Chrome for Testing" on the mac-arm64 full build,
+#: ``chrome-headless-shell`` on the shell build, plain ``chrome`` on linux), so
+#: resolve rather than hardcode one machine's layout. BROWSER_USE_SAMPLE_CHROME
+#: overrides everything; the lane skips honestly if nothing resolves.
+_CHROME_GLOBS = (
+    "~/Library/Caches/ms-playwright/chromium-*/chrome-mac*/*.app/Contents/MacOS/*",
+    "~/Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-mac*/chrome-headless-shell",
+    "~/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
+    "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-linux/chrome-headless-shell",
+)
+
+
+def _resolve_chrome() -> Optional[str]:
+    """The first executable chromium in the playwright cache, or None."""
+    explicit = os.environ.get("BROWSER_USE_SAMPLE_CHROME")
+    if explicit:
+        return explicit if os.access(explicit, os.X_OK) else None
+    for pattern in _CHROME_GLOBS:
+        for path in sorted(glob.glob(os.path.expanduser(pattern)), reverse=True):
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+    return None
+
+
+def _serve_board():
+    """Serve the facts board over REAL HTTP on loopback, for this lane only."""
+    import tempfile
+    import functools
+    import threading
+    import http.server
+    import socketserver
+
+    directory = tempfile.mkdtemp(prefix="ll-live-board-")
+    with open(os.path.join(directory, "index.html"), "w") as f:
+        f.write(_BOARD_HTML)
+
+    class _Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, fmt, *args):  # noqa: A003 - stdlib signature
+            pass
+
+    handler = functools.partial(_Quiet, directory=directory)
+    socketserver.TCPServer.allow_reuse_address = True
+    server = socketserver.TCPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, "http://127.0.0.1:%d/index.html" % server.server_address[1]
+
+
+def run_browser_use(flow: str) -> None:
+    import asyncio
+
+    from browser_use import Agent
+    from browser_use.llm import ChatOpenAI
+    from browser_use.browser.profile import BrowserProfile
+
+    from layerlens.instrument.adapters.frameworks.browser_use import BrowserUseAdapter
+
+    chrome = _resolve_chrome()
+    if chrome is None:
+        raise RuntimeError(
+            "browser_use live lane: no executable chromium found in the playwright cache "
+            "(set BROWSER_USE_SAMPLE_CHROME, or run `playwright install chromium`). "
+            "Refusing to fake a browse."
+        )
+
+    server, url = _serve_board()
+    agent = Agent(
+        task=(
+            "Read the Ocean Facts Board that is already open in the browser and report "
+            "which ocean has the largest area, with its area. %s" % SENTINEL
+        ),
+        llm=ChatOpenAI(model=_OPENAI_MODEL),
+        browser_profile=BrowserProfile(headless=True, executable_path=chrome),
+        initial_actions=[{"navigate": {"url": url, "new_tab": False}}],
+        use_vision=False,
+        enable_planning=False,
+        use_judge=False,
+        max_actions_per_step=2,
+    )
+    adapter = BrowserUseAdapter(None, capture_config=_cfg(flow))
+    # A real browser_use Agent declares no name of its own, so the honest agent
+    # identity is the one the caller declares — the same seam a customer uses
+    # via ``instrument_browser_use(agent, agent_name=...)``.
+    adapter.connect(target=agent, agent_name="ocean-board-reader")
+
+    async def _drive():
+        try:
+            return await agent.run(3)
+        finally:
+            await agent.close()
+
+    try:
+        asyncio.run(_drive())
+    finally:
+        try:
+            adapter.disconnect()
+        except Exception:
+            pass
+        server.shutdown()
+        server.server_close()
+
+
+# --------------------------------------------------------------------------- #
+# OpenInference (`pip install openinference-instrumentation-openai
+# opentelemetry-sdk`) — INGESTION. The adapter makes no LLM call of its own; it
+# is an OTel SpanProcessor that normalizes OpenInference spans into layerlens
+# events. So the honest live lane is a REAL OTel workload: the REAL
+# OpenInference auto-instrumentor for the openai SDK, on a REAL TracerProvider,
+# producing REAL OpenInference spans off a REAL chat completion — which the
+# adapter ingests, seals into a trace, and uploads.
+#
+# The completion is a plain (tool-free) call, so it is served credlessly by the
+# local ollama through its OpenAI-COMPATIBLE endpoint. The provider really is
+# ollama and the trace says so; only the wire protocol is OpenAI's, which is
+# exactly what makes ``openinference-instrumentation-openai`` the real, correct
+# instrumentor for this call.
+#
+# Self-flushing: the adapter owns one TraceCollector per SOURCE OTel trace id
+# and uploads them itself on flush()/disconnect().
+# --------------------------------------------------------------------------- #
+def run_openinference(flow: str, client: object) -> None:
+    from opentelemetry.sdk.trace import TracerProvider
+    from openinference.instrumentation.openai import OpenAIInstrumentor
+
+    from openai import OpenAI
+    from layerlens.instrument.adapters.frameworks.openinference import OpenInferenceAdapter
+
+    provider = TracerProvider()
+    instrumentor = OpenAIInstrumentor()
+    adapter = OpenInferenceAdapter(client, capture_config=_cfg(flow))
+    adapter.connect()
+    # The adapter's LIVE production wiring: it is an OTel SpanProcessor.
+    provider.add_span_processor(adapter.span_processor())
+    try:
+        instrumentor.instrument(tracer_provider=provider, skip_dep_check=True)
+        openai_client = OpenAI(api_key="ollama", base_url=_OLLAMA_HOST.rstrip("/") + "/v1")
+        openai_client.chat.completions.create(
+            model=_OLLAMA_MODEL,
+            messages=[{"role": "user", "content": _PROMPT}],
+            max_tokens=64,
+        )
+    finally:
+        try:
+            instrumentor.uninstrument()
+        except Exception:
+            pass
+        # Seals + flushes (and uploads) every open collector.
+        adapter.disconnect()

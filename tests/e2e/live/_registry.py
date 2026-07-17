@@ -146,6 +146,29 @@ PROVIDERS: Tuple[ProviderCase, ...] = (
             min_events=3,
         ),
     ),
+    # SEALED lane. OpenRouter is an OpenAI-compatible GATEWAY; without an
+    # OPENROUTER_API_KEY this self-skips honestly rather than being pointed at
+    # another provider (which would exercise none of the gateway-specific
+    # surface: :free slug routing, the usage-accounting block, the attribution
+    # headers). See _scenarios.run_openrouter.
+    ProviderCase(
+        id="openrouter",
+        import_name="openai",  # OpenRouter speaks the OpenAI wire protocol
+        runner=_scenarios.run_openrouter,
+        required_env=("OPENROUTER_API_KEY",),
+        variants=_CHAT_VARIANTS,
+        contract=Contract(
+            requires_tool_call=False,
+            requires_cost_record=True,
+            # OpenRouter reports its own charge in the usage block (and the
+            # ``:free`` route's real charge is $0.00) — the adapter records the
+            # gateway's number rather than pricing the slug from our catalog, so
+            # a priced cost is not required.
+            cost_priced=False,
+            pricing_table=None,
+            min_events=3,
+        ),
+    ),
     ProviderCase(
         id="litellm",
         import_name="litellm",

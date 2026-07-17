@@ -192,6 +192,69 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
             "for a PREPARED Bedrock Agent with enableTrace"
         ),
     ),
+    # ----------------------------------------------------------------- #
+    # ADP-PORT: the seven adapters ported from the ateam reference SDK.
+    # ----------------------------------------------------------------- #
+    FrameworkCase(
+        id="dspy",
+        import_name="dspy",
+        runner=fs.run_dspy,
+        required_env=("OLLAMA_HOST",),  # FREE: a plain predict needs no tools
+        expected_types=("model.invoke",),
+        install_hint="dspy (py>=3.10); a local ollama + llama3:8b",
+    ),
+    FrameworkCase(
+        id="instructor",
+        import_name="instructor",
+        runner=fs.run_instructor,
+        # Mode.TOOLS drives the provider's function-calling schema: llama3:8b
+        # genuinely cannot ("does not support tools"), so this needs OpenAI.
+        required_env=("OPENAI_API_KEY",),
+        expected_types=("model.invoke",),
+        install_hint="instructor openai (no extra)",
+    ),
+    FrameworkCase(
+        id="marvin",
+        import_name="marvin",
+        runner=fs.run_marvin,
+        # Marvin 3.x rides pydantic-ai, whose structured output is an output
+        # TOOL — ollama cannot hold it. Venv pin: pydantic-ai must stay <1.95.
+        required_env=("OPENAI_API_KEY",),
+        expected_types=("model.invoke",),
+        extra_imports=("pydantic_ai",),
+        install_hint="marvin (py>=3.10; pydantic-ai<1.95)",
+    ),
+    FrameworkCase(
+        id="mirascope",
+        import_name="mirascope",
+        runner=fs.run_mirascope,
+        required_env=("OLLAMA_HOST",),  # FREE: a plain llm.call needs no tools
+        expected_types=("model.invoke",),
+        install_hint="mirascope>=2 openai (v2 API: mirascope.llm, not mirascope.core)",
+    ),
+    FrameworkCase(
+        id="browser_use",
+        import_name="browser_use",
+        runner=fs.run_browser_use,
+        # browser-use makes the model emit a strict JSON action schema per step
+        # against a serialized DOM; llama3:8b does not hold it.
+        required_env=("OPENAI_API_KEY",),
+        expected_types=("tool.call",),
+        install_hint="browser-use (py>=3.11) + a playwright-cached chromium",
+    ),
+    FrameworkCase(
+        id="openinference",
+        import_name="openinference.instrumentation.openai",
+        runner=fs.run_openinference,
+        # Ingestion adapter: makes no LLM call of its own. The workload is a real
+        # OTel-instrumented completion, served FREE by the local ollama over its
+        # OpenAI-compatible endpoint.
+        required_env=("OLLAMA_HOST",),
+        supports_redaction=False,  # content gating covered by the unit doubles
+        self_flushing=True,  # owns one collector per SOURCE OTel trace id
+        extra_imports=("opentelemetry.sdk",),
+        install_hint="openinference-instrumentation-openai opentelemetry-sdk",
+    ),
     FrameworkCase(
         id="langfuse",
         import_name="httpx",

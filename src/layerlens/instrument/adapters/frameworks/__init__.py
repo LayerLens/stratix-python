@@ -30,6 +30,12 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "AutoGenAdapter": ("autogen", "AutoGenAdapter"),
     "AgentforceAdapter": ("agentforce", "AgentforceAdapter"),
     "SemanticKernelAdapter": ("semantic_kernel", "SemanticKernelAdapter"),
+    "DSPyAdapter": ("dspy", "DSPyAdapter"),
+    "InstructorAdapter": ("instructor", "InstructorAdapter"),
+    "MarvinAdapter": ("marvin", "MarvinAdapter"),
+    "MirascopeAdapter": ("mirascope", "MirascopeAdapter"),
+    "BrowserUseAdapter": ("browser_use", "BrowserUseAdapter"),
+    "OpenInferenceAdapter": ("openinference", "OpenInferenceAdapter"),
 }
 
 
@@ -49,11 +55,17 @@ def __dir__() -> list[str]:
 if TYPE_CHECKING:
     # Re-export under TYPE_CHECKING so static analysers see the names without
     # forcing an eager import at runtime.
+    from .dspy import DSPyAdapter as DSPyAdapter
     from .crewai import CrewAIAdapter as CrewAIAdapter
+    from .marvin import MarvinAdapter as MarvinAdapter
     from .autogen import AutoGenAdapter as AutoGenAdapter
     from .langchain import LangChainCallbackHandler as LangChainCallbackHandler
     from .langgraph import LangGraphCallbackHandler as LangGraphCallbackHandler
+    from .mirascope import MirascopeAdapter as MirascopeAdapter
     from .agentforce import AgentforceAdapter as AgentforceAdapter
+    from .instructor import InstructorAdapter as InstructorAdapter
+    from .browser_use import BrowserUseAdapter as BrowserUseAdapter
+    from .openinference import OpenInferenceAdapter as OpenInferenceAdapter
     from .semantic_kernel import SemanticKernelAdapter as SemanticKernelAdapter
 
 

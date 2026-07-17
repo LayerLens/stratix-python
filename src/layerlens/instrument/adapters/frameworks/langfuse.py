@@ -210,8 +210,13 @@ class LangfuseAdapter(FrameworkAdapter):
                 "framework": "langfuse",
                 "langfuse_trace_id": trace_id,
                 "name": trace.get("name", ""),
-                "metadata": _safe_dict(trace.get("metadata")),
             }
+            # ``metadata`` is arbitrary user-supplied trace metadata (reviewer
+            # notes, user ids, prompt fragments) — content, not structure — so it
+            # is gated like the trace input. Emitting it unconditionally leaked it
+            # under capture_content=False, and it is not in _CONTENT_KEYS, so the
+            # collector backstop would not have stripped it either.
+            self._set_if_capturing(in_payload, "metadata", _safe_dict(trace.get("metadata")))
             self._set_if_capturing(in_payload, "content", truncate(str(trace_input), max_len=4000))
             collector.emit(
                 "agent.input",

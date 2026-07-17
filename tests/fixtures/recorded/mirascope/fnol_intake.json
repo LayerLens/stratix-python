@@ -1,0 +1,47 @@
+{
+  "provenance": {
+    "provider": "mirascope",
+    "sdk_version": "2.5.0",
+    "model": "ollama/llama3:8b",
+    "scenario": "fnol_intake",
+    "captured_at": "2026-07-15T21:03:39+00:00"
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "id": "chatcmpl-317",
+          "object": "chat.completion",
+          "created": 1784149419,
+          "model": "llama3:8b",
+          "system_fingerprint": "fp_ollama",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "Here's the FNOL record extracted from the intake notes:\n\n```json\n{\n  \"policy_number\": \"AUTO-TX-4482910\",\n  \"claimant_name\": \"Denise Okonkwo\",\n  \"loss_date\": \"11th of March\",\n  \"loss_type\": \"rear-end collision\",\n  \"loss_location\": \"Lamar Boulevard, Austin, near the Barton Springs intersection\",\n  \"insured_vehicle\": \"2021 Honda Accord\",\n  \"damage_description\": \"Whole back end is crushed, trunk won't shut and bumper is on the ground. Vehicle is drivable but barely.\",\n  \"injuries_reported\": true,\n  \"injury_description\": \"Whiplash, stiff neck and shoulder\",\n  \"police_report_number\": \"APD-2025-0311-4417\",\n  \"other_party_involved\": true,\n  \"severity\": \"HIGH\"\n}\n```"
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 986,
+            "completion_tokens": 189,
+            "total_tokens": 1175
+          }
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json"
+        }
+      }
+    }
+  ]
+}

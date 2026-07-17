@@ -256,10 +256,29 @@ _COMMERCE_PII_KEYS: FrozenSet[str] = frozenset(
 
 _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     # --- core agent / model / tool surfaces (backstop; adapters also gate) ---
-    "agent.input": frozenset({"input", "messages", "content", "prompt", "system", "value"}),
+    # ``input_text``/``inputs``/``task``: the ported ingestion + framework
+    # adapters (dspy, browser_use, openinference) carry the turn's real input
+    # under these names — dspy renders it to ``input_text``, browser_use names
+    # the run's natural-language goal ``task``. They gate at the emit site; the
+    # backstop makes a forgotten gate non-fatal (ADP-PORT 2026-07-15).
+    "agent.input": frozenset(
+        {"input", "messages", "content", "prompt", "system", "value", "input_text", "inputs", "task"}
+    ),
     # ``error`` covers adapters that fold str(exc) onto agent.output/step (instead
     # of agent.error): smolagents, haystack, agno (census 2026-06-24).
-    "agent.output": frozenset({"output", "output_message", "content", "messages", "value", "error"}),
+    # ``output_text``/``prediction``: the dspy + browser_use answer surfaces.
+    "agent.output": frozenset(
+        {
+            "output",
+            "output_message",
+            "content",
+            "messages",
+            "value",
+            "error",
+            "output_text",
+            "prediction",
+        }
+    ),
     "agent.error": frozenset({"error", "error_message"}),
     "agent.step": frozenset({"input", "output", "messages", "content", "reason", "error", "code_action"}),
     # NB: agent.handoff `reason` is intentionally NOT stripped — it is a CATEGORY
@@ -278,8 +297,10 @@ _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     # ``payload``/``data`` cover the AG-UI middleware + fallback raw-event
     # passthrough, which rides agent.state.change / tool.call (a raw protocol
     # event blob is content whichever type it lands on).
+    # ``error``: browser_use folds a failed run's exception text onto the
+    # run_status change (the category — complete/failed — survives).
     "agent.state.change": frozenset(
-        {"state", "status_message", "input", "output", "messages", "value", "payload", "data"}
+        {"state", "status_message", "input", "output", "messages", "value", "payload", "data", "error"}
     ),
     "agent.interaction": frozenset({"content", "input", "output", "messages"}),
     "conversation.message": frozenset({"content", "message"}),
@@ -287,14 +308,39 @@ _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     # (google_adk emits these on environment.config). Content — a collector-tier
     # backstop so they are stripped under capture_content=False even if an emit
     # site forgets to gate them (environment.config otherwise has no strip-set).
-    "environment.config": frozenset({"instruction", "description"}),
+    # ``task``: browser_use's environment.config carries the run's raw
+    # natural-language goal, which is the user's own words (ADP-PORT).
+    "environment.config": frozenset({"instruction", "description", "task"}),
     # ``error``: strands/langchain attach str(exc) onto model.invoke/tool.result.
-    "model.invoke": frozenset({"messages", "output_message", "error"}),
+    # ``prompt``/``output``/``response``/``args``/``kwargs``: the ported adapters
+    # (dspy, marvin, openinference) carry the rendered prompt + completion under
+    # these names. ``invocation_parameters`` is an OpenInference span attribute
+    # that embeds the request — including, for some producers, the messages.
+    "model.invoke": frozenset(
+        {
+            "messages",
+            "output_message",
+            "error",
+            "prompt",
+            "output",
+            "response",
+            "args",
+            "kwargs",
+            "invocation_parameters",
+        }
+    ),
     "embedding.create": frozenset({"input", "messages", "texts", "contents"}),
-    "tool.call": frozenset({"arguments", "input", "args", "result", "payload", "data"}),
+    # ``url``: a browsed URL (browser_use) is content, not topology — a query
+    # string routinely carries session tokens and PII (user ruling 2026-07-15).
+    # ``output``/``error``: browser_use + dspy + openinference fold the action's
+    # extracted page text and the failure text onto the single tool.call rather
+    # than a paired tool.result.
+    "tool.call": frozenset({"arguments", "input", "args", "result", "payload", "data", "url", "output", "error"}),
     "tool.result": frozenset({"result", "output", "content", "error"}),
     "retrieval.query": frozenset({"query", "input"}),
-    "evaluation.result": frozenset({"comment", "explanation"}),
+    # ``result``: an OpenInference EVALUATOR span's output.value — the judged
+    # text, not the score (the numeric verdict survives redaction).
+    "evaluation.result": frozenset({"comment", "explanation", "result"}),
     # --- protocol surfaces ---
     "agui.message": frozenset({"text"}),
     "agui.tool_call": frozenset({"arguments", "result"}),
@@ -356,7 +402,10 @@ _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     # stays so a customer sees WHY a charge was refused under no-content.
     # (bedrock_agents' policy.violation carries action/stage/policies/ids only —
     # none of these keys — so this is a no-op for it.)
-    "policy.violation": frozenset({"reason", "detail", "amount", "merchant", "merchant_name"}),
+    # ``output``: a triggered OpenInference GUARDRAIL span's output.value — the
+    # blocked text itself. The violation CATEGORY + guardrail name survive, so a
+    # block stays auditable without republishing what was blocked.
+    "policy.violation": frozenset({"reason", "detail", "amount", "merchant", "merchant_name", "output"}),
     "commerce.supplier_discovered": frozenset({"name"}),
     "commerce.catalog.browsed": frozenset({"query"}),
     # Commerce checkout/start PII (A15 / UCP-Q2 fail-open, user-approved

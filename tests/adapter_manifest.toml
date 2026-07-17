@@ -330,3 +330,94 @@ family = "protocol"
 unit = { path = "tests/instrument/adapters/protocols/test_a2ui_adapter.py" }
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "a2ui"
+
+# --- ADP-PORT (2026-07-15): the seven adapters ported from the ateam reference
+# SDK. Tiers below are declared ONLY where the test genuinely exists; the gaps
+# (recorded corpus, live_id) are tracked in the port's coverage matrix rather
+# than declared here, because a manifest row is a CLAIM and an unearned one is
+# worse than an honest blank.
+
+[adapters.dspy]
+family = "framework"
+unit = { path = "tests/instrument/adapters/frameworks/test_dspy.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_dspy_recorded.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_dspy_floor.py", pattern = "TestRedactionFloor" }
+error_paths = { path = "tests/instrument/adapters/frameworks/test_dspy_floor.py", pattern = "TestRealErrorShape" }
+attestation = { path = "tests/instrument/adapters/frameworks/test_dspy_floor.py", pattern = "TestAttestationOffline" }
+cost = { path = "tests/instrument/adapters/frameworks/test_dspy_floor.py", pattern = "TestCostFloor" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_dspy.py", pattern = "TestLifecycleAndEntrypoint" }
+matrix_row = "dspy"
+
+[adapters.instructor]
+family = "framework"
+unit = { path = "tests/instrument/adapters/frameworks/test_instructor.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_instructor_recorded.py" }
+async = { path = "tests/instrument/adapters/frameworks/test_instructor.py", pattern = "TestAsync" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_instructor_floor.py", pattern = "TestRedactionFloor" }
+error_paths = { path = "tests/instrument/adapters/frameworks/test_instructor_floor.py", pattern = "TestRealErrorShape" }
+attestation = { path = "tests/instrument/adapters/frameworks/test_instructor_floor.py", pattern = "TestAttestationOffline" }
+cost = { path = "tests/instrument/adapters/frameworks/test_instructor_floor.py", pattern = "TestCostFloor" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_instructor.py", pattern = "TestLifecycle" }
+matrix_row = "instructor"
+
+[adapters.marvin]
+family = "framework"
+unit = { path = "tests/instrument/adapters/frameworks/test_marvin.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_marvin_recorded.py" }
+async = { path = "tests/instrument/adapters/frameworks/test_marvin.py", pattern = "TestAsyncSurface" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_marvin_floor.py", pattern = "TestRedactionFloor" }
+error_paths = { path = "tests/instrument/adapters/frameworks/test_marvin_floor.py", pattern = "TestRealErrorShape" }
+attestation = { path = "tests/instrument/adapters/frameworks/test_marvin_floor.py", pattern = "TestAttestationOffline" }
+# Marvin exposes no usage on its primitives, so the adapter emits NO cost.record.
+# The tier proves the OMISSION is honest rather than a forgotten emit.
+cost = { path = "tests/instrument/adapters/frameworks/test_marvin_floor.py", pattern = "TestCostOmission" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_marvin.py", pattern = "TestPatching" }
+matrix_row = "marvin"
+
+[adapters.mirascope]
+family = "framework"
+unit = { path = "tests/instrument/adapters/frameworks/test_mirascope.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_mirascope_recorded.py" }
+async = { path = "tests/instrument/adapters/frameworks/test_mirascope.py", pattern = "TestAsyncAndContext" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_mirascope_floor.py", pattern = "TestRedactionFloor" }
+error_paths = { path = "tests/instrument/adapters/frameworks/test_mirascope_floor.py", pattern = "TestRealErrorShape" }
+attestation = { path = "tests/instrument/adapters/frameworks/test_mirascope_floor.py", pattern = "TestAttestationOffline" }
+cost = { path = "tests/instrument/adapters/frameworks/test_mirascope_floor.py", pattern = "TestCostFloor" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_mirascope.py", pattern = "TestPatchLifecycle" }
+matrix_row = "mirascope"
+
+[adapters.browser_use]
+family = "framework"
+unit = { path = "tests/instrument/adapters/frameworks/test_browser_use.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_browser_use_recorded.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_browser_use_floor.py", pattern = "TestRedactionFloor" }
+error_paths = { path = "tests/instrument/adapters/frameworks/test_browser_use_floor.py", pattern = "TestRealErrorShape" }
+attestation = { path = "tests/instrument/adapters/frameworks/test_browser_use_floor.py", pattern = "TestAttestationOffline" }
+cost = { path = "tests/instrument/adapters/frameworks/test_browser_use_floor.py", pattern = "TestCostFloor" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_browser_use.py", pattern = "TestLifecycle" }
+matrix_row = "browser_use"
+
+[adapters.openinference]
+family = "framework"
+unit = { path = "tests/instrument/adapters/frameworks/test_openinference.py" }
+recorded = { path = "tests/instrument/adapters/frameworks/test_openinference_recorded.py" }
+redaction = { path = "tests/instrument/adapters/frameworks/test_openinference_floor.py", pattern = "TestRedaction" }
+error_paths = { path = "tests/instrument/adapters/frameworks/test_openinference_floor.py", pattern = "TestError" }
+attestation = { path = "tests/instrument/adapters/frameworks/test_openinference_floor.py", pattern = "TestAttestation" }
+cost = { path = "tests/instrument/adapters/frameworks/test_openinference_floor.py", pattern = "TestCost" }
+disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_openinference.py", pattern = "TestLifecycle" }
+matrix_row = "openinference"
+
+[adapters.openrouter]
+family = "provider"
+unit = { path = "tests/instrument/adapters/providers/test_openrouter.py" }
+recorded = { path = "tests/instrument/adapters/providers/test_openrouter_recorded.py" }
+streaming = { path = "tests/instrument/adapters/providers/test_openrouter.py", pattern = "TestStreaming" }
+redaction = { path = "tests/instrument/adapters/providers/test_openrouter_floor.py", pattern = "TestRedactionFloor" }
+error_paths = { path = "tests/instrument/adapters/providers/test_openrouter_floor.py", pattern = "TestRealErrorShape" }
+attestation = { path = "tests/instrument/adapters/providers/test_openrouter_floor.py", pattern = "TestAttestationOffline" }
+# The gateway bills at its own rates, which no bundled table holds: the tier
+# proves cost.record carries the PROVIDER-reported charge or is omitted — never
+# a catalog guess. Live 🔒 deferred: no OpenRouter key exists.
+cost = { path = "tests/instrument/adapters/providers/test_openrouter_floor.py", pattern = "TestCostFloor" }
+disconnect_restore = { path = "tests/instrument/adapters/providers/test_openrouter.py", pattern = "TestLifecycle" }
