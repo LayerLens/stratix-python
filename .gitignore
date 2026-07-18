@@ -24,3 +24,4 @@ Brewfile.lock.json
 .venv*
 docs/review/
 tests/e2e/live/.report/
+tests/e2e/live/**/.report/
