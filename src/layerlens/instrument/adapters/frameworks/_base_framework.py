@@ -10,9 +10,12 @@ import time
 import uuid
 import logging
 import threading
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from .._base import AdapterInfo, BaseAdapter
+
+if TYPE_CHECKING:
+    from ._handoff import HandoffDetector
 from ..._context import (
     RunState,
     _pop_span,
@@ -132,6 +135,30 @@ class FrameworkAdapter(BaseAdapter):
     def _get_run(self) -> Optional[RunState]:
         """Return the current RunState, or None if not inside a ``_begin_run`` scope."""
         return _current_run.get()
+
+    def _run_handoff_detector(self) -> Optional["HandoffDetector"]:
+        """Return THIS run's ``HandoffDetector``, stored in ``RunState.data``.
+
+        Agent-to-agent handoff detection tracks a "previous agent" scalar. A
+        detector shared on the adapter instance leaks that scalar across runs:
+        under ``asyncio.gather`` (and, for adapters that never reset it, even
+        back-to-back reuse of one handler) a later run's ``set_current_agent`` /
+        ``detect`` becomes an earlier run's ``from_agent`` — a FABRICATED
+        ``agent.handoff`` edge that poisons the multi-agent DAG (``.claude``
+        rule #3). ``RunState.data`` is ContextVar-isolated per asyncio Task /
+        thread, so a per-run detector cannot cross-contaminate. Returns ``None``
+        outside a ``_begin_run`` scope (caller emits no handoff).
+        """
+        run = _current_run.get()
+        if run is None:
+            return None
+        detector = run.data.get("handoff_detector")
+        if detector is None:
+            from ._handoff import HandoffDetector
+
+            detector = HandoffDetector(framework=self.name)
+            run.data["handoff_detector"] = detector
+        return detector
 
     @staticmethod
     def _new_span_id() -> str:

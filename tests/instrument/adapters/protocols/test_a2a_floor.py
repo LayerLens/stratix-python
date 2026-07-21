@@ -261,6 +261,64 @@ class TestRedactionFloor:
 
 
 # ---------------------------------------------------------------------------
+# Request-parameter allowlist (``params`` cell, partial -> solid)
+# ---------------------------------------------------------------------------
+# Distinct from the redaction sweep above: even with capture_content=True (so the
+# whole ``request`` summary is preserved), ``_summarize`` (a2a/adapter.py) copies
+# ONLY the fixed key set {skill, skill_description, task_id, priority} from the
+# caller's send kwargs and DROPS every other kwarg — a2a's deny-by-default
+# request-param allowlist (the protocol analog of the providers' derive_params
+# safe-param filter). An arbitrary caller kwarg (an auth header, a PII field)
+# never reaches the trace regardless of the content gate. This bite was untested.
+def _send_with_extra_kwargs(config: CaptureConfig) -> Tuple[Any, Callable[[], None]]:
+    adapter = A2AProtocolAdapter(capture_config=config)
+    target = type("Cli", (), {"send_task": staticmethod(lambda **kw: {"task_id": "t1", "status": "completed"})})()
+    adapter.connect(target=target)
+
+    def go() -> None:
+        target.send_task(
+            task_id="t1",
+            skill="refund",
+            skill_description="issue the refund",
+            priority="high",
+            # Non-allowlisted caller kwargs — MUST NOT reach the 'request' summary.
+            internal_auth_header="Bearer SEKRIT-XYZ",
+            customer_ssn="123-45-6789",
+        )
+
+    return adapter, go
+
+
+class TestClientRequestParamAllowlist:
+    def test_only_allowlisted_send_kwargs_reach_the_request_summary(self, mock_client, capture_trace):
+        # capture_content=True keeps the whole 'request' summary — so any leak of a
+        # non-allowlisted kwarg would be visible; the allowlist is the ONLY thing
+        # keeping it out.
+        _drive(mock_client, _send_with_extra_kwargs, CaptureConfig.full())
+
+        created = _events_of(capture_trace, "a2a.task.created")
+        assert created, "no a2a.task.created emitted — test would be vacuous"
+        req = created[0]["request"]
+
+        # Positive / vacuity control (bites a `return {}` regression): the four
+        # allowlisted keys are copied through verbatim.
+        assert req["task_id"] == "t1"
+        assert req["skill"] == "refund"
+        assert req["skill_description"] == "issue the refund"
+        assert req["priority"] == "high"
+
+        # The bite (fails a `return dict(kwargs)` passthrough regression): the
+        # arbitrary caller kwargs are dropped, keys AND values.
+        assert "internal_auth_header" not in req, "non-allowlisted send kwarg leaked into the request summary"
+        assert "customer_ssn" not in req, "PII send kwarg leaked into the request summary"
+        assert set(req) <= {"skill", "skill_description", "task_id", "priority"}, (
+            f"request summary carried keys outside the allowlist: {set(req)}"
+        )
+        assert "SEKRIT-XYZ" not in json.dumps(created[0]), "a dropped kwarg's value still leaked into the created event"
+        assert "123-45-6789" not in json.dumps(created[0]), "a dropped PII value still leaked into the created event"
+
+
+# ---------------------------------------------------------------------------
 # Client-side task correlation over a REAL a2a-sdk send_message(message=Message)
 # ---------------------------------------------------------------------------
 # The delegation lifecycle above passes task_id explicitly (the duck-typed

@@ -58,6 +58,8 @@ from __future__ import annotations
 import json
 import asyncio
 import dataclasses
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -411,3 +413,80 @@ class TestStreamingModelInvokeMultiplicity:
         assert costs[0]["payload"]["model"] == _MODEL
         assert costs[0]["payload"].get("cost_usd") is not None
         assert costs[0]["payload"]["cost_usd"] > 0
+
+
+# ---------------------------------------------------------------------------
+# environment.config agent-instructions content-gate (``params``/privacy cell)
+# ---------------------------------------------------------------------------
+# _maybe_emit_chat_config captures an agent's system prompt as
+# environment.config["instructions"], gated `if instructions and
+# self._config.capture_content` (ms_agent_framework.py). That emit-site gate is
+# the PRIMARY guard on the system prompt under capture_content=False. It fires
+# only for a chat exposing `.agent` (a single-agent AgentChat / a group chat's
+# active agent) — a bare ChatCompletionAgent has no `.agent`, so a duck-typed
+# chat double (the concurrency-test idiom) is what exercises it.
+def _chat_with_agent(instructions: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        name="care_panel",
+        agent=SimpleNamespace(name="triage", instructions=instructions, kernel=None),
+        agents=None,
+        selection_strategy=None,
+        termination_strategy=None,
+    )
+
+
+class TestEnvironmentConfigInstructionsGate:
+    def _emitted_config(self, config) -> dict:
+        adapter = MSAgentFrameworkAdapter(_MockClient(), capture_config=config)
+        seen: dict = {}
+        # Spy _emit to capture the payload AS CONSTRUCTED (post emit-site gate,
+        # PRE collector backstop) so this bites the emit-site gate specifically,
+        # independent of the collector-tier strip below.
+        with patch.object(adapter, "_emit", side_effect=lambda et, p, **k: seen.setdefault(et, p)):
+            adapter._maybe_emit_chat_config(_chat_with_agent(f"System policy: {SENTINEL}"))
+        assert "environment.config" in seen, "chat config was not emitted at all"
+        return seen["environment.config"]
+
+    def test_instructions_stripped_at_emit_site_under_no_content(self):
+        payload = self._emitted_config(_CONTENT_OFF)
+        # The bite: deleting `and self._config.capture_content` at the emit site
+        # puts the system prompt (SENTINEL) into the payload here.
+        assert "instructions" not in payload, "agent system prompt leaked into environment.config under no-content"
+        assert SENTINEL not in json.dumps(payload), "SENTINEL survived the emit-site content gate"
+        # Structural metadata still surfaces (not gated) — proves the emission
+        # ran and the strip is targeted, not blanket.
+        assert payload.get("agent_name") == "triage"
+
+    def test_instructions_captured_when_capturing_content(self):
+        # Vacuity control: with content capture ON the system prompt IS surfaced,
+        # so the no-content assertion above is not trivially true.
+        payload = self._emitted_config(CaptureConfig.full())
+        assert "instructions" in payload, "agent instructions absent even with capture_content=True"
+        assert SENTINEL in payload["instructions"]
+
+    def test_collector_backstop_also_strips_instructions_key(self):
+        # Defense-in-depth: the collector-tier _CONTENT_KEYS backstop for
+        # environment.config must ALSO strip the plural "instructions" key (it
+        # previously listed only singular "instruction", so an emit site that
+        # forgot the gate would leak). redact_payload is the collector's strip.
+        stripped = CaptureConfig(capture_content=False).redact_payload(
+            "environment.config",
+            {"instructions": f"System policy: {SENTINEL}", "agent_name": "triage"},
+        )
+        assert "instructions" not in stripped, "collector backstop does not strip environment.config 'instructions'"
+        assert SENTINEL not in json.dumps(stripped)
+        assert stripped.get("agent_name") == "triage", "backstop over-stripped structural metadata"
+        # Vacuity control: with content ON the collector keeps it.
+        kept = CaptureConfig.full().redact_payload(
+            "environment.config",
+            {"instructions": f"System policy: {SENTINEL}", "agent_name": "triage"},
+        )
+        assert kept.get("instructions") == f"System policy: {SENTINEL}"
+
+
+class _MockClient:
+    """Minimal client double — the instructions gate test never uploads (it spies
+    _emit / drives redact_payload directly), so no traces surface is needed."""
+
+    def __init__(self) -> None:
+        self.traces = SimpleNamespace(upload=lambda *a, **k: None)

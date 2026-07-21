@@ -851,3 +851,39 @@ class TestHonestGraphContract:
         events = uploaded["events"]
         assert find_events(events, "agent.handoff") == []
         assert find_event(events, "tool.call")["payload"]["tool_name"] == "web_search"
+
+    def test_delegate_task_to_member_becomes_handoff(self, mock_client):
+        """agno 2.6 delegates via ``delegate_task_to_member`` (NOT transfer/forward).
+        It must classify as an ``agent.handoff`` edge, not be buried as a tool.call —
+        else a real agno-2.6 team's multi-agent DAG silently never forms."""
+        uploaded = _run_team_with_transfer(
+            mock_client,
+            team=self._team(),
+            tool_name="delegate_task_to_member",
+            tool_args={"member_id": "researcher"},
+        )
+        events = uploaded["events"]
+        ho = find_event(events, "agent.handoff")
+        assert ho is not None, "delegate_task_to_member must surface as agent.handoff"
+        assert ho["payload"]["from_agent"] == "research_team"
+        assert ho["payload"]["to_agent"] == "researcher"
+        # The delegation must NOT be buried as an ordinary tool.call.
+        assert find_events(events, "tool.call") == []
+        assert find_events(events, "tool.result") == []
+
+    def test_delegate_task_to_members_all_is_handoff_with_blank_target(self, mock_client):
+        """``delegate_task_to_members`` (delegate-to-all) is still a handoff; with
+        no single delegatee the ``to_agent`` endpoint is honestly blank (not a
+        fabricated node), and it is never buried as a tool.call."""
+        uploaded = _run_team_with_transfer(
+            mock_client,
+            team=self._team(),
+            tool_name="delegate_task_to_members",
+            tool_args={"task": "review the whole submission"},
+        )
+        events = uploaded["events"]
+        ho = find_event(events, "agent.handoff")
+        assert ho is not None, "delegate_task_to_members must surface as agent.handoff"
+        assert ho["payload"]["from_agent"] == "research_team"
+        assert "to_agent" not in ho["payload"]  # honest blank — no single delegatee
+        assert find_events(events, "tool.call") == []

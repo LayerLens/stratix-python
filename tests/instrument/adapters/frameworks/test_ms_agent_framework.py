@@ -559,7 +559,9 @@ class TestDisconnectLeaveNoTrace:
         assert adapter._originals == {}
         assert adapter._wrapped_chats == []
         assert adapter._seen_chats == set()
-        assert adapter._handoff_detector.current_agent is None
+        # Handoff state is per-run (RunState.data), never a shared instance
+        # scalar — so there is nothing to leak across runs and nothing to clear.
+        assert not hasattr(adapter, "_handoff_detector")
 
     def test_double_disconnect_does_not_raise(self, mock_client):
         invoke = _make_invoke([])

@@ -27,6 +27,27 @@ from ._scenarios import SENTINEL
 from ._framework_registry import FrameworkCase
 
 
+def _assert_variant_depth(variant: str, by_type: Dict[str, Any], tag: str) -> None:
+    """A depth variant must prove the depth it claims (ADP-partials Cluster F), or
+    it is a toothless lane. "async" just relies on the standard model.invoke
+    contract (that the async path emits at all). ``by_type`` values may be full
+    events (ambient path) or bare payloads (self-flushing path) — normalize."""
+
+    def _pl(e: Any) -> Dict[str, Any]:
+        return e.get("payload", e) if isinstance(e, dict) else {}
+
+    if variant == "tool":
+        assert by_type.get("tool.call"), f"{tag} tool variant emitted no tool.call; types={sorted(by_type)}"
+    elif variant == "multi":
+        assert by_type.get("agent.handoff"), (
+            f"{tag} multi-agent variant emitted no agent.handoff; types={sorted(by_type)}"
+        )
+    elif variant == "streaming":
+        mis = by_type.get("model.invoke", [])
+        streamed = any((_pl(p).get("streaming") or _pl(p).get("streamed_chunks")) for p in mis)
+        assert streamed, f"{tag} streaming variant emitted no streamed model.invoke; types={sorted(by_type)}"
+
+
 def run_framework_case(client: Any, case: FrameworkCase, variant: str) -> Dict[str, Any]:
     """Run one (framework, variant): collect, assert, upload, verify linkage, tear down."""
     config = CaptureConfig(capture_content=False) if variant == "redaction" else CaptureConfig.standard()
@@ -49,6 +70,7 @@ def run_framework_case(client: Any, case: FrameworkCase, variant: str) -> Dict[s
         )
         for t in case.expected_types:
             assert t in by_type, f"{tag} missing expected event type {t!r}; got {sorted(by_type)}"
+        _assert_variant_depth(variant, by_type, tag)
     if variant == "redaction":
         blob = json.dumps(events, default=str)
         assert SENTINEL not in blob, f"{tag} redaction failed: sentinel leaked into trace payload"
@@ -102,10 +124,20 @@ def run_self_flushing_case(client: Any, case: FrameworkCase, variant: str = "def
     # thread (crewai), so after the workload we drain the background upload queue
     # — every upload, sync or background, routes through the wrapped method.
     captured: list = []
+    uploaded_by_type: Dict[str, list] = {}
     traces_res = client.traces
     orig_upload = traces_res.upload
 
     def _wrapped_upload(path, **kw):  # type: ignore[no-untyped-def]
+        # Read the serialized payload the adapter is uploading so a depth variant
+        # (e.g. crewai "multi") can be asserted locally on the real event types.
+        try:
+            with open(path) as _f:
+                for _p in json.load(_f):
+                    for _e in _p.get("events", []):
+                        uploaded_by_type.setdefault(_e.get("event_type"), []).append(_e.get("payload", {}))
+        except Exception:
+            pass
         result = orig_upload(path, **kw)
         if result is not None and getattr(result, "trace_ids", None):
             captured.extend(result.trace_ids)
@@ -128,6 +160,7 @@ def run_self_flushing_case(client: Any, case: FrameworkCase, variant: str = "def
         traces_res.upload = orig_upload  # type: ignore[method-assign]
 
     assert captured, f"[{case.id}/{variant}] adapter produced no uploaded trace"
+    _assert_variant_depth(variant, uploaded_by_type, f"[{case.id}/{variant}]")
     trace_id = captured[0]
     linkage = verify_linkage(client, trace_id)
     trace = client.traces.get(trace_id)
@@ -136,6 +169,8 @@ def run_self_flushing_case(client: Any, case: FrameworkCase, variant: str = "def
         "variant": variant,
         "trace_id": trace_id,
         "event_count": getattr(trace, "event_count", None),
+        "event_types": {k: len(v) for k, v in uploaded_by_type.items()},
+        "tool_calls": len(uploaded_by_type.get("tool.call", [])),
         "linked": linkage.get("linked"),
         "integration_id": linkage.get("integration_id"),
         "status": linkage.get("status"),

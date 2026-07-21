@@ -31,7 +31,6 @@ import logging
 from uuid import UUID
 from typing import Any, Dict, List, Optional
 
-from ._handoff import HandoffDetector
 from .langchain import LangChainCallbackHandler, _to_jsonable
 from ....attestation._hash import compute_hash
 
@@ -60,7 +59,12 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
         self._state_include_keys = frozenset(state_include_keys) if state_include_keys is not None else None
         self._state_exclude_keys = frozenset(state_exclude_keys) if state_exclude_keys is not None else None
         self._detect_handoffs = detect_handoffs
-        self._handoff_detector = HandoffDetector(framework=self.name) if detect_handoffs else None
+        # Handoff "previous node" state is kept PER-RUN in RunState.data (see
+        # FrameworkAdapter._run_handoff_detector). A detector shared on the
+        # handler leaks the previous node across runs: because langgraph never
+        # reset it, reusing one handler across graph runs (the auto()-wired,
+        # detect_handoffs=True default) fabricated a cross-run agent.handoff on
+        # run #2 onward — deterministic, not just under concurrency.
 
     # ------------------------------------------------------------------
     # Chain callbacks — enrich with node-level detection
@@ -102,8 +106,10 @@ class LangGraphCallbackHandler(LangChainCallbackHandler):
                 run_id=run_id,
                 parent_run_id=parent_run_id,
             )
-            if self._handoff_detector is not None:
-                self._handoff_detector.detect(node_name, context=safe_inputs)
+            if self._detect_handoffs:
+                detector = self._run_handoff_detector()
+                if detector is not None:
+                    detector.detect(node_name, context=safe_inputs)
 
         name = node_name or serialized.get("name") or serialized.get("id", ["unknown"])[-1]
         payload = self._payload(name=name)

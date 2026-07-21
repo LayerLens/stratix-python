@@ -137,7 +137,11 @@ PROVIDERS: Tuple[ProviderCase, ...] = (
         import_name="boto3",
         runner=_scenarios.run_bedrock,
         any_of_env=("AWS_ACCESS_KEY_ID", "AWS_PROFILE"),
-        variants=_CHAT_VARIANTS,
+        # ADP-partials Cluster F: Nova's Converse path now emits streamed ttft
+        # (converse_stream) and honours toolConfig (converse tool.call) — both
+        # fixed post-PR#51 — so add the streaming + tool depth lanes. boto3 is
+        # sync, so there is no async variant (honestly N/A).
+        variants=_CHAT_VARIANTS + ("streaming", "tool"),
         contract=Contract(
             requires_tool_call=False,
             requires_cost_record=True,

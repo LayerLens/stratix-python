@@ -530,3 +530,166 @@ class TestCostFloor:
         assert "tokens_prompt" not in invoke
         assert "tokens_total" not in invoke
         assert not find_events(events, "cost.record"), "no usage => no cost.record (never a fabricated 0.0)"
+
+
+# ---------------------------------------------------------------------------
+# Streaming structured-output floor (``streaming`` cell, partial -> solid)
+# ---------------------------------------------------------------------------
+# Instructor's canonical streaming API — ``create_partial`` (growing partial
+# models) / ``create_iterable`` (a stream of items) — was UNINSTRUMENTED: the
+# adapter wrapped only ``create``/``acreate``, so a streamed call emitted ZERO
+# telemetry (silent on a first-class instructor API). The adapter now wraps the
+# streaming methods with DEFERRED emission (the model + usage land only when the
+# generator drains), so a fully-drained stream emits exactly one model.invoke.
+from layerlens.models import CreateTracesResponse  # noqa: E402
+from layerlens.instrument._upload import shutdown_uploads  # noqa: E402
+
+
+def _stream_chunks(arguments: Dict[str, Any], *, usage: Optional[Dict[str, int]] = None):
+    """Real OpenAI ``chat.completion.chunk`` SSE for a tool-call (structured)
+    stream: a header chunk then the JSON arguments in fragments, a terminal
+    finish chunk, and (optionally) a usage chunk — the shape instructor's
+    partial/iterable streaming consumes."""
+    base = {"id": "chatcmpl-stream", "object": "chat.completion.chunk", "created": 1, "model": "gpt-4o-mini"}
+    raw = json.dumps(arguments)
+    frags = [raw[i : i + 6] for i in range(0, len(raw), 6)]  # split the JSON into fragments
+    chunks = [
+        {
+            **base,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "Profile", "arguments": ""},
+                            }
+                        ],
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        }
+    ]
+    for f in frags:
+        chunks.append(
+            {
+                **base,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"tool_calls": [{"index": 0, "function": {"arguments": f}}]},
+                        "finish_reason": None,
+                    }
+                ],
+            }
+        )
+    chunks.append({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]})
+    if usage is not None:
+        chunks.append({**base, "choices": [], "usage": usage})
+    return chunks
+
+
+def _stream_client(arguments: Dict[str, Any], *, usage: Optional[Dict[str, int]] = None) -> Any:
+    body = (
+        "".join(f"data: {json.dumps(c)}\n\n" for c in _stream_chunks(arguments, usage=usage)) + "data: [DONE]\n\n"
+    ).encode()
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    return _client(handler)
+
+
+def _stream_capture():
+    from unittest.mock import Mock
+
+    mock_client = Mock()
+    uploaded: Dict[str, Any] = {"events": []}
+
+    def _capture(path: str) -> CreateTracesResponse:
+        with open(path) as f:
+            data = json.load(f)
+        uploaded["events"].extend(data[0].get("events", []))
+        # Non-empty trace_ids or the collector treats the upload as REJECTED (F-L7-002).
+        return CreateTracesResponse(trace_ids=[data[0].get("trace_id") or "mock-trace-id"])
+
+    mock_client.traces.upload.side_effect = _capture
+    return mock_client, uploaded
+
+
+class TestStreamingFloor:
+    def test_create_partial_stream_emits_one_model_invoke(self):
+        mock_client, uploaded = _stream_capture()
+        client = _stream_client({"name": "John", "age": 30})
+        adapter = InstructorAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=client)
+        partials = list(
+            client.create_partial(
+                model="gpt-4o-mini", response_model=Profile, messages=[{"role": "user", "content": "extract"}]
+            )
+        )
+        adapter.disconnect()
+        shutdown_uploads(10.0)
+
+        # The stream genuinely streamed multiple partials (vacuity: not a single shot).
+        assert len(partials) > 1, "create_partial did not stream multiple partials"
+        assert (partials[-1].name, partials[-1].age) == ("John", 30), "final partial not fully accumulated"
+
+        # The bite: streaming now emits exactly one model.invoke (was ZERO before
+        # the fix). Deferred to drain, so exactly one — not one-per-partial.
+        mis = find_events(uploaded["events"], "model.invoke")
+        assert len(mis) == 1, f"expected exactly 1 model.invoke for a drained stream, got {len(mis)}"
+        p = mis[0]["payload"]
+        assert p["status"] == "ok"
+        assert p["model"] == "gpt-4o-mini"
+        assert p["provider"] == "openai"
+        assert p["response_model"] == "Profile"
+        # The emitted event carries the ACCUMULATED final object (content on), not
+        # the raw un-drained generator — bites an eager wrap that would emit
+        # str(<generator>) at call time before any partial was produced.
+        assert "John" in json.dumps(p), "model.invoke did not carry the accumulated streamed result"
+
+    def test_create_iterable_stream_emits_one_model_invoke(self):
+        mock_client, uploaded = _stream_capture()
+        client = _stream_client({"name": "Jane", "age": 41})
+        adapter = InstructorAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=client)
+        items = list(
+            client.create_iterable(
+                model="gpt-4o-mini", response_model=Profile, messages=[{"role": "user", "content": "extract"}]
+            )
+        )
+        adapter.disconnect()
+        shutdown_uploads(10.0)
+
+        assert items, "create_iterable yielded no items"
+        mis = find_events(uploaded["events"], "model.invoke")
+        assert len(mis) == 1, f"expected exactly 1 model.invoke for a drained iterable stream, got {len(mis)}"
+        assert mis[0]["payload"]["status"] == "ok"
+        assert mis[0]["payload"]["response_model"] == "Profile"
+
+    def test_streaming_emission_is_deferred_not_eager(self):
+        # The load-bearing distinguisher between the correct deferred wrap and an
+        # eager one: a stream that is only PARTIALLY consumed (never fully drained)
+        # must emit NOTHING — the model + usage are known only at completion. An
+        # eager wrap that fires model.invoke at call time would emit here.
+        mock_client, uploaded = _stream_capture()
+        client = _stream_client({"name": "John", "age": 30})
+        adapter = InstructorAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=client)
+
+        stream = client.create_partial(
+            model="gpt-4o-mini", response_model=Profile, messages=[{"role": "user", "content": "extract"}]
+        )
+        it = iter(stream)
+        next(it)  # one partial only — do NOT drain to completion
+        shutdown_uploads(10.0)
+
+        assert find_events(uploaded["events"], "model.invoke") == [], (
+            "streaming emission is eager (fired before full drain), not deferred"
+        )

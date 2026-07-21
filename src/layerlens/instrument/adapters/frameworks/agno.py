@@ -516,17 +516,21 @@ def _team_members(agent: Any) -> Optional[List[str]]:
 
 
 def _is_transfer_tool(name: Optional[str]) -> bool:
-    """True if a tool-call name is Agno's team-delegation transfer/forward call.
+    """True if a tool-call name is Agno's team-delegation transfer/forward/delegate call.
 
-    Agno teams delegate via tools named ``transfer_task_to_member`` /
-    ``forward_task_to_member`` (and close variants). Matching the real tool name
-    is how we tell a genuine handoff from an ordinary tool call so the delegation
-    surfaces as an ``agent.handoff`` edge instead of being buried in a tool.call.
-    Mirrors the ateam original (``adapters/agno/lifecycle.py``)."""
+    Agno teams delegate via built-in tools named ``transfer_task_to_member`` /
+    ``forward_task_to_member`` and — on agno >= 2.6 — ``delegate_task_to_member`` /
+    ``delegate_task_to_members`` (``agno/team/_default_tools.py``). Matching the
+    real tool name is how we tell a genuine handoff from an ordinary tool call so
+    the delegation surfaces as an ``agent.handoff`` edge instead of being buried
+    in a tool.call — without ``delegate`` a real agno-2.6 team's multi-agent DAG
+    silently never forms. Mirrors the ateam original (``adapters/agno/lifecycle.py``)."""
     if not name:
         return False
     low = name.lower()
-    return ("transfer" in low or "forward" in low) and ("member" in low or "agent" in low or "task" in low)
+    return ("transfer" in low or "forward" in low or "delegate" in low) and (
+        "member" in low or "agent" in low or "task" in low
+    )
 
 
 def _parse_handoff_target(args: Any) -> Optional[str]:

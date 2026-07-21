@@ -321,3 +321,58 @@ class TestConcurrentRunIsolation:
         asyncio.run(main())
 
         _assert_isolated(traces, ["alpha", "bravo"])
+
+
+# ===========================================================================
+# Floor 4 — streaming depth: a REAL multi-chunk streamed response drives real
+# on_llm_new_token callbacks -> streamed_chunks + ttft (streaming cell).
+# ===========================================================================
+class TestStreamingFloor:
+    # A prompt | model chain so on_chain_start opens the outermost run the
+    # adapter flushes on (a bare LLM run never begins a root run). GenericFake
+    # ChatModel streams the message token-by-token through the real callback
+    # dispatch, firing one real on_llm_new_token per token.
+    @staticmethod
+    def _chain(handler):
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+        model = GenericFakeChatModel(messages=iter(["hello world foo bar"]))
+        return ChatPromptTemplate.from_messages([("user", "{q}")]) | model
+
+    def test_streaming_run_emits_streamed_chunk_count_and_ttft(self, mock_client):
+        # Real on_llm_new_token callbacks (langchain.py:318-334) -> on_llm_end
+        # surfaces streaming=True, streamed_chunks=tokens_accum, ttft_ms
+        # (langchain.py:410-417). The existing single-token test can't catch an
+        # off-by-one / hardcoded count; a genuine multi-chunk stream can.
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig.full())
+
+        chunks = list(
+            self._chain(handler).stream({"q": "hi"}, config={"callbacks": [handler], "run_name": "stream-agent"})
+        )
+
+        # Vacuity: a genuine multi-token stream (bites a count bound to 1).
+        assert len(chunks) > 1, "fake model did not stream multiple chunks — count assertion would be vacuous"
+
+        mi = find_event(uploaded["events"], "model.invoke")
+        assert mi["payload"]["streaming"] is True
+        # Bind to the REAL observed chunk count, not a literal.
+        assert mi["payload"]["streamed_chunks"] == len(chunks), (
+            f"streamed_chunks {mi['payload'].get('streamed_chunks')} != observed {len(chunks)} on_llm_new_token calls"
+        )
+        assert "ttft_ms" in mi["payload"] and mi["payload"]["ttft_ms"] >= 0
+
+    def test_non_streaming_run_has_no_streamed_chunks(self, mock_client):
+        # Paired control: the SAME chain invoked (not streamed) fires no token
+        # callbacks, so streaming/streamed_chunks/ttft are absent — proving they
+        # are a genuine signal of the streaming path, not always-emitted.
+        uploaded = capture_framework_trace(mock_client)
+        handler = LangChainCallbackHandler(mock_client, capture_config=CaptureConfig.full())
+
+        self._chain(handler).invoke({"q": "hi"}, config={"callbacks": [handler], "run_name": "plain-agent"})
+
+        mi = find_event(uploaded["events"], "model.invoke")
+        assert "streamed_chunks" not in mi["payload"], "streamed_chunks leaked onto a non-streaming run"
+        assert "streaming" not in mi["payload"], "streaming flag leaked onto a non-streaming run"
+        assert "ttft_ms" not in mi["payload"], "ttft_ms leaked onto a non-streaming run"

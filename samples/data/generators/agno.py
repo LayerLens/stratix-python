@@ -38,23 +38,14 @@ edges are the real declared members / real ``delegate_task_to_member``
 delegations the framework emitted (``to_agent`` is the real ``member_id`` agno
 passed to the delegation tool).
 
-ADAPTER/VERSION-DRIFT SHIM (multi only) — PING the SDK owner:
-    The AgnoAdapter classifies a team delegation into an ``agent.handoff`` edge
-    only when the delegation tool name matches ``_is_transfer_tool`` — which today
-    matches ``transfer``/``forward`` variants (``transfer_task_to_member`` /
-    ``forward_task_to_member``). Installed agno 2.6.x names its delegation tool
-    ``delegate_task_to_member`` / ``delegate_task_to_members``, which
-    ``_is_transfer_tool`` does NOT match, so an un-shimmed real run buries the
-    delegation as an ordinary ``tool.call`` and emits ZERO handoff edges. The
-    ``agno.py`` unit tests inject the (now-stale) ``transfer_``/``forward_`` names
-    so they pass, masking the drift. This recorder installs a GENERATOR-TIME shim
-    (``_delegation_aware_transfer``, restored in a ``finally``) that broadens the
-    classifier to also match ``delegate_*_member`` so the adapter's OWN
-    ``_emit_handoff`` / ``_parse_handoff_target`` code path records the REAL
-    delegation as an honest handoff — nothing is invented (the delegation genuinely
-    occurred; the member ran and produced a real ``model.invoke``). The correct
-    source fix is a one-line broadening of ``_is_transfer_tool`` to recognize
-    ``delegate``; this recorder does NOT edit src.
+The multi-agent delegation records honestly with NO record-time shim: the
+AgnoAdapter's ``_is_transfer_tool`` now recognizes agno-2.6's
+``delegate_task_to_member`` / ``delegate_task_to_members`` (alongside the older
+``transfer_``/``forward_`` variants), so a real run's delegation surfaces as an
+``agent.handoff`` through the adapter's own ``_emit_handoff`` /
+``_parse_handoff_target`` path (ADP-W3 source fix). Earlier revisions of this
+recorder installed a generator-time classifier shim to compensate for the drift;
+that shim is gone now that the source recognizes ``delegate``.
 """
 
 from __future__ import annotations
@@ -157,18 +148,6 @@ def _capture_agno(client: Stratix, target, task: str, *, members=()) -> dict:
     return payload
 
 
-def _delegation_aware_transfer(name):
-    """Generator-time widening of the adapter's ``_is_transfer_tool`` classifier
-    so agno 2.6.x's real ``delegate_task_to_member`` delegation tool is recorded
-    as an ``agent.handoff`` (see the module docstring — PING the source fix)."""
-    if not name:
-        return False
-    low = name.lower()
-    return ("transfer" in low or "forward" in low or "delegate" in low) and (
-        "member" in low or "agent" in low or "task" in low
-    )
-
-
 # --------------------------------------------------------------------------
 # Single agent + a real ``lookup_policy`` tool turn (insurance claims intake)
 # --------------------------------------------------------------------------
@@ -239,7 +218,6 @@ def generate_agno_multi(client: Stratix) -> dict:
     delegates risk assessment to ``risk-analyst`` and the compliance check to
     ``compliance-checker`` (real ``delegate_task_to_member`` -> real member runs
     + honest handoff edges)."""
-    import layerlens.instrument.adapters.frameworks.agno as _agno_mod
     from agno.agent import Agent
     from agno.team.team import Team
     from agno.models.openai import OpenAIChat
@@ -294,16 +272,12 @@ def generate_agno_multi(client: Stratix) -> dict:
         "the final decision:\n" + application
     )
 
-    # See module docstring: broaden the adapter's handoff classifier so agno's
-    # real ``delegate_task_to_member`` records via the adapter's own _emit_handoff.
-    _orig_transfer = _agno_mod._is_transfer_tool
-    _agno_mod._is_transfer_tool = _delegation_aware_transfer
-    try:
-        payload = _capture_agno(
-            client, team, task, members=(risk_analyst, compliance_checker)
-        )
-    finally:
-        _agno_mod._is_transfer_tool = _orig_transfer
+    # The adapter's own ``_is_transfer_tool`` now recognizes agno-2.6
+    # ``delegate_task_to_member(s)``, so the delegation records as an honest
+    # ``agent.handoff`` with no record-time shim.
+    payload = _capture_agno(
+        client, team, task, members=(risk_analyst, compliance_checker)
+    )
 
     payload["tags"] = [
         "layerlens-sample",

@@ -35,6 +35,8 @@ from smolagents import ToolCall, ActionStep  # noqa: E402
 from smolagents.memory import Timing  # noqa: E402
 from smolagents.monitoring import TokenUsage  # noqa: E402
 
+from layerlens.models import CreateTracesResponse  # noqa: E402
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
 from layerlens.instrument.adapters.frameworks.smolagents import SmolAgentsAdapter  # noqa: E402
 
 
@@ -42,11 +44,13 @@ def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
     """Accumulate each uploaded trace payload separately (one entry per flush)."""
     traces: List[Dict[str, Any]] = []
 
-    def _capture(path: str) -> None:
+    def _capture(path: str) -> CreateTracesResponse:
         with open(path) as f:
             data = json.load(f)
         traces.append(data[0])
         record_for_schema_lock(data[0].get("events", []))
+        # Non-empty trace_ids or the upload counts as a REJECT (F-L7-002).
+        return CreateTracesResponse(trace_ids=[data[0].get("trace_id") or "mock-trace-id"])
 
     mock_client.traces.upload.side_effect = _capture
     return traces
@@ -98,7 +102,9 @@ _MARKERS = {
 @pytest.mark.parametrize("schedule_name", list(_SCHEDULES))
 def test_interleaved_runs_produce_two_isolated_traces(mock_client, schedule_name):
     traces = _collect_traces(mock_client)
-    adapter = SmolAgentsAdapter(mock_client)
+    # Full capture so the run-content markers the isolation check searches for are
+    # actually captured — the default standard() config redacts content.
+    adapter = SmolAgentsAdapter(mock_client, capture_config=CaptureConfig.full())
     agents = {k: _make_mock_agent(m["agent"], f"model-{k}") for k, m in _MARKERS.items()}
     adapter.connect(target=agents["a"])
 

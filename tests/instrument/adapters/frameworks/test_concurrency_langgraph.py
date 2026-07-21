@@ -223,3 +223,117 @@ class TestLangGraphRunIsolation:
         asyncio.run(main())
 
         _assert_isolated_traces(traces, ["alpha", "bravo"], _EXPECTED_RUN_COUNTS)
+
+
+# ---------------------------------------------------------------------------
+# Handoff-detection isolation (detect_handoffs=True — the DEFAULT)
+# ---------------------------------------------------------------------------
+
+
+def _drive_handoff_run(handler: LangGraphCallbackHandler, marker: str) -> None:
+    """One graph run that walks TWO named nodes (researcher -> writer), so a real
+    intra-run ``agent.handoff`` fires (writer's node-enter, prev=researcher).
+
+    A root chain begins the run (no langgraph_node -> no detect); the two node
+    chains live inside it; the root end flushes the trace.
+    """
+    root = uuid4()
+    handler.on_chain_start({"name": f"{marker}-graph"}, {"topic": f"{marker}-topic"}, run_id=root)
+    for step, node_name in enumerate((f"{marker}-researcher", f"{marker}-writer"), start=1):
+        node = uuid4()
+        handler.on_chain_start(
+            {"name": node_name},
+            {"topic": f"{marker}-topic"},
+            run_id=node,
+            parent_run_id=root,
+            metadata={"langgraph_node": node_name, "langgraph_step": step},
+        )
+        handler.on_chain_end({"result": f"{marker}-result-{step}"}, run_id=node, parent_run_id=root)
+    handler.on_chain_end({"result": f"{marker}-final"}, run_id=root)
+
+
+def _own_nodes(trace: Dict[str, Any]) -> set:
+    """The run's OWN node identities, from its agent.node.enter events — these are
+    emitted by the run itself and are NOT polluted by a contaminating handoff."""
+    return {e["payload"]["node"] for e in trace["events"] if e["event_type"] == "agent.node.enter"}
+
+
+def _handoff_endpoints(trace: Dict[str, Any]) -> List[tuple]:
+    return [
+        (e["payload"].get("from_agent"), e["payload"].get("to_agent"))
+        for e in trace["events"]
+        if e["event_type"] == "agent.handoff"
+    ]
+
+
+def _assert_no_cross_run_handoffs(traces: List[Dict[str, Any]], n_runs: int) -> None:
+    assert len(traces) == n_runs, f"expected {n_runs} traces, got {len(traces)}"
+    total = 0
+    for trace in traces:
+        allowed = _own_nodes(trace)
+        assert allowed, "trace has no agent.node.enter events to attribute it to a run"
+        for frm, to in _handoff_endpoints(trace):
+            total += 1
+            assert frm in allowed and to in allowed, (
+                f"handoff {frm!r}->{to!r} has an endpoint outside this trace's own nodes "
+                f"{sorted(allowed)} — the shared detector leaked another run's node (fabricated edge)"
+            )
+    assert total >= n_runs, f"expected a real intra-run handoff per run, got {total}"
+
+
+class TestConcurrentHandoffIsolation:
+    """detect_handoffs defaults to True, so real customers reusing one handler
+    across graph runs (sequentially or concurrently) hit the shared-detector
+    leak. Every handoff edge must stay within its own run's node set.
+
+    Both tests are RED while the detector is a single shared instance on the
+    handler and GREEN once the detector state is per-run (RunState-isolated):
+    the shared 'previous node' scalar leaks the prior/other run's last node into
+    the next run's first handoff.
+    """
+
+    def _handler_detecting(self, mock_client: Any) -> LangGraphCallbackHandler:
+        return LangGraphCallbackHandler(
+            mock_client,
+            capture_config=CaptureConfig(capture_content=True),
+            detect_handoffs=True,
+        )
+
+    def test_sequential_handoff_runs_do_not_leak_last_node(self, mock_client):
+        """Back-to-back detecting runs on one handler: the second run must not
+        emit a handoff from the first run's last node."""
+        traces = _collect_traces(mock_client)
+        handler = self._handler_detecting(mock_client)
+        _drive_handoff_run(handler, "alpha")
+        _drive_handoff_run(handler, "bravo")
+        _assert_no_cross_run_handoffs(traces, 2)
+
+    def test_gathered_handoff_runs_do_not_cross_contaminate(self, mock_client):
+        """Two detecting graph runs gathered on one handler — the shared
+        'previous node' scalar fabricates a handoff whose from_agent belongs to
+        the other run."""
+        traces = _collect_traces(mock_client)
+        handler = self._handler_detecting(mock_client)
+
+        async def run(marker: str) -> None:
+            root = uuid4()
+            handler.on_chain_start({"name": f"{marker}-graph"}, {"topic": f"{marker}-topic"}, run_id=root)
+            for step, node_name in enumerate((f"{marker}-researcher", f"{marker}-writer"), start=1):
+                node = uuid4()
+                await asyncio.sleep(0)
+                handler.on_chain_start(
+                    {"name": node_name},
+                    {"topic": f"{marker}-topic"},
+                    run_id=node,
+                    parent_run_id=root,
+                    metadata={"langgraph_node": node_name, "langgraph_step": step},
+                )
+                await asyncio.sleep(0)
+                handler.on_chain_end({"result": f"{marker}-result-{step}"}, run_id=node, parent_run_id=root)
+            handler.on_chain_end({"result": f"{marker}-final"}, run_id=root)
+
+        async def main() -> None:
+            await asyncio.gather(run("alpha"), run("bravo"))
+
+        asyncio.run(main())
+        _assert_no_cross_run_handoffs(traces, 2)

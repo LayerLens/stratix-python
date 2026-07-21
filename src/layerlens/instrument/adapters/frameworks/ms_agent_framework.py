@@ -23,7 +23,6 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from ._utils import safe_serialize
-from ._handoff import HandoffDetector
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
 
@@ -71,7 +70,10 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
         self._originals: Dict[int, Dict[str, Any]] = {}
         self._wrapped_chats: List[Any] = []
         self._seen_chats: set[int] = set()
-        self._handoff_detector = HandoffDetector(framework=self.name)
+        # Handoff detection state is kept PER-RUN in RunState.data (see
+        # FrameworkAdapter._run_handoff_detector) — never as a shared instance
+        # scalar, which would fabricate cross-run agent.handoff edges under
+        # concurrent AgentGroupChat runs on one adapter.
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -88,7 +90,6 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
         self._wrapped_chats.clear()
         self._originals.clear()
         self._seen_chats.clear()
-        self._handoff_detector.reset()
 
     def _unwrap_chat(self, chat: Any) -> None:
         chat_id = id(chat)
@@ -150,8 +151,11 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
             input_data = kwargs.get("input") or kwargs.get("message")
 
             adapter._begin_run()
-            adapter._handoff_detector.reset()
-            adapter._handoff_detector.set_current_agent(agent_name)
+            # Per-run detector (RunState.data): a fresh one starts at None, so
+            # seeding the run's current agent is all that's needed.
+            detector = adapter._run_handoff_detector()
+            if detector is not None:
+                detector.set_current_agent(agent_name)
             adapter._start_timer("run")
 
             # One-shot environment.config per chat instance (now that we
@@ -199,9 +203,10 @@ class MSAgentFrameworkAdapter(FrameworkAdapter):
         """Extract handoff / tool / model events from one chat message."""
         try:
             msg_agent = getattr(message, "agent_name", None) or getattr(message, "name", None)
-            if msg_agent and msg_agent != current_agent:
+            detector = self._run_handoff_detector()
+            if detector is not None and msg_agent and msg_agent != current_agent:
                 # Group-chat turn transition.
-                self._handoff_detector.detect(
+                detector.detect(
                     msg_agent,
                     context={
                         "prev_agent": current_agent,

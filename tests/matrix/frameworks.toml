@@ -28,6 +28,7 @@ tests = [
     "tests/instrument/adapters/frameworks/test_langgraph.py",
     "tests/instrument/adapters/frameworks/test_langgraph_recorded.py",
     "tests/instrument/adapters/frameworks/test_langgraph_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_langgraph.py",
 ]
 
 [frameworks.crewai]
@@ -48,6 +49,7 @@ tests = [
     "tests/instrument/adapters/frameworks/test_openai_agents.py",
     "tests/instrument/adapters/frameworks/test_openai_agents_recorded.py",
     "tests/instrument/adapters/frameworks/test_openai_agents_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_openai_agents.py",
 ]
 
 [frameworks.semantic_kernel]
@@ -60,6 +62,8 @@ tests = [
     "tests/instrument/adapters/frameworks/test_ms_agent_framework_floor.py",
     "tests/instrument/adapters/frameworks/test_semantic_kernel_recorded.py",
     "tests/instrument/adapters/frameworks/test_ms_agent_framework_recorded.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_semantic_kernel.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_ms_agent_framework.py",
 ]
 
 [frameworks.pydantic_ai]
@@ -83,6 +87,7 @@ install = ["google-adk==2.2.0"]
 tests = [
     "tests/instrument/adapters/frameworks/test_google_adk.py",
     "tests/instrument/adapters/frameworks/test_google_adk_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_google_adk.py",
 ]
 
 [frameworks.strands]
@@ -92,6 +97,7 @@ tests = [
     "tests/instrument/adapters/frameworks/test_strands.py",
     "tests/instrument/adapters/frameworks/test_strands_recorded.py",
     "tests/instrument/adapters/frameworks/test_strands_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_strands.py",
 ]
 
 [frameworks.smolagents]
@@ -101,6 +107,7 @@ tests = [
     "tests/instrument/adapters/frameworks/test_smolagents.py",
     "tests/instrument/adapters/frameworks/test_smolagents_recorded.py",
     "tests/instrument/adapters/frameworks/test_smolagents_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_smolagents.py",
 ]
 
 [frameworks.llamaindex]

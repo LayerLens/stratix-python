@@ -392,6 +392,45 @@ def run_bedrock(flow: str) -> None:
             except Exception:
                 pass
             return
+        if flow == "streaming":
+            # Converse streaming — the adapter's _streaming path emits ttft_ms
+            # (the W1 bare-model.invoke gap was closed in PR #51).
+            resp = client.converse_stream(
+                modelId=model_id,
+                messages=[{"role": "user", "content": [{"text": f"Name two oceans. {SENTINEL}"}]}],
+                inferenceConfig={"maxTokens": 32},
+            )
+            for _ in resp["stream"]:
+                pass
+            return
+        if flow == "tool":
+            # Converse toolConfig — Nova requests the tool; the adapter surfaces
+            # the toolUse block as a tool.call (the W1 dropped-toolUse gap was
+            # closed in PR #51).
+            tool_config = {
+                "tools": [
+                    {
+                        "toolSpec": {
+                            "name": "ocean_count",
+                            "description": "How many oceans border a region.",
+                            "inputSchema": {
+                                "json": {
+                                    "type": "object",
+                                    "properties": {"region": {"type": "string"}},
+                                    "required": ["region"],
+                                }
+                            },
+                        }
+                    }
+                ]
+            }
+            client.converse(
+                modelId=model_id,
+                messages=[{"role": "user", "content": [{"text": f"Call ocean_count for earth. {SENTINEL}"}]}],
+                toolConfig=tool_config,
+                inferenceConfig={"maxTokens": 128},
+            )
+            return
         for turn in _CHAT_TURNS:
             _invoke(turn, model_id)
     finally:

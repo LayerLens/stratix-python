@@ -73,11 +73,20 @@ class AGUIProtocolAdapter(BaseProtocolAdapter):
     def _observe(self, event: Any, state: "_StreamState") -> None:
         etype = _event_type(event)
         if etype == "TEXT_MESSAGE_CONTENT":
-            state.text_buffer += _event_field(event, "delta") or ""
+            # Key the buffer by the protocol's messageId (exactly as tool-call
+            # fragments below are keyed by toolCallId). connect() shares ONE
+            # _StreamState across every dispatched event, so a single shared
+            # scalar accumulator would cross-contaminate concurrent/interleaved
+            # dispatch sessions (run A's deltas bleed into run B's message and
+            # run B's own message flushes empty). Per-messageId buffering isolates
+            # them; a stream that omits messageId falls back to a single key
+            # (sequential single-message streams stay correct).
+            mid = _event_field(event, "messageId")
+            state.text_buffers[mid] = (state.text_buffers.get(mid) or "") + (_event_field(event, "delta") or "")
             return
         if etype == "TEXT_MESSAGE_END":
-            self.emit(AGUI_MESSAGE, {"text": state.text_buffer})
-            state.text_buffer = ""
+            mid = _event_field(event, "messageId")
+            self.emit(AGUI_MESSAGE, {"text": state.text_buffers.pop(mid, "")})
             return
         if etype == "TOOL_CALL_START":
             tc_id = _event_field(event, "toolCallId") or uuid.uuid4().hex[:16]
@@ -154,17 +163,20 @@ class AGUIProtocolAdapter(BaseProtocolAdapter):
             )
 
     def _flush(self, state: "_StreamState") -> None:
-        if state.text_buffer:
-            self.emit(AGUI_MESSAGE, {"text": state.text_buffer, "reason": "stream_closed"})
+        for text in state.text_buffers.values():
+            if text:
+                self.emit(AGUI_MESSAGE, {"text": text, "reason": "stream_closed"})
         for call in state.tool_calls.values():
             self.emit(AGUI_TOOL_CALL, {**call, "reason": "stream_closed"})
 
 
 class _StreamState:
-    __slots__ = ("text_buffer", "tool_calls")
+    __slots__ = ("text_buffers", "tool_calls")
 
     def __init__(self) -> None:
-        self.text_buffer: str = ""
+        # Buffers keyed by AG-UI messageId (None when a stream omits it); the
+        # dict is what isolates concurrent dispatch sessions sharing one state.
+        self.text_buffers: Dict[Any, str] = {}
         self.tool_calls: Dict[str, Dict[str, Any]] = {}
 
 

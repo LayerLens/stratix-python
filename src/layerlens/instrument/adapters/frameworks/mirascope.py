@@ -44,6 +44,7 @@ import threading
 from typing import Any, Dict, List, Tuple, Callable, Optional
 
 from ._utils import truncate, safe_serialize
+from ..._context import _current_run, _current_collector
 from ..._identity import _API_METHOD_RE, _s, _is_generic
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -233,6 +234,8 @@ class MirascopeAdapter(FrameworkAdapter):
     def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
         super().__init__(client, capture_config)
         self._patched: Dict[type, Any] = {}
+        #: cls -> original ``stream`` — a separate v2 method patched alongside call.
+        self._patched_streams: Dict[type, Any] = {}
         self._adapter_lock = threading.Lock()
         self._framework_version: Optional[str] = None
         self._config_emitted = False
@@ -266,7 +269,16 @@ class MirascopeAdapter(FrameworkAdapter):
                     cls.call = original
                 except (AttributeError, TypeError):
                     log.warning("layerlens: could not restore %s.call", cls.__name__)
+            for cls, original in self._patched_streams.items():
+                current = cls.__dict__.get("stream")
+                if not getattr(current, "_layerlens_traced", False):
+                    continue
+                try:
+                    cls.stream = original
+                except (AttributeError, TypeError):
+                    log.warning("layerlens: could not restore %s.stream", cls.__name__)
             self._patched.clear()
+            self._patched_streams.clear()
             self._config_emitted = False
 
     # ------------------------------------------------------------------
@@ -274,7 +286,12 @@ class MirascopeAdapter(FrameworkAdapter):
     # ------------------------------------------------------------------
 
     def patch_call_classes(self) -> List[str]:
-        """Wrap ``call`` on every v2 ``Call`` class. Returns the classes patched."""
+        """Wrap ``call`` AND ``stream`` on every v2 ``Call`` class. Returns the classes patched.
+
+        ``stream()`` is a SEPARATE v2 method from ``call()`` (``fn.stream(...)`` ->
+        a ``StreamResponse``); left unpatched, a streamed call would emit zero
+        telemetry. Both are wrapped together so a class is never half-instrumented.
+        """
         patched: List[str] = []
         with self._adapter_lock:
             for cls in _call_classes():
@@ -293,6 +310,17 @@ class MirascopeAdapter(FrameworkAdapter):
                 # never claim a class we did not actually instrument.
                 self._patched[cls] = original
                 patched.append(cls.__name__)
+
+                stream_original = cls.__dict__.get("stream")
+                if stream_original is None or getattr(stream_original, "_layerlens_traced", False):
+                    continue
+                stream_wrapped = self._wrap_stream_method(stream_original)
+                try:
+                    cls.stream = stream_wrapped
+                except (AttributeError, TypeError):
+                    log.warning("layerlens: could not patch %s.stream", cls.__name__)
+                    continue
+                self._patched_streams[cls] = stream_original
         return patched
 
     def traced_call(self, target: Any) -> Any:
@@ -424,6 +452,161 @@ class MirascopeAdapter(FrameworkAdapter):
                 error=error,
             )
             self._end_run()
+
+    # ------------------------------------------------------------------
+    # Streaming — Call.stream() / AsyncCall.stream()
+    # ------------------------------------------------------------------
+
+    def _wrap_stream_method(self, original: Callable[..., Any]) -> Callable[..., Any]:
+        """Wrap a class-level ``stream``; the descriptor protocol binds *target*.
+
+        Sync ``stream`` returns a ``StreamResponse``; async ``stream`` is a
+        coroutine returning an ``AsyncStreamResponse``. Emission is DEFERRED to
+        when the stream drains (usage/model_id are known only then), so this only
+        begins the run and hands back the customer's real stream object with its
+        drain instrumented.
+        """
+        adapter = self
+
+        if inspect.iscoroutinefunction(original):
+
+            @functools.wraps(original)
+            async def traced_async_stream(target: Any, *args: Any, **kwargs: Any) -> Any:
+                return await adapter._invoke_stream_async(original, target, args, kwargs)
+
+            traced_async_stream._layerlens_traced = True  # type: ignore[attr-defined]
+            return traced_async_stream
+
+        @functools.wraps(original)
+        def traced_stream(target: Any, *args: Any, **kwargs: Any) -> Any:
+            return adapter._invoke_stream_sync(original, target, args, kwargs)
+
+        traced_stream._layerlens_traced = True  # type: ignore[attr-defined]
+        return traced_stream
+
+    def _invoke_stream_sync(
+        self,
+        original: Callable[..., Any],
+        target: Any,
+        args: Tuple[Any, ...],
+        kwargs: Dict[str, Any],
+    ) -> Any:
+        self._begin_run()
+        model_hint = _target_model_id(target)
+        self._start_timer("call")
+        try:
+            stream = original(target, *args, **kwargs)
+        except BaseException as exc:
+            # stream() setup itself failed — keep the call visible like the buffered path.
+            self._emit_call_events(
+                target=target, model_hint=model_hint, args=args, kwargs=kwargs, response=None, error=exc
+            )
+            self._end_run()
+            raise
+        self._instrument_stream(stream, target, model_hint, args, kwargs, is_async=False)
+        self._end_run(flush=False)  # detach ContextVars; drain re-establishes them and flushes
+        return stream
+
+    async def _invoke_stream_async(
+        self,
+        original: Callable[..., Any],
+        target: Any,
+        args: Tuple[Any, ...],
+        kwargs: Dict[str, Any],
+    ) -> Any:
+        self._begin_run()
+        model_hint = _target_model_id(target)
+        self._start_timer("call")
+        try:
+            stream = await original(target, *args, **kwargs)
+        except BaseException as exc:
+            self._emit_call_events(
+                target=target, model_hint=model_hint, args=args, kwargs=kwargs, response=None, error=exc
+            )
+            self._end_run()
+            raise
+        self._instrument_stream(stream, target, model_hint, args, kwargs, is_async=True)
+        self._end_run(flush=False)
+        return stream
+
+    def _instrument_stream(
+        self,
+        stream: Any,
+        target: Any,
+        model_hint: Optional[str],
+        args: Tuple[Any, ...],
+        kwargs: Dict[str, Any],
+        *,
+        is_async: bool,
+    ) -> None:
+        """Shadow the stream's ``chunk_stream`` — the single funnel EVERY mirascope
+        consumption path (``text_stream``/``streams``/``pretty_stream``/
+        ``structured_stream``/``finish``) routes through — so emission fires once
+        the stream drains, whichever method the caller uses. Emission is deferred
+        (usage/tokens/model_id land only at drain) and single-fire (mirascope
+        replays cached chunks on re-consumption). An abandoned (never-fully-drained)
+        stream emits nothing — an honest tokens-less non-report beats a fabricated one.
+        """
+        run = self._get_run()
+        if run is None:  # pragma: no cover - always inside _begin_run here
+            return
+        owns_collector = run._col_token is not None
+        original_chunk_stream = stream.chunk_stream
+        state = {"emitted": False}
+        lock = threading.Lock()
+
+        def emit_once(error: Optional[BaseException] = None) -> None:
+            with lock:
+                if state["emitted"]:
+                    return
+                state["emitted"] = True
+            run_token = _current_run.set(run)
+            col_token = _current_collector.set(run.collector)
+            try:
+                self._emit_call_events(
+                    target=target,
+                    model_hint=model_hint,
+                    args=args,
+                    kwargs=kwargs,
+                    response=stream,
+                    error=error,
+                )
+            finally:
+                _current_collector.reset(col_token)
+                _current_run.reset(run_token)
+                if owns_collector:
+                    run.collector.flush()
+
+        if is_async:
+
+            async def traced_async_chunk_stream(*a: Any, **k: Any) -> Any:
+                try:
+                    async for chunk in original_chunk_stream(*a, **k):
+                        yield chunk
+                except GeneratorExit:
+                    raise  # caller abandoned mid-drain — incomplete, emit nothing
+                except BaseException as exc:
+                    emit_once(error=exc)
+                    raise
+                else:
+                    emit_once()
+
+            object.__setattr__(stream, "chunk_stream", traced_async_chunk_stream)
+        else:
+
+            def traced_sync_chunk_stream(*a: Any, **k: Any) -> Any:
+                try:
+                    for chunk in original_chunk_stream(*a, **k):
+                        yield chunk
+                except GeneratorExit:
+                    raise
+                except BaseException as exc:
+                    emit_once(error=exc)
+                    raise
+                else:
+                    emit_once()
+
+            object.__setattr__(stream, "chunk_stream", traced_sync_chunk_stream)
 
     # ------------------------------------------------------------------
     # Event emission

@@ -472,5 +472,20 @@
   "shipped_column": "",
   "guarded_nodes": [],
   "guarded_column": ""
+ },
+ "haystack-s2": {
+  "lane": "haystack-s2",
+  "shipped_nodes": [
+   "llm",
+   "prompt_builder",
+   "retriever"
+  ],
+  "shipped_column": "multi-agent",
+  "guarded_nodes": [
+   "llm",
+   "prompt_builder",
+   "retriever"
+  ],
+  "guarded_column": "multi-agent"
  }
 }

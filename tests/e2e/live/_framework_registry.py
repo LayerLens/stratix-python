@@ -31,6 +31,12 @@ class FrameworkCase:
     supports_error: bool = False
     extra_imports: Tuple[str, ...] = ()  # additional packages the workload needs
     self_flushing: bool = False  # adapter manages+uploads its own trace (e.g. openai_agents)
+    # Additional depth variants beyond default/redaction/error (ADP-partials
+    # Cluster F). Each name is passed to the runner as its ``flow`` and the
+    # harness asserts the depth it implies: "tool" -> a tool.call, "multi" -> an
+    # agent.handoff, "streaming" -> a streamed model.invoke, "async" -> the async
+    # path still emits. The runner must handle each name it declares here.
+    extra_variants: Tuple[str, ...] = ()
     install_hint: str = ""
 
 
@@ -44,6 +50,11 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         required_env=("OPENAI_API_KEY",),
         expected_types=("model.invoke",),
         supports_error=True,  # on_llm_error -> agent.error
+        # tool: a real prompt|llm chain (with run_name -> agent_name) + a bound
+        # tool -> tool.call. streaming: chain.stream -> streamed model.invoke.
+        # async: chain.ainvoke. Closes "bare invoke; chain/tool/agent_name/
+        # streaming never on the real wire".
+        extra_variants=("tool", "streaming", "async"),
         extra_imports=("langchain_core",),
         install_hint="layerlens[langchain] langchain-openai",
     ),
@@ -83,6 +94,9 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         required_env=("OPENAI_API_KEY",),
         supports_redaction=False,
         self_flushing=True,  # listens on crewai event bus, uploads its own trace
+        # multi: a 2-agent crew where a manager delegates to a coworker -> real
+        # agent.handoff. Closes "DEFAULT only; no multi-agent/hierarchical".
+        extra_variants=("multi",),
         install_hint="layerlens[crewai] (py>=3.10)",
     ),
     FrameworkCase(
@@ -100,6 +114,10 @@ FRAMEWORKS: Tuple[FrameworkCase, ...] = (
         required_env=("OPENAI_API_KEY",),
         supports_redaction=False,
         self_flushing=True,  # root-dispatcher handlers + own collectors, flush on disconnect
+        # multi: a real AgentWorkflow where a coordinator hands off to a
+        # researcher FunctionAgent -> agent.handoff. Closes "RAG default only;
+        # no multi-agent lane".
+        extra_variants=("multi",),
         install_hint="llama-index (no extra)",
     ),
     FrameworkCase(

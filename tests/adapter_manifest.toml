@@ -151,6 +151,7 @@ family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel.py" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel.py", pattern = "capture_content" }
 recorded = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel_recorded.py" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_semantic_kernel.py" }  # ADP-W3: gather + thread + interleaved-filter isolation (RunState.data)
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_semantic_kernel.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "semantic_kernel"
 live_id = "semantic_kernel"
@@ -160,6 +161,7 @@ family = "framework"
 unit = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework.py" }
 redaction = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework.py", pattern = "capture_content" }
 recorded = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework_recorded.py" }
+concurrency = { path = "tests/instrument/adapters/frameworks/test_concurrency_ms_agent_framework.py" }  # ADP-W3: per-run handoff-detector isolation (was a shared scalar -> fabricated cross-run edges)
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_ms_agent_framework.py", pattern = "TestDisconnectLeaveNoTrace" }
 matrix_row = "semantic_kernel"
 live_id = "ms_agent_framework"
@@ -305,6 +307,7 @@ live_id = "a2a"
 family = "protocol"
 unit = { path = "tests/instrument/adapters/protocols/test_agui_middleware.py" }
 redaction = { path = "tests/instrument/adapters/protocols/test_protocol_redaction.py" }
+concurrency = { path = "tests/instrument/adapters/protocols/test_agui_concurrency.py" }  # ADP-partials: dispatch-session message-buffer isolation (per-messageId keying)
 disconnect_restore = { path = "tests/instrument/adapters/test_disconnect_invariants.py" }
 live_id = "agui"
 

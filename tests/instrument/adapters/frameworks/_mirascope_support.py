@@ -66,6 +66,51 @@ def completion_body(
     }
 
 
+def stream_sse_body(
+    content: str = "Dune by Frank Herbert",
+    *,
+    prompt_tokens: int = 17,
+    completion_tokens: int = 6,
+    model: str = "gpt-4o-mini-2024-07-18",
+) -> bytes:
+    """A real OpenAI chat-completions STREAM wire body (SSE chunks + a terminal
+    usage chunk + ``[DONE]``) — the shape the SDK deserialises for ``stream=True``.
+
+    Usage rides the final ``choices: []`` chunk (the ``stream_options`` include-usage
+    contract), so ``StreamResponse.usage`` is known only once the stream drains."""
+    base = {"id": "chatcmpl-layerlens-test", "object": "chat.completion.chunk", "created": 1730000000, "model": model}
+    chunks: List[Dict[str, Any]] = [
+        {**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}]}
+    ]
+    words = content.split(" ")
+    for i, word in enumerate(words):
+        piece = word if i == 0 else " " + word
+        chunks.append({**base, "choices": [{"index": 0, "delta": {"content": piece}, "finish_reason": None}]})
+    chunks.append({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
+    chunks.append(
+        {
+            **base,
+            "choices": [],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        }
+    )
+    return ("".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n").encode()
+
+
+def stream_ok_handler(body: Optional[bytes] = None) -> Callable[[httpx.Request], httpx.Response]:
+    """A transport handler returning an SSE stream body (default: a plain stream)."""
+    payload = stream_sse_body() if body is None else body
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=payload)
+
+    return handler
+
+
 def ok_handler(body: Optional[Dict[str, Any]] = None) -> Callable[[httpx.Request], httpx.Response]:
     """A transport handler returning *body* (default: a plain completion)."""
     payload = completion_body() if body is None else body
@@ -190,3 +235,6 @@ def restore_call_classes() -> None:
         current = cls.__dict__.get("call")
         if getattr(current, "_layerlens_traced", False):
             cls.call = current.__wrapped__
+        stream_current = cls.__dict__.get("stream")
+        if getattr(stream_current, "_layerlens_traced", False):
+            cls.stream = stream_current.__wrapped__

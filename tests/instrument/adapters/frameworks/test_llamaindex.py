@@ -504,6 +504,55 @@ class TestEmbeddingEvents:
         assert payload["num_embeddings"] == 3
         assert payload["embedding_dim"] == 1536
 
+    def test_embedding_end_computes_chunk_char_metrics(self, adapter, mock_client):
+        # The chunk-length metrics (llamaindex.py:_on_embedding_end) are a real
+        # computed delta — total length summed over NON-EMPTY chunks, avg via
+        # integer floor-division — and were untested (grep chunk_chars = source
+        # only). Chunk lengths 5, 8, 0 -> total 13 over 2 non-empty -> avg 13//2=6.
+        adapter.connect()
+        root = _create_span(adapter)
+
+        event = EmbeddingEndEvent(
+            chunks=["abcde", "fghijklm", ""],  # lengths 5, 8, 0
+            embeddings=[[0.1] * 8, [0.2] * 8, [0.3] * 8],
+            span_id=root,
+        )
+        _emit_event_via_dispatcher(event, span_id=root)
+
+        payload = _find_events(adapter, "model.invoke")[0]["payload"]
+        assert payload["num_chunks"] == 3, "num_chunks counts the whole list (empty included)"
+        assert payload["num_embeddings"] == 3
+        assert payload["embedding_dim"] == 8
+        assert payload["chunk_chars_total"] == 13, "total must sum len over non-empty chunks (5+8)"
+        # 13//2 == 6 bites: an empty chunk in the divisor -> 13//3==4; num_chunks as
+        # divisor -> 13//3==4; float instead of floor -> 6.5. 6 is distinct from
+        # num_chunks(3), total(13) and any single chunk length (5/8).
+        assert payload["chunk_chars_avg"] == 6, "avg must be floor-division over NON-EMPTY chunk count"
+
+    def test_l3_disabled_suppresses_embedding_fire(self, mock_client):
+        # The l3_model_metadata=False early-returns (_on_embedding_start/_end) are
+        # a real adapter-side suppression, but a collector-event assertion is
+        # VACUOUS: model.invoke maps to l3_model_metadata, so the collector drops
+        # it regardless. Bite the ADAPTER's own early-return with a _fire spy.
+        adapter = LlamaIndexAdapter(mock_client, capture_config=CaptureConfig(l3_model_metadata=False))
+        adapter.connect()
+        root = _create_span(adapter)
+
+        with patch.object(adapter, "_fire") as spy:
+            _emit_event_via_dispatcher(
+                EmbeddingStartEvent(model_dict={"model_name": "text-embedding-ada-002"}, span_id=root),
+                span_id=root,
+            )
+            _emit_event_via_dispatcher(
+                EmbeddingEndEvent(chunks=["abcde", "fghijklm", ""], embeddings=[[0.1] * 8] * 3, span_id=root),
+                span_id=root,
+            )
+
+        # Deleting either early-return calls _fire("model.invoke", ...) -> >0.
+        # test_embedding_end_computes_chunk_char_metrics proves the l3=True path
+        # DOES fire, so this "not called" assertion is meaningful, not trivial.
+        assert spy.call_count == 0, "l3_model_metadata=False did not suppress the adapter's embedding _fire"
+
 
 class TestQueryEvents:
     def test_query_start_emits_agent_input(self, mock_client):

@@ -123,6 +123,14 @@ def _assert_contract(
         )
         return _sum_cost(cost_records)
 
+    if variant == "tool":
+        # A dedicated tool-use lane (ADP-partials Cluster F): the provider's
+        # tool-calling path must surface a real tool.call, distinct from the
+        # default lane's contract.
+        assert model_invokes, f"{tag} tool variant produced no model.invoke event"
+        assert by_type.get("tool.call"), f"{tag} tool variant emitted no tool.call, got types {sorted(by_type)}"
+        return _sum_cost(cost_records)
+
     # default / redaction / async: the full canonical contract
     # (async runs the same tool loop as default, through the async client)
     c = case.contract

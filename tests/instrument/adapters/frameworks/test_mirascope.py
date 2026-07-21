@@ -44,6 +44,7 @@ from ._mirascope_support import (  # noqa: E402
     mirascope_openai,
     not_found_handler,
     recording_handler,
+    stream_ok_handler,
     restore_call_classes,
 )
 
@@ -576,3 +577,80 @@ class TestInstrumentEntryPoint:
         assert find_events(uploaded["events"], "tool.call")
         # uninstrument must restore the seam.
         assert not getattr(llm.Call.__dict__["call"], "_layerlens_traced", False)
+
+
+# ---------------------------------------------------------------------------
+# Streaming — Call.stream() / AsyncCall.stream() (a separate v2 method)
+# ---------------------------------------------------------------------------
+class TestStreaming:
+    """``@llm.call`` functions can be consumed as a stream via ``fn.stream(...)``
+    (``Call.stream`` / ``AsyncCall.stream``), a first-class v2 API distinct from
+    ``call``. A streamed call must produce the SAME honest telemetry as a
+    buffered one — emitted once the stream drains, when usage/model are known.
+    RED until ``stream()`` is patched alongside ``call()``.
+    """
+
+    def test_streamed_sync_call_emits_full_event_set(self, mock_client):
+        from layerlens.instrument._upload import shutdown_uploads
+
+        uploaded = capture_framework_trace(mock_client)
+        with mirascope_openai(stream_ok_handler()):
+            adapter = _adapter(mock_client)
+            adapter.connect()
+
+            @llm.call(MODEL_ID)
+            def recommend_book(genre: str):
+                return f"Recommend a {genre} book"
+
+            stream = recommend_book.stream("fantasy")
+            text = "".join(stream.text_stream())  # drain the stream
+            adapter.disconnect()
+        shutdown_uploads(10.0)
+
+        # Transparency: the caller still receives the streamed content untouched.
+        assert "Dune" in text
+
+        events = uploaded["events"]
+        call = find_event(events, "tool.call")["payload"]
+        assert call["tool_name"] == "mirascope.recommend_book"
+        assert call["agent_name"] == "recommend_book"
+
+        invoke = find_event(events, "model.invoke")["payload"]
+        assert invoke["model"] == BARE_MODEL
+        assert invoke["model_id"] == MODEL_ID
+        assert invoke["provider"] == "openai"
+        assert invoke["tokens_prompt"] == 17
+        assert invoke["tokens_completion"] == 6
+        assert invoke["tokens_total"] == 23
+
+        cost = find_event(events, "cost.record")["payload"]
+        assert cost["model"] == BARE_MODEL
+
+    def test_streamed_async_call_emits_full_event_set(self, mock_client):
+        from layerlens.instrument._upload import shutdown_uploads
+
+        uploaded = capture_framework_trace(mock_client)
+        with mirascope_openai(stream_ok_handler()):
+            adapter = _adapter(mock_client)
+            adapter.connect()
+
+            @llm.call(MODEL_ID)
+            async def recommend_book(genre: str):
+                return f"Recommend a {genre} book"
+
+            async def drive() -> str:
+                stream = await recommend_book.stream("fantasy")  # AsyncCall.stream is a coroutine
+                out = []
+                async for piece in stream.text_stream():
+                    out.append(piece)
+                return "".join(out)
+
+            text = asyncio.run(drive())
+            adapter.disconnect()
+        shutdown_uploads(10.0)
+
+        assert "Dune" in text
+        events = uploaded["events"]
+        invoke = find_event(events, "model.invoke")["payload"]
+        assert invoke["tokens_total"] == 23
+        assert find_event(events, "tool.call")["payload"]["tool_name"] == "mirascope.recommend_book"

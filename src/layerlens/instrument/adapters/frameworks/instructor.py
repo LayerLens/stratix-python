@@ -40,6 +40,7 @@ from typing import Any, Dict, List, Tuple, Optional
 from contextvars import ContextVar
 
 from ._utils import truncate, safe_serialize
+from ..._context import _current_run, _current_collector
 from ..._identity import _API_METHOD_RE, _s, _is_generic
 from ._base_framework import FrameworkAdapter
 from ..._capture_config import CaptureConfig
@@ -75,7 +76,21 @@ _CREATE_METHOD_PATHS: Tuple[str, ...] = (
     "completions.acreate",
     "create",
     "acreate",
+    # Structured-output STREAMING endpoints. These return a (sync/async)
+    # generator of partial models / items rather than a finished model, so they
+    # are instrumented with deferred emission (see _build_traced_stream). Left
+    # unwrapped, a streamed instructor call emitted zero telemetry.
+    "chat.completions.create_partial",
+    "chat.completions.create_iterable",
+    "create_partial",
+    "create_iterable",
 )
+
+#: The streaming method NAMES (last path segment). ``create_partial`` yields a
+#: growing partial model; ``create_iterable`` yields items. Both return a plain
+#: generator (sync client) or async generator (async client) — usage + the final
+#: object land only when the generator drains, so emission is deferred to drain.
+_STREAM_METHODS: frozenset = frozenset({"create_partial", "create_iterable"})
 
 #: The in-flight traced call on this thread / asyncio.Task. Instructor's hooks are
 #: registered client-GLOBALLY, so a handler needs this to find the call that
@@ -337,7 +352,7 @@ class InstructorAdapter(FrameworkAdapter):
         if getattr(original, _TRACED_ATTR, False):
             return "traced"
 
-        traced = self._build_traced(original, client_id)
+        traced = self._build_traced(original, client_id, method_name=method_name)
         try:
             setattr(owner, method_name, traced)
         except (AttributeError, TypeError):
@@ -363,7 +378,10 @@ class InstructorAdapter(FrameworkAdapter):
             self._wrapped_methods.setdefault(client_id, {})[dotted_path] = (owner, method_name, original)
         return "wrapped"
 
-    def _build_traced(self, original: Any, client_id: int) -> Any:
+    def _build_traced(self, original: Any, client_id: int, *, method_name: Optional[str] = None) -> Any:
+        if method_name in _STREAM_METHODS:
+            return self._build_traced_stream(original, client_id)
+
         if inspect.iscoroutinefunction(original):
 
             @functools.wraps(original)
@@ -381,6 +399,34 @@ class InstructorAdapter(FrameworkAdapter):
         setattr(traced_create, _ORIGINAL_ATTR, original)
         setattr(traced_create, _TRACED_ATTR, True)
         return traced_create
+
+    def _build_traced_stream(self, original: Any, client_id: int) -> Any:
+        """Wrap a streaming ``create_partial`` / ``create_iterable``.
+
+        The call returns a generator, so emission is DEFERRED to when the
+        generator drains (the final object + usage are known only then). The run
+        is begun eagerly (so a setup error is still surfaced) then detached with
+        ``flush=False``; the drain wrapper re-establishes the run to emit + flush.
+        An abandoned (never-fully-drained) stream emits nothing — an honest
+        non-report beats a fabricated complete result.
+        """
+        if inspect.isasyncgenfunction(original):
+
+            @functools.wraps(original)
+            def traced_astream(*args: Any, **kwargs: Any) -> Any:
+                return self._invoke_async_stream(original, client_id, args, kwargs)
+
+            setattr(traced_astream, _ORIGINAL_ATTR, original)
+            setattr(traced_astream, _TRACED_ATTR, True)
+            return traced_astream
+
+        @functools.wraps(original)
+        def traced_stream(*args: Any, **kwargs: Any) -> Any:
+            return self._invoke_sync_stream(original, client_id, args, kwargs)
+
+        setattr(traced_stream, _ORIGINAL_ATTR, original)
+        setattr(traced_stream, _TRACED_ATTR, True)
+        return traced_stream
 
     def _restore(self, client: Any) -> None:
         client_id = id(client)
@@ -529,6 +575,107 @@ class InstructorAdapter(FrameworkAdapter):
             _ACTIVE_CALL.reset(token)
             self._finish_call(ctx, client_id, response, error)
         return response
+
+    # ------------------------------------------------------------------
+    # Streaming invocation core (deferred-emit; mirrors the mirascope stream seam)
+    # ------------------------------------------------------------------
+
+    def _invoke_sync_stream(self, original: Any, client_id: int, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Any:
+        ctx = self._begin_call(client_id, kwargs)
+        token = _ACTIVE_CALL.set(ctx)
+        try:
+            gen = original(*args, **kwargs)
+        except BaseException as exc:
+            # create_partial()/create_iterable() setup failed before yielding —
+            # surface it like the buffered error path.
+            _ACTIVE_CALL.reset(token)
+            self._finish_call(ctx, client_id, None, exc)
+            raise
+        _ACTIVE_CALL.reset(token)
+        run = self._get_run()
+        # Detach the run's ContextVars; the drain re-establishes them and flushes
+        # once the stream completes (usage/final object land only then).
+        self._end_run(flush=False)
+        return self._drain_sync(gen, ctx, client_id, run)
+
+    def _invoke_async_stream(self, original: Any, client_id: int, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Any:
+        # ``original`` is an async-generator function: calling it returns the
+        # async generator WITHOUT running its body (no await), so the underlying
+        # request fires during the drain, not here.
+        ctx = self._begin_call(client_id, kwargs)
+        token = _ACTIVE_CALL.set(ctx)
+        try:
+            agen = original(*args, **kwargs)
+        except BaseException as exc:
+            _ACTIVE_CALL.reset(token)
+            self._finish_call(ctx, client_id, None, exc)
+            raise
+        _ACTIVE_CALL.reset(token)
+        run = self._get_run()
+        self._end_run(flush=False)
+        return self._drain_async(agen, ctx, client_id, run)
+
+    def _drain_sync(self, gen: Any, ctx: Dict[str, Any], client_id: int, run: Any) -> Any:
+        state = {"emitted": False, "last": None}
+
+        def emit(error: Optional[BaseException]) -> None:
+            if state["emitted"]:
+                return
+            state["emitted"] = True
+            self._emit_stream_call(ctx, client_id, run, state["last"], error)
+
+        try:
+            for item in gen:
+                state["last"] = item
+                yield item
+        except GeneratorExit:
+            # Caller abandoned mid-drain — incomplete; emit nothing (honest).
+            raise
+        except BaseException as exc:
+            emit(exc)
+            raise
+        else:
+            emit(None)
+
+    async def _drain_async(self, agen: Any, ctx: Dict[str, Any], client_id: int, run: Any) -> Any:
+        state = {"emitted": False, "last": None}
+
+        def emit(error: Optional[BaseException]) -> None:
+            if state["emitted"]:
+                return
+            state["emitted"] = True
+            self._emit_stream_call(ctx, client_id, run, state["last"], error)
+
+        try:
+            async for item in agen:
+                state["last"] = item
+                yield item
+        except GeneratorExit:
+            raise
+        except BaseException as exc:
+            emit(exc)
+            raise
+        else:
+            emit(None)
+
+    def _emit_stream_call(
+        self, ctx: Dict[str, Any], client_id: int, run: Any, response: Any, error: Optional[BaseException]
+    ) -> None:
+        """Re-establish the (detached) run, emit the deferred model.invoke /
+        cost.record for the drained stream, then flush if this run owns its
+        collector (an ambient collector is flushed by its owner)."""
+        if run is None:  # pragma: no cover - always inside _begin_call here
+            return
+        owns_collector = run._col_token is not None
+        run_token = _current_run.set(run)
+        col_token = _current_collector.set(run.collector)
+        try:
+            self._emit_call_events(ctx, client_id, response, error)
+        finally:
+            _current_collector.reset(col_token)
+            _current_run.reset(run_token)
+            if owns_collector:
+                run.collector.flush()
 
     def _begin_call(self, client_id: int, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         self._begin_run()

@@ -32,11 +32,16 @@ def _variants(case) -> tuple:
         out.append("redaction")
     if case.supports_error:
         out.append("error")
+    out.extend(case.extra_variants)  # ADP-partials depth variants (tool/streaming/async/multi)
     return tuple(out)
 
 
 _CASES = [(c, v) for c in _AMBIENT for v in _variants(c)]
 _IDS = [f"{c.id}-{v}" for c, v in _CASES]
+
+# Self-flushing adapters also run their default + any declared depth variants.
+_SELF_FLUSH_CASES = [(c, v) for c in _SELF_FLUSH for v in ("default", *c.extra_variants)]
+_SELF_FLUSH_IDS = [f"{c.id}-{v}" for c, v in _SELF_FLUSH_CASES]
 
 
 def _skip_unless_ready(case) -> None:
@@ -57,11 +62,11 @@ def test_framework_live(case, variant, stratix_live_client, record_result) -> No
 
 
 @pytest.mark.live
-@pytest.mark.parametrize("case", _SELF_FLUSH, ids=[c.id for c in _SELF_FLUSH])
-def test_framework_live_self_flushing(case, stratix_live_client, record_result) -> None:
+@pytest.mark.parametrize("case, variant", _SELF_FLUSH_CASES, ids=_SELF_FLUSH_IDS)
+def test_framework_live_self_flushing(case, variant, stratix_live_client, record_result) -> None:
     """Adapters that manage + upload their own trace (e.g. openai_agents)."""
     _skip_unless_ready(case)
-    row = run_self_flushing_case(stratix_live_client, case)
+    row = run_self_flushing_case(stratix_live_client, case, variant)
     record_result(row)
 
 

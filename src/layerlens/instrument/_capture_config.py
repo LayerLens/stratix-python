@@ -304,13 +304,15 @@ _CONTENT_KEYS: Dict[str, FrozenSet[str]] = {
     ),
     "agent.interaction": frozenset({"content", "input", "output", "messages"}),
     "conversation.message": frozenset({"content", "message"}),
-    # ``instruction``/``description``: an agent's system prompt + description
-    # (google_adk emits these on environment.config). Content — a collector-tier
-    # backstop so they are stripped under capture_content=False even if an emit
-    # site forgets to gate them (environment.config otherwise has no strip-set).
+    # ``instruction``/``instructions``/``description``: an agent's system prompt +
+    # description (google_adk emits singular ``instruction``; ms_agent_framework
+    # emits plural ``instructions`` on environment.config). Content — a
+    # collector-tier backstop so they are stripped under capture_content=False even
+    # if an emit site forgets to gate them (environment.config otherwise has no
+    # strip-set). Both spellings must be listed or the backstop misses one adapter.
     # ``task``: browser_use's environment.config carries the run's raw
     # natural-language goal, which is the user's own words (ADP-PORT).
-    "environment.config": frozenset({"instruction", "description", "task"}),
+    "environment.config": frozenset({"instruction", "instructions", "description", "task"}),
     # ``error``: strands/langchain attach str(exc) onto model.invoke/tool.result.
     # ``prompt``/``output``/``response``/``args``/``kwargs``: the ported adapters
     # (dspy, marvin, openinference) carry the rendered prompt + completion under

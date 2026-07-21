@@ -54,6 +54,41 @@ def run_langchain(flow: str) -> None:
     # client=None -> emit to the harness's ambient collector. The sample's no-arg
     # call is a bug — __init__ requires the positional client (see report C2).
     handler = LangChainCallbackHandler(None, capture_config=_cfg(flow))
+
+    # Depth variants (ADP-partials Cluster F): a real prompt|llm chain carrying a
+    # run_name (so the adapter fills agent_name on the wire — the exact gap the
+    # matrix flagged), with a bound tool / a streamed drain / an async invoke.
+    if flow in ("tool", "streaming", "async"):
+        from langchain_core.tools import tool
+        from langchain_core.prompts import ChatPromptTemplate
+
+        llm = ChatOpenAI(model=_OPENAI_MODEL, max_tokens=64)
+        prompt = ChatPromptTemplate.from_messages([("user", "{q}")])
+        cfg = {"callbacks": [handler], "run_name": "ocean_agent"}
+
+        if flow == "tool":
+
+            @tool
+            def ocean_count(region: str) -> int:  # noqa: ARG001
+                """Return how many oceans border a region."""
+                return 2
+
+            chain = prompt | llm.bind_tools([ocean_count])
+            chain.invoke({"q": f"Call ocean_count for 'earth', then answer. {SENTINEL}"}, config=cfg)
+        elif flow == "streaming":
+            # streaming=True so ChatOpenAI streams token-by-token (fires
+            # on_llm_new_token -> streamed_chunks/ttft); stream_usage carries the
+            # token totals on the final chunk.
+            streaming_llm = ChatOpenAI(model=_OPENAI_MODEL, max_tokens=64, streaming=True, stream_usage=True)
+            chain = prompt | streaming_llm
+            list(chain.stream({"q": _PROMPT}, config=cfg))  # drain the stream -> streamed_chunks + ttft
+        else:  # async
+            import asyncio
+
+            chain = prompt | llm
+            asyncio.run(chain.ainvoke({"q": _PROMPT}, config=cfg))
+        return
+
     llm = ChatOpenAI(model=_model_for(flow), max_tokens=32, callbacks=[handler])
     try:
         llm.invoke([HumanMessage(content=_PROMPT)])
@@ -209,6 +244,36 @@ def run_crewai(flow: str, client: object) -> None:
 
     from layerlens.instrument.adapters.frameworks.crewai import CrewAIAdapter
 
+    if flow == "multi":
+        # Multi-agent depth (ADP-partials Cluster F): a manager that DELEGATES to
+        # a coworker -> crewai's "Delegate work to coworker" tool -> the adapter's
+        # _is_transfer_tool -> a real agent.handoff DAG (>=2 agent nodes + an edge).
+        researcher = Agent(
+            role="ocean researcher",
+            goal="name exactly one ocean",
+            backstory="a terse geographer who names oceans",
+            allow_delegation=False,
+        )
+        manager = Agent(
+            role="coordinator",
+            goal="produce a one-word ocean by delegating to the ocean researcher",
+            backstory="coordinates specialists and never answers directly",
+            allow_delegation=True,
+        )
+        task = Task(
+            description="Delegate the job of naming one ocean to the ocean researcher coworker, then report their answer.",
+            agent=manager,
+            expected_output="one ocean name",
+        )
+        crew = Crew(agents=[manager, researcher], tasks=[task])
+        adapter = CrewAIAdapter(client, capture_config=_cfg(flow))
+        adapter.connect(crew)
+        try:
+            crew.kickoff()
+        finally:
+            adapter.disconnect()
+        return
+
     researcher = Agent(
         role="researcher",
         goal=f"name an ocean {SENTINEL}",
@@ -266,9 +331,54 @@ def run_llamaindex(flow: str, client: object) -> None:
     # LlamaIndexAdapter is self-flushing: it registers handlers on llama_index's
     # root dispatcher, builds its own per-span collectors, and flushes them
     # (uploads via ``client``) on disconnect.
-    from llama_index.core import Document, VectorStoreIndex
-
     from layerlens.instrument.adapters.frameworks.llamaindex import LlamaIndexAdapter
+
+    if flow == "multi":
+        # Multi-agent depth (ADP-partials Cluster F): a real AgentWorkflow where a
+        # coordinator hands off to a researcher FunctionAgent -> agent.handoff DAG.
+        import asyncio
+
+        from llama_index.llms.openai import OpenAI as LIOpenAI
+        from llama_index.core.agent.workflow import AgentWorkflow, FunctionAgent
+
+        llm = LIOpenAI(model=_OPENAI_MODEL)
+
+        def name_ocean() -> str:
+            """Return one ocean name."""
+            return "Pacific"
+
+        researcher = FunctionAgent(
+            name="researcher",
+            description="names an ocean using its tool",
+            system_prompt="Call name_ocean and report the ocean in one word.",
+            tools=[name_ocean],
+            llm=llm,
+            can_handoff_to=[],
+        )
+        coordinator = FunctionAgent(
+            name="coordinator",
+            description="delegates ocean-naming to the researcher",
+            system_prompt="Hand off to the researcher to get one ocean name, then report it. Do not answer yourself.",
+            tools=[],
+            llm=llm,
+            can_handoff_to=["researcher"],
+        )
+        workflow = AgentWorkflow(agents=[coordinator, researcher], root_agent="coordinator")
+        adapter = LlamaIndexAdapter(client, capture_config=_cfg(flow))
+        adapter.connect()
+
+        async def _go() -> None:
+            # workflow.run() schedules tasks, so it must be called INSIDE the
+            # running loop (not passed to asyncio.run() directly), then awaited.
+            await workflow.run(user_msg="Name one ocean.")
+
+        try:
+            asyncio.run(_go())
+        finally:
+            adapter.disconnect()
+        return
+
+    from llama_index.core import Document, VectorStoreIndex
 
     index = VectorStoreIndex.from_documents([Document(text=f"The Pacific and Atlantic are oceans. {SENTINEL}")])
     adapter = LlamaIndexAdapter(client, capture_config=_cfg(flow))

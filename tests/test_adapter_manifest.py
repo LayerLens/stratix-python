@@ -124,6 +124,31 @@ class TestCrossReferences:
         )
         assert not bad, f"manifest matrix_row values missing from tests/matrix/frameworks.toml: {bad}"
 
+    def test_concurrency_tier_is_wired_into_its_matrix_row(self) -> None:
+        """A concurrency test that exists + is manifest-declared but is NOT listed
+        in its ``matrix_row``'s ``frameworks.toml`` ``tests`` array never runs in
+        CI — the exact orphan failure mode that let 5 concurrency suites silently
+        stop covering async isolation. When an adapter declares BOTH a (non-pending)
+        ``concurrency`` tier and a ``matrix_row``, the tier's path must appear in
+        that row's ``tests``.
+        """
+        with open(MATRIX_SPEC_PATH, "rb") as f:
+            rows = tomllib.load(f)["frameworks"]
+        orphaned = []
+        for name, entry in MANIFEST.items():
+            conc = entry.get("concurrency")
+            row_name = entry.get("matrix_row")
+            if not isinstance(conc, dict) or conc.get("pending") or not row_name:
+                continue
+            path = conc.get("path")
+            row_tests = rows.get(row_name, {}).get("tests", [])
+            if path not in row_tests:
+                orphaned.append(f"{name}.concurrency ({path}) not in matrix_row '{row_name}'")
+        assert not orphaned, (
+            "concurrency tests are manifest-declared but NOT wired into their frameworks.toml "
+            f"matrix row, so they never run in CI: {orphaned}"
+        )
+
     def test_live_ids_exist(self) -> None:
         try:
             from tests.e2e.live._registry import PROVIDERS as live_providers
