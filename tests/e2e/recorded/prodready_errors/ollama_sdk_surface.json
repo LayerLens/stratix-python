@@ -1,0 +1,22 @@
+{
+  "marker": "prodready-l5-20260626T232437Z",
+  "probe": "ollama_sdk_surface",
+  "kind": "sdk_surface",
+  "result": {
+    "label": "ollama_sdk_badmodel",
+    "raised_type": "ResponseError",
+    "raised_str_has_key": false,
+    "agent_error_captured": true,
+    "agent_error_payload": {
+      "name": "ollama.chat",
+      "error_type": "ResponseError",
+      "latency_ms": 4.748821258544922
+    },
+    "error_field": null,
+    "error_type_field": "ResponseError",
+    "key_in_stored_dump": false,
+    "secret_patterns_in_dump": [],
+    "raw_str_exc": "model 'definitely-not-a-real-model-xyz' not found (status code: 404)",
+    "safe_error_of_exc": "model 'definitely-not-a-real-model-xyz' not found (status code: 404)"
+  }
+}

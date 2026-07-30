@@ -130,7 +130,11 @@ def main() -> None:
         logger.error("Failed to initialize client: %s", exc)
         sys.exit(1)
 
-    logger.info("Connected to LayerLens (org=%s, project=%s)", client.organization_id, client.project_id)
+    logger.info(
+        "Connected to LayerLens (org=%s, project=%s)",
+        client.organization_id,
+        client.project_id,
+    )
 
     # --- Step 1: Upload traces ---
     logger.info("=" * 60)
@@ -171,9 +175,13 @@ def main() -> None:
     logger.info("Step 2: List traces")
     logger.info("=" * 60)
 
-    response = client.traces.get_many(page_size=args.page_size, sort_by="created_at", sort_order="desc")
+    response = client.traces.get_many(
+        page_size=args.page_size, sort_by="created_at", sort_order="desc"
+    )
     if response:
-        logger.info("Found %d trace(s) (total=%d)", response.count, response.total_count)
+        logger.info(
+            "Found %d trace(s) (total=%d)", response.count, response.total_count
+        )
         for trace in response.traces[:5]:
             logger.info("  - %s: %s", trace.id, getattr(trace, "filename", "N/A"))
     else:
@@ -187,7 +195,10 @@ def main() -> None:
     trace = client.traces.get(uploaded_ids[0])
     if trace:
         logger.info("Trace %s retrieved successfully", trace.id)
-        logger.info("  Data keys: %s", list(trace.data.keys()) if hasattr(trace, "data") and trace.data else "N/A")
+        logger.info(
+            "  Data keys: %s",
+            list(trace.data.keys()) if hasattr(trace, "data") and trace.data else "N/A",
+        )
     else:
         logger.warning("Could not retrieve trace %s", uploaded_ids[0])
 
@@ -209,7 +220,9 @@ def main() -> None:
             deleted = client.traces.delete(tid)
             logger.info("  Deleted %s: %s", tid, deleted)
     else:
-        logger.info("Skipping deletion (--skip-delete). Trace IDs: %s", ", ".join(uploaded_ids))
+        logger.info(
+            "Skipping deletion (--skip-delete). Trace IDs: %s", ", ".join(uploaded_ids)
+        )
 
     logger.info("Sample complete.")
 

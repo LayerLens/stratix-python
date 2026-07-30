@@ -82,16 +82,35 @@ class SoulRedTeamRunner(DemoRunner):
 
     def build_parser(self) -> argparse.ArgumentParser:
         parser = super().build_parser()
-        parser.add_argument("--soul-file", default="", help="Path to a soul.md file (OpenClaw agent spec).")
-        parser.add_argument("--models", default="claude-sonnet-4-20250514,gpt-4o", help="Comma-separated model IDs.")
+        parser.add_argument(
+            "--soul-file",
+            default="",
+            help="Path to a soul.md file (OpenClaw agent spec).",
+        )
+        parser.add_argument(
+            "--models",
+            default="claude-sonnet-4-20250514,gpt-4o",
+            help="Comma-separated model IDs.",
+        )
         parser.add_argument(
             "--categories",
             default="jailbreak,persona_drift,prompt_injection,scope_expansion,refusal_bypass,cross_turn_consistency",
             help="Comma-separated probe categories (default: all 6).",
         )
-        parser.add_argument("--probes-per-category", type=int, default=3, help="Probes per category (default: 3).")
-        parser.add_argument("--alert-on-violation", action="store_true", help="Send notifications on VIOLATION.")
-        parser.add_argument("--alert-channel", default="stdout://", help="Notification channel URI.")
+        parser.add_argument(
+            "--probes-per-category",
+            type=int,
+            default=3,
+            help="Probes per category (default: 3).",
+        )
+        parser.add_argument(
+            "--alert-on-violation",
+            action="store_true",
+            help="Send notifications on VIOLATION.",
+        )
+        parser.add_argument(
+            "--alert-channel", default="stdout://", help="Notification channel URI."
+        )
         return parser
 
     async def run(self) -> dict[str, Any]:
@@ -101,7 +120,11 @@ class SoulRedTeamRunner(DemoRunner):
         else:
             soul_spec = get_default_soul_spec()
 
-        logger.info("Soul spec: %s (%d constraints)", soul_spec.agent_name, soul_spec.constraint_count())
+        logger.info(
+            "Soul spec: %s (%d constraints)",
+            soul_spec.agent_name,
+            soul_spec.constraint_count(),
+        )
         print(f"\n  Soul Spec: {soul_spec.agent_name}")
         print(f"  Constraints: {soul_spec.constraint_count()}")
 
@@ -110,7 +133,9 @@ class SoulRedTeamRunner(DemoRunner):
 
         generator = RedTeamProbeGenerator(seed=42)
         probes = generator.generate(
-            soul_spec=soul_spec.to_dict(), categories=categories, count_per_category=self.args.probes_per_category
+            soul_spec=soul_spec.to_dict(),
+            categories=categories,
+            count_per_category=self.args.probes_per_category,
         )
         print(f"  Generated probes: {len(probes)}")
         print(f"  Models under test: {', '.join(models)}")
@@ -135,7 +160,12 @@ class SoulRedTeamRunner(DemoRunner):
             trace_id = self.upload_trace(
                 input_text=f"Soul red-team: {soul_spec.agent_name} -- {model_id}",
                 output_text=f"Aligned: {report['aligned_rate']}%, Violations: {report['violation_rate']}%",
-                metadata={"demo": self.demo_id, "model_id": model_id, "models": models, "source": "openclaw"},
+                metadata={
+                    "demo": self.demo_id,
+                    "model_id": model_id,
+                    "models": models,
+                    "source": "openclaw",
+                },
             )
             if trace_id:
                 logger.info("Trace uploaded for %s: %s", model_id, trace_id)
@@ -173,7 +203,11 @@ class SoulRedTeamRunner(DemoRunner):
         }
 
     def _evaluate_model(
-        self, model_id: str, probes: list[Probe], soul_spec: SoulSpec, notifier: Notifier
+        self,
+        model_id: str,
+        probes: list[Probe],
+        soul_spec: SoulSpec,
+        notifier: Notifier,
     ) -> dict[str, Any]:
         print(f"\n{'=' * 60}")
         print(f"  Model: {model_id}")
@@ -220,8 +254,12 @@ class SoulRedTeamRunner(DemoRunner):
                 }
             )
 
-            icon = {"ALIGNED": "[OK]", "DRIFT": "[!!]", "VIOLATION": "[XX]"}.get(verdict, "[??]")
-            print(f"  {icon} {probe.category:<25} score={result['aggregate_score']:>5.2f}  verdict={verdict}")
+            icon = {"ALIGNED": "[OK]", "DRIFT": "[!!]", "VIOLATION": "[XX]"}.get(
+                verdict, "[??]"
+            )
+            print(
+                f"  {icon} {probe.category:<25} score={result['aggregate_score']:>5.2f}  verdict={verdict}"
+            )
 
             if verdict == "VIOLATION" and self.args.alert_on_violation:
                 notifier.publish_alert(
@@ -257,15 +295,17 @@ class SoulRedTeamRunner(DemoRunner):
                 cat_counts[cat] = cat_counts.get(cat, 0) + 1
             for cat in avg_scores:
                 avg_scores[cat] /= cat_counts[cat]
-            overall_avg = sum(pr["aggregate_score"] for pr in probe_results) / len(probe_results)
+            overall_avg = sum(pr["aggregate_score"] for pr in probe_results) / len(
+                probe_results
+            )
             _print_scores(
                 avg_scores,
                 overall_avg,
-                verdict="VIOLATION"
-                if verdict_counts["VIOLATION"] > 0
-                else "DRIFT"
-                if verdict_counts["DRIFT"] > 0
-                else "ALIGNED",
+                verdict=(
+                    "VIOLATION"
+                    if verdict_counts["VIOLATION"] > 0
+                    else "DRIFT" if verdict_counts["DRIFT"] > 0 else "ALIGNED"
+                ),
             )
 
         return {
@@ -278,14 +318,18 @@ class SoulRedTeamRunner(DemoRunner):
             "probe_results": probe_results,
         }
 
-    def _print_summary(self, model_reports: dict[str, Any], soul_spec: SoulSpec) -> None:
+    def _print_summary(
+        self, model_reports: dict[str, Any], soul_spec: SoulSpec
+    ) -> None:
         print(f"\n{'=' * 60}")
         print(f"  CROSS-MODEL ALIGNMENT SUMMARY")
         print(f"  Soul Spec: {soul_spec.agent_name}")
         print(f"{'=' * 60}")
         print(f"  {'Model':<30} {'Aligned%':>10} {'Violations':>12}")
         print(f"  {'-' * 52}")
-        for model_id, report in sorted(model_reports.items(), key=lambda x: x[1]["aligned_rate"], reverse=True):
+        for model_id, report in sorted(
+            model_reports.items(), key=lambda x: x[1]["aligned_rate"], reverse=True
+        ):
             violations = report["verdict_distribution"].get("VIOLATION", 0)
             print(f"  {model_id:<30} {report['aligned_rate']:>9.1f}% {violations:>10}")
         print(f"{'=' * 60}\n")

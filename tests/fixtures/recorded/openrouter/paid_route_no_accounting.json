@@ -1,0 +1,67 @@
+{
+  "provenance": {
+    "provider": "openrouter",
+    "sdk_version": "2.45.0",
+    "model": "openai/gpt-4o-mini",
+    "scenario": "paid_route_no_accounting",
+    "captured_at": "2026-07-15T21:39:13+00:00",
+    "sealed": true,
+    "sealed_reason": "No OpenRouter API key exists (sk-or-...), so the gateway network could not be called. The bodies below are REAL model responses captured live (see real_body_source) and re-enveloped into OpenRouter's documented wire shape, then replayed through the REAL OpenRouterProvider over httpx.MockTransport. The adapter's parsing, event emission and cost handling are genuinely exercised; only the gateway hop is sealed. Deferred until an OpenRouter credential is provisioned.",
+    "real_body_source": "REAL live inference: OpenAI gpt-4o-mini (POST https://api.openai.com/v1/chat/completions, real key, billed ~$0.0001). OpenRouter's 'openai/gpt-4o-mini' route proxies to this exact model, so the slug names the model that genuinely produced this text.",
+    "notes": "NO usage.cost: the caller did not enable usage accounting (extra_body={'usage': {'include': True}}). We have no OpenRouter charge for this call and refuse to invent one, so the adapter must emit model.invoke with real tokens and NO cost.record (provider_cost_only). This fixture is the regression gate on that refusal branch \u2014 pricing the routed slug from our own catalog would attach a number nobody was billed."
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/chat/completions"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "id": "gen-sealed-no-openrouter-credential-paid-0002",
+          "object": "chat.completion",
+          "created": 1784151552,
+          "model": "openai/gpt-4o-mini",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "The 429 status code indicates that you've exceeded the rate limit for your Growth plan, which is likely set at 30 requests per second. During your nightly backfill, the burst of 40k events/min translates to over 666 requests per second, causing the rate limit to trigger.\n\nTo remediate this, implement exponential backoff for retries after receiving a 429 response. Additionally, consider batching your events to reduce the number of requests. For example, send events in groups of 100 or 200, which can help stay within the rate limits. If backfilling continues to be an issue, consider upgrading to a higher plan with increased limits.",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 128,
+            "completion_tokens": 132,
+            "total_tokens": 260,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "service_tier": "default",
+          "system_fingerprint": "fp_07be26b212"
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json",
+          "openai-version": "2020-10-01",
+          "x-request-id": "req_e8e4aee19c53498bb040f4bdc046da10"
+        }
+      }
+    }
+  ]
+}

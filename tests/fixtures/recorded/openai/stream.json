@@ -1,0 +1,28 @@
+{
+  "provenance": {
+    "provider": "openai",
+    "sdk_version": "2.41.0",
+    "model": "gpt-4o-mini",
+    "scenario": "stream",
+    "captured_at": "2026-07-13T15:47:20+00:00"
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status_code": 200,
+        "json": null,
+        "text": "data: {\"id\":\"chatcmpl-E1DAGmLcaNZrgB5jP4k3FRJEcgV7S\",\"object\":\"chat.completion.chunk\",\"created\":1783957640,\"model\":\"gpt-4o-mini-2024-07-18\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_8c62eb5aea\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\",\"refusal\":null},\"logprobs\":null,\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"0ShNSLjEY\"}\n\ndata: {\"id\":\"chatcmpl-E1DAGmLcaNZrgB5jP4k3FRJEcgV7S\",\"object\":\"chat.completion.chunk\",\"created\":1783957640,\"model\":\"gpt-4o-mini-2024-07-18\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_8c62eb5aea\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"pong\"},\"logprobs\":null,\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"sDEbWIa\"}\n\ndata: {\"id\":\"chatcmpl-E1DAGmLcaNZrgB5jP4k3FRJEcgV7S\",\"object\":\"chat.completion.chunk\",\"created\":1783957640,\"model\":\"gpt-4o-mini-2024-07-18\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_8c62eb5aea\",\"choices\":[{\"index\":0,\"delta\":{},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"usage\":null,\"obfuscation\":\"GozlG\"}\n\ndata: {\"id\":\"chatcmpl-E1DAGmLcaNZrgB5jP4k3FRJEcgV7S\",\"object\":\"chat.completion.chunk\",\"created\":1783957640,\"model\":\"gpt-4o-mini-2024-07-18\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_8c62eb5aea\",\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":1,\"total_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"obfuscation\":\"vJVzCcpKJIG\"}\n\ndata: [DONE]\n\n",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8",
+          "openai-version": "2020-10-01",
+          "x-request-id": "req_44e667f9385a42dd8be71ea5d0a719f5"
+        }
+      }
+    }
+  ]
+}

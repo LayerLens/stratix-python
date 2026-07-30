@@ -1,0 +1,416 @@
+{
+  "provenance": {
+    "provider": "openinference",
+    "sdk_version": "openinference-instrumentation-openai 0.1.52",
+    "model": "gpt-4o-mini",
+    "scenario": "default",
+    "captured_at": "2026-07-15T21:03:23+00:00"
+  },
+  "transport": "object",
+  "sdk": "openinference",
+  "note": "REAL OpenInference/OTel spans exported from one real instrumented retail-support RAG run (openinference-instrumentation-openai auto-instrumenting a real openai gpt-4o-mini call, plus OITracer app-level AGENT/TOOL/RETRIEVER spans), encoded to OTLP/JSON by the real OTel OTLP encoder. This is the adapter's upstream INPUT.",
+  "otlp": {
+    "resourceSpans": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "telemetry.sdk.language",
+              "value": {
+                "stringValue": "python"
+              }
+            },
+            {
+              "key": "telemetry.sdk.name",
+              "value": {
+                "stringValue": "opentelemetry"
+              }
+            },
+            {
+              "key": "telemetry.sdk.version",
+              "value": {
+                "stringValue": "1.43.0"
+              }
+            },
+            {
+              "key": "service.instance.id",
+              "value": {
+                "stringValue": "16cf3e86-383b-47e9-bb55-c9093aa15e38"
+              }
+            },
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "unknown_service"
+              }
+            }
+          ]
+        },
+        "scopeSpans": [
+          {
+            "scope": {
+              "name": "retail.support.assistant"
+            },
+            "spans": [
+              {
+                "traceId": "8d2c225d03715e361994726d38c0bb4d",
+                "spanId": "77e88f632a4942de",
+                "parentSpanId": "dbb01c6b213c86b2",
+                "name": "order_lookup",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784149400971011000",
+                "endTimeUnixNano": "1784149400971070000",
+                "attributes": [
+                  {
+                    "key": "tool.name",
+                    "value": {
+                      "stringValue": "order_lookup"
+                    }
+                  },
+                  {
+                    "key": "tool.parameters",
+                    "value": {
+                      "stringValue": "{\"order_id\": \"SO-884213\"}"
+                    }
+                  },
+                  {
+                    "key": "tool.description",
+                    "value": {
+                      "stringValue": "Fetch a customer order record (item, order/delivery dates, final-sale flag) by order id."
+                    }
+                  },
+                  {
+                    "key": "output.value",
+                    "value": {
+                      "stringValue": "{\"order_id\": \"SO-884213\", \"sku\": \"SUMMIT-TRAIL-9M\", \"item\": \"Summit Trail Waterproof Hiking Boot, M9\", \"price_usd\": 189.0, \"ordered_on\": \"2026-03-14\", \"delivered_on\": \"2026-03-19\", \"final_sale\": false, \"channel\": \"web\", \"found\": true}"
+                    }
+                  },
+                  {
+                    "key": "output.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "TOOL"
+                    }
+                  }
+                ],
+                "status": {},
+                "flags": 256
+              },
+              {
+                "traceId": "8d2c225d03715e361994726d38c0bb4d",
+                "spanId": "b92c7b854c88f295",
+                "parentSpanId": "dbb01c6b213c86b2",
+                "name": "policy_retriever",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784149400971474000",
+                "endTimeUnixNano": "1784149400971586000",
+                "attributes": [
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "I ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.content",
+                    "value": {
+                      "stringValue": "Unworn items in original packaging may be returned within 30 days of delivery for a full refund to the original payment method. Items marked final sale are not returnable."
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.id",
+                    "value": {
+                      "stringValue": "POL-RET-01"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.metadata",
+                    "value": {
+                      "stringValue": "{\"title\": \"Returns & Refunds\"}"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.0.document.score",
+                    "value": {
+                      "doubleValue": 6.0
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.content",
+                    "value": {
+                      "stringValue": "Return shipping is free for items that arrive damaged, incorrect, or that fail under warranty. For all other returns a $6.99 prepaid label fee is deducted from the refund."
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.id",
+                    "value": {
+                      "stringValue": "POL-RET-03"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.metadata",
+                    "value": {
+                      "stringValue": "{\"title\": \"Return Shipping Costs\"}"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.1.document.score",
+                    "value": {
+                      "doubleValue": 6.0
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.content",
+                    "value": {
+                      "stringValue": "Manufacturing defects such as split seams, delamination, or sole separation are covered for 12 months from the delivery date. Covered defects are replaced or refunded regardless of the 30-day return window, and are not treated as ordinary wear and tear."
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.id",
+                    "value": {
+                      "stringValue": "POL-WAR-04"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.metadata",
+                    "value": {
+                      "stringValue": "{\"title\": \"Footwear Defect Warranty\"}"
+                    }
+                  },
+                  {
+                    "key": "retrieval.documents.2.document.score",
+                    "value": {
+                      "doubleValue": 5.0
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "RETRIEVER"
+                    }
+                  }
+                ],
+                "status": {},
+                "flags": 256
+              },
+              {
+                "traceId": "8d2c225d03715e361994726d38c0bb4d",
+                "spanId": "dbb01c6b213c86b2",
+                "name": "retail_support_agent",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784149400970955000",
+                "endTimeUnixNano": "1784149403185537000",
+                "attributes": [
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "I ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "output.value",
+                    "value": {
+                      "stringValue": "You are eligible for a refund because your item has a manufacturing defect, which is covered by our Footwear Defect Warranty (POL-WAR-04). This warranty allows for refunds regardless of the 30-day return window. Additionally, return shipping will be free for items that arrive damaged or fail under warranty (POL-RET-03). Therefore, you will not have to pay for return shipping."
+                    }
+                  },
+                  {
+                    "key": "output.mime_type",
+                    "value": {
+                      "stringValue": "text/plain"
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "AGENT"
+                    }
+                  }
+                ],
+                "status": {},
+                "flags": 256
+              }
+            ]
+          },
+          {
+            "scope": {
+              "name": "openinference.instrumentation.openai",
+              "version": "0.1.52"
+            },
+            "spans": [
+              {
+                "traceId": "8d2c225d03715e361994726d38c0bb4d",
+                "spanId": "910124e986c74840",
+                "parentSpanId": "dbb01c6b213c86b2",
+                "name": "ChatCompletion",
+                "kind": "SPAN_KIND_INTERNAL",
+                "startTimeUnixNano": "1784149401181139000",
+                "endTimeUnixNano": "1784149403183525000",
+                "attributes": [
+                  {
+                    "key": "llm.provider",
+                    "value": {
+                      "stringValue": "openai"
+                    }
+                  },
+                  {
+                    "key": "llm.system",
+                    "value": {
+                      "stringValue": "openai"
+                    }
+                  },
+                  {
+                    "key": "input.value",
+                    "value": {
+                      "stringValue": "{\"messages\": [{\"role\": \"system\", \"content\": \"You are the customer-support assistant for an online footwear retailer. Answer the customer using ONLY the store policy excerpts provided, and cite the policy ids you rely on. State clearly whether a refund is available and who pays return shipping. Answer concisely (under 150 words).\"}, {\"role\": \"user\", \"content\": \"Order record:\\n{\\\"order_id\\\": \\\"SO-884213\\\", \\\"sku\\\": \\\"SUMMIT-TRAIL-9M\\\", \\\"item\\\": \\\"Summit Trail Waterproof Hiking Boot, M9\\\", \\\"price_usd\\\": 189.0, \\\"ordered_on\\\": \\\"2026-03-14\\\", \\\"delivered_on\\\": \\\"2026-03-19\\\", \\\"final_sale\\\": false, \\\"channel\\\": \\\"web\\\", \\\"found\\\": true}\\n\\nStore policy excerpts:\\n[POL-RET-01] Returns & Refunds: Unworn items in original packaging may be returned within 30 days of delivery for a full refund to the original payment method. Items marked final sale are not returnable.\\n[POL-RET-03] Return Shipping Costs: Return shipping is free for items that arrive damaged, incorrect, or that fail under warranty. For all other returns a $6.99 prepaid label fee is deducted from the refund.\\n[POL-WAR-04] Footwear Defect Warranty: Manufacturing defects such as split seams, delamination, or sole separation are covered for 12 months from the delivery date. Covered defects are replaced or refunded regardless of the 30-day return window, and are not treated as ordinary wear and tear.\\n\\nCustomer message:\\nI ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?\"}], \"model\": \"gpt-4o-mini\"}"
+                    }
+                  },
+                  {
+                    "key": "input.mime_type",
+                    "value": {
+                      "stringValue": "application/json"
+                    }
+                  },
+                  {
+                    "key": "output.value",
+                    "value": {
+                      "stringValue": "{\"id\":\"chatcmpl-E213B5IUN4GNiwlRr9UsrIDivPHtl\",\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"You are eligible for a refund because your item has a manufacturing defect, which is covered by our Footwear Defect Warranty (POL-WAR-04). This warranty allows for refunds regardless of the 30-day return window. Additionally, return shipping will be free for items that arrive damaged or fail under warranty (POL-RET-03). Therefore, you will not have to pay for return shipping.\",\"refusal\":null,\"role\":\"assistant\",\"annotations\":[]}}],\"created\":1784149401,\"model\":\"gpt-4o-mini-2024-07-18\",\"object\":\"chat.completion\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_2247163164\",\"usage\":{\"completion_tokens\":80,\"prompt_tokens\":372,\"total_tokens\":452,\"completion_tokens_details\":{\"accepted_prediction_tokens\":0,\"audio_tokens\":0,\"reasoning_tokens\":0,\"rejected_prediction_tokens\":0},\"prompt_tokens_details\":{\"audio_tokens\":0,\"cached_tokens\":0}}}"
+                    }
+                  },
+                  {
+                    "key": "output.mime_type",
+                    "value": {
+                      "stringValue": "application/json"
+                    }
+                  },
+                  {
+                    "key": "llm.invocation_parameters",
+                    "value": {
+                      "stringValue": "{\"model\": \"gpt-4o-mini\"}"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.0.message.role",
+                    "value": {
+                      "stringValue": "system"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.0.message.content",
+                    "value": {
+                      "stringValue": "You are the customer-support assistant for an online footwear retailer. Answer the customer using ONLY the store policy excerpts provided, and cite the policy ids you rely on. State clearly whether a refund is available and who pays return shipping. Answer concisely (under 150 words)."
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.1.message.role",
+                    "value": {
+                      "stringValue": "user"
+                    }
+                  },
+                  {
+                    "key": "llm.input_messages.1.message.content",
+                    "value": {
+                      "stringValue": "Order record:\n{\"order_id\": \"SO-884213\", \"sku\": \"SUMMIT-TRAIL-9M\", \"item\": \"Summit Trail Waterproof Hiking Boot, M9\", \"price_usd\": 189.0, \"ordered_on\": \"2026-03-14\", \"delivered_on\": \"2026-03-19\", \"final_sale\": false, \"channel\": \"web\", \"found\": true}\n\nStore policy excerpts:\n[POL-RET-01] Returns & Refunds: Unworn items in original packaging may be returned within 30 days of delivery for a full refund to the original payment method. Items marked final sale are not returnable.\n[POL-RET-03] Return Shipping Costs: Return shipping is free for items that arrive damaged, incorrect, or that fail under warranty. For all other returns a $6.99 prepaid label fee is deducted from the refund.\n[POL-WAR-04] Footwear Defect Warranty: Manufacturing defects such as split seams, delamination, or sole separation are covered for 12 months from the delivery date. Covered defects are replaced or refunded regardless of the 30-day return window, and are not treated as ordinary wear and tear.\n\nCustomer message:\nI ordered the Summit Trail boots back in March \u2014 about four months ago \u2014 and the seam along the left heel has completely split open. They were not final sale. Can I still get a refund, and do I have to pay for the return shipping?"
+                    }
+                  },
+                  {
+                    "key": "llm.model_name",
+                    "value": {
+                      "stringValue": "gpt-4o-mini-2024-07-18"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.total",
+                    "value": {
+                      "intValue": "452"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt",
+                    "value": {
+                      "intValue": "372"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion",
+                    "value": {
+                      "intValue": "80"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt_details.cache_read",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.prompt_details.audio",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion_details.reasoning",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.token_count.completion_details.audio",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "llm.output_messages.0.message.role",
+                    "value": {
+                      "stringValue": "assistant"
+                    }
+                  },
+                  {
+                    "key": "llm.output_messages.0.message.content",
+                    "value": {
+                      "stringValue": "You are eligible for a refund because your item has a manufacturing defect, which is covered by our Footwear Defect Warranty (POL-WAR-04). This warranty allows for refunds regardless of the 30-day return window. Additionally, return shipping will be free for items that arrive damaged or fail under warranty (POL-RET-03). Therefore, you will not have to pay for return shipping."
+                    }
+                  },
+                  {
+                    "key": "llm.finish_reason",
+                    "value": {
+                      "stringValue": "stop"
+                    }
+                  },
+                  {
+                    "key": "openinference.span.kind",
+                    "value": {
+                      "stringValue": "LLM"
+                    }
+                  }
+                ],
+                "status": {
+                  "code": "STATUS_CODE_OK"
+                },
+                "flags": 256
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

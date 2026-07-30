@@ -1,0 +1,15 @@
+{
+  "marker": "prodready-l5-20260626T232437Z",
+  "generated_utc": "20260626T232437Z",
+  "probes": {
+    "anthropic_badkey_401": "tests/e2e/recorded/prodready_errors/anthropic_badkey_401.json",
+    "anthropic_malformed_400": "tests/e2e/recorded/prodready_errors/anthropic_malformed_400.json",
+    "openai_badkey_401": "tests/e2e/recorded/prodready_errors/openai_badkey_401.json",
+    "openai_malformed_400": "tests/e2e/recorded/prodready_errors/openai_malformed_400.json",
+    "ollama_badmodel_404": "tests/e2e/recorded/prodready_errors/ollama_badmodel_404.json",
+    "ollama_badjson_400": "tests/e2e/recorded/prodready_errors/ollama_badjson_400.json",
+    "anthropic_sdk_surface": "tests/e2e/recorded/prodready_errors/anthropic_sdk_surface.json",
+    "openai_sdk_surface": "tests/e2e/recorded/prodready_errors/openai_sdk_surface.json",
+    "ollama_sdk_surface": "tests/e2e/recorded/prodready_errors/ollama_sdk_surface.json"
+  }
+}

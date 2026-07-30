@@ -112,7 +112,9 @@ class PopulationQualityJudge:
         self._evaluation_count: int = 0
         self._dimension_sums: dict[str, float] = {dim: 0.0 for dim in self.DIMENSIONS}
 
-    def evaluate(self, trace_id: str, output: str, context: dict[str, Any]) -> dict[str, Any]:
+    def evaluate(
+        self, trace_id: str, output: str, context: dict[str, Any]
+    ) -> dict[str, Any]:
         community = context.get("community", "general")
         karma_tier = context.get("karma_tier", "standard")
         topic = context.get("topic", "")
@@ -126,10 +128,16 @@ class PopulationQualityJudge:
         for dim, modifier in modifiers.items():
             if dim in scores:
                 scores[dim] = round(min(10.0, scores[dim] / modifier), 2)
-        aggregate = round(sum(scores[dim] * weight for dim, weight in self.DIMENSIONS.items()), 2)
-        verdict = self._classify_verdict(aggregate, community=community, karma_tier=karma_tier)
+        aggregate = round(
+            sum(scores[dim] * weight for dim, weight in self.DIMENSIONS.items()), 2
+        )
+        verdict = self._classify_verdict(
+            aggregate, community=community, karma_tier=karma_tier
+        )
         self._update_stats(scores)
-        rationale = self._build_rationale(scores, aggregate, verdict, community, karma_tier)
+        rationale = self._build_rationale(
+            scores, aggregate, verdict, community, karma_tier
+        )
         return {
             "trace_id": trace_id,
             "scores": scores,
@@ -144,19 +152,32 @@ class PopulationQualityJudge:
     def evaluate_batch(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         results = []
         for item in items:
-            result = self.evaluate(trace_id=item["trace_id"], output=item["output"], context=item.get("context", {}))
+            result = self.evaluate(
+                trace_id=item["trace_id"],
+                output=item["output"],
+                context=item.get("context", {}),
+            )
             results.append(result)
         return results
 
     def get_population_stats(self) -> dict[str, Any]:
         if self._evaluation_count == 0:
             return {"evaluation_count": 0, "dimension_averages": {}}
-        averages = {dim: round(total / self._evaluation_count, 2) for dim, total in self._dimension_sums.items()}
-        return {"evaluation_count": self._evaluation_count, "dimension_averages": averages}
+        averages = {
+            dim: round(total / self._evaluation_count, 2)
+            for dim, total in self._dimension_sums.items()
+        }
+        return {
+            "evaluation_count": self._evaluation_count,
+            "dimension_averages": averages,
+        }
 
     def _classify_verdict(self, score: float, **context: Any) -> str:
         threshold = self.pass_threshold
-        if context.get("karma_tier") == "high" and context.get("community") == "research":
+        if (
+            context.get("karma_tier") == "high"
+            and context.get("community") == "research"
+        ):
             threshold += 0.5
         return "PASS" if score >= threshold else "FAIL"
 
@@ -166,7 +187,9 @@ class PopulationQualityJudge:
         rng = random.Random(seed)
         base = rng.uniform(4.0, 8.5)
         bonus = min(sum(1 for s in _REASONING_SIGNALS if s in output_lower) * 0.6, 3.0)
-        penalty = min(sum(1 for s in _INCOHERENCE_SIGNALS if s in output_lower) * 1.0, 4.0)
+        penalty = min(
+            sum(1 for s in _INCOHERENCE_SIGNALS if s in output_lower) * 1.0, 4.0
+        )
         word_count = len(output.split())
         if word_count > 200:
             bonus += 0.5
@@ -190,15 +213,23 @@ class PopulationQualityJudge:
         rng = random.Random(seed)
         base = rng.uniform(5.5, 9.0)
         if topic:
-            topic_words = set(w.lower() for w in re.findall(r"\w+", topic) if len(w) > 3)
-            output_words = set(w.lower() for w in re.findall(r"\w+", output) if len(w) > 3)
+            topic_words = set(
+                w.lower() for w in re.findall(r"\w+", topic) if len(w) > 3
+            )
+            output_words = set(
+                w.lower() for w in re.findall(r"\w+", output) if len(w) > 3
+            )
             if topic_words:
                 overlap = len(topic_words & output_words) / len(topic_words)
                 if overlap > 0.5:
                     base += 1.0
                 elif overlap < 0.1:
                     base -= 2.0
-        tangent_hits = sum(1 for s in ["tangent", "off topic", "side note", "unrelated"] if s in output_lower)
+        tangent_hits = sum(
+            1
+            for s in ["tangent", "off topic", "side note", "unrelated"]
+            if s in output_lower
+        )
         return round(max(0.0, min(10.0, base - tangent_hits * 1.5)), 2)
 
     def _score_originality(self, output: str) -> float:
@@ -216,7 +247,12 @@ class PopulationQualityJudge:
             self._dimension_sums[dim] = self._dimension_sums.get(dim, 0.0) + score
 
     def _build_rationale(
-        self, scores: dict[str, float], aggregate: float, verdict: str, community: str, karma_tier: str
+        self,
+        scores: dict[str, float],
+        aggregate: float,
+        verdict: str,
+        community: str,
+        karma_tier: str,
     ) -> str:
         strongest = max(scores, key=scores.get)  # type: ignore[arg-type]
         weakest = min(scores, key=scores.get)  # type: ignore[arg-type]

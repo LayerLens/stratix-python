@@ -1,0 +1,60 @@
+# Real-framework + fake-model adapter matrix (LAY-3580 / T6).
+#
+# Cost model (team-reviewed): zero LLM spend — the suites drive real framework
+# objects with fake models; NO API keys are configured in these jobs. Compute
+# knobs: PRs run only the rows whose adapter paths the diff touches; the full
+# matrix runs nightly; uv caching keeps installs fast.
+
+name: Adapter Matrix
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * *" # nightly full matrix (04:17 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      frameworks: ${{ steps.pick.outputs.frameworks }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pick rows to run
+        id: pick
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" != "pull_request" ]; then
+            ROWS=$(python3 tests/matrix/run_matrix.py --list)
+          else
+            git fetch -q origin "${GITHUB_BASE_REF}"
+            ROWS=$(git diff --name-only "origin/${GITHUB_BASE_REF}"...HEAD | python3 tests/matrix/run_matrix.py --pick)
+          fi
+          echo "frameworks=${ROWS}" >> "$GITHUB_OUTPUT"
+          echo "rows: ${ROWS}"
+
+  matrix:
+    needs: plan
+    if: needs.plan.outputs.frameworks != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: ${{ fromJSON(needs.plan.outputs.frameworks) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "tests/matrix/frameworks.toml"
+
+      - name: Run framework row
+        run: python3 tests/matrix/run_matrix.py --framework "${{ matrix.framework }}"

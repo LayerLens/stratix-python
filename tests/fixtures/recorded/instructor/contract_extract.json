@@ -1,0 +1,73 @@
+{
+  "provenance": {
+    "provider": "openai",
+    "sdk_version": "2.45.0",
+    "model": "gpt-4o-mini",
+    "scenario": "contract_extract",
+    "captured_at": "2026-07-15T21:38:16+00:00"
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "id": "chatcmpl-E21aw6tWGa61qW34GnLKaBEZ3eBVe",
+          "object": "chat.completion",
+          "created": 1784151494,
+          "model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                  {
+                    "id": "call_ZFWDZOKY4qG1ZWg9VmmdRNeN",
+                    "type": "function",
+                    "function": {
+                      "name": "ContractMetadata",
+                      "arguments": "{\"agreement_title\":\"MASTER SERVICES AGREEMENT\",\"parties\":[{\"name\":\"NORTHWIND ANALYTICS, INC.\",\"role\":\"Provider\",\"entity_type\":\"Delaware corporation\"},{\"name\":\"MERIDIAN HEALTH PARTNERS, LLC\",\"role\":\"Customer\",\"entity_type\":\"New York limited liability company\"}],\"effective_date\":\"March 14, 2026\",\"initial_term_months\":36,\"governing_law\":\"State of New York\",\"exclusive_venue\":\"New York County, New York\",\"auto_renews\":true,\"renewal_term_months\":12,\"non_renewal_notice_days\":90}"
+                    }
+                  }
+                ],
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 947,
+            "completion_tokens": 125,
+            "total_tokens": 1072,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "service_tier": "default",
+          "system_fingerprint": "fp_1aec1bbdb8"
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json",
+          "openai-version": "2020-10-01",
+          "x-request-id": "req_1f482c11902245b9bfc34633f8af0e64"
+        }
+      }
+    }
+  ]
+}

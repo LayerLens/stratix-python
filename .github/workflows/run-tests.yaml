@@ -32,6 +32,26 @@ jobs:
       - name: Run tests
         run: rye run pytest
 
+  coverage:
+    # Core-scoped coverage gate (LAY-3614 / W3): floor on the shared core
+    # machinery only, run once on 3.11 (coverage is py-version-stable for core).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rye
+        uses: eifinger/setup-rye@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: |
+          rye pin 3.11
+          rye sync
+
+      - name: Core coverage gate
+        run: rye run test:cov-core
+
   test-build:
     runs-on: ubuntu-latest
     steps:

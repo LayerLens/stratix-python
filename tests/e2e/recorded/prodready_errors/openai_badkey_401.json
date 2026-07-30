@@ -1,0 +1,19 @@
+{
+  "marker": "prodready-l5-20260626T232437Z",
+  "probe": "openai_badkey_401",
+  "kind": "raw_http",
+  "result": {
+    "status": 401,
+    "body": {
+      "error": {
+        "message": "Incorrect API key provided: sk-proj-**************************************************nary. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "type": "invalid_request_error",
+        "code": "invalid_api_key",
+        "param": null
+      },
+      "status": 401
+    },
+    "raw": "{\n  \"error\": {\n    \"message\": \"Incorrect API key provided: sk-proj-**************************************************nary. You can find your API key at https://platform.openai.com/account/api-keys.\",\n    \"type\": \"invalid_request_error\",\n    \"code\": \"invalid_api_key\",\n    \"param\": null\n  },\n  \"status\": 401\n}",
+    "key_in_body": false
+  }
+}

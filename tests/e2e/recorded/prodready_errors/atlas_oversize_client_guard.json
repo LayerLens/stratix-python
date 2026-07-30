@@ -1,0 +1,6 @@
+{
+  "marker": "prodready-l7-20260626T232832Z",
+  "probe": "atlas_oversize_client_guard",
+  "surfaced_type": "ValueError",
+  "str": "File size 53477377 exceeds maximum of 52428800 bytes (50 MB)"
+}

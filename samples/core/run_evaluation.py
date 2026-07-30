@@ -103,7 +103,11 @@ def main() -> None:
         logger.error("Failed to initialize client: %s", exc)
         sys.exit(1)
 
-    logger.info("Connected to LayerLens (org=%s, project=%s)", client.organization_id, client.project_id)
+    logger.info(
+        "Connected to LayerLens (org=%s, project=%s)",
+        client.organization_id,
+        client.project_id,
+    )
 
     # --- Step 1: Fetch models and benchmarks ---
     logger.info("=" * 60)
@@ -215,7 +219,10 @@ def main() -> None:
         else:
             logger.warning("No results available for this evaluation")
     else:
-        logger.warning("Evaluation did not succeed (status=%s), no results to show.", evaluation.status)
+        logger.warning(
+            "Evaluation did not succeed (status=%s), no results to show.",
+            evaluation.status,
+        )
 
     logger.info("Sample complete.")
 

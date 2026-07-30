@@ -1,0 +1,338 @@
+{
+  "corpus_sha256": "2538fc5a92b7605b2491639c261b6237af0797a2814718160090bf9a06b96241",
+  "events": [
+    {
+      "span_id": "0000000000000001",
+      "span_name": "ChatCompletion",
+      "event_type": "model.invoke",
+      "payload": {
+        "completion_tokens": 178,
+        "duration_ms": 500,
+        "input_tokens": 312,
+        "invocation_parameters": "{\"temperature\": 0.0, \"max_tokens\": 256}",
+        "metadata": "{\"tenant\": \"acme\"}",
+        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "output": "Score: 4/5. The response is mostly accurate.",
+        "output_tokens": 178,
+        "prompt": "Score this response for factual accuracy.",
+        "prompt_tokens": 312,
+        "provider": "openai",
+        "session_id": "sess-42",
+        "total_tokens": 490,
+        "user_id": "user-7"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000002",
+      "span_name": "ChatCompletion",
+      "event_type": "model.invoke",
+      "payload": {
+        "duration_ms": 500,
+        "model": "claude-3-5-sonnet",
+        "model_name": "claude-3-5-sonnet",
+        "provider": "anthropic"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000003",
+      "span_name": "ChatCompletion",
+      "event_type": "model.invoke",
+      "payload": {
+        "duration_ms": 500,
+        "error": "rate limited by upstream",
+        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "provider": "unknown"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000004",
+      "span_name": "ChatCompletion",
+      "event_type": "model.invoke",
+      "payload": {
+        "duration_ms": 500,
+        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "provider": "unknown"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000005",
+      "span_name": "ChatCompletion",
+      "event_type": "model.invoke",
+      "payload": {
+        "duration_ms": 500,
+        "error": "span status ERROR",
+        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "provider": "unknown"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000006",
+      "span_name": "ChatCompletion",
+      "event_type": "model.invoke",
+      "payload": {
+        "duration_ms": 500,
+        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[truncated 3000 chars]",
+        "prompt": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[truncated 3000 chars]",
+        "provider": "unknown"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000007",
+      "span_name": "ChatCompletion",
+      "event_type": "model.invoke",
+      "payload": {
+        "duration_ms": 500,
+        "input_tokens": 128,
+        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "prompt_tokens": 128,
+        "provider": "unknown"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000008",
+      "span_name": "openai.chat",
+      "event_type": "model.invoke",
+      "payload": {
+        "duration_ms": 500,
+        "model": "unknown",
+        "model_name": "unknown",
+        "provider": "unknown"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000009",
+      "span_name": "embedding",
+      "event_type": "embedding.create",
+      "payload": {
+        "duration_ms": 500,
+        "embedding_count": 2,
+        "input": "embed these chunks",
+        "input_tokens": 64,
+        "model": "text-embedding-3-small",
+        "model_name": "text-embedding-3-small",
+        "prompt_tokens": 64,
+        "provider": "openai"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "000000000000000a",
+      "span_name": "embedding",
+      "event_type": "embedding.create",
+      "payload": {
+        "duration_ms": 500,
+        "model": "text-embedding-3-small",
+        "model_name": "text-embedding-3-small",
+        "provider": "unknown"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "000000000000000b",
+      "span_name": "embedding",
+      "event_type": "embedding.create",
+      "payload": {
+        "duration_ms": 500,
+        "model": "m",
+        "model_name": "m",
+        "provider": "unknown"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "000000000000000c",
+      "span_name": "web_search",
+      "event_type": "tool.call",
+      "payload": {
+        "duration_ms": 500,
+        "input": "{\"query\": \"layerlens pricing\"}",
+        "output": "3 results",
+        "tool_description": "Search the public web",
+        "tool_name": "web_search"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "000000000000000d",
+      "span_name": "web_search",
+      "event_type": "tool.call",
+      "payload": {
+        "duration_ms": 500,
+        "input": "{\"q\": \"real params\"}",
+        "tool_name": "web_search"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "000000000000000e",
+      "span_name": "lookup_order",
+      "event_type": "tool.call",
+      "payload": {
+        "duration_ms": 500,
+        "tool_name": "lookup_order"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "000000000000000f",
+      "span_name": "rerank",
+      "event_type": "tool.call",
+      "payload": {
+        "duration_ms": 500,
+        "input": "best pricing page",
+        "subtype": "reranker",
+        "tool_name": "rerank-v3",
+        "top_k": 5
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000010",
+      "span_name": "retrieve",
+      "event_type": "retrieval.query",
+      "payload": {
+        "document_count": 3,
+        "duration_ms": 500,
+        "query": "layerlens pricing"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000011",
+      "span_name": "retrieve",
+      "event_type": "retrieval.query",
+      "payload": {
+        "document_count": 0,
+        "duration_ms": 500
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000012",
+      "span_name": "research_agent",
+      "event_type": "agent.input",
+      "payload": {
+        "agent_id": "research_agent",
+        "duration_ms": 500,
+        "input": "research the pricing question",
+        "input_text": "research the pricing question",
+        "operation": "agent"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000012",
+      "span_name": "research_agent",
+      "event_type": "agent.output",
+      "payload": {
+        "agent_id": "research_agent",
+        "duration_ms": 500,
+        "operation": "agent",
+        "output": "pricing is usage-based",
+        "output_text": "pricing is usage-based"
+      },
+      "timestamp_ns": 1777593600500000000
+    },
+    {
+      "span_id": "0000000000000013",
+      "span_name": "rag_chain",
+      "event_type": "agent.input",
+      "payload": {
+        "agent_id": "rag_chain",
+        "duration_ms": 500,
+        "input": "chain in",
+        "input_text": "chain in",
+        "operation": "chain"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000013",
+      "span_name": "rag_chain",
+      "event_type": "agent.output",
+      "payload": {
+        "agent_id": "rag_chain",
+        "duration_ms": 500,
+        "operation": "chain",
+        "output": "chain out",
+        "output_text": "chain out"
+      },
+      "timestamp_ns": 1777593600500000000
+    },
+    {
+      "span_id": "0000000000000014",
+      "span_name": "safety_check",
+      "event_type": "policy.violation",
+      "payload": {
+        "duration_ms": 500,
+        "error": "blocked: policy hit",
+        "guardrail_name": "safety_check",
+        "output": "BLOCKED",
+        "policy_id": "safety_check",
+        "subtype": "guardrail",
+        "violation_type": "guardrail"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000015",
+      "span_name": "safety_check",
+      "event_type": "tool.call",
+      "payload": {
+        "duration_ms": 500,
+        "guardrail_name": "safety_check",
+        "output": "PASS",
+        "subtype": "guardrail",
+        "tool_name": "safety_check"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000016",
+      "span_name": "hallucination_eval",
+      "event_type": "evaluation.result",
+      "payload": {
+        "duration_ms": 500,
+        "evaluator_name": "hallucination_eval",
+        "result": "PASS"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000017",
+      "span_name": "weird_span",
+      "event_type": "agent.interaction",
+      "payload": {
+        "duration_ms": 500,
+        "input": "in",
+        "output": "out"
+      },
+      "timestamp_ns": 1777593600000000000
+    },
+    {
+      "span_id": "0000000000000018",
+      "span_name": "empty_kind",
+      "event_type": "agent.interaction",
+      "payload": {
+        "duration_ms": 500,
+        "input": "in"
+      },
+      "timestamp_ns": 1777593600000000000
+    }
+  ]
+}

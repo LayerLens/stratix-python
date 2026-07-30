@@ -1,0 +1,480 @@
+"""Pricing-table tests covering LAY-3330 ACs.
+
+The acceptance criteria are:
+
+* Cost calculated dynamically from a pricing table (not inline rates).
+* Default pricing covers all current OpenAI models (GPT-4o, mini, turbo,
+  GPT-4, GPT-3.5, o1, o1-mini, o3, o3-mini).
+* User can override pricing via the ``pricing_table`` argument.
+* Fuzzy model-name matching: dated model IDs (``gpt-4o-2024-08-06``,
+  ``claude-3-5-sonnet-20241022``) resolve to base-model pricing.
+* Unknown models return ``None`` cost gracefully (no error).
+"""
+
+from __future__ import annotations
+
+import os
+import json
+from pathlib import Path
+
+import pytest
+
+from layerlens.instrument.adapters.providers.pricing import (
+    PRICING,
+    BEDROCK_PRICING,
+    PRICING_OVERRIDE_ENV,
+    CostRecord,
+    PricingTable,
+    calculate_cost,
+    reset_pricing_cache,
+)
+from layerlens.instrument.adapters.providers.token_usage import NormalizedTokenUsage
+
+
+def _usage(prompt: int = 100, completion: int = 50, cached: int | None = None) -> NormalizedTokenUsage:
+    return NormalizedTokenUsage(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        total_tokens=prompt + completion,
+        cached_tokens=cached,
+    )
+
+
+class TestDefaultCoverage:
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-4-turbo",
+            "gpt-4",
+            "gpt-3.5-turbo",
+            "o1",
+            "o1-mini",
+            "o3",
+            "o3-mini",
+        ],
+    )
+    def test_default_pricing_covers_current_openai_models(self, model: str) -> None:
+        # LAY-3330 AC: Default pricing covers all current OpenAI models.
+        cost = calculate_cost(model, _usage())
+        assert cost is not None, f"{model} missing from default PRICING table"
+        assert cost > 0
+
+
+class TestFuzzyMatching:
+    def test_openai_dated_iso_suffix_resolves_to_base(self) -> None:
+        # gpt-4o-2024-08-06 should match gpt-4o's pricing.
+        dated = calculate_cost("gpt-4o-2024-08-06", _usage())
+        base = calculate_cost("gpt-4o", _usage())
+        assert dated is not None
+        assert dated == base
+
+    def test_openai_mini_dated_resolves_to_base(self) -> None:
+        dated = calculate_cost("gpt-4o-mini-2024-07-18", _usage())
+        base = calculate_cost("gpt-4o-mini", _usage())
+        assert dated is not None
+        assert dated == base
+
+    def test_anthropic_short_date_suffix_resolves_to_base(self) -> None:
+        # claude-3-5-sonnet-20241022 hits the exact entry; ensure another
+        # short-date variant (e.g. an unknown dated build) also resolves.
+        cost = calculate_cost("claude-3-5-sonnet-20990101", _usage())
+        base = calculate_cost("claude-3-5-sonnet", _usage())
+        assert cost is not None
+        assert cost == base
+
+    def test_longest_prefix_disambiguates_gpt_4o_from_gpt_4(self) -> None:
+        # ``gpt-4o-2099-99-99-foo`` regex-strips to ``gpt-4o-2099-99-99-foo``
+        # unchanged (the suffix isn't a valid date). The longest-prefix
+        # fallback must pick ``gpt-4o`` over ``gpt-4``.
+        cost = calculate_cost("gpt-4o-experimental-build", _usage())
+        gpt_4o = calculate_cost("gpt-4o", _usage())
+        gpt_4 = calculate_cost("gpt-4", _usage())
+        assert cost is not None
+        assert cost == gpt_4o
+        assert cost != gpt_4
+
+
+class TestBedrockNovaPricing:
+    """LAY-3605: Nova (the live Bedrock Agents default) must be priced — including
+    the region-prefixed inference-profile ids the real wire carries."""
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "amazon.nova-micro-v1:0",
+            "amazon.nova-lite-v1:0",
+            "amazon.nova-pro-v1:0",
+            "amazon.nova-premier-v1:0",
+        ],
+    )
+    def test_nova_models_priced(self, model: str) -> None:
+        cost = calculate_cost(model, _usage(), BEDROCK_PRICING)
+        assert cost is not None, f"{model} missing from BEDROCK_PRICING"
+        assert cost > 0
+
+    def test_region_prefixed_nova_resolves_to_base(self) -> None:
+        # Bedrock Agents requires an inference profile, so the live foundationModel
+        # is region-prefixed (us./eu./apac./us-gov.) — it must resolve to the bare id.
+        base = calculate_cost("amazon.nova-lite-v1:0", _usage(), BEDROCK_PRICING)
+        assert base is not None
+        for prefix in ("us.", "eu.", "apac.", "us-gov."):
+            cost = calculate_cost(prefix + "amazon.nova-lite-v1:0", _usage(), BEDROCK_PRICING)
+            assert cost == base, f"{prefix!r} prefix did not resolve to the base rate"
+
+    def test_inference_profile_arn_resolves(self) -> None:
+        arn = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.amazon.nova-pro-v1:0"
+        cost = calculate_cost(arn, _usage(), BEDROCK_PRICING)
+        base = calculate_cost("amazon.nova-pro-v1:0", _usage(), BEDROCK_PRICING)
+        assert cost is not None and cost == base
+
+    def test_region_prefix_normalization_also_fixes_bedrock_claude(self) -> None:
+        # The same normalization resolves the inference-profile Claude ids the
+        # bedrock PROVIDER adapter sees.
+        cost = calculate_cost("us.anthropic.claude-3-haiku-20240307-v1:0", _usage(), BEDROCK_PRICING)
+        base = calculate_cost("anthropic.claude-3-haiku-20240307-v1:0", _usage(), BEDROCK_PRICING)
+        assert cost is not None and cost == base
+
+
+class TestBedrockMistralAI21Pricing:
+    """LAY-3452: the Bedrock provider parses the Mistral and AI21 families but
+    they had no rates in BEDROCK_PRICING, so cost resolved to None. These assert
+    real, positive, non-None costs — they FAIL if the rate entries are removed."""
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "mistral.mistral-7b-instruct-v0:2",
+            "mistral.mixtral-8x7b-instruct-v0:1",
+            "mistral.mistral-large-2402-v1:0",
+            "mistral.mistral-large-2407-v1:0",
+            "mistral.mistral-small-2402-v1:0",
+            "ai21.jamba-1-5-large-v1:0",
+            "ai21.jamba-1-5-mini-v1:0",
+        ],
+    )
+    def test_mistral_and_ai21_models_priced(self, model: str) -> None:
+        cost = calculate_cost(model, _usage(), BEDROCK_PRICING)
+        assert cost is not None, f"{model} missing from BEDROCK_PRICING"
+        assert cost > 0
+
+    def test_mistral_large_exact_cost(self) -> None:
+        # mistral.mistral-large-2402-v1:0 = $0.004/1k input, $0.012/1k output.
+        cost = calculate_cost(
+            "mistral.mistral-large-2402-v1:0",
+            _usage(prompt=1000, completion=1000),
+            BEDROCK_PRICING,
+        )
+        assert cost is not None and cost > 0
+        # 1000 * 0.004/1000 + 1000 * 0.012/1000 = 0.004 + 0.012 = 0.016
+        assert cost == pytest.approx(0.016)
+
+    def test_ai21_jamba_mini_exact_cost(self) -> None:
+        # ai21.jamba-1-5-mini-v1:0 = $0.0002/1k input, $0.0004/1k output.
+        cost = calculate_cost(
+            "ai21.jamba-1-5-mini-v1:0",
+            _usage(prompt=1000, completion=1000),
+            BEDROCK_PRICING,
+        )
+        assert cost is not None and cost > 0
+        # 1000 * 0.0002/1000 + 1000 * 0.0004/1000 = 0.0002 + 0.0004 = 0.0006
+        assert cost == pytest.approx(0.0006)
+
+
+class TestUnknownModelsGracefully:
+    def test_completely_unknown_model_returns_none(self) -> None:
+        assert calculate_cost("totally-fake-model-9000", _usage()) is None
+
+    def test_empty_model_returns_none(self) -> None:
+        assert calculate_cost("", _usage()) is None
+
+
+class TestUserOverrides:
+    def test_caller_supplied_pricing_table_takes_precedence(self) -> None:
+        # The caller can pass an entirely custom pricing table — no code changes
+        # in the library needed (LAY-3327 + LAY-3330 ACs).
+        custom = {"my-private-model": {"input": 1.0, "output": 2.0}}
+        cost = calculate_cost(
+            "my-private-model",
+            _usage(prompt=1000, completion=500),
+            pricing_table=custom,
+        )
+        # 1000 * 1.0/1000 + 500 * 2.0/1000 = 1.0 + 1.0 = 2.0
+        assert cost == pytest.approx(2.0)
+
+    def test_custom_table_isolates_from_defaults(self) -> None:
+        # A custom table that doesn't include a model that exists in PRICING
+        # must NOT silently fall through to PRICING — it's an explicit override.
+        custom = {"my-private-model": {"input": 1.0, "output": 2.0}}
+        assert calculate_cost("gpt-4o", _usage(), pricing_table=custom) is None
+
+
+class TestCachedTokens:
+    def test_cached_tokens_discounted(self) -> None:
+        # OpenAI cached tokens are billed at 50% of input rate (per
+        # _cached_token_discount). Anthropic gets 90% off; Google 75% off.
+        without = calculate_cost("gpt-4o", _usage(prompt=1000, completion=0))
+        with_cache = calculate_cost("gpt-4o", _usage(prompt=1000, completion=0, cached=500))
+        assert with_cache is not None and without is not None
+        # Half of the 1000 prompt tokens are cached at 50% off, so cost drops.
+        assert with_cache < without
+
+    def test_anthropic_cached_tokens_steeper_discount(self) -> None:
+        # 90% off for Claude; ensure the function applies the right discount.
+        cost = calculate_cost(
+            "claude-3-5-sonnet",
+            _usage(prompt=1000, completion=0, cached=1000),
+        )
+        # All-cached: 1000 * 0.003/1000 * 0.10 = 0.0003
+        assert cost == pytest.approx(0.0003)
+
+    def test_google_cached_tokens_discount(self) -> None:
+        # 75% off for Gemini (0.25 multiplier) — the _cached_token_discount
+        # gemini branch (pricing.py) had no test (LAY-3572 / B3).
+        # gemini-1.5-pro input rate = 0.00125; all-cached 1000 tokens:
+        # 1000 * 0.00125/1000 * 0.25 = 0.0003125
+        cost = calculate_cost("gemini-1.5-pro", _usage(prompt=1000, completion=0, cached=1000))
+        assert cost == pytest.approx(0.0003125)
+        # ...and distinctly cheaper than the 50%-off default would give.
+        default_rate = calculate_cost("gpt-4o-mini", _usage(prompt=1000, completion=0, cached=1000))
+        gemini_ratio = cost / calculate_cost("gemini-1.5-pro", _usage(prompt=1000, completion=0))
+        assert gemini_ratio == pytest.approx(0.25), "gemini cached discount is not 75% off"
+        assert default_rate is not None
+
+
+class TestPricingTableIsPubliclyAccessible:
+    def test_pricing_dict_is_importable(self) -> None:
+        # The story explicitly asks for "dynamic pricing table" — the table
+        # itself must be a public attribute callers can introspect.
+        assert isinstance(PRICING, dict)
+        assert "gpt-4o" in PRICING
+        assert "claude-3-5-sonnet" in PRICING
+
+
+class TestEnvOverride:
+    """LAY-3327 AC: pricing 'can be updated without code changes'.
+
+    Setting ``LAYERLENS_PRICING_TABLE`` to a JSON file path applies overrides
+    that take precedence over both the bundled defaults and any caller-supplied
+    ``pricing_table``.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate_env(self, monkeypatch: pytest.MonkeyPatch):
+        # The override loader caches; reset before and after each test so the
+        # tests are independent.
+        monkeypatch.delenv(PRICING_OVERRIDE_ENV, raising=False)
+        reset_pricing_cache()
+        yield
+        reset_pricing_cache()
+
+    def test_env_override_changes_pricing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        override_path = tmp_path / "pricing.json"
+        override_path.write_text(json.dumps({"gpt-4o": {"input": 0.999, "output": 0.999}}))
+        monkeypatch.setenv(PRICING_OVERRIDE_ENV, str(override_path))
+        reset_pricing_cache()
+
+        cost = calculate_cost("gpt-4o", _usage(prompt=1000, completion=1000))
+        # 1000 * 0.999/1000 + 1000 * 0.999/1000 = 1.998
+        assert cost == pytest.approx(1.998)
+
+    def test_env_override_wins_over_caller_supplied_table(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        override_path = tmp_path / "pricing.json"
+        override_path.write_text(json.dumps({"gpt-4o": {"input": 0.5, "output": 0.5}}))
+        monkeypatch.setenv(PRICING_OVERRIDE_ENV, str(override_path))
+        reset_pricing_cache()
+
+        caller_table = {"gpt-4o": {"input": 100.0, "output": 100.0}}
+        cost = calculate_cost("gpt-4o", _usage(prompt=1000, completion=0), pricing_table=caller_table)
+        # env value (0.5) used, not caller table (100.0).
+        # 1000 * 0.5/1000 = 0.5
+        assert cost == pytest.approx(0.5)
+
+    def test_env_override_supports_fuzzy_matching(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Override of ``gpt-4o`` should also apply to dated variants via the
+        # same fuzzy resolution.
+        override_path = tmp_path / "pricing.json"
+        override_path.write_text(json.dumps({"gpt-4o": {"input": 0.001, "output": 0.001}}))
+        monkeypatch.setenv(PRICING_OVERRIDE_ENV, str(override_path))
+        reset_pricing_cache()
+
+        cost = calculate_cost("gpt-4o-2024-08-06", _usage(prompt=1000, completion=0))
+        assert cost == pytest.approx(0.001)
+
+    def test_missing_env_var_uses_defaults(self) -> None:
+        # When LAYERLENS_PRICING_TABLE isn't set, defaults work normally.
+        assert PRICING_OVERRIDE_ENV not in os.environ
+        cost = calculate_cost("gpt-4o", _usage(prompt=1000, completion=0))
+        assert cost is not None
+        assert cost > 0
+
+    def test_unreadable_override_file_falls_back_gracefully(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Pointing at a missing file must not crash the request path.
+        monkeypatch.setenv(PRICING_OVERRIDE_ENV, str(tmp_path / "does-not-exist.json"))
+        reset_pricing_cache()
+        cost = calculate_cost("gpt-4o", _usage())
+        # Falls back to defaults.
+        assert cost is not None
+
+    def test_malformed_json_override_falls_back_gracefully(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bad = tmp_path / "bad.json"
+        bad.write_text("not valid json at all {{{")
+        monkeypatch.setenv(PRICING_OVERRIDE_ENV, str(bad))
+        reset_pricing_cache()
+        cost = calculate_cost("gpt-4o", _usage())
+        assert cost is not None
+
+    def test_env_override_adds_new_model_not_in_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # An ops team can price a new model that ships before a library release.
+        override_path = tmp_path / "pricing.json"
+        override_path.write_text(json.dumps({"my-internal-llm-v2": {"input": 0.01, "output": 0.02}}))
+        monkeypatch.setenv(PRICING_OVERRIDE_ENV, str(override_path))
+        reset_pricing_cache()
+
+        cost = calculate_cost("my-internal-llm-v2", _usage(prompt=1000, completion=500))
+        # 1000 * 0.01/1000 + 500 * 0.02/1000 = 0.01 + 0.01 = 0.02
+        assert cost == pytest.approx(0.02)
+
+
+class TestPricingTableClass:
+    """LAY-3330 Claude Code Prompt requires a ``PricingTable`` class with:
+
+    * default rates covering current OpenAI models
+    * caller-provided overrides via constructor / from_dict / from_json_file
+    * calculate_cost(model, input_tokens, output_tokens) -> CostRecord
+    * fuzzy model matching for dated variants
+    """
+
+    def test_default_constructor_covers_openai_models(self):
+        table = PricingTable()
+        for m in ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo", "o1", "o1-mini", "o3", "o3-mini"]:
+            assert table.has_model(m), f"PricingTable() missing default: {m}"
+
+    def test_calculate_cost_returns_cost_record(self):
+        table = PricingTable()
+        record = table.calculate_cost("gpt-4o", input_tokens=1000, output_tokens=500)
+        assert isinstance(record, CostRecord)
+        assert record.model == "gpt-4o"
+        assert record.input_tokens == 1000
+        assert record.output_tokens == 500
+        # gpt-4o: $0.0025/1k input + $0.01/1k output = $0.0025 + $0.005 = $0.0075
+        assert record.cost_usd == pytest.approx(0.0075)
+
+    def test_unknown_model_returns_record_with_none_cost(self):
+        table = PricingTable()
+        record = table.calculate_cost("totally-fake-model", input_tokens=100, output_tokens=50)
+        assert record.cost_usd is None
+        # And the input/output token counts are still surfaced so the caller
+        # can decide how to log the unknown-model event.
+        assert record.input_tokens == 100
+        assert record.output_tokens == 50
+
+    def test_fuzzy_match_on_class_method(self):
+        table = PricingTable()
+        dated = table.calculate_cost("gpt-4o-2024-08-06", input_tokens=1000, output_tokens=0)
+        base = table.calculate_cost("gpt-4o", input_tokens=1000, output_tokens=0)
+        assert dated.cost_usd == base.cost_usd
+
+    def test_from_dict_overrides_defaults_entirely(self):
+        custom = {"my-private-model": {"input": 1.0, "output": 2.0}}
+        table = PricingTable.from_dict(custom)
+        # Bundled defaults are NOT present in a from_dict table.
+        assert table.has_model("my-private-model")
+        assert not table.has_model("gpt-4o")
+
+    def test_from_json_file(self, tmp_path):
+        path = tmp_path / "rates.json"
+        path.write_text(json.dumps({"team-llm": {"input": 0.005, "output": 0.01}}))
+        table = PricingTable.from_json_file(str(path))
+        record = table.calculate_cost("team-llm", input_tokens=2000, output_tokens=1000)
+        # 2000 * 0.005/1000 + 1000 * 0.01/1000 = 0.01 + 0.01 = 0.02
+        assert record.cost_usd == pytest.approx(0.02)
+
+    def test_from_json_file_rejects_non_object_root(self, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text(json.dumps([1, 2, 3]))
+        with pytest.raises(ValueError, match="must be an object"):
+            PricingTable.from_json_file(str(path))
+
+    def test_models_lists_keys(self):
+        table = PricingTable.from_dict({"a": {"input": 0.1, "output": 0.2}, "b": {"input": 0.3, "output": 0.4}})
+        models = table.models()
+        assert sorted(models) == ["a", "b"]
+
+    def test_cached_tokens_propagated_to_record(self):
+        table = PricingTable()
+        record = table.calculate_cost("gpt-4o", input_tokens=1000, output_tokens=0, cached_tokens=200)
+        assert record.cached_tokens == 200
+        # 800 non-cached at $0.0025/1k + 200 cached at 50% off = 200 * 0.00125/1k
+        expected = (800 * 0.0025 / 1000) + (200 * (0.0025 * 0.5) / 1000)
+        assert record.cost_usd == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# Service-tier pricing (A2 / LAY-3626) — OpenAI flex/batch (~0.5x) and priority
+# (~2x) change the per-token price. The response echoes service_tier; pricing
+# was model-keyed only, so flex was over-billed ~2x and priority UNDER-billed
+# (the dangerous direction — budgets/ceilings read cost_usd). Web-grounded:
+# OpenAI flex = batch rates (~50% off); priority ~2-2.5x standard.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.invariant
+class TestServiceTierPricing:
+    def test_tier_orders_flex_lt_standard_lt_priority(self) -> None:
+        u = _usage(prompt=1000, completion=1000)
+        flex = calculate_cost("gpt-4o", u, service_tier="flex")
+        std = calculate_cost("gpt-4o", u, service_tier="standard")
+        prio = calculate_cost("gpt-4o", u, service_tier="priority")
+        assert flex is not None and std is not None and prio is not None
+        assert flex < std < prio, f"service_tier not priced: flex={flex} std={std} prio={prio}"
+
+    def test_no_tier_equals_standard_backcompat(self) -> None:
+        u = _usage(prompt=1000, completion=1000)
+        assert calculate_cost("gpt-4o", u) == calculate_cost("gpt-4o", u, service_tier="standard")
+
+    def test_flex_is_half_standard(self) -> None:
+        u = _usage(prompt=1000, completion=1000)
+        assert calculate_cost("gpt-4o", u, service_tier="flex") == pytest.approx(calculate_cost("gpt-4o", u) * 0.5)
+
+    def test_priority_is_double_standard(self) -> None:
+        u = _usage(prompt=1000, completion=1000)
+        assert calculate_cost("gpt-4o", u, service_tier="priority") == pytest.approx(calculate_cost("gpt-4o", u) * 2.0)
+
+
+# ---------------------------------------------------------------------------
+# Cache-WRITE pricing (A3 / LAY-3626) — Anthropic cache_creation tokens cost
+# 1.25x base input (5-min TTL); the formula priced only non-cached + cache-READ
+# (0.1x) + completion, so every cache write was billed at $0 (systematic
+# under-bill on the canonical long-running-agent prompt-cache pattern).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.invariant
+class TestCacheCreationPricing:
+    def test_cache_write_tokens_are_priced(self) -> None:
+        base = NormalizedTokenUsage(prompt_tokens=1000, completion_tokens=100, total_tokens=1100)
+        with_write = NormalizedTokenUsage(
+            prompt_tokens=1000, completion_tokens=100, total_tokens=1100, cache_creation_tokens=1000
+        )
+        c_base = calculate_cost("claude-3-5-sonnet", base)
+        c_write = calculate_cost("claude-3-5-sonnet", with_write)
+        assert c_write > c_base, "cache_creation (write) tokens billed at $0"
+        input_rate = 0.003  # claude-3-5-sonnet input $/1k
+        expected_delta = 1000 * input_rate * 1.25 / 1000
+        assert c_write - c_base == pytest.approx(expected_delta), "cache write not priced at input_rate * 1.25"
+
+    def test_cache_write_costs_more_than_cache_read_for_same_tokens(self) -> None:
+        read = NormalizedTokenUsage(prompt_tokens=2000, completion_tokens=100, total_tokens=2100, cached_tokens=1000)
+        write = NormalizedTokenUsage(
+            prompt_tokens=1000, completion_tokens=100, total_tokens=1100, cache_creation_tokens=1000
+        )
+        # both have 1000 full-rate input; read adds 1000 @0.1x, write adds 1000 @1.25x
+        assert calculate_cost("claude-3-5-sonnet", write) > calculate_cost("claude-3-5-sonnet", read)

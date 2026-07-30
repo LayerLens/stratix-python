@@ -27,6 +27,7 @@ def judge() -> None:
       stratix judge get <judge-id>
       stratix judge create --name "Quality" --goal "Evaluate response quality"
       stratix judge test --judge-id <id> --trace-id <id>
+      stratix judge result <trace-evaluation-id>
     """
 
 
@@ -81,7 +82,12 @@ def get_judge(ctx: click.Context, id: str) -> None:
 @judge.command("create")
 @click.option("--name", required=True, help="Judge name.")
 @click.option("--goal", required=True, help="Evaluation goal description.")
-@click.option("--model-id", default=None, shell_complete=complete_model, help="Model ID for the judge.")
+@click.option(
+    "--model-id",
+    default=None,
+    shell_complete=complete_model,
+    help="Model ID for the judge.",
+)
 @click.pass_context
 @handle_errors
 def create_judge(ctx: click.Context, name: str, goal: str, model_id: str | None) -> None:
@@ -104,8 +110,18 @@ def create_judge(ctx: click.Context, name: str, goal: str, model_id: str | None)
 
 
 @judge.command("test")
-@click.option("--judge-id", required=True, shell_complete=complete_judge, help="Judge ID to test with.")
-@click.option("--trace-id", required=True, shell_complete=complete_trace, help="Trace ID to evaluate.")
+@click.option(
+    "--judge-id",
+    required=True,
+    shell_complete=complete_judge,
+    help="Judge ID to test with.",
+)
+@click.option(
+    "--trace-id",
+    required=True,
+    shell_complete=complete_trace,
+    help="Trace ID to evaluate.",
+)
 @click.pass_context
 @handle_errors
 def test_judge(ctx: click.Context, judge_id: str, trace_id: str) -> None:
@@ -125,5 +141,50 @@ def test_judge(ctx: click.Context, judge_id: str, trace_id: str) -> None:
         sys.exit(1)
 
     click.echo(f"Trace evaluation created: {te.id}")
+    # Point users at the right command to retrieve the result. Without this hint
+    # they tend to reach for `evaluate get`, which targets the unrelated
+    # benchmark-evaluations endpoint and fails on a trace-evaluation ID.
+    click.echo(f"Fetch the result with: layerlens judge result {te.id}", err=True)
     output = format_output(te, ctx.obj["output_format"])
+    click.echo(output)
+
+
+@judge.command("result")
+@click.argument("id")
+@click.pass_context
+@handle_errors
+def judge_result(ctx: click.Context, id: str) -> None:
+    """Fetch the result of a judge test (a trace evaluation) by ID.
+
+    The ID is the one returned by `judge test`. If the evaluation has finished
+    successfully its scored result is shown; otherwise the current status is
+    reported so you can re-run once it completes.
+
+    Note: this is distinct from `evaluate get`, which fetches benchmark
+    evaluations rather than judge/trace evaluations.
+
+    \b
+    Examples:
+      stratix judge result abc123
+      stratix judge result abc123 --format json
+    """
+    client = get_client(ctx)
+    te = client.trace_evaluations.get(id)
+    if te is None:
+        click.echo(f"Trace evaluation {id} not found.", err=True)
+        sys.exit(1)
+
+    status = str(getattr(te.status, "value", te.status))
+    if status != "success":
+        if status in ("pending", "in_progress"):
+            click.echo(
+                f"Trace evaluation {id} is still running (status: {status}). Re-run this command once it finishes.",
+                err=True,
+            )
+        output = format_output(te, ctx.obj["output_format"])
+        click.echo(output)
+        return
+
+    results = client.trace_evaluations.get_results(id)
+    output = format_output(results if results is not None else te, ctx.obj["output_format"])
     click.echo(output)

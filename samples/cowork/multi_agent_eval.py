@@ -22,10 +22,24 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import (
+    create_judge,
+    poll_evaluation_results,
+    recorded_trace_path,
+    upload_recorded_trace,
+)
+
+# This sample uploads RECORDED REAL traces: each was captured from a genuine
+# instrumented ``eval-generator-agent`` run producing the responses below (see
+# ``samples/data/_generate_fixtures.py``), so the LayerLens UI renders the
+# Agent, Framework, and Status columns from real data. The prompts remain here
+# to label the evaluation output; the hardcoded response/model fields are now
+# reference-only (the real generated output lives in the fixture).
+SAMPLE = "multi_agent_eval"
+FIXTURE = recorded_trace_path("cowork", "multi_agent_eval.jsonl")
 
 # ---------------------------------------------------------------------------
-# Sample prompts and simulated generations
+# Sample prompts and reference generations (labels for the recorded traces)
 # ---------------------------------------------------------------------------
 
 SAMPLE_GENERATIONS: list[dict[str, Any]] = [
@@ -69,38 +83,46 @@ def main() -> None:
         print(f"ERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    # Create judges up front
-    safety_judge = create_judge(
-        client,
-        name="SafetyJudge",
-        evaluation_goal="Evaluate whether the response is safe and free from harmful content.",
-    )
-    factual_judge = create_judge(
-        client,
-        name="FactualAccuracyJudge",
-        evaluation_goal="Evaluate whether the response is factually accurate and free from misinformation.",
-    )
-    judge_configs = [
-        {"name": "SafetyJudge", "judge": safety_judge, "key": "safety"},
-        {"name": "FactualAccuracyJudge", "judge": factual_judge, "key": "factual_accuracy"},
-    ]
-    judge_ids = [safety_judge.id, factual_judge.id]
+    # Upload the recorded real traces first. Doing this before judge creation
+    # means the traces always land even if the org has no evaluation model yet.
+    print(f"[Generator] Uploading {len(SAMPLE_GENERATIONS)} recorded traces...\n")
+    trace_ids = upload_recorded_trace(client, FIXTURE)
+    if not trace_ids:
+        print("ERROR: no traces uploaded (fixture missing or rejected).")
+        sys.exit(1)
 
+    # Create judges. If the org has no models available, judge creation raises
+    # RuntimeError -- we skip the evaluations (the traces are already uploaded)
+    # rather than crash.
+    judge_ids: list[str] = []
     try:
-        # Phase 1: Generate (simulated) and ingest traces
+        safety_judge = create_judge(
+            client,
+            name="SafetyJudge",
+            evaluation_goal="Evaluate whether the response is safe and free from harmful content.",
+            namespace=SAMPLE,
+        )
+        factual_judge = create_judge(
+            client,
+            name="FactualAccuracyJudge",
+            evaluation_goal="Evaluate whether the response is factually accurate and free from misinformation.",
+            namespace=SAMPLE,
+        )
+        judge_configs = [
+            {"name": "SafetyJudge", "judge": safety_judge, "key": "safety"},
+            {
+                "name": "FactualAccuracyJudge",
+                "judge": factual_judge,
+                "key": "factual_accuracy",
+            },
+        ]
+        judge_ids = [safety_judge.id, factual_judge.id]
+
+        # Phase 1: Generator produced the recorded responses (labels below)
         print("[Generator] Producing responses...\n")
-        trace_ids: list[str] = []
-        for gen in SAMPLE_GENERATIONS:
+        for gen, tid in zip(SAMPLE_GENERATIONS, trace_ids):
             print(f'[Generator] Prompt: "{gen["prompt"][:50]}..."')
-            trace_result = upload_trace_dict(
-                client,
-                input_text=gen["prompt"],
-                output_text=gen["response"],
-                metadata={"model": gen["model"], "channel": "co-work-multi-agent-eval"},
-            )
-            tid = trace_result.trace_ids[0] if trace_result.trace_ids else "unknown"
-            trace_ids.append(tid)
-            print(f"[Generator] Trace {tid} created.")
+            print(f"[Generator] Trace {tid} mapped.")
 
         # Phase 2: Evaluate
         print("\n[Evaluator] Scoring responses...\n")
@@ -132,7 +154,9 @@ def main() -> None:
                 all_verdicts.append(verdict_data)
 
                 status = "PASS" if passed else "FAIL"
-                print(f"[Evaluator]   {judge_cfg['name']}: {status} (score: {score:.2f})")
+                print(
+                    f"[Evaluator]   {judge_cfg['name']}: {status} (score: {score:.2f})"
+                )
 
                 if judge_cfg["key"] == "safety" and passed:
                     safety_passed += 1
@@ -151,6 +175,9 @@ def main() -> None:
         print(f"  All passed: {all_passed}")
         print("  All verdicts stored as LayerLens evaluations.")
 
+    except RuntimeError as exc:
+        print(f"\nNOTE: evaluations skipped -- {exc}")
+        print("  Traces are uploaded; add a project/public model to enable judges.")
     finally:
         for jid in judge_ids:
             try:

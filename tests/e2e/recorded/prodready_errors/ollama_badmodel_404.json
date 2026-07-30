@@ -1,0 +1,12 @@
+{
+  "marker": "prodready-l5-20260626T232437Z",
+  "probe": "ollama_badmodel_404",
+  "kind": "raw_http",
+  "result": {
+    "status": 404,
+    "body": {
+      "error": "model 'definitely-not-a-real-model-xyz' not found"
+    },
+    "raw": "{\"error\":\"model 'definitely-not-a-real-model-xyz' not found\"}"
+  }
+}

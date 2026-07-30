@@ -212,13 +212,22 @@ class BenchmarkTaskBattery:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         battery = cls._validate_and_build(data)
-        logger.info("Loaded task battery '%s' v%s from %s", battery.battery_id, battery.version, path)
+        logger.info(
+            "Loaded task battery '%s' v%s from %s",
+            battery.battery_id,
+            battery.version,
+            path,
+        )
         return battery
 
     @classmethod
     def load_default(cls) -> BenchmarkTaskBattery:
         battery = cls._validate_and_build(DEFAULT_BATTERY)
-        logger.info("Loaded default battery '%s': %d tasks", battery.battery_id, battery.task_count)
+        logger.info(
+            "Loaded default battery '%s': %d tasks",
+            battery.battery_id,
+            battery.task_count,
+        )
         return battery
 
     def filter_by_category(self, category: str) -> list[BenchmarkTask]:
@@ -244,10 +253,12 @@ class BenchmarkTaskBattery:
             "total_weight": self.total_weight,
             "categories": self.categories,
             "difficulty_distribution": {
-                diff: sum(1 for t in self.tasks if t.difficulty == diff) for diff in ("easy", "medium", "hard")
+                diff: sum(1 for t in self.tasks if t.difficulty == diff)
+                for diff in ("easy", "medium", "hard")
             },
             "method_distribution": {
-                m: sum(1 for t in self.tasks if t.scoring_method == m) for m in VALID_SCORING_METHODS
+                m: sum(1 for t in self.tasks if t.scoring_method == m)
+                for m in VALID_SCORING_METHODS
             },
         }
 
@@ -255,7 +266,9 @@ class BenchmarkTaskBattery:
     def _validate_and_build(cls, data: dict[str, Any]) -> BenchmarkTaskBattery:
         version = data.get("version", "")
         if version not in SUPPORTED_VERSIONS:
-            raise ValueError(f"Unsupported battery version '{version}'. Supported: {SUPPORTED_VERSIONS}")
+            raise ValueError(
+                f"Unsupported battery version '{version}'. Supported: {SUPPORTED_VERSIONS}"
+            )
         if "tasks" not in data or not isinstance(data["tasks"], list):
             raise ValueError("Battery must contain a 'tasks' array")
         if not data["tasks"]:
@@ -285,7 +298,9 @@ class BenchmarkTaskBattery:
                 continue
             weight = raw_task.get("weight", 1.0)
             if weight <= 0:
-                errors.append(f"Task '{task_id}': weight must be positive, got {weight}")
+                errors.append(
+                    f"Task '{task_id}': weight must be positive, got {weight}"
+                )
                 continue
             validated_tasks.append(
                 BenchmarkTask(
@@ -303,7 +318,10 @@ class BenchmarkTaskBattery:
         if errors:
             for err in errors:
                 logger.error("Validation error: %s", err)
-            raise ValueError(f"Battery validation failed with {len(errors)} error(s): " + "; ".join(errors[:5]))
+            raise ValueError(
+                f"Battery validation failed with {len(errors)} error(s): "
+                + "; ".join(errors[:5])
+            )
 
         manifest = BatteryManifest(
             version=version,

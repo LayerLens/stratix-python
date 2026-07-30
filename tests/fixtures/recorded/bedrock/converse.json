@@ -1,0 +1,33 @@
+{
+  "provenance": {
+    "provider": "aws_bedrock",
+    "sdk_version": "1.42.91",
+    "model": "amazon.nova-micro-v1:0",
+    "scenario": "converse",
+    "captured_at": "2026-06-22T22:54:59+00:00"
+  },
+  "transport": "boto3",
+  "service": "bedrock-runtime",
+  "operation": "converse",
+  "response": {
+    "output": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "pong"
+          }
+        ]
+      }
+    },
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 6,
+      "outputTokens": 3,
+      "totalTokens": 9
+    },
+    "metrics": {
+      "latencyMs": 293
+    }
+  }
+}

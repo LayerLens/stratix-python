@@ -21,12 +21,30 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import (
+    create_judge,
+    poll_evaluation_results,
+    recorded_trace_path,
+    upload_recorded_trace,
+)
+
+# This sample uploads RECORDED REAL traces: each was captured from a genuine
+# instrumented ``underwriting-agent`` run over the applications below (see
+# ``samples/data/_generate_fixtures.py``), so the LayerLens UI renders the
+# Agent, Framework, and Status columns from real data. The scenarios remain
+# here as documentation of what was analyzed and to label the evaluation output.
+SAMPLE = "insurance_underwriting"
+FIXTURE = recorded_trace_path("industry", "insurance_underwriting.jsonl")
 
 APPLICATIONS: list[dict[str, Any]] = [
     {
         "id": "uw-001",
-        "applicant": {"age": 35, "location": "suburban", "credit_score": 780, "claims_history": 0},
+        "applicant": {
+            "age": 35,
+            "location": "suburban",
+            "credit_score": 780,
+            "claims_history": 0,
+        },
         "coverage_type": "auto",
         "risk_assessment": {
             "risk_class": "preferred",
@@ -37,7 +55,12 @@ APPLICATIONS: list[dict[str, Any]] = [
     },
     {
         "id": "uw-002",
-        "applicant": {"age": 22, "location": "urban", "credit_score": 650, "claims_history": 2},
+        "applicant": {
+            "age": 22,
+            "location": "urban",
+            "credit_score": 650,
+            "claims_history": 2,
+        },
         "coverage_type": "auto",
         "risk_assessment": {
             "risk_class": "standard",
@@ -48,7 +71,12 @@ APPLICATIONS: list[dict[str, Any]] = [
     },
     {
         "id": "uw-003",
-        "applicant": {"age": 45, "location": "rural", "credit_score": 720, "claims_history": 1},
+        "applicant": {
+            "age": 45,
+            "location": "rural",
+            "credit_score": 720,
+            "claims_history": 1,
+        },
         "coverage_type": "homeowners",
         "risk_assessment": {
             "risk_class": "standard",
@@ -73,39 +101,49 @@ def main() -> None:
         print(f"ERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    # Create judges up front
-    judges = {
-        "risk_accuracy": create_judge(
-            client,
-            name="Risk Accuracy Judge",
-            evaluation_goal="Evaluate whether the risk assessment accurately reflects the applicant's risk profile based on their attributes.",
-        ),
-        "fair_lending": create_judge(
-            client,
-            name="Fair Lending Judge",
-            evaluation_goal="Evaluate whether the underwriting decision complies with fair lending regulations and does not discriminate based on protected characteristics.",
-        ),
-        "pricing_consistency": create_judge(
-            client,
-            name="Pricing Consistency Judge",
-            evaluation_goal="Evaluate whether the premium pricing is consistent with the risk assessment and comparable to similar risk profiles.",
-        ),
-    }
-    judge_labels = {"risk_accuracy": "Risk Accuracy", "fair_lending": "Fair Lending", "pricing_consistency": "Pricing"}
-    judge_ids = [j.id for j in judges.values()]
+    # Upload the recorded real traces first. Doing this before judge creation
+    # means the traces always land even if the org has no evaluation model yet.
+    print(f"Uploading {len(APPLICATIONS)} recorded underwriting traces...\n")
+    trace_ids = upload_recorded_trace(client, FIXTURE)
+    if not trace_ids:
+        print("ERROR: no traces uploaded (fixture missing or rejected).")
+        sys.exit(1)
 
+    # Create judges. If the org has no models available, judge creation raises
+    # RuntimeError -- we skip the evaluations (the traces are already uploaded)
+    # rather than crash.
+    judge_ids: list[str] = []
     try:
-        for app in APPLICATIONS:
+        judges = {
+            "risk_accuracy": create_judge(
+                client,
+                name="Risk Accuracy Judge",
+                evaluation_goal="Evaluate whether the risk assessment accurately reflects the applicant's risk profile based on their attributes.",
+                namespace=SAMPLE,
+            ),
+            "fair_lending": create_judge(
+                client,
+                name="Fair Lending Judge",
+                evaluation_goal="Evaluate whether the underwriting decision complies with fair lending regulations and does not discriminate based on protected characteristics.",
+                namespace=SAMPLE,
+            ),
+            "pricing_consistency": create_judge(
+                client,
+                name="Pricing Consistency Judge",
+                evaluation_goal="Evaluate whether the premium pricing is consistent with the risk assessment and comparable to similar risk profiles.",
+                namespace=SAMPLE,
+            ),
+        }
+        judge_labels = {
+            "risk_accuracy": "Risk Accuracy",
+            "fair_lending": "Fair Lending",
+            "pricing_consistency": "Pricing",
+        }
+        judge_ids = [j.id for j in judges.values()]
+
+        for app, trace_id in zip(APPLICATIONS, trace_ids):
             assessment = app["risk_assessment"]
             applicant = app["applicant"]
-
-            trace_result = upload_trace_dict(
-                client,
-                input_text=str(applicant),
-                output_text=str(assessment),
-                metadata={"coverage_type": app["coverage_type"], "applicant": applicant, "risk_assessment": assessment},
-            )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else app["id"]
 
             print(
                 f"Application: {app['coverage_type']} - Age {applicant['age']}, Credit {applicant['credit_score']}, Claims {applicant['claims_history']}"
@@ -116,7 +154,9 @@ def main() -> None:
 
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -128,9 +168,14 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:18s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:18s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
+    except RuntimeError as exc:
+        print(f"\nNOTE: evaluations skipped -- {exc}")
+        print("  Traces are uploaded; add a project/public model to enable judges.")
     finally:
         for jid in judge_ids:
             try:

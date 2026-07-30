@@ -208,6 +208,10 @@ from layerlens import AsyncPublicClient
 | `LAYERLENS_STRATIX_API_KEY`  | Your API key              | (required)                        |
 | `LAYERLENS_STRATIX_BASE_URL` | Override the API base URL | `https://api.layerlens.ai/api/v1` |
 
+> **Note:** `LAYERLENS_STRATIX_BASE_URL` must include the `/api/v1` path prefix, exactly as in
+> the default above. A bare host returns `404 page not found` on every endpoint — for a
+> local/self-hosted backend use e.g. `http://localhost:8080/api/v1`.
+
 Legacy env vars (`LAYERLENS_ATLAS_API_KEY`, `LAYERLENS_ATLAS_BASE_URL`) are also supported.
 
 ## Error handling

@@ -54,7 +54,11 @@ SAMPLES: list[dict[str, Any]] = [
         "name": "Landing page (mixed content)",
         "content": "Leverage our synergistic platform to disrupt the market!",
         "content_type": "mixed",
-        "visual_metadata": {"colors_used": ["#1a73e8", "#ff0000"], "fonts_used": ["Arial"], "logo_size_px": 32},
+        "visual_metadata": {
+            "colors_used": ["#1a73e8", "#ff0000"],
+            "fonts_used": ["Arial"],
+            "logo_size_px": 32,
+        },
     },
 ]
 
@@ -67,7 +71,9 @@ _FAIL_COLOR = "\033[91m"
 _RESET = "\033[0m"
 
 
-def display_result(label: str, score: float | None, passed: bool | None, reasoning: str) -> None:
+def display_result(
+    label: str, score: float | None, passed: bool | None, reasoning: str
+) -> None:
     """Display a single evaluation result."""
     score_str = f"{score:.2f}" if score is not None else "N/A"
     if passed is not None:
@@ -137,7 +143,9 @@ def main() -> None:
                     "visual_metadata": sample.get("visual_metadata"),
                 },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else sample["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else sample["id"]
+            )
 
             all_passed = True
 
@@ -186,7 +194,9 @@ def main() -> None:
                 passed_all += 1
             print()
 
-        print(f"Overall: {passed_all}/{len(SAMPLES)} pieces fully compliant with brand guidelines")
+        print(
+            f"Overall: {passed_all}/{len(SAMPLES)} pieces fully compliant with brand guidelines"
+        )
 
     finally:
         # Clean up judges

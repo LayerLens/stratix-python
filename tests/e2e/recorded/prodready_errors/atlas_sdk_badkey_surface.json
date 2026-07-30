@@ -1,0 +1,10 @@
+{
+  "marker": "prodready-l3-20260626T232800Z",
+  "probe": "atlas_sdk_badkey_surface",
+  "kind": "sdk_surface",
+  "result": {
+    "surfaced_type": "AuthenticationError",
+    "str": "Error code: 401 - {'status': 'error', 'error': 'Unknown API key'}",
+    "key_in_str": false
+  }
+}

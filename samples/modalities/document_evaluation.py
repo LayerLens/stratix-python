@@ -107,7 +107,9 @@ _FAIL_COLOR = "\033[91m"
 _RESET = "\033[0m"
 
 
-def display_result(label: str, score: float | None, passed: bool | None, reasoning: str) -> None:
+def display_result(
+    label: str, score: float | None, passed: bool | None, reasoning: str
+) -> None:
     """Display a single evaluation result."""
     score_str = f"{score:.2f}" if score is not None else "N/A"
     if passed is not None:
@@ -144,7 +146,9 @@ def main() -> None:
             name=f"{jdef['name']} {int(time.time())}",
             evaluation_goal=jdef["evaluation_goal"],
         )
-        judges.append((jdef["name"].replace("Document ", "").replace(" Judge", ""), judge))
+        judges.append(
+            (jdef["name"].replace("Document ", "").replace(" Judge", ""), judge)
+        )
         print(f"  Created: {judge.name} (id={judge.id})")
     print()
 
@@ -168,7 +172,9 @@ def main() -> None:
                     "ground_truth": sample["ground_truth"],
                 },
             )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else sample["id"]
+            trace_id = (
+                trace_result.trace_ids[0] if trace_result.trace_ids else sample["id"]
+            )
 
             all_passed = True
             for label, judge in judges:

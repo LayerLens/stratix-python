@@ -52,7 +52,11 @@ def main() -> None:
         logger.error("Failed to initialize client: %s", exc)
         sys.exit(1)
 
-    logger.info("Connected to LayerLens (org=%s, project=%s)", client.organization_id, client.project_id)
+    logger.info(
+        "Connected to LayerLens (org=%s, project=%s)",
+        client.organization_id,
+        client.project_id,
+    )
 
     # --- Models ---
     logger.info("=" * 60)
@@ -85,7 +89,9 @@ def main() -> None:
         key = public_models[0].key
         model = client.models.get_by_key(key)
         if model:
-            logger.info("Looked up model by key '%s': %s (id=%s)", key, model.name, model.id)
+            logger.info(
+                "Looked up model by key '%s': %s (id=%s)", key, model.name, model.id
+            )
 
     # --- Benchmarks ---
     logger.info("=" * 60)
@@ -111,7 +117,12 @@ def main() -> None:
         key = public_benchmarks[0].key
         benchmark = client.benchmarks.get_by_key(key)
         if benchmark:
-            logger.info("Looked up benchmark by key '%s': %s (id=%s)", key, benchmark.name, benchmark.id)
+            logger.info(
+                "Looked up benchmark by key '%s': %s (id=%s)",
+                key,
+                benchmark.name,
+                benchmark.id,
+            )
 
     # --- Public catalog (no auth required) ---
     logger.info("=" * 60)

@@ -1,0 +1,10 @@
+{
+  "marker": "prodready-l3-20260626T232656Z",
+  "probe": "atlas_oversize_presign",
+  "status": 413,
+  "body": {
+    "status": "error",
+    "error": "file too large (max allowed: 50MB)"
+  },
+  "raw": "{\"status\":\"error\",\"error\":\"file too large (max allowed: 50MB)\"}\n"
+}

@@ -23,6 +23,19 @@ log: logging.Logger = logging.getLogger(__name__)
 log.addFilter(SensitiveHeadersFilter())
 
 
+def _request_for_error(err: httpx.RequestError, method: str, url: str) -> httpx.Request:
+    """Best-effort httpx.Request for a transport error.
+
+    ``err.request`` is set by httpx when the error is raised during a real
+    request, but raises ``RuntimeError`` when unset (e.g. a synthetic error in a
+    test); fall back to a minimal request so the SDK exception always has one.
+    """
+    try:
+        return err.request
+    except RuntimeError:
+        return httpx.Request(method, url)
+
+
 class BaseClient(httpx.Client):
     _max_retries: int
 
@@ -66,14 +79,19 @@ class BaseClient(httpx.Client):
         delay = INITIAL_RETRY_DELAY
 
         while True:
-            response = super().request(
-                method=method,
-                url=url,
-                json=body,
-                params=params,
-                headers=combined_headers,
-                **kwargs,
-            )
+            try:
+                response = super().request(
+                    method=method,
+                    url=url,
+                    json=body,
+                    params=params,
+                    headers=combined_headers,
+                    **kwargs,
+                )
+            except httpx.TimeoutException as err:
+                raise _exceptions.APITimeoutError(request=_request_for_error(err, method, url)) from err
+            except httpx.RequestError as err:
+                raise _exceptions.APIConnectionError(request=_request_for_error(err, method, url)) from err
 
             if response.status_code in RETRY_STATUS_CODES and retries_left > 0:
                 retry_after = response.headers.get("retry-after")
@@ -98,8 +116,11 @@ class BaseClient(httpx.Client):
                 raise self._make_status_error_from_response(err.response) from None
 
             if cast_to:
-                data = response.json()
-                return cast_to(**data)
+                try:
+                    data = response.json()
+                    return cast_to(**data)
+                except Exception as err:
+                    raise _exceptions.APIResponseValidationError(response, None) from err
             return response
 
     def get_cast(
@@ -216,14 +237,19 @@ class BaseAsyncClient(httpx.AsyncClient):
         delay = INITIAL_RETRY_DELAY
 
         while True:
-            response = await super().request(
-                method=method,
-                url=url,
-                json=body,
-                params=params,
-                headers=combined_headers,
-                **kwargs,
-            )
+            try:
+                response = await super().request(
+                    method=method,
+                    url=url,
+                    json=body,
+                    params=params,
+                    headers=combined_headers,
+                    **kwargs,
+                )
+            except httpx.TimeoutException as err:
+                raise _exceptions.APITimeoutError(request=_request_for_error(err, method, url)) from err
+            except httpx.RequestError as err:
+                raise _exceptions.APIConnectionError(request=_request_for_error(err, method, url)) from err
 
             if response.status_code in RETRY_STATUS_CODES and retries_left > 0:
                 retry_after = response.headers.get("retry-after")
@@ -248,8 +274,11 @@ class BaseAsyncClient(httpx.AsyncClient):
                 raise self._make_status_error_from_response(err.response) from None
 
             if cast_to:
-                data = response.json()
-                return cast_to(**data)
+                try:
+                    data = response.json()
+                    return cast_to(**data)
+                except Exception as err:
+                    raise _exceptions.APIResponseValidationError(response, None) from err
             return response
 
     async def get_cast(

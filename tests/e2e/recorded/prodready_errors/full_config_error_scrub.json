@@ -1,0 +1,34 @@
+{
+  "marker": "prodready-l5-20260626T232540Z",
+  "probe": "full_config_error_scrub",
+  "kind": "sdk_surface",
+  "default": {
+    "label": "default_capture_off",
+    "capture_content": false,
+    "agent_error_payload": {
+      "name": "openai.chat.completions.create",
+      "error_type": "LeakyError",
+      "latency_ms": 12.3
+    },
+    "error_field_present": false,
+    "error_field_value": null,
+    "full_key_in_stored_dump": false,
+    "secret_patterns_in_dump": []
+  },
+  "full": {
+    "label": "full_capture_on",
+    "capture_content": true,
+    "agent_error_payload": {
+      "name": "openai.chat.completions.create",
+      "error": "Incorrect API key provided: [REDACTED-SECRET]. See docs.",
+      "error_type": "LeakyError",
+      "latency_ms": 12.3
+    },
+    "error_field_present": true,
+    "error_field_value": "Incorrect API key provided: [REDACTED-SECRET]. See docs.",
+    "full_key_in_stored_dump": false,
+    "secret_patterns_in_dump": [
+      "card_pan"
+    ]
+  }
+}

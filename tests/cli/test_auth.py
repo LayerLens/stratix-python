@@ -1,4 +1,5 @@
 """Tests for CLI authentication: credential storage, token refresh, login flow."""
+
 # ruff: noqa: ARG002  # creds_dir fixture is used for its monkeypatch side effect
 
 from __future__ import annotations
@@ -8,7 +9,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from click.testing import CliRunner
 
 from layerlens.cli._app import cli
 from layerlens.cli._auth import (
@@ -18,6 +18,8 @@ from layerlens.cli._auth import (
     clear_credentials,
 )
 
+from .conftest import _make_runner
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -25,10 +27,21 @@ from layerlens.cli._auth import (
 
 @pytest.fixture
 def runner():
+    return _make_runner()
+
+
+def _combined(result) -> str:
+    """Return stdout + (separately captured) stderr.
+
+    With ``mix_stderr=True`` (Click's modern default) ``result.stderr`` is a
+    property that raises ``ValueError`` — ``getattr(result, "stderr", "")``
+    only catches ``AttributeError``, so we guard explicitly.
+    """
     try:
-        return CliRunner(mix_stderr=False)
-    except TypeError:
-        return CliRunner()
+        stderr = result.stderr or ""
+    except (ValueError, AttributeError):
+        stderr = ""
+    return (result.output or "") + stderr
 
 
 @pytest.fixture
@@ -298,7 +311,11 @@ class TestCLILogin:
 
         with patch("layerlens.cli._auth.httpx.post", return_value=login_resp):
             with patch("layerlens.cli._auth.httpx.get", return_value=config_resp):
-                result = cli_login("user@example.com", "pass123", base_url="https://api.test.com/api/v1")
+                result = cli_login(
+                    "user@example.com",
+                    "pass123",
+                    base_url="https://api.test.com/api/v1",
+                )
 
         assert result["access_token"] == "access-tok"
         assert result["user"]["email"] == "user@example.com"
@@ -345,7 +362,7 @@ class TestLoginCommand:
                 result = runner.invoke(cli, ["login"], input="user@test.com\nsecret\n")
 
         assert result.exit_code == 0
-        combined = (result.output or "") + (getattr(result, "stderr", "") or "")
+        combined = _combined(result)
         assert "logged in" in combined.lower()
 
     def test_login_already_logged_in_decline(self, runner, creds_dir):
@@ -360,11 +377,14 @@ class TestLoginCommand:
         from layerlens.cli._auth import LoginError
 
         with patch("layerlens.cli._auth.load_credentials", return_value=None):
-            with patch("layerlens.cli._auth.cli_login", side_effect=LoginError("Invalid email or password.")):
+            with patch(
+                "layerlens.cli._auth.cli_login",
+                side_effect=LoginError("Invalid email or password."),
+            ):
                 result = runner.invoke(cli, ["login"], input="bad@test.com\nwrong\n")
 
         assert result.exit_code != 0
-        combined = (result.output or "") + (getattr(result, "stderr", "") or "")
+        combined = _combined(result)
         assert "invalid" in combined.lower()
 
 
@@ -373,14 +393,14 @@ class TestLogoutCommand:
         save_credentials(sample_creds)
         result = runner.invoke(cli, ["logout"])
         assert result.exit_code == 0
-        combined = (result.output or "") + (getattr(result, "stderr", "") or "")
+        combined = _combined(result)
         assert "logged out" in combined.lower()
         assert load_credentials() is None
 
     def test_logout_not_logged_in(self, runner, creds_dir):
         result = runner.invoke(cli, ["logout"])
         assert result.exit_code == 0
-        combined = (result.output or "") + (getattr(result, "stderr", "") or "")
+        combined = _combined(result)
         assert "not currently" in combined.lower()
 
 
@@ -389,14 +409,14 @@ class TestWhoamiCommand:
         monkeypatch.setenv("LAYERLENS_API_KEY", "env-key")
         result = runner.invoke(cli, ["whoami"])
         assert result.exit_code == 0
-        combined = (result.output or "") + (getattr(result, "stderr", "") or "")
+        combined = _combined(result)
         assert "LAYERLENS_API_KEY" in combined
 
     def test_whoami_not_logged_in(self, runner, creds_dir, monkeypatch):
         monkeypatch.delenv("LAYERLENS_API_KEY", raising=False)
         result = runner.invoke(cli, ["whoami"])
         assert result.exit_code != 0
-        combined = (result.output or "") + (getattr(result, "stderr", "") or "")
+        combined = _combined(result)
         assert "not logged in" in combined.lower()
 
     def test_whoami_shows_user_info(self, runner, creds_dir, sample_creds, monkeypatch):
@@ -406,11 +426,15 @@ class TestWhoamiCommand:
         with patch("layerlens.cli._auth.get_valid_token", return_value="tok"):
             with patch(
                 "layerlens.cli._auth.get_user_info",
-                return_value={"email": "user@example.com", "name": "Test User", "sub": "abc-123"},
+                return_value={
+                    "email": "user@example.com",
+                    "name": "Test User",
+                    "sub": "abc-123",
+                },
             ):
                 result = runner.invoke(cli, ["whoami"])
 
         assert result.exit_code == 0
-        combined = (result.output or "") + (getattr(result, "stderr", "") or "")
+        combined = _combined(result)
         assert "user@example.com" in combined
         assert "Test User" in combined

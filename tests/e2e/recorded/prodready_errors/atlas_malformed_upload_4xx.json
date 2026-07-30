@@ -1,0 +1,10 @@
+{
+  "marker": "prodready-l3-20260626T232656Z",
+  "probe": "atlas_malformed_upload_4xx",
+  "status": 415,
+  "body": {
+    "status": "error",
+    "error": "invalid file type"
+  },
+  "raw": "{\"status\":\"error\",\"error\":\"invalid file type\"}\n"
+}
