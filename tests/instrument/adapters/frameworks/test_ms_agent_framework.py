@@ -1,0 +1,603 @@
+"""Tests for the Microsoft Agent Framework adapter.
+
+These exercise the message-processing path against synthetic
+ChatMessageContent-shaped objects so the tests don't need a working
+semantic-kernel install. The wrapper itself is exercised by feeding a
+mock async-iterable into ``instrument_chat``.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+
+import pytest
+
+from layerlens.instrument._capture_config import CaptureConfig
+from layerlens.instrument.adapters.frameworks.ms_agent_framework import (
+    MSAgentFrameworkAdapter,
+    _detect_provider,
+)
+
+from .conftest import find_event, find_events, capture_framework_trace
+
+# ---------------------------------------------------------------------------
+# Synthetic message helpers
+# ---------------------------------------------------------------------------
+
+
+def _msg(agent_name=None, items=(), metadata=None):
+    return SimpleNamespace(
+        agent_name=agent_name,
+        items=list(items),
+        metadata=metadata,
+    )
+
+
+def _make_item(cls_name, **fields):
+    """Build an item whose ``type(item).__name__`` matches a specific class.
+
+    SimpleNamespace's type name is fixed, so we create a fresh class per call.
+    """
+    cls = type(cls_name, (), {})
+    obj = cls()
+    for key, value in fields.items():
+        setattr(obj, key, value)
+    return obj
+
+
+def _func_call(name, arguments):
+    return _make_item("FunctionCallContent", name=name, arguments=arguments)
+
+
+def _func_result(name, result):
+    return _make_item("FunctionResultContent", name=name, result=result)
+
+
+def _make_invoke(messages):
+    """Build a fake `chat.invoke` that yields the given messages."""
+
+    async def invoke(*_args, **_kwargs):
+        for m in messages:
+            yield m
+
+    return invoke
+
+
+def _run_chat(adapter, chat, messages):
+    chat.invoke = _make_invoke(messages)
+    adapter.instrument_chat(chat)
+
+    async def consume():
+        collected = []
+        async for m in chat.invoke():
+            collected.append(m)
+        return collected
+
+    return asyncio.run(consume())
+
+
+# ---------------------------------------------------------------------------
+# Adapter info / detection
+# ---------------------------------------------------------------------------
+
+
+class TestAdapterInfo:
+    def test_name_and_type(self, mock_client):
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        info = adapter.adapter_info()
+        assert info.name == "ms_agent_framework"
+        assert info.adapter_type == "framework"
+
+
+class TestProviderDetection:
+    @pytest.mark.parametrize(
+        ("model", "expected"),
+        [
+            ("gpt-4o", "openai"),
+            ("o3-mini", "openai"),
+            ("claude-3-5-sonnet", "anthropic"),
+            ("gemini-1.5-pro", "google"),
+            ("mistral-large", "mistral"),
+            ("phi-3", "microsoft"),
+            ("llama-3", "meta"),
+            ("some-random-deployment", "azure_openai"),
+        ],
+    )
+    def test_classification(self, model, expected):
+        assert _detect_provider(model) == expected
+
+    def test_none_returns_none(self):
+        assert _detect_provider(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle wrapping
+# ---------------------------------------------------------------------------
+
+
+class TestInvokeWrapping:
+    def test_invoke_emits_agent_input_and_output(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="ChatGroup", agent=SimpleNamespace(name="primary"))
+        _run_chat(adapter, chat, [_msg(agent_name="primary")])
+
+        events = uploaded["events"]
+        agent_in = find_event(events, "agent.input")
+        agent_out = find_event(events, "agent.output")
+        assert agent_in["payload"]["agent_name"] == "primary"
+        assert agent_out["payload"]["agent_name"] == "primary"
+        # Sanity: framework label is set
+        assert agent_in["payload"]["framework"] == "ms_agent_framework"
+
+    def test_invoke_emits_environment_config_once(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(
+            name="GroupChat",
+            agents=[SimpleNamespace(name="a1"), SimpleNamespace(name="a2")],
+            selection_strategy=_make_item("RoundRobinSelectionStrategy"),
+            termination_strategy=_make_item("DefaultTermination"),
+        )
+
+        _run_chat(adapter, chat, [_msg(agent_name="a1")])
+
+        configs = find_events(uploaded["events"], "environment.config")
+        assert len(configs) == 1
+        assert configs[0]["payload"]["agents"] == ["a1", "a2"]
+        assert configs[0]["payload"]["selection_strategy"] == "RoundRobinSelectionStrategy"
+
+    def test_disconnect_restores_originals(self, mock_client):
+        # Skip connect() — it checks the optional semantic-kernel dependency
+        # which isn't installed in the default test env. instrument_chat
+        # itself doesn't check the dep.
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="c", invoke=_make_invoke([]))
+        original_invoke = chat.invoke
+        adapter.instrument_chat(chat)
+        assert chat.invoke is not original_invoke
+        adapter.disconnect()
+        assert chat.invoke is original_invoke
+
+    def test_error_in_invoke_emits_agent_error(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client, CaptureConfig(capture_content=True))
+
+        async def failing_invoke(*_a, **_kw):
+            yield _msg(agent_name="primary")
+            raise RuntimeError("kaboom")
+
+        chat = SimpleNamespace(name="c", invoke=failing_invoke)
+        adapter.instrument_chat(chat)
+
+        async def consume():
+            async for _ in chat.invoke():
+                pass
+
+        with pytest.raises(RuntimeError):
+            asyncio.run(consume())
+
+        agent_err = find_event(uploaded["events"], "agent.error")
+        assert "kaboom" in agent_err["payload"]["error"]
+
+
+# ---------------------------------------------------------------------------
+# Per-message processing
+# ---------------------------------------------------------------------------
+
+
+class TestMessageProcessing:
+    def test_tool_call_and_result_emitted(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client, CaptureConfig(capture_content=True))
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(
+            adapter,
+            chat,
+            [
+                _msg(agent_name="primary", items=[_func_call("search", {"q": "AI"})]),
+                _msg(agent_name="primary", items=[_func_result("search", ["r1", "r2"])]),
+            ],
+        )
+
+        events = uploaded["events"]
+        tool_call = find_event(events, "tool.call")
+        tool_result = find_event(events, "tool.result")
+        assert tool_call["payload"]["tool_name"] == "search"
+        assert tool_result["payload"]["tool_name"] == "search"
+        assert tool_call["payload"]["input"] == {"q": "AI"}
+
+    def test_model_invoke_and_cost_from_metadata(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(
+            adapter,
+            chat,
+            [
+                _msg(
+                    agent_name="primary",
+                    metadata={
+                        "model": "gpt-4o",
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+                    },
+                )
+            ],
+        )
+
+        model_invoke = find_event(uploaded["events"], "model.invoke")
+        assert model_invoke["payload"]["model"] == "gpt-4o"
+        assert model_invoke["payload"]["provider"] == "openai"
+
+        cost = find_event(uploaded["events"], "cost.record")
+        assert cost["payload"]["tokens_prompt"] == 10
+        assert cost["payload"]["tokens_completion"] == 20
+
+    def test_model_invoke_emitted_with_tokens_when_model_absent(self, mock_client):
+        """G5: when the framework reports usage but NO model id, model.invoke is
+        still emitted with the flat tokens so tokens_total fills — both ateam and
+        atlas read tokens_total from model.invoke only, and previously the tokens
+        were stranded on cost.record (model.invoke was gated on a model id)."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(
+            adapter,
+            chat,
+            [_msg(agent_name="primary", metadata={"usage": {"prompt_tokens": 7, "completion_tokens": 5}})],
+        )
+
+        mi = find_event(uploaded["events"], "model.invoke")
+        assert mi["payload"]["tokens_total"] == 12
+        assert mi["payload"]["tokens_prompt"] == 7
+        # model/provider honestly omitted when the framework surfaces no model id.
+        assert "model" not in mi["payload"]
+
+    def test_model_invoke_has_flat_token_keys(self, mock_client):
+        """S18/F11: model.invoke itself carries the flat tokens_* keys the
+        atlas extractor reads, not just the sibling cost.record."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(
+            adapter,
+            chat,
+            [
+                _msg(
+                    agent_name="primary",
+                    metadata={
+                        "model": "gpt-4o",
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+                    },
+                )
+            ],
+        )
+
+        model_invoke = find_event(uploaded["events"], "model.invoke")
+        assert model_invoke["payload"]["tokens_prompt"] == 10
+        assert model_invoke["payload"]["tokens_completion"] == 20
+        assert model_invoke["payload"]["tokens_total"] == 30
+
+    def test_model_invoke_without_usage_has_no_token_keys(self, mock_client):
+        """No usage on the metadata must leave model.invoke unchanged (no fabrication)."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(
+            adapter,
+            chat,
+            [_msg(agent_name="primary", metadata={"model": "gpt-4o"})],
+        )
+
+        model_invoke = find_event(uploaded["events"], "model.invoke")
+        assert "tokens_prompt" not in model_invoke["payload"]
+        assert "tokens_completion" not in model_invoke["payload"]
+        assert "tokens_total" not in model_invoke["payload"]
+        assert find_events(uploaded["events"], "cost.record") == []
+
+    def test_handoff_emitted_on_agent_turn_change(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(
+            adapter,
+            chat,
+            [
+                _msg(agent_name="primary"),
+                _msg(agent_name="researcher"),  # turn transition
+                _msg(agent_name="researcher"),  # no transition
+                _msg(agent_name="writer"),  # another transition
+            ],
+        )
+
+        handoffs = find_events(uploaded["events"], "agent.handoff")
+        # Two transitions -> two handoffs
+        assert len(handoffs) == 2
+        assert handoffs[0]["payload"]["from_agent"] == "primary"
+        assert handoffs[0]["payload"]["to_agent"] == "researcher"
+        assert handoffs[1]["payload"]["from_agent"] == "researcher"
+        assert handoffs[1]["payload"]["to_agent"] == "writer"
+
+    def test_unknown_item_types_are_ignored(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        opaque = _make_item("TextContent", name="ignore_me")
+
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(adapter, chat, [_msg(agent_name="primary", items=[opaque])])
+
+        assert find_events(uploaded["events"], "tool.call") == []
+        assert find_events(uploaded["events"], "tool.result") == []
+
+
+# ---------------------------------------------------------------------------
+# Content redaction (W5 / G10) — capture_content=False must scrub the
+# framework's content fields (agent.input/agent.output/tool.call/tool.result)
+# through the per-adapter _set_if_capturing gate.
+# ---------------------------------------------------------------------------
+
+
+# A recognizable marker that should never survive into the emitted payloads
+# when content capture is disabled.
+_SENTINEL = "S3NT1NEL_ms_agent_framework_secret_payload"
+
+
+def _run_chat_with_content(adapter, capture):
+    """Drive a full content-bearing invocation: input kwarg + a tool
+    call/result whose fields all carry the SENTINEL, then return the
+    uploaded events. The yielded message string-serializes to the
+    SENTINEL so agent.output's content branch is exercised too.
+    """
+
+    class _SentinelMessage(SimpleNamespace):
+        def __str__(self):  # str(self) feeds safe_serialize -> agent.output content
+            return _SENTINEL
+
+    message = _SentinelMessage(
+        agent_name="primary",
+        items=[
+            _func_call("search", {"query": _SENTINEL}),
+            _func_result("search", f"result-{_SENTINEL}"),
+        ],
+        metadata=None,
+    )
+
+    chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+    chat.invoke = _make_invoke([message])
+    adapter.instrument_chat(chat)
+
+    async def consume():
+        # Pass the secret as the `input` kwarg so the agent.input content
+        # branch (kwargs.get("input")) is driven with the SENTINEL.
+        async for _ in chat.invoke(input=_SENTINEL):
+            pass
+
+    asyncio.run(consume())
+    return capture["events"]
+
+
+class TestCaptureContentRedaction:
+    """When ``CaptureConfig(capture_content=False)`` every content field the
+    adapter routes through ``_set_if_capturing`` (agent.input ``input``,
+    agent.output ``output``, tool.call ``input``, tool.result ``output``)
+    must be scrubbed — and the SENTINEL must not appear anywhere in the
+    emitted payloads. The control run with ``capture_content=True`` proves
+    the gate is real, not a vacuous pass."""
+
+    def _payloads_blob(self, events):
+        import json as _json
+
+        return _json.dumps([e.get("payload", {}) for e in events])
+
+    def test_content_scrubbed_when_capture_disabled(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client, capture_config=CaptureConfig(capture_content=False))
+        events = _run_chat_with_content(adapter, uploaded)
+
+        agent_in = find_event(events, "agent.input")
+        agent_out = find_event(events, "agent.output")
+        tool_call = find_event(events, "tool.call")
+        tool_result = find_event(events, "tool.result")
+
+        # The content keys must be absent under the gate.
+        assert "input" not in agent_in["payload"]
+        assert "output" not in agent_out["payload"]
+        assert "input" not in tool_call["payload"]
+        assert "output" not in tool_result["payload"]
+
+        # And the SENTINEL must not have leaked into ANY emitted payload.
+        assert _SENTINEL not in self._payloads_blob(events)
+
+    def test_content_present_when_capture_enabled(self, mock_client):
+        """Control: with capture_content=True the same SENTINEL content IS
+        emitted — proving the gate above does real work."""
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        events = _run_chat_with_content(adapter, uploaded)
+
+        agent_in = find_event(events, "agent.input")
+        agent_out = find_event(events, "agent.output")
+        tool_call = find_event(events, "tool.call")
+        tool_result = find_event(events, "tool.result")
+
+        assert agent_in["payload"]["input"] == _SENTINEL
+        assert agent_out["payload"]["output"] == _SENTINEL
+        assert tool_call["payload"]["input"] == {"query": _SENTINEL}
+        assert tool_result["payload"]["output"] == f"result-{_SENTINEL}"
+
+        # The SENTINEL is present somewhere when capture is on.
+        assert _SENTINEL in self._payloads_blob(events)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic chats — semantic-kernel's AgentChat/AgentGroupChat are pydantic
+# models with validate_assignment, which reject plain method assignment
+# ---------------------------------------------------------------------------
+
+
+class TestPydanticChatWrapping:
+    """``instrument_chat`` must work on pydantic ``validate_assignment``
+    models — assigning the invoke wrapper used to raise ValidationError
+    (found wiring the live SK AgentGroupChat scenario; LAY-3567 follow-up)."""
+
+    def _make_pydantic_chat(self):
+        pydantic = pytest.importorskip("pydantic", minversion="2")
+
+        class _PydanticChat(pydantic.BaseModel):
+            model_config = pydantic.ConfigDict(validate_assignment=True)
+            name: str = "group"
+
+            async def invoke(self, *args, **kwargs):
+                yield _msg(
+                    agent_name="primary",
+                    metadata={
+                        "model": "gpt-4o",
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+                    },
+                )
+
+        return _PydanticChat()
+
+    def test_instrument_chat_wraps_pydantic_chat(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        chat = self._make_pydantic_chat()
+
+        adapter.instrument_chat(chat)  # must not raise pydantic ValidationError
+
+        async def consume():
+            return [m async for m in chat.invoke()]
+
+        messages = asyncio.run(consume())
+        assert len(messages) == 1  # wrapper is transparent
+
+        model_invoke = find_event(uploaded["events"], "model.invoke")
+        assert model_invoke["payload"]["model"] == "gpt-4o"
+
+        adapter.disconnect()
+
+    def test_disconnect_restores_pydantic_chat(self, mock_client):
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        chat = self._make_pydantic_chat()
+
+        adapter.instrument_chat(chat)
+        adapter.disconnect()
+
+        async def consume():
+            return [m async for m in chat.invoke()]
+
+        # restored invoke still yields; no adapter state left behind
+        assert len(asyncio.run(consume())) == 1
+        assert not adapter._originals
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    def test_user_invoke_surfaces_restored_identically(self, mock_client):
+        """Both wrapped chat surfaces must come back as the exact originals."""
+        invoke = _make_invoke([])
+        invoke_stream = _make_invoke([])
+        chat = SimpleNamespace(name="c", invoke=invoke, invoke_stream=invoke_stream)
+
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        adapter.instrument_chat(chat)
+        assert chat.invoke is not invoke  # wrapped while connected
+        assert chat.invoke_stream is not invoke_stream
+        assert chat.invoke._layerlens_original is invoke
+
+        adapter.disconnect()
+        assert chat.invoke is invoke
+        assert chat.invoke_stream is invoke_stream
+        assert not hasattr(chat.invoke, "_layerlens_original")
+
+    def test_pydantic_chat_restored_to_exact_original(self, mock_client):
+        pydantic = pytest.importorskip("pydantic", minversion="2")
+
+        class _PydanticChat(pydantic.BaseModel):
+            model_config = pydantic.ConfigDict(validate_assignment=True)
+            name: str = "group"
+
+            async def invoke(self, *args, **kwargs):
+                yield _msg(agent_name="primary")
+
+        chat = _PydanticChat()
+        class_func = _PydanticChat.invoke
+
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        adapter.instrument_chat(chat)
+        adapter.disconnect()
+
+        # The restored bound method must wrap the exact class function
+        assert chat.invoke.__func__ is class_func
+
+    def test_disconnect_clears_internal_state(self, mock_client):
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"))
+        _run_chat(adapter, chat, [_msg(agent_name="primary"), _msg(agent_name="other")])
+
+        # the run populated per-chat bookkeeping
+        assert adapter._originals
+        assert adapter._wrapped_chats
+        assert adapter._seen_chats
+
+        adapter.disconnect()
+        assert adapter._originals == {}
+        assert adapter._wrapped_chats == []
+        assert adapter._seen_chats == set()
+        # Handoff state is per-run (RunState.data), never a shared instance
+        # scalar — so there is nothing to leak across runs and nothing to clear.
+        assert not hasattr(adapter, "_handoff_detector")
+
+    def test_double_disconnect_does_not_raise(self, mock_client):
+        invoke = _make_invoke([])
+        chat = SimpleNamespace(name="c", invoke=invoke)
+
+        adapter = MSAgentFrameworkAdapter(mock_client)
+        adapter.instrument_chat(chat)
+        adapter.disconnect()
+        adapter.disconnect()
+
+        assert chat.invoke is invoke
+
+    def test_connect_disconnect_cycle(self, mock_client, monkeypatch):
+        import layerlens.instrument.adapters.frameworks.ms_agent_framework as _mod
+
+        # connect() checks the optional semantic-kernel dependency; force it on
+        # so the cycle is deterministic in every venv.
+        monkeypatch.setattr(_mod, "_HAS_SK_AGENTS", True)
+        uploaded = capture_framework_trace(mock_client)
+
+        invoke = _make_invoke([_msg(agent_name="primary")])
+        chat = SimpleNamespace(name="c", agent=SimpleNamespace(name="primary"), invoke=invoke)
+        adapter = MSAgentFrameworkAdapter(mock_client)
+
+        async def consume():
+            return [m async for m in chat.invoke()]
+
+        adapter.connect(target=chat)
+        assert len(asyncio.run(consume())) == 1
+        adapter.disconnect()
+        assert chat.invoke is invoke
+
+        adapter.connect(target=chat)
+        assert len(asyncio.run(consume())) == 1
+        adapter.disconnect()
+        assert chat.invoke is invoke
+
+        # Both connected periods produced full traces
+        assert len(find_events(uploaded["events"], "agent.input")) == 2

@@ -1,0 +1,1062 @@
+"""Tests for the Semantic Kernel adapter using the SK filter API.
+
+Tests use real Kernel objects and KernelFunctions. Filters are exercised
+either through actual kernel.invoke() calls or by directly invoking the
+filter callables with mock contexts.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any, Optional
+
+import pytest
+
+sk = pytest.importorskip("semantic_kernel")
+
+from semantic_kernel import Kernel  # noqa: E402
+from semantic_kernel.functions import kernel_function  # noqa: E402
+
+# The multi-agent (AgentGroupChat) honest-graph path needs the SK agents module.
+_sk_agents = pytest.importorskip("semantic_kernel.agents")
+ChatCompletionAgent = _sk_agents.ChatCompletionAgent
+AgentGroupChat = _sk_agents.AgentGroupChat
+from semantic_kernel.contents.utils.author_role import AuthorRole  # noqa: E402
+from semantic_kernel.contents.chat_message_content import ChatMessageContent  # noqa: E402
+
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
+from layerlens.instrument.adapters.frameworks.semantic_kernel import (  # noqa: E402
+    SemanticKernelAdapter,
+    _extract_arguments,
+    _extract_plugin_name,
+    _extract_function_name,
+)
+
+from .conftest import find_event, find_events, capture_framework_trace  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+class MathPlugin:
+    @kernel_function(name="add", description="Add two numbers")
+    def add(self, a: int, b: int) -> int:
+        return a + b
+
+    @kernel_function(name="divide", description="Divide a by b")
+    def divide(self, a: int, b: int) -> float:
+        return a / b
+
+
+class TextPlugin:
+    @kernel_function(name="upper", description="Uppercase text")
+    def upper(self, text: str) -> str:
+        return text.upper()
+
+
+class MockFunction:
+    def __init__(self, name: str = "test_func", plugin_name: str = "TestPlugin"):
+        self.name = name
+        self.plugin_name = plugin_name
+
+
+class MockContext:
+    def __init__(
+        self,
+        function: Any = None,
+        arguments: Any = None,
+        result: Any = None,
+        rendered_prompt: Optional[str] = None,
+        function_call_content: Any = None,
+        function_result: Any = None,
+        request_sequence_index: int = 0,
+        function_sequence_index: int = 0,
+    ):
+        self.function = function or MockFunction()
+        self.arguments = arguments
+        self.result = result
+        self.rendered_prompt = rendered_prompt
+        self.function_call_content = function_call_content
+        self.function_result = function_result
+        self.request_sequence_index = request_sequence_index
+        self.function_sequence_index = function_sequence_index
+
+
+class MockFunctionCallContent:
+    def __init__(self, arguments: Any = None):
+        self.arguments = arguments
+
+
+class MockFunctionResult:
+    def __init__(self, value: Any = None):
+        self.value = value
+
+
+def _run(coro: Any) -> Any:
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestLifecycle:
+    def test_connect_registers_filters(self, mock_client):
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        assert adapter.is_connected
+        assert len(kernel.function_invocation_filters) == 1
+        assert len(kernel.prompt_rendering_filters) == 1
+        assert len(kernel.auto_function_invocation_filters) == 1
+
+        info = adapter.adapter_info()
+        assert info.name == "semantic_kernel"
+        assert info.adapter_type == "framework"
+        assert info.connected is True
+
+        adapter.disconnect()
+
+    def test_disconnect_removes_filters(self, mock_client):
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        adapter.disconnect()
+
+        assert not adapter.is_connected
+        assert len(kernel.function_invocation_filters) == 0
+        assert len(kernel.prompt_rendering_filters) == 0
+        assert len(kernel.auto_function_invocation_filters) == 0
+
+    def test_connect_without_target_raises(self, mock_client):
+        adapter = SemanticKernelAdapter(mock_client)
+        with pytest.raises(ValueError, match="requires a target kernel"):
+            adapter.connect()
+
+    def test_connect_without_sk_raises(self, mock_client, monkeypatch):
+        import layerlens.instrument.adapters.frameworks.semantic_kernel as mod
+
+        monkeypatch.setattr(mod, "_HAS_SEMANTIC_KERNEL", False)
+        adapter = SemanticKernelAdapter(mock_client)
+        with pytest.raises(ImportError, match="semantic_kernel"):
+            adapter.connect(target=Kernel())
+
+    def test_disconnect_idempotent(self, mock_client):
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        adapter.disconnect()
+        adapter.disconnect()  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Function invocation via real kernel.invoke()
+# ---------------------------------------------------------------------------
+
+
+class TestFunctionInvocation:
+    def test_invoke_emits_tool_call(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        result = _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=2, b=3))
+        assert str(result) == "5"
+
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        tool_calls = find_events(events, "tool.call")
+        assert len(tool_calls) >= 1
+        assert tool_calls[0]["payload"]["tool_name"] == "MathPlugin.add"
+        assert tool_calls[0]["payload"]["plugin_name"] == "MathPlugin"
+        assert tool_calls[0]["payload"]["function_name"] == "add"
+
+        tool_results = find_events(events, "tool.result")
+        assert len(tool_results) >= 1
+        assert tool_results[0]["payload"]["status"] == "ok"
+        assert tool_results[0]["payload"]["latency_ms"] >= 0
+
+    def test_invoke_captures_output(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=kernel)
+
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=10, b=20))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        tool_result = find_event(events, "tool.result")
+        assert tool_result["payload"]["output"] == 30
+
+    def test_invoke_error_emits_agent_error(self, mock_client):
+        from semantic_kernel.exceptions.kernel_exceptions import KernelInvokeException
+
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect(target=kernel)
+
+        # semantic_kernel wraps function errors in KernelInvokeException starting
+        # with 1.x; the inner ZeroDivisionError lives on ``__cause__``.
+        with pytest.raises((ZeroDivisionError, KernelInvokeException)) as exc_info:
+            _run(kernel.invoke(plugin_name="MathPlugin", function_name="divide", a=1, b=0))
+        inner = exc_info.value.__cause__ or exc_info.value
+        assert isinstance(inner, ZeroDivisionError) or isinstance(exc_info.value, ZeroDivisionError)
+
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        err = find_event(events, "agent.error")
+        assert "division by zero" in err["payload"]["error"]
+        assert err["payload"]["error_type"] == "ZeroDivisionError"
+        assert err["payload"]["tool_name"] == "MathPlugin.divide"
+
+    def test_sequential_invocations(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=1, b=2))
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=3, b=4))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        assert len(find_events(events, "tool.call")) == 2
+        assert len(find_events(events, "tool.result")) == 2
+
+
+# ---------------------------------------------------------------------------
+# Function invocation filter via direct call
+# ---------------------------------------------------------------------------
+
+
+class TestFunctionInvocationFilter:
+    def test_filter_calls_next_and_emits(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        ctx = MockContext(
+            function=MockFunction("greet", "HelloPlugin"),
+        )
+
+        async def mock_next(context):
+            context.result = MockFunctionResult("Hi")
+
+        _run(adapter._function_invocation_filter(ctx, mock_next))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        tool_call = find_event(events, "tool.call")
+        assert tool_call["payload"]["plugin_name"] == "HelloPlugin"
+        assert tool_call["payload"]["function_name"] == "greet"
+
+        tool_result = find_event(events, "tool.result")
+        assert tool_result["payload"]["status"] == "ok"
+
+    def test_filter_propagates_exception(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect(target=kernel)
+
+        ctx = MockContext()
+
+        async def failing_next(context):
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            _run(adapter._function_invocation_filter(ctx, failing_next))
+
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        err = find_event(events, "agent.error")
+        assert err["payload"]["error"] == "boom"
+        assert err["payload"]["error_type"] == "RuntimeError"
+
+
+# ---------------------------------------------------------------------------
+# Prompt rendering
+# ---------------------------------------------------------------------------
+
+
+class TestPromptRendering:
+    def test_prompt_render_emits_agent_code(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=kernel)
+
+        ctx = MockContext(
+            function=MockFunction("summarize", "TextPlugin"),
+            rendered_prompt="Summarize: Hello world",
+        )
+
+        async def mock_next(context):
+            pass
+
+        # Prompt rendering only fires inside a function invocation,
+        # so we need an active RunState.
+        adapter._begin_run()
+        _run(adapter._prompt_rendering_filter(ctx, mock_next))
+        adapter._end_run()
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        ev = find_event(events, "agent.code")
+        assert ev["payload"]["event_subtype"] == "prompt_render"
+        assert ev["payload"]["function_name"] == "summarize"
+        assert "Summarize" in ev["payload"]["rendered_prompt"]
+
+    def test_prompt_render_no_content_when_disabled(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        config = CaptureConfig(l2_agent_code=True, capture_content=False)
+        adapter = SemanticKernelAdapter(mock_client, capture_config=config)
+        adapter.connect(target=kernel)
+
+        ctx = MockContext(
+            function=MockFunction("summarize", "TextPlugin"),
+            rendered_prompt="secret prompt",
+        )
+
+        async def mock_next(context):
+            pass
+
+        adapter._begin_run()
+        _run(adapter._prompt_rendering_filter(ctx, mock_next))
+        adapter._end_run()
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        ev = find_event(events, "agent.code")
+        assert "rendered_prompt" not in ev["payload"]
+
+
+# ---------------------------------------------------------------------------
+# Auto function invocation (LLM-initiated tool calls)
+# ---------------------------------------------------------------------------
+
+
+class TestAutoFunctionInvocation:
+    def test_auto_function_emits_tool_call_and_result(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=kernel)
+
+        ctx = MockContext(
+            function=MockFunction("web_search", "SearchPlugin"),
+            function_call_content=MockFunctionCallContent(arguments={"query": "test"}),
+            function_result=MockFunctionResult("found it"),
+            request_sequence_index=1,
+            function_sequence_index=0,
+        )
+
+        async def mock_next(context):
+            pass
+
+        _run(adapter._auto_function_invocation_filter(ctx, mock_next))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+
+        tool_call = find_event(events, "tool.call")
+        assert tool_call["payload"]["auto_invoked"] is True
+        assert tool_call["payload"]["tool_name"] == "SearchPlugin.web_search"
+        assert tool_call["payload"]["input"] == {"query": "test"}
+        assert tool_call["payload"]["request_sequence_index"] == 1
+
+        tool_results = find_events(events, "tool.result")
+        assert len(tool_results) == 1
+        assert tool_results[0]["payload"]["auto_invoked"] is True
+        assert tool_results[0]["payload"]["output"] == "found it"
+        assert tool_results[0]["payload"]["latency_ms"] >= 0
+
+    def test_auto_function_error(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect(target=kernel)
+
+        ctx = MockContext(
+            function=MockFunction("fail_tool", "ToolPlugin"),
+        )
+
+        async def failing_next(context):
+            raise ValueError("tool exploded")
+
+        with pytest.raises(ValueError, match="tool exploded"):
+            _run(adapter._auto_function_invocation_filter(ctx, failing_next))
+
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        # tool.call should still be emitted (before the error)
+        tool_call = find_event(events, "tool.call")
+        assert tool_call["payload"]["auto_invoked"] is True
+
+        err = find_event(events, "agent.error")
+        assert err["payload"]["error"] == "tool exploded"
+        assert err["payload"]["auto_invoked"] is True
+
+
+# ---------------------------------------------------------------------------
+# Plugin discovery
+# ---------------------------------------------------------------------------
+
+
+class TestPluginDiscovery:
+    def test_discover_plugins_on_connect(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+        kernel.add_plugin(TextPlugin(), "TextPlugin")
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        config_events = find_events(events, "environment.config")
+        plugin_names = {e["payload"]["plugin_name"] for e in config_events}
+        assert "MathPlugin" in plugin_names
+        assert "TextPlugin" in plugin_names
+
+    def test_new_plugin_discovered_on_first_call(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        # Invoke filter directly with a plugin not yet seen
+        ctx = MockContext(function=MockFunction("do_stuff", "NewPlugin"))
+
+        async def mock_next(context):
+            context.result = MockFunctionResult("ok")
+
+        _run(adapter._function_invocation_filter(ctx, mock_next))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        config_events = find_events(events, "environment.config")
+        names = {e["payload"]["plugin_name"] for e in config_events}
+        assert "NewPlugin" in names
+
+    def test_duplicate_plugin_not_rediscovered(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        ctx1 = MockContext(function=MockFunction("f1", "SamePlugin"))
+        ctx2 = MockContext(function=MockFunction("f2", "SamePlugin"))
+
+        async def mock_next(context):
+            context.result = MockFunctionResult("ok")
+
+        _run(adapter._function_invocation_filter(ctx1, mock_next))
+        _run(adapter._function_invocation_filter(ctx2, mock_next))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        config_events = find_events(events, "environment.config")
+        same_plugin = [e for e in config_events if e["payload"]["plugin_name"] == "SamePlugin"]
+        assert len(same_plugin) == 1
+
+
+# ---------------------------------------------------------------------------
+# CaptureConfig gating
+# ---------------------------------------------------------------------------
+
+
+class TestCaptureConfigGating:
+    def test_no_content_strips_io(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig(capture_content=False))
+        adapter.connect(target=kernel)
+
+        ctx = MockContext(
+            function=MockFunction("search", "Plugin"),
+            arguments={"secret": "key"},
+        )
+
+        async def mock_next(context):
+            context.result = MockFunctionResult("classified")
+
+        _run(adapter._function_invocation_filter(ctx, mock_next))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        tool_call = find_event(events, "tool.call")
+        assert "input" not in tool_call["payload"]
+
+        tool_result = find_event(events, "tool.result")
+        assert "output" not in tool_result["payload"]
+
+    def test_full_config_includes_io(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect(target=kernel)
+
+        ctx = MockContext(
+            function=MockFunction("search", "Plugin"),
+            arguments={"query": "test"},
+        )
+
+        async def mock_next(context):
+            context.result = MockFunctionResult("results")
+
+        _run(adapter._function_invocation_filter(ctx, mock_next))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        tool_call = find_event(events, "tool.call")
+        assert tool_call["payload"]["input"] == {"query": "test"}
+
+        tool_result = find_event(events, "tool.result")
+        assert tool_result["payload"]["output"] == "results"
+
+
+# ---------------------------------------------------------------------------
+# LLM call wrapping
+# ---------------------------------------------------------------------------
+
+
+class MockUsage:
+    def __init__(self, prompt_tokens: int = 0, completion_tokens: int = 0):
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+
+
+class MockChatMessage:
+    def __init__(self, text: str = "Hello!", model_id: str = "gpt-4o", usage: Any = None):
+        self.content = text
+        self.ai_model_id = model_id
+        self.metadata = {"usage": usage} if usage else {}
+
+
+class MockChatService:
+    """Minimal mock that looks like a ChatCompletionClientBase to the adapter."""
+
+    def __init__(
+        self,
+        response_text: str = "Hello!",
+        model_id: str = "gpt-4o",
+        prompt_tokens: int = 100,
+        completion_tokens: int = 50,
+    ):
+        self.ai_model_id = model_id
+        self._response = MockChatMessage(
+            text=response_text,
+            model_id=model_id,
+            usage=MockUsage(prompt_tokens, completion_tokens),
+        )
+
+    async def _inner_get_chat_message_contents(self, chat_history: Any, settings: Any) -> list:
+        return [self._response]
+
+
+class TestLLMCallWrapping:
+    def _register_mock_service(self, kernel, service):
+        """Register a mock service directly on the kernel."""
+        kernel.services["mock"] = service
+
+    def test_model_invoke_emitted(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        service = MockChatService(prompt_tokens=100, completion_tokens=50)
+        self._register_mock_service(kernel, service)
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        # In real usage, LLM calls happen inside a function invocation filter.
+        adapter._begin_run()
+        _run(service._inner_get_chat_message_contents(None, None))
+        adapter._end_run()
+
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        model_invoke = find_event(events, "model.invoke")
+        assert model_invoke["payload"]["model"] == "gpt-4o"
+        assert model_invoke["payload"]["tokens_prompt"] == 100
+        assert model_invoke["payload"]["tokens_completion"] == 50
+        assert model_invoke["payload"]["latency_ms"] >= 0
+
+    def test_cost_record_emitted(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        service = MockChatService(prompt_tokens=200, completion_tokens=100)
+        self._register_mock_service(kernel, service)
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        adapter._begin_run()
+        _run(service._inner_get_chat_message_contents(None, None))
+        adapter._end_run()
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["tokens_total"] == 300
+        assert cost["payload"]["model"] == "gpt-4o"
+
+    def test_no_cost_record_without_tokens(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        service = MockChatService(prompt_tokens=0, completion_tokens=0)
+        self._register_mock_service(kernel, service)
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        adapter._begin_run()
+        _run(service._inner_get_chat_message_contents(None, None))
+        adapter._end_run()
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        cost_events = find_events(events, "cost.record")
+        assert len(cost_events) == 0
+
+    def test_llm_error_emits_agent_error(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        service = MockChatService()
+        self._register_mock_service(kernel, service)
+
+        # Replace inner method with one that fails
+        original = service._inner_get_chat_message_contents
+
+        async def failing_inner(chat_history, settings):
+            raise RuntimeError("API timeout")
+
+        adapter = SemanticKernelAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+        adapter.connect(target=kernel)
+
+        # The adapter wrapped the original, so replace the original call path
+        # We need to set up the service to fail BEFORE connect wraps it
+        # Let's test by reconnecting
+        adapter.disconnect()
+
+        service._inner_get_chat_message_contents = failing_inner
+        adapter.connect(target=kernel)
+
+        adapter._begin_run()
+        with pytest.raises(RuntimeError, match="API timeout"):
+            _run(service._inner_get_chat_message_contents(None, None))
+        adapter._end_run()
+
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        err = find_event(events, "agent.error")
+        assert err["payload"]["error"] == "API timeout"
+        assert err["payload"]["model"] == "gpt-4o"
+
+    def test_disconnect_restores_original(self, mock_client):
+        kernel = Kernel()
+        service = MockChatService()
+        self._register_mock_service(kernel, service)
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        # After connect, the method is our wrapper (an instance attribute, not the class method)
+        assert "_traced_inner" in service._inner_get_chat_message_contents.__name__
+
+        adapter.disconnect()
+        # After disconnect, the instance override is removed and the class method is accessible again
+        assert "_traced_inner" not in service._inner_get_chat_message_contents.__name__
+
+
+# ---------------------------------------------------------------------------
+# Span hierarchy
+# ---------------------------------------------------------------------------
+
+
+class TestSpanHierarchy:
+    def test_events_share_root_span(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=1, b=2))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        # All events should share the same root span (via parent_span_id)
+        parent_spans = {e.get("parent_span_id") for e in events if e.get("parent_span_id")}
+        # There should be at most one root
+        assert len(parent_spans) <= 2  # root_span_id from _ensure_collector + our root
+
+
+# ---------------------------------------------------------------------------
+# Event structure
+# ---------------------------------------------------------------------------
+
+
+class TestEventStructure:
+    def test_event_fields(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=1, b=2))
+        adapter.disconnect()
+
+        events = uploaded["events"]
+        for event in events:
+            assert "event_type" in event
+            assert "trace_id" in event
+            assert "span_id" in event
+            assert "sequence_id" in event
+            assert "timestamp_ns" in event
+            assert "payload" in event
+            # The synthesized structural root (``trace.root``) is content-free by
+            # design and carries no framework tag; its envelope is asserted above,
+            # but the per-framework payload check does not apply to it.
+            if event["event_type"] == "trace.root":
+                continue
+            assert event["payload"]["framework"] == "semantic_kernel"
+
+        # sequence_id is monotonic WITHIN a trace. capture_framework_trace
+        # concatenates several collectors' events (each numbering from 1, and each
+        # now closed by its own appended-last ``trace.root``), so the global list is
+        # not sorted — assert the real per-trace invariant instead.
+        for tid in {e["trace_id"] for e in events}:
+            seqs = [e["sequence_id"] for e in events if e["trace_id"] == tid]
+            assert seqs == sorted(seqs), f"sequence_ids not monotonic within trace {tid}: {seqs}"
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+class TestHelpers:
+    def test_extract_plugin_name_from_function(self):
+        ctx = MockContext(function=MockFunction(plugin_name="MyPlugin"))
+        assert _extract_plugin_name(ctx) == "MyPlugin"
+
+    def test_extract_plugin_name_fallback(self):
+        class Ctx:
+            function = None
+            plugin_name = "FallbackPlugin"
+
+        assert _extract_plugin_name(Ctx()) == "FallbackPlugin"
+
+    def test_extract_function_name(self):
+        ctx = MockContext(function=MockFunction(name="my_func"))
+        assert _extract_function_name(ctx) == "my_func"
+
+    def test_extract_arguments_dict(self):
+        ctx = MockContext(arguments={"x": 1, "y": 2})
+        assert _extract_arguments(ctx) == {"x": 1, "y": 2}
+
+    def test_extract_arguments_none(self):
+        ctx = MockContext(arguments=None)
+        assert _extract_arguments(ctx) is None
+
+    def test_extract_arguments_mapping(self):
+        """SK KernelArguments has .items() but isn't a dict."""
+
+        class FakeArgs:
+            def items(self):
+                return [("a", 1)]
+
+        ctx = MockContext(arguments=FakeArgs())
+        assert _extract_arguments(ctx) == {"a": 1}
+
+
+# ---------------------------------------------------------------------------
+# Disconnect leave-no-trace (LAY-3577 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectLeaveNoTrace:
+    def test_pre_existing_user_filter_survives_disconnect(self, mock_client):
+        """A filter the user registered BEFORE connect must survive disconnect —
+        only the adapter's own filters may be removed."""
+        from semantic_kernel.filters.filter_types import FilterTypes
+
+        kernel = Kernel()
+
+        async def user_filter(context, next):
+            await next(context)
+
+        kernel.add_filter(FilterTypes.FUNCTION_INVOCATION, user_filter)
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        assert len(kernel.function_invocation_filters) == 2
+        adapter.disconnect()
+
+        remaining = [f for _, f in kernel.function_invocation_filters]
+        assert remaining == [user_filter], "disconnect must remove only the adapter's filter, leaving the user's"
+        assert remaining[0] is user_filter
+        assert len(kernel.prompt_rendering_filters) == 0
+        assert len(kernel.auto_function_invocation_filters) == 0
+
+    def test_user_filter_added_after_connect_survives_disconnect(self, mock_client):
+        from semantic_kernel.filters.filter_types import FilterTypes
+
+        kernel = Kernel()
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+
+        async def user_filter(context, next):
+            await next(context)
+
+        kernel.add_filter(FilterTypes.FUNCTION_INVOCATION, user_filter)
+        adapter.disconnect()
+
+        remaining = [f for _, f in kernel.function_invocation_filters]
+        assert remaining == [user_filter]
+        assert remaining[0] is user_filter
+
+    def test_wrapped_chat_service_restored_to_class_method(self, mock_client):
+        kernel = Kernel()
+        service = MockChatService()
+        kernel.services["mock"] = service
+        class_func = MockChatService._inner_get_chat_message_contents
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        assert "_traced_inner" in service._inner_get_chat_message_contents.__name__
+        adapter.disconnect()
+
+        # The restored method must be the exact original class function
+        assert service._inner_get_chat_message_contents.__func__ is class_func
+        result = _run(service._inner_get_chat_message_contents(None, None))
+        assert result == [service._response]
+
+    def test_user_patched_service_method_restored_identically(self, mock_client):
+        """A user's own instance-level patch of the chat service must come back
+        as the exact same object after disconnect."""
+        kernel = Kernel()
+        service = MockChatService()
+        kernel.services["mock"] = service
+
+        async def user_inner(chat_history, settings):
+            return [service._response]
+
+        service._inner_get_chat_message_contents = user_inner
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        assert service._inner_get_chat_message_contents is not user_inner  # wrapped
+        adapter.disconnect()
+
+        assert service._inner_get_chat_message_contents is user_inner
+
+    def test_double_disconnect_does_not_raise(self, mock_client):
+        kernel = Kernel()
+        service = MockChatService()
+        kernel.services["mock"] = service
+        class_func = MockChatService._inner_get_chat_message_contents
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        adapter.disconnect()
+        adapter.disconnect()
+
+        assert not adapter.is_connected
+        assert len(kernel.function_invocation_filters) == 0
+        assert service._inner_get_chat_message_contents.__func__ is class_func
+
+    def test_connect_disconnect_cycle(self, mock_client):
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+        adapter = SemanticKernelAdapter(mock_client)
+
+        adapter.connect(target=kernel)
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=1, b=2))
+        adapter.disconnect()
+        assert len(kernel.function_invocation_filters) == 0
+
+        adapter.connect(target=kernel)
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=3, b=4))
+        adapter.disconnect()
+
+        assert len(kernel.function_invocation_filters) == 0
+        assert len(kernel.prompt_rendering_filters) == 0
+        assert len(kernel.auto_function_invocation_filters) == 0
+        # Both connected periods produced tool events
+        assert len(find_events(uploaded["events"], "tool.call")) == 2
+
+
+# ---------------------------------------------------------------------------
+# Honest graph contract (Lever A) — an AgentGroupChat multi-agent run must emit
+# a producer-DECLARED ChatCompletionAgent.name on agent.input/agent.output/
+# model.invoke and a real agent.handoff{from_agent,to_agent} on turn
+# transitions, so the server graph engine renders the multi-agent topology.
+# A single unnamed kernel run (and SK's auto-generated ``agent_<random>``
+# default name) must stay honestly BLANK — never fabricate an agent, and never
+# promote a plugin/tool name as the agent identity.
+# ---------------------------------------------------------------------------
+
+
+def _sk_msg(name: str, content: str, model: str = "gpt-4o", usage: Any = None) -> ChatMessageContent:
+    """A real SK ChatMessageContent as an agent turn yields it (``name`` is the
+    agent's own name; ``ai_model_id``/``metadata.usage`` are the model provenance
+    SK attaches to a ChatCompletionAgent's assistant message)."""
+    return ChatMessageContent(
+        role=AuthorRole.ASSISTANT,
+        content=content,
+        name=name,
+        ai_model_id=model,
+        metadata={"usage": usage} if usage else {},
+    )
+
+
+def _stub_group_invoke(messages: list):
+    """A stand-in for AgentGroupChat.invoke that yields real ChatMessageContent
+    turns without an LLM — the adapter wraps THIS at connect() and iterates it,
+    exactly as it would the real turn stream."""
+
+    async def _invoke(*args: Any, **kwargs: Any):
+        for m in messages:
+            yield m
+
+    return _invoke
+
+
+def _build_group_chat(names: list) -> tuple:
+    agents = [ChatCompletionAgent(name=n) if n else ChatCompletionAgent() for n in names]
+    chat = AgentGroupChat(agents=agents)
+    return chat, agents
+
+
+def _drive_group_chat(mock_client, chat, config: Optional[CaptureConfig] = None) -> dict:
+    uploaded = capture_framework_trace(mock_client)
+    adapter = SemanticKernelAdapter(mock_client, capture_config=config)
+    adapter.connect(target=chat)
+
+    async def _consume():
+        async for _ in chat.invoke():
+            pass
+
+    _run(_consume())
+    adapter.disconnect()
+    return uploaded
+
+
+class TestHonestGraphContract:
+    def test_multi_agent_emits_honest_name_handoff_and_model(self, mock_client):
+        chat, _ = _build_group_chat(["researcher", "writer"])
+        object.__setattr__(
+            chat,
+            "invoke",
+            _stub_group_invoke(
+                [
+                    _sk_msg("researcher", "found data", usage={"prompt_tokens": 10, "completion_tokens": 4}),
+                    _sk_msg("writer", "final report", usage={"prompt_tokens": 8, "completion_tokens": 6}),
+                ]
+            ),
+        )
+        uploaded = _drive_group_chat(mock_client, chat, CaptureConfig(capture_content=True))
+        events = uploaded["events"]
+
+        # agent.output — the producing agent's honest name.
+        out_names = {e["payload"].get("agent_name") for e in find_events(events, "agent.output")}
+        assert {"researcher", "writer"} <= out_names
+
+        # agent.input — every agent-turn input carries the honest agent_name.
+        inputs = find_events(events, "agent.input")
+        assert inputs, "expected per-turn agent.input events"
+        assert all(e["payload"].get("agent_name") for e in inputs)
+
+        # model.invoke — the model call is attributed to the honest agent.
+        mi_names = {e["payload"].get("agent_name") for e in find_events(events, "model.invoke")}
+        assert {"researcher", "writer"} <= mi_names
+
+        # agent.handoff — the real turn transition.
+        ho = find_event(events, "agent.handoff")
+        assert ho["payload"]["from_agent"] == "researcher"
+        assert ho["payload"]["to_agent"] == "writer"
+
+    def test_handoff_deduped_within_conversation(self, mock_client):
+        chat, _ = _build_group_chat(["researcher", "writer"])
+        object.__setattr__(
+            chat,
+            "invoke",
+            _stub_group_invoke(
+                [
+                    _sk_msg("researcher", "a"),
+                    _sk_msg("writer", "b"),
+                    _sk_msg("researcher", "c"),
+                    _sk_msg("writer", "d"),
+                ]
+            ),
+        )
+        uploaded = _drive_group_chat(mock_client, chat)
+        hos = find_events(uploaded["events"], "agent.handoff")
+        edges = {(h["payload"]["from_agent"], h["payload"]["to_agent"]) for h in hos}
+        # Distinct edges only — the repeated researcher->writer edge is deduped.
+        assert edges == {("researcher", "writer"), ("writer", "researcher")}
+        assert len(hos) == 2
+
+    def test_unnamed_agents_stay_blank(self, mock_client):
+        # SK gives an unnamed ChatCompletionAgent a generated ``agent_<random>``
+        # name — a framework placeholder, NOT a developer-declared identity.
+        chat, agents = _build_group_chat([None, None])
+        n0, n1 = agents[0].name, agents[1].name
+        assert n0.startswith("agent_") and n1.startswith("agent_")
+        object.__setattr__(
+            chat,
+            "invoke",
+            _stub_group_invoke([_sk_msg(n0, "x"), _sk_msg(n1, "y")]),
+        )
+        uploaded = _drive_group_chat(mock_client, chat)
+        events = uploaded["events"]
+
+        for e in find_events(events, "agent.output"):
+            assert "agent_name" not in e["payload"]
+        for e in find_events(events, "model.invoke"):
+            assert "agent_name" not in e["payload"]
+        for e in find_events(events, "agent.input"):
+            assert "agent_name" not in e["payload"]
+        # No honest identities => no fabricated topology.
+        assert find_events(events, "agent.handoff") == []
+
+    def test_plugins_are_not_promoted_as_agents(self, mock_client):
+        # A single-kernel function-calling run has NO declared agent — it must
+        # stay blank, and a plugin/tool name must never become an agent_name.
+        uploaded = capture_framework_trace(mock_client)
+        kernel = Kernel()
+        kernel.add_plugin(MathPlugin(), "MathPlugin")
+
+        adapter = SemanticKernelAdapter(mock_client)
+        adapter.connect(target=kernel)
+        _run(kernel.invoke(plugin_name="MathPlugin", function_name="add", a=1, b=2))
+        adapter.disconnect()
+
+        for e in uploaded["events"]:
+            assert "agent_name" not in e["payload"], e["event_type"]

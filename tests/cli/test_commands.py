@@ -3,9 +3,10 @@ from __future__ import annotations
 from unittest.mock import Mock, patch
 
 import pytest
-from click.testing import CliRunner
 
 from layerlens.cli._app import cli
+
+from .conftest import _make_runner
 
 
 class TestTraceCommands:
@@ -13,7 +14,7 @@ class TestTraceCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @pytest.fixture
     def mock_traces(self):
@@ -66,7 +67,11 @@ class TestTraceCommands:
         client.traces.get.return_value = mock_traces
         mock_get_client.return_value = client
 
-        result = runner.invoke(cli, ["trace", "get", "trace-123"], env={"LAYERLENS_STRATIX_API_KEY": "test"})
+        result = runner.invoke(
+            cli,
+            ["trace", "get", "trace-123"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
+        )
 
         assert result.exit_code == 0
         assert "trace-123" in result.output
@@ -78,7 +83,11 @@ class TestTraceCommands:
         client.traces.get.return_value = None
         mock_get_client.return_value = client
 
-        result = runner.invoke(cli, ["trace", "get", "nonexistent"], env={"LAYERLENS_STRATIX_API_KEY": "test"})
+        result = runner.invoke(
+            cli,
+            ["trace", "get", "nonexistent"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
+        )
 
         assert result.exit_code != 0
 
@@ -89,7 +98,10 @@ class TestTraceCommands:
         mock_get_client.return_value = client
 
         result = runner.invoke(
-            cli, ["trace", "delete", "trace-123"], input="y\n", env={"LAYERLENS_STRATIX_API_KEY": "test"}
+            cli,
+            ["trace", "delete", "trace-123"],
+            input="y\n",
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
         )
 
         client.traces.delete.assert_called_once()
@@ -102,7 +114,9 @@ class TestTraceCommands:
         mock_get_client.return_value = client
 
         result = runner.invoke(
-            cli, ["trace", "delete", "trace-123", "--yes"], env={"LAYERLENS_STRATIX_API_KEY": "test"}
+            cli,
+            ["trace", "delete", "trace-123", "--yes"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
         )
 
         assert result.exit_code == 0
@@ -114,7 +128,7 @@ class TestJudgeCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.judge.get_client")
     def test_judge_list(self, mock_get_client, runner):
@@ -152,7 +166,14 @@ class TestJudgeCommands:
 
         result = runner.invoke(
             cli,
-            ["judge", "create", "--name", "Test", "--goal", "Evaluate accuracy and completeness"],
+            [
+                "judge",
+                "create",
+                "--name",
+                "Test",
+                "--goal",
+                "Evaluate accuracy and completeness",
+            ],
             env={"LAYERLENS_STRATIX_API_KEY": "test"},
         )
 
@@ -164,7 +185,12 @@ class TestJudgeCommands:
         """judge test creates a trace evaluation."""
         te = Mock()
         te.id = "te-1"
-        te.model_dump.return_value = {"id": "te-1", "trace_id": "t-1", "judge_id": "j-1", "status": "pending"}
+        te.model_dump.return_value = {
+            "id": "te-1",
+            "trace_id": "t-1",
+            "judge_id": "j-1",
+            "status": "pending",
+        }
         client = Mock()
         client.trace_evaluations.create.return_value = te
         mock_get_client.return_value = client
@@ -177,6 +203,75 @@ class TestJudgeCommands:
 
         assert result.exit_code == 0
         assert "te-1" in result.output
+        # The user should be told how to fetch the result so they don't reach
+        # for `evaluate get` (which targets the wrong resource and 500s).
+        assert "judge result te-1" in result.stderr
+
+    @patch("layerlens.cli.commands.judge.get_client")
+    def test_judge_result_success_shows_results(self, mock_get_client, runner):
+        """judge result fetches the result once the trace evaluation succeeds."""
+        te = Mock()
+        te.id = "te-1"
+        te.status = Mock(value="success")
+        results = Mock()
+        results.model_dump.return_value = {
+            "id": "ter-1",
+            "trace_evaluation_id": "te-1",
+            "score": 0.92,
+            "passed": True,
+            "reasoning": "Looks good.",
+        }
+        client = Mock()
+        client.trace_evaluations.get.return_value = te
+        client.trace_evaluations.get_results.return_value = results
+        mock_get_client.return_value = client
+
+        result = runner.invoke(
+            cli,
+            ["judge", "result", "te-1"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
+        )
+
+        assert result.exit_code == 0
+        client.trace_evaluations.get_results.assert_called_once_with("te-1")
+        assert "0.92" in result.output
+
+    @patch("layerlens.cli.commands.judge.get_client")
+    def test_judge_result_pending_skips_results(self, mock_get_client, runner):
+        """judge result reports status and does not fetch results while pending."""
+        te = Mock()
+        te.id = "te-1"
+        te.status = Mock(value="pending")
+        te.model_dump.return_value = {"id": "te-1", "status": "pending"}
+        client = Mock()
+        client.trace_evaluations.get.return_value = te
+        mock_get_client.return_value = client
+
+        result = runner.invoke(
+            cli,
+            ["judge", "result", "te-1"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
+        )
+
+        assert result.exit_code == 0
+        client.trace_evaluations.get_results.assert_not_called()
+        assert "still running" in result.stderr
+
+    @patch("layerlens.cli.commands.judge.get_client")
+    def test_judge_result_not_found(self, mock_get_client, runner):
+        """judge result exits non-zero when the trace evaluation is missing."""
+        client = Mock()
+        client.trace_evaluations.get.return_value = None
+        mock_get_client.return_value = client
+
+        result = runner.invoke(
+            cli,
+            ["judge", "result", "missing"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
+        )
+
+        assert result.exit_code == 1
+        assert "not found" in result.stderr
 
 
 class TestEvaluateCommands:
@@ -184,7 +279,7 @@ class TestEvaluateCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.evaluate.get_client")
     def test_evaluate_list(self, mock_get_client, runner):
@@ -210,13 +305,39 @@ class TestEvaluateCommands:
         assert result.exit_code == 0
         assert "GPT-4" in result.output
 
+    @patch("layerlens.cli.commands.evaluate.get_client")
+    def test_evaluate_get_wrong_resource_hints_judge_result(self, mock_get_client, runner):
+        """A backend error (e.g. a trace-eval ID) yields a hint, not a raw 500."""
+        from unittest.mock import MagicMock
+
+        from layerlens._exceptions import InternalServerError
+
+        response = MagicMock()
+        response.status_code = 500
+        response.headers = {}
+        err = InternalServerError("boom", response=response, body=None)
+
+        client = Mock()
+        client.evaluations.get_by_id.side_effect = err
+        mock_get_client.return_value = client
+
+        result = runner.invoke(
+            cli,
+            ["evaluate", "get", "te-1"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
+        )
+
+        assert result.exit_code == 1
+        assert "judge result te-1" in result.stderr
+        assert "500" in result.stderr
+
 
 class TestScorerCommands:
     """Test scorer CLI commands."""
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.scorer.get_client")
     def test_scorer_list(self, mock_get_client, runner):
@@ -274,7 +395,11 @@ class TestScorerCommands:
         client.scorers.delete.return_value = True
         mock_get_client.return_value = client
 
-        result = runner.invoke(cli, ["scorer", "delete", "s-1", "--yes"], env={"LAYERLENS_STRATIX_API_KEY": "test"})
+        result = runner.invoke(
+            cli,
+            ["scorer", "delete", "s-1", "--yes"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
+        )
 
         assert result.exit_code == 0
         client.scorers.delete.assert_called_once_with("s-1")
@@ -285,7 +410,7 @@ class TestSpaceCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.space.get_client")
     def test_space_create_dry_run(self, mock_get_client, runner):
@@ -306,7 +431,7 @@ class TestBulkCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     @patch("layerlens.cli.commands.bulk.get_client")
     def test_bulk_eval_file_dry_run(self, _mock_get_client, runner):
@@ -346,7 +471,15 @@ class TestBulkCommands:
 
         result = runner.invoke(
             cli,
-            ["bulk", "eval", "--judge-id", "j-1", "--traces", str(traces_file), "--dry-run"],
+            [
+                "bulk",
+                "eval",
+                "--judge-id",
+                "j-1",
+                "--traces",
+                str(traces_file),
+                "--dry-run",
+            ],
             env={"LAYERLENS_STRATIX_API_KEY": "test"},
         )
 
@@ -359,11 +492,15 @@ class TestCiCommands:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     def test_ci_report_dry_run(self, runner):
         """ci report --dry-run previews."""
-        result = runner.invoke(cli, ["ci", "report", "--dry-run"], env={"LAYERLENS_STRATIX_API_KEY": "test"})
+        result = runner.invoke(
+            cli,
+            ["ci", "report", "--dry-run"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
+        )
 
         assert result.exit_code == 0
         assert "[dry-run]" in result.output
@@ -409,7 +546,11 @@ class TestCiCommands:
         mock_get_client.return_value = client
 
         out_file = tmp_path / "report.md"
-        result = runner.invoke(cli, ["ci", "report", "-o", str(out_file)], env={"LAYERLENS_STRATIX_API_KEY": "test"})
+        result = runner.invoke(
+            cli,
+            ["ci", "report", "-o", str(out_file)],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
+        )
 
         assert result.exit_code == 0
         assert out_file.exists()
@@ -422,7 +563,7 @@ class TestGlobalOptions:
 
     @pytest.fixture
     def runner(self):
-        return CliRunner(mix_stderr=False)
+        return _make_runner()
 
     def test_version(self, runner):
         """--version prints version."""
@@ -434,7 +575,16 @@ class TestGlobalOptions:
         """--help shows all command groups."""
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
-        for cmd in ["trace", "judge", "evaluate", "integration", "scorer", "space", "bulk", "ci"]:
+        for cmd in [
+            "trace",
+            "judge",
+            "evaluate",
+            "integration",
+            "scorer",
+            "space",
+            "bulk",
+            "ci",
+        ]:
             assert cmd in result.output
 
     @patch("layerlens.cli.commands.trace.get_client")
@@ -447,7 +597,9 @@ class TestGlobalOptions:
         mock_get_client.return_value = client
 
         result = runner.invoke(
-            cli, ["--format", "json", "trace", "get", "t-1"], env={"LAYERLENS_STRATIX_API_KEY": "test"}
+            cli,
+            ["--format", "json", "trace", "get", "t-1"],
+            env={"LAYERLENS_STRATIX_API_KEY": "test"},
         )
 
         assert result.exit_code == 0

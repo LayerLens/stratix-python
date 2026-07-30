@@ -1,0 +1,73 @@
+{
+  "provenance": {
+    "provider": "openai",
+    "sdk_version": "2.32.0",
+    "model": "gpt-4o-mini",
+    "scenario": "tool_call",
+    "captured_at": "2026-06-22T22:51:54+00:00"
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "id": "chatcmpl-DthmbppX6J6vGollngZYuPviDUYWT",
+          "object": "chat.completion",
+          "created": 1782168713,
+          "model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                  {
+                    "id": "call_N0cYZsPSiRm7o3khCvuy6J3M",
+                    "type": "function",
+                    "function": {
+                      "name": "get_weather",
+                      "arguments": "{\"city\":\"Paris\"}"
+                    }
+                  }
+                ],
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 54,
+            "completion_tokens": 14,
+            "total_tokens": 68,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "service_tier": "default",
+          "system_fingerprint": "fp_7ef2449383"
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json",
+          "openai-version": "2020-10-01",
+          "x-request-id": "req_d2f6eb7e04f34ede94e8d3abfe72288d"
+        }
+      }
+    }
+  ]
+}

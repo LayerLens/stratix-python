@@ -1,0 +1,12 @@
+{
+  "marker": "prodready-l5-20260626T232437Z",
+  "probe": "ollama_badjson_400",
+  "kind": "raw_http",
+  "result": {
+    "status": 400,
+    "body": {
+      "error": "invalid character 'n' looking for beginning of object key string"
+    },
+    "raw": "{\"error\":\"invalid character 'n' looking for beginning of object key string\"}"
+  }
+}

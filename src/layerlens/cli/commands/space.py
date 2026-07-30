@@ -39,7 +39,11 @@ def space() -> None:
 @click.pass_context
 @handle_errors
 def list_spaces(
-    ctx: click.Context, page: int | None, page_size: int | None, sort_by: str | None, order: str | None
+    ctx: click.Context,
+    page: int | None,
+    page_size: int | None,
+    sort_by: str | None,
+    order: str | None,
 ) -> None:
     """List evaluation spaces with optional pagination.
 
@@ -56,7 +60,10 @@ def list_spaces(
         return
 
     if ctx.obj["verbose"]:
-        click.echo(f"Showing {result.count} of {result.total_count} evaluation spaces", err=True)
+        click.echo(
+            f"Showing {result.count} of {result.total_count} evaluation spaces",
+            err=True,
+        )
 
     output = format_output(result.evaluation_spaces, ctx.obj["output_format"], SPACE_COLUMNS)
     click.echo(output)
@@ -89,12 +96,21 @@ def get_space(ctx: click.Context, id: str) -> None:
 @click.option("--name", required=True, help="Space name.")
 @click.option("--description", default=None, help="Space description (max 500 chars).")
 @click.option(
-    "--visibility", default=None, type=click.Choice(["private", "public", "tenant"]), help="Visibility level."
+    "--visibility",
+    default=None,
+    type=click.Choice(["private", "public", "tenant"]),
+    help="Visibility level.",
 )
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without executing.")
 @click.pass_context
 @handle_errors
-def create_space(ctx: click.Context, name: str, description: str | None, visibility: str | None, dry_run: bool) -> None:
+def create_space(
+    ctx: click.Context,
+    name: str,
+    description: str | None,
+    visibility: str | None,
+    dry_run: bool,
+) -> None:
     """Create a new evaluation space.
 
     \b

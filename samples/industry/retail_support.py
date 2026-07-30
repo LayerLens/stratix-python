@@ -21,7 +21,20 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import (
+    create_judge,
+    poll_evaluation_results,
+    recorded_trace_path,
+    upload_recorded_trace,
+)
+
+# This sample uploads RECORDED REAL traces: each was captured from a genuine
+# instrumented ``retail-support-agent`` run over the tickets below (see
+# ``samples/data/_generate_fixtures.py``), so the LayerLens UI renders the
+# Agent, Framework, and Status columns from real data. The scenarios remain
+# here as documentation of what was analyzed and to label the evaluation output.
+SAMPLE = "retail_support"
+FIXTURE = recorded_trace_path("industry", "retail_support.jsonl")
 
 SUPPORT_TICKETS: list[dict[str, Any]] = [
     {
@@ -29,7 +42,11 @@ SUPPORT_TICKETS: list[dict[str, Any]] = [
         "category": "return_request",
         "customer_message": "I received the wrong item. I ordered a blue jacket size M but got a red one in size L.",
         "agent_response": "I'm sorry about the mix-up. I've initiated a prepaid return label. Once we receive the incorrect item, we'll ship the correct blue jacket in size M with express shipping at no cost. You should have it within 2-3 business days.",
-        "policies_applied": ["30_day_return", "free_exchange_shipping", "wrong_item_priority"],
+        "policies_applied": [
+            "30_day_return",
+            "free_exchange_shipping",
+            "wrong_item_priority",
+        ],
     },
     {
         "id": "ticket-002",
@@ -54,41 +71,55 @@ def main() -> None:
         print(f"ERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    # Create judges up front
-    judges = {
-        "accuracy": create_judge(
-            client,
-            name="Response Accuracy Judge",
-            evaluation_goal="Evaluate whether the customer service response accurately applies company policies and provides correct information.",
-        ),
-        "empathy": create_judge(
-            client,
-            name="Empathy Judge",
-            evaluation_goal="Evaluate whether the customer service response demonstrates appropriate empathy, tone, and professionalism.",
-        ),
-        "resolution": create_judge(
-            client,
-            name="Resolution Judge",
-            evaluation_goal="Evaluate whether the customer service response effectively resolves the customer's issue with a clear action plan.",
-        ),
-    }
-    judge_labels = {"accuracy": "Accuracy", "empathy": "Empathy", "resolution": "Resolution"}
-    judge_ids = [j.id for j in judges.values()]
+    # Upload the recorded real traces first. Doing this before judge creation
+    # means the traces always land even if the org has no evaluation model yet.
+    print(f"Uploading {len(SUPPORT_TICKETS)} recorded customer-support traces...\n")
+    trace_ids = upload_recorded_trace(client, FIXTURE)
+    if not trace_ids:
+        print("ERROR: no traces uploaded (fixture missing or rejected).")
+        sys.exit(1)
 
+    # Create judges. If the org has no models available, judge creation raises
+    # RuntimeError -- we skip the evaluations (the traces are already uploaded)
+    # rather than crash.
+    judge_ids: list[str] = []
     try:
-        for ticket in SUPPORT_TICKETS:
-            trace_result = upload_trace_dict(
+        judges = {
+            "accuracy": create_judge(
                 client,
-                input_text=ticket["customer_message"],
-                output_text=ticket["agent_response"],
-                metadata={"category": ticket["category"], "policies_applied": ticket["policies_applied"]},
-            )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else ticket["id"]
+                name="Response Accuracy Judge",
+                evaluation_goal="Evaluate whether the customer service response accurately applies company policies and provides correct information.",
+                namespace=SAMPLE,
+            ),
+            "empathy": create_judge(
+                client,
+                name="Empathy Judge",
+                evaluation_goal="Evaluate whether the customer service response demonstrates appropriate empathy, tone, and professionalism.",
+                namespace=SAMPLE,
+            ),
+            "resolution": create_judge(
+                client,
+                name="Resolution Judge",
+                evaluation_goal="Evaluate whether the customer service response effectively resolves the customer's issue with a clear action plan.",
+                namespace=SAMPLE,
+            ),
+        }
+        judge_labels = {
+            "accuracy": "Accuracy",
+            "empathy": "Empathy",
+            "resolution": "Resolution",
+        }
+        judge_ids = [j.id for j in judges.values()]
 
-            print(f"Ticket: {ticket['category']} - {ticket['customer_message'][:50]}...")
+        for ticket, trace_id in zip(SUPPORT_TICKETS, trace_ids):
+            print(
+                f"Ticket: {ticket['category']} - {ticket['customer_message'][:50]}..."
+            )
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -100,9 +131,14 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:12s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:12s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
+    except RuntimeError as exc:
+        print(f"\nNOTE: evaluations skipped -- {exc}")
+        print("  Traces are uploaded; add a project/public model to enable judges.")
     finally:
         for jid in judge_ids:
             try:

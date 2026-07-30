@@ -6,7 +6,11 @@ import pytest
 
 from layerlens._constants import DEFAULT_TIMEOUT
 from layerlens.models.scorer import Scorer
-from layerlens.resources.scorers.scorers import Scorers, _normalize_keys, _pascal_to_snake
+from layerlens.resources.scorers.scorers import (
+    Scorers,
+    _normalize_keys,
+    _pascal_to_snake,
+)
 
 
 class TestPascalToSnake:
@@ -101,7 +105,10 @@ class TestScorers:
 
     def test_get_with_envelope(self, scorers_resource, sample_scorer_data):
         """get handles {status, data} envelope."""
-        scorers_resource._get.return_value = {"status": "success", "data": sample_scorer_data}
+        scorers_resource._get.return_value = {
+            "status": "success",
+            "data": sample_scorer_data,
+        }
 
         result = scorers_resource.get("s-123")
 
@@ -166,7 +173,10 @@ class TestScorers:
 
     def test_create_request_parameters(self, scorers_resource):
         """create sends correct body."""
-        scorers_resource._post.return_value = {"status": "success", "data": {"Name": "X", "Prompt": "Y"}}
+        scorers_resource._post.return_value = {
+            "status": "success",
+            "data": {"Name": "X", "Prompt": "Y"},
+        }
 
         scorers_resource.create(name="X", description="D", model_id="m-1", prompt="Y")
 

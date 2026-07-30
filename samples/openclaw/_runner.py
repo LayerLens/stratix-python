@@ -170,7 +170,9 @@ class DemoRunner(ABC):
                     "duration_ms": duration_ms,
                 }
             except Exception as exc:
-                self.logger.warning("OpenClaw execution failed (%s). Using simulated data.", exc)
+                self.logger.warning(
+                    "OpenClaw execution failed (%s). Using simulated data.", exc
+                )
 
         # Simulated fallback
         import random
@@ -217,7 +219,9 @@ class DemoRunner(ABC):
         ``None`` in offline mode or on failure.
         """
         if not self.client or not trace_id or not judge_id:
-            self.logger.debug("SDK not available or missing IDs; skipping trace evaluation.")
+            self.logger.debug(
+                "SDK not available or missing IDs; skipping trace evaluation."
+            )
             return None
         try:
             evaluation = self.client.trace_evaluations.create(
@@ -227,7 +231,9 @@ class DemoRunner(ABC):
             if not evaluation:
                 return None
             # Use shared polling helper
-            results = poll_evaluation_results(self.client, evaluation.id, max_attempts=15)
+            results = poll_evaluation_results(
+                self.client, evaluation.id, max_attempts=15
+            )
             if results:
                 r = results[0]
                 return {"score": r.score, "passed": r.passed, "reasoning": r.reasoning}
@@ -245,7 +251,9 @@ class DemoRunner(ABC):
         try:
             model_id = get_default_model_id(self.client)
             try:
-                judge = self.client.judges.create(name=name, evaluation_goal=evaluation_goal, model_id=model_id)
+                judge = self.client.judges.create(
+                    name=name, evaluation_goal=evaluation_goal, model_id=model_id
+                )
                 return judge.id if judge else ""
             except Exception as create_exc:
                 # Handle 409 Conflict by reusing existing judge

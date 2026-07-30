@@ -213,9 +213,13 @@ def _execute_tasks_for_model(model: str) -> list[dict[str, Any]]:
             )
         return results
     except ImportError:
-        return [{"task": TASKS[i], **SIMULATED_OUTPUTS[model][i]} for i in range(len(TASKS))]
+        return [
+            {"task": TASKS[i], **SIMULATED_OUTPUTS[model][i]} for i in range(len(TASKS))
+        ]
     except Exception:
-        return [{"task": TASKS[i], **SIMULATED_OUTPUTS[model][i]} for i in range(len(TASKS))]
+        return [
+            {"task": TASKS[i], **SIMULATED_OUTPUTS[model][i]} for i in range(len(TASKS))
+        ]
 
 
 # Judge definitions
@@ -312,8 +316,12 @@ def main() -> None:
 
     # --- 4. Evaluate all traces ---
     # scores[model][judge_label] = list of scores
-    scores: dict[str, dict[str, list[float]]] = {model: {label: [] for _, label in judge_pairs} for model in MODELS}
-    pass_counts: dict[str, dict[str, int]] = {model: {label: 0 for _, label in judge_pairs} for model in MODELS}
+    scores: dict[str, dict[str, list[float]]] = {
+        model: {label: [] for _, label in judge_pairs} for model in MODELS
+    }
+    pass_counts: dict[str, dict[str, int]] = {
+        model: {label: 0 for _, label in judge_pairs} for model in MODELS
+    }
 
     for model in MODELS:
         print(f"Evaluating {model}...")
@@ -363,7 +371,9 @@ def main() -> None:
     # Winner
     if model_averages:
         best_model = max(model_averages, key=model_averages.get)  # type: ignore[arg-type]
-        print(f"\nBest overall: \033[92m{best_model}\033[0m (avg score: {model_averages[best_model]:.2f})")
+        print(
+            f"\nBest overall: \033[92m{best_model}\033[0m (avg score: {model_averages[best_model]:.2f})"
+        )
 
     print("\nDone.")
 

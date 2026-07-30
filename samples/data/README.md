@@ -62,3 +62,34 @@ referenced by the corresponding sample in `samples/industry/`.
 | `industry/real_estate_listings.jsonl` | Real estate -- property listings with valuations |
 | `industry/telecom_interactions.jsonl` | Telecom -- customer service interactions |
 | `industry/travel_bookings.jsonl` | Travel -- booking transactions with preferences |
+
+## Recorded real traces (`traces/industry/`, `traces/cowork/`)
+
+The industry and co-work samples upload **recorded real traces** rather than
+hand-authored stubs. Each fixture is a JSONL file (one trace per line) captured
+from a genuine, instrumented agent run over that sample's scenarios: real
+`model.invoke`/`cost.record` events, a real `agent.identity`, and an intact
+attestation chain. Because the data is real, the LayerLens UI renders the Agent,
+Framework, and Status columns from actual producer values -- the Framework
+column shows the provider that really ran (`openai`, `anthropic`, or `ollama`),
+not a fabricated label.
+
+Each `traces/industry/<sample>.jsonl` / `traces/cowork/<sample>.jsonl` file is
+consumed by the matching sample in `samples/industry/` / `samples/cowork/` via
+`_helpers.upload_recorded_trace`. The one exception is
+`traces/cowork/incident_response.jsonl`, which mixes real recorded traces with a
+small set of clearly-labeled synthetic adversarial entries (`metadata.synthetic`
+= true) -- unsafe outputs a real aligned model refuses to produce, kept so the
+Safety judge has known-bad inputs to flag.
+
+To regenerate the fixtures from the domain scenarios, run:
+
+```bash
+export LAYERLENS_STRATIX_API_KEY=your-api-key
+export OPENAI_API_KEY=...  ANTHROPIC_API_KEY=...   # + a local Ollama
+python samples/data/_generate_fixtures.py
+```
+
+`_generate_fixtures.py` runs each scenario through a real instrumented model
+call and captures the resulting trace **without uploading** it, so regenerating
+never pollutes your workspace.

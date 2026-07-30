@@ -5,7 +5,7 @@ All notable changes to the Stratix Python SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Latest version:** [1.7.0](https://github.com/LayerLens/stratix-python/releases/tag/v1.7.0) — 2026-05-20
+**Latest version:** [1.9.0](https://github.com/LayerLens/stratix-python/releases/tag/v1.9.0) — 2026-07-30
 
 ## [Unreleased]
 
@@ -20,6 +20,46 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 ### Deprecated
 
 ### Removed
+
+## [1.9.0] - 2026-07-30
+
+The instrumentation release: `layerlens.instrument` captures agent traces from the frameworks, LLM providers, and agent protocols you already use, and ships them to LayerLens for trace evaluation.
+
+### Added
+
+- **`layerlens.instrument` — agent instrumentation and tracing engine.** Public API: `auto()`, `trace()`, `span()`, `emit()`, `TraceCollector`, `CaptureConfig`, `BaseAdapter`, `AdapterInfo`, and `discover_installed()`. `auto()` detects the agent libraries installed in the environment and wires up the matching adapters; `trace()` / `span()` mark run and step boundaries by hand when you want explicit control
+- **39 adapters** across three layers:
+  - 8 LLM providers — OpenAI, Anthropic, Azure OpenAI, Bedrock (including Amazon Nova `invoke_model`), Google Vertex, LiteLLM, Ollama, OpenRouter
+  - 25 frameworks — LangChain, LangGraph, LlamaIndex, CrewAI, AutoGen, Agno, Haystack, Semantic Kernel, OpenAI Agents, Google ADK, Bedrock Agents, Agentforce, Strands, smolagents, Pydantic AI, Microsoft Agent Framework, DSPy, Instructor, Marvin, Mirascope, OpenInference, browser-use, Langfuse, embedding, vector store
+  - 6 protocols — MCP, A2A, AG-UI, A2UI, AP2, UCP
+- **W3C trace context propagation** — `inject_headers()`, `extract_headers()`, `get_trace_context()`, `new_traceparent()`, and the `trace_context` context manager, so a trace survives a hop across services and protocol boundaries
+- **Agent-graph contract** — adapters emit `agent_name` and handoff edges, so multi-agent runs reconstruct as a real DAG instead of a flat span list
+- **Attestation** — every wire event carries a per-event hash for OTLP conformance and tamper evidence
+- **Cost tracking** — a spend ledger and provider pricing tables attach `cost_usd` to captured runs, including costs the framework reports itself
+- **Upload data-loss observability** — `set_upload_loss_callback()` and `get_upload_loss_stats()` surface dropped events instead of failing silently
+- **`strict` flag on `traces.get()` / `traces.get_many()`** (sync + async, default `False`). When `True`, a 200 response with an empty or unparseable body raises `StratixError` instead of returning `None`, distinguishing contract drift from a genuine miss. A real 404 still raises `NotFoundError`
+- CLI: `judge result` command; trace-evaluation IDs no longer get routed to `evaluate get`
+
+### Changed
+
+- **BREAKING (`capture_content=False` only):** `model.invoke.parameters` redaction is now deny-by-default. The collector previously stripped a fixed deny-list, so any parameter the SDK had not seen before passed through and could carry prompt or response content. It now keeps only a vetted allowlist of non-content metrics (sampling and limit parameters), recursing into nested containers like `generation_config` and `options` so safe sub-keys survive and content sub-keys are dropped. Impact is metadata loss on custom or provider-specific parameters, never a content leak. The default `capture_content=True` path is unchanged
+- Every resource method now raises from the SDK exception taxonomy. `_request_cast` previously mapped only `httpx.HTTPStatusError`, letting raw transport and decode failures escape; timeouts now surface as `APITimeoutError`, transport errors as `APIConnectionError`, and response decode/validation failures as `APIResponseValidationError`
+- Per-event byte cap on captured events, and upload filenames are sanitized fail-fast
+- Dropped the `browser-use` extra — its `openai` pin conflicts with the SDK's. The browser-use adapter still works when you install the package yourself
+
+### Fixed
+
+- **Privacy — `capture_content=False` leaks closed across all adapters**. Follow-ups: Google ADK system prompts and CrewAI task descriptions, protocol-layer content gating and redaction, and arbitrary user-supplied trace metadata in the Langfuse adapter
+- **SSRF guard on presigned uploads** — the upload target is validated before the request goes out
+- Async provider clients are routed onto the async wrap path instead of the sync one
+- Per-adapter concurrent-run isolation — parallel runs no longer bleed spans into each other
+- Provider-only traces emit a real captured root span rather than a synthesized placeholder
+- `agent.identity` is captured canonically at flush time
+- LangGraph and LangChain event serialization
+- Agentforce importer rewritten against the real Salesforce STDM, and `bedrock_agents` rewritten against the real `InvokeAgent` completion EventStream
+- `autogen`, `crewai`, and `llamaindex` now honor a caller-bound collector instead of falling back to the global one
+- A2A: protobuf `TaskStatus.state` enum now maps to the canonical status string
+- Telemetry fidelity for LiteLLM streaming; adapter schema-lock re-arm, Vertex/Azure coverage, vector-store and provider linkage
 
 ## [1.8.0] - 2026-05-26
 
@@ -175,7 +215,8 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 - `evaluations`, `results`, `models`, and `benchmarks` resources
 - Typed exception hierarchy for API errors
 
-[Unreleased]: https://github.com/LayerLens/stratix-python/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/LayerLens/stratix-python/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/LayerLens/stratix-python/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/LayerLens/stratix-python/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/LayerLens/stratix-python/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/LayerLens/stratix-python/compare/v1.6.0...v1.6.1

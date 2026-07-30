@@ -150,7 +150,12 @@ def search_traces(
 @trace.command("export")
 @click.argument("id", shell_complete=complete_trace)
 @click.option(
-    "--output", "-o", "output_file", default=None, type=click.Path(), help="Output file path (default: stdout)."
+    "--output",
+    "-o",
+    "output_file",
+    default=None,
+    type=click.Path(),
+    help="Output file path (default: stdout).",
 )
 @click.pass_context
 @handle_errors

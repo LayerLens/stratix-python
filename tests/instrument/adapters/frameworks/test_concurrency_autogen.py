@@ -1,0 +1,256 @@
+"""Interleaved-run isolation guard for the AutoGen adapter (LAY-3576 / A6).
+
+THE INVARIANT: two runs (conversations) driven through ONE ``AutoGenAdapter``
+instance concurrently must upload two traces with distinct trace_ids, each
+holding exactly its own run's events — no cross-contamination, no lost events.
+
+THE BUG (now fixed): the adapter funnelled every run into one lazily-created
+``self._collector`` shared across all conversations (autogen logs through the
+module-global ``EVENT_LOGGER_NAME`` and its events carry no run/topic/session
+id). Two interleaved conversations merged into one trace.
+
+THE FIX: each AgentChat team owns its own ``SingleThreadedAgentRuntime`` whose
+message loop drains on ONE thread, and the logging handler runs inline on the
+emitting thread. So the adapter keys a ``RunState`` by THREAD ident
+(``autogen.py`` — ``_runs_by_thread`` / ``_ensure_run`` / ``_dispatch``): all of
+one run's asyncio tasks share the thread (one coherent trace — see
+``test_single_run_across_asyncio_tasks_is_one_trace``), while two concurrent runs
+on separate threads stay isolated even for the sender-less ``LLMCallEvent``. Each
+run flushes as its own trace on ``disconnect()``.
+
+DRIVING: faithful concurrency — each conversation runs on its OWN worker thread
+through the REAL ``autogen_core`` event logger, with a barrier forcing the two
+runs to interleave. A single-thread interleave is intentionally NOT used: it is
+genuinely infeasible (the runtime drains every event from one shared task and
+``LLMCallEvent`` has no conversation key), so it would not reflect — or be able
+to isolate — a real concurrent workload.
+
+Requires autogen-core >= 0.4 (Python >= 3.10).
+"""
+
+from __future__ import annotations
+
+import sys
+import json
+import logging
+import threading
+from typing import Any, Dict, List
+
+import pytest
+
+from .conftest import record_for_schema_lock
+
+if sys.version_info < (3, 10):
+    pytest.skip("autogen-core requires Python >= 3.10", allow_module_level=True)
+try:
+    import autogen_core  # noqa: F401
+except (ImportError, TypeError):
+    pytest.skip("autogen-core not installed or incompatible", allow_module_level=True)
+
+from autogen_core import EVENT_LOGGER_NAME, AgentId  # noqa: E402
+from autogen_core.logging import (  # noqa: E402
+    MessageKind,
+    LLMCallEvent,
+    MessageEvent,
+    DeliveryStage,
+)
+
+from layerlens.instrument._capture_config import CaptureConfig  # noqa: E402
+from layerlens.instrument.adapters.frameworks.autogen import (
+    AutoGenAdapter,
+    _autogen_agent_name,
+)  # noqa: E402
+
+
+def test_autogen_agent_name_cleans_and_filters():
+    """A team runtime names participants '<agent>_<team-uuid>' and stringifies
+    an AgentId as '<type>/<key>'. The node name must be the clean agent
+    (uuid stripped); plumbing (group-chat manager, routing topics) must be None."""
+    u = "e2bdcfef-0da1-4d13-8fb8-11ba78956b18"
+    assert _autogen_agent_name(f"writer_{u}/{u}") == "writer"
+    assert _autogen_agent_name(f"critic_{u}/{u}") == "critic"
+    assert _autogen_agent_name(f"RoundRobinGroupChatManager_{u}/{u}") is None
+    assert _autogen_agent_name(f"SelectorGroupChatManager_{u}/{u}") is None
+    assert _autogen_agent_name(f"group_topic_{u}/{u}") is None
+    assert _autogen_agent_name(f"output_topic_{u}/{u}") is None
+    # A plain, non-team-runtime name passes through unchanged.
+    assert _autogen_agent_name("planner") == "planner"
+    assert _autogen_agent_name(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _collect_traces(mock_client: Any) -> List[Dict[str, Any]]:
+    """Accumulate each uploaded trace payload separately (one entry per flush)."""
+    traces: List[Dict[str, Any]] = []
+    lock = threading.Lock()
+
+    def _capture(path: str) -> None:
+        with open(path) as f:
+            data = json.load(f)
+        with lock:
+            traces.append(data[0])
+            record_for_schema_lock(data[0].get("events", []))
+
+    mock_client.traces.upload.side_effect = _capture
+    return traces
+
+
+def _ask(content: str, user: str, assistant: str) -> MessageEvent:
+    return MessageEvent(
+        payload=content,
+        sender=AgentId(user, "default"),
+        receiver=AgentId(assistant, "default"),
+        kind=MessageKind.DIRECT,
+        delivery_stage=DeliveryStage.SEND,
+    )
+
+
+def _answer(content: str, user: str, assistant: str) -> MessageEvent:
+    return MessageEvent(
+        payload=content,
+        sender=AgentId(assistant, "default"),
+        receiver=AgentId(user, "default"),
+        kind=MessageKind.RESPOND,
+        delivery_stage=DeliveryStage.SEND,
+    )
+
+
+def _llm_call(content: str, model: str) -> LLMCallEvent:
+    return LLMCallEvent(
+        messages=[{"role": "user", "content": content}],
+        response={"model": model},
+        prompt_tokens=11,
+        completion_tokens=7,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Isolation invariant
+# ---------------------------------------------------------------------------
+
+
+def _assert_two_isolated_traces(traces: List[Dict[str, Any]]) -> None:
+    summaries = [[(e["event_type"], e["payload"].get("content")) for e in t["events"]] for t in traces]
+    assert traces, "SETUP BUG (not the isolation invariant): no trace was uploaded at all"
+    assert len(traces) == 2, (
+        f"Each conversation must flush its own trace: expected 2 uploads, got {len(traces)}. "
+        f"Uploaded traces as (event_type, content): {summaries}"
+    )
+
+    trace_ids = {t["trace_id"] for t in traces}
+    assert len(trace_ids) == 2, f"The two runs must not share a trace_id: {trace_ids}"
+
+    markers = {
+        "ask-alpha": ("user_alpha", "assistant_alpha", "model-alpha", "answer-alpha"),
+        "ask-beta": ("user_beta", "assistant_beta", "model-beta", "answer-beta"),
+    }
+    by_ask: Dict[str, Dict[str, Any]] = {}
+    for trace in traces:
+        inputs = [e for e in trace["events"] if e["event_type"] == "agent.input"]
+        assert len(inputs) == 1, (
+            f"Each trace must hold exactly one run's agent.input, got {[e['payload'].get('content') for e in inputs]}"
+        )
+        by_ask[inputs[0]["payload"]["content"]] = trace
+    assert set(by_ask) == set(markers), f"Expected one trace per conversation, got {sorted(by_ask)}"
+
+    for ask, own_markers in markers.items():
+        text = json.dumps(by_ask[ask]["events"])
+        for marker in (ask, *own_markers):
+            assert marker in text, f"Trace for {ask!r} lost its own event marker {marker!r}"
+        (other_ask,) = [a for a in markers if a != ask]
+        for marker in (other_ask, *markers[other_ask]):
+            assert marker not in text, f"Trace for {ask!r} contaminated by other run's marker {marker!r}"
+
+
+def test_single_run_across_asyncio_tasks_is_one_trace(mock_client):
+    """The COUNTERPART invariant: a single ``team.run()`` spans many asyncio
+    tasks on ONE thread (autogen's SingleThreadedAgentRuntime), and every event
+    of that run must land in ONE trace.
+
+    THE BUG: the adapter opened a RunState per ``_current_run`` ContextVar, which
+    is COPIED per asyncio task — so the events of one run scatter across many
+    tasks' contexts and fragment into many one/few-event traces (a real
+    ``team.run`` fragmented into 13). The fix keys the run by THREAD, so all of
+    one run's asyncio tasks share it while separate threads (the concurrency test
+    above) stay isolated.
+    """
+    import asyncio
+
+    traces = _collect_traces(mock_client)
+    adapter = AutoGenAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+    adapter.connect()
+    logger = logging.getLogger(EVENT_LOGGER_NAME)
+
+    async def drive() -> None:
+        # Each event fires from its OWN asyncio task (context-copied at creation),
+        # exactly like autogen's runtime drains messages across tasks.
+        async def ask() -> None:
+            logger.info(_ask("ask-solo", "planner", "writer"))
+
+        async def llm() -> None:
+            logger.info(_llm_call("ask-solo", model="model-solo"))
+
+        async def answer() -> None:
+            logger.info(_answer("answer-solo", "planner", "writer"))
+
+        await asyncio.gather(ask(), llm(), answer())
+
+    asyncio.run(drive())
+    adapter.disconnect()
+
+    assert len(traces) == 1, (
+        f"one run's events (across asyncio tasks) must be ONE trace, got {len(traces)}: "
+        f"{[[e['event_type'] for e in t['events']] for t in traces]}"
+    )
+    types = {e["event_type"] for e in traces[0]["events"]}
+    assert {"agent.input", "model.invoke", "agent.handoff", "agent.output"} <= types, (
+        f"the single trace must hold the whole run's events, got {sorted(types)}"
+    )
+
+
+def test_concurrent_conversations_produce_two_isolated_traces(mock_client):
+    """Two conversations on two worker threads → two clean, isolated traces.
+
+    The faithful production workload: two ``team.run()`` equivalents racing
+    through the one shared adapter and the real autogen event logger. A barrier
+    interleaves their phases (ask A/ask B, llm A/llm B, answer A/answer B).
+    Reverting the keyed-run fix (back to one shared ``self._collector``) merges
+    them into a single trace and turns this RED.
+    """
+    traces = _collect_traces(mock_client)
+    # capture_content=True so the per-run content markers (ask/answer text) are
+    # present to prove non-contamination; the sender/receiver/model markers are
+    # checked regardless.
+    adapter = AutoGenAdapter(mock_client, capture_config=CaptureConfig(capture_content=True))
+    adapter.connect()
+    logger = logging.getLogger(EVENT_LOGGER_NAME)
+
+    barrier = threading.Barrier(2)
+    errors: List[BaseException] = []
+
+    def run(user: str, assistant: str, model: str, suffix: str) -> None:
+        try:
+            logger.info(_ask(f"ask-{suffix}", user, assistant))
+            barrier.wait(timeout=10)
+            logger.info(_llm_call(f"ask-{suffix}", model=model))
+            barrier.wait(timeout=10)
+            logger.info(_answer(f"answer-{suffix}", user, assistant))
+        except BaseException as exc:  # noqa: BLE001 — surface to the test thread
+            errors.append(exc)
+
+    ta = threading.Thread(target=run, args=("user_alpha", "assistant_alpha", "model-alpha", "alpha"))
+    tb = threading.Thread(target=run, args=("user_beta", "assistant_beta", "model-beta", "beta"))
+    ta.start()
+    tb.start()
+    ta.join(timeout=30)
+    tb.join(timeout=30)
+
+    assert not errors, f"worker thread raised: {errors}"
+
+    adapter.disconnect()
+
+    _assert_two_isolated_traces(traces)

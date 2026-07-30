@@ -58,6 +58,151 @@ def upload_trace_dict(
     return result
 
 
+def recorded_trace_path(*parts: str) -> str:
+    """Resolve a shipped recorded-trace fixture under ``samples/data/traces/``.
+
+    The industry/cowork samples upload **recorded real traces** — genuine,
+    fully instrumented traces captured once (by ``data/_generate_fixtures.py``)
+    from real model runs and shipped in the repo. Passing the path parts here
+    keeps the samples portable regardless of the working directory.
+
+    Example::
+
+        path = recorded_trace_path("industry", "financial_fraud.jsonl")
+    """
+    return os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "traces", *parts)
+    )
+
+
+def upload_recorded_trace(client: Stratix, fixture_path: str) -> List[str]:
+    """Upload a recorded real-trace fixture and return the created trace IDs.
+
+    A fixture is a JSONL file where each line is a complete, honestly
+    attested trace captured from a real instrumented agent run (see
+    ``samples/data/_generate_fixtures.py``). Because the trace carries real
+    ``agent.identity``/``model.invoke``/``agent.output`` events, the LayerLens
+    UI renders the Agent, Framework, and Status columns from genuine data — no
+    fabrication. The returned IDs are in file order, so callers can zip them
+    back onto the source scenarios to run evaluations.
+
+    Args:
+        client: An initialized :class:`Stratix` client.
+        fixture_path: Absolute path to the ``.jsonl`` fixture (see
+            :func:`recorded_trace_path`).
+
+    Returns:
+        The created trace IDs in file order (empty list if the upload was
+        rejected without raising).
+    """
+    with open(fixture_path) as f:
+        traces = [json.loads(line) for line in f if line.strip()]
+    if not traces:
+        return []
+
+    # Upload the traces together as a JSON array so the backend creates one
+    # trace per record (a JSONL file whose lines each start with "{" is read as
+    # a single JSON object, yielding only the first record). The array is
+    # created in-order, so the returned IDs line up with the fixture records.
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as tmp:
+            json.dump(traces, tmp, default=str)
+        result = client.traces.upload(path)
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+    if result and getattr(result, "trace_ids", None):
+        return list(result.trace_ids)
+    return []
+
+
+def trace_call(
+    client: Stratix,
+    *,
+    agent_name: str,
+    run_fn: Any,
+    input_value: Any = None,
+) -> tuple[Any, Optional[str]]:
+    """Trace a real, instrumented model call and upload the resulting trace.
+
+    Use this in the integration samples to demonstrate **live tracing**: first
+    ``instrument_openai(...)`` / ``instrument_anthropic(...)`` to wire the
+    provider, then call ``trace_call`` with a ``run_fn`` that makes the real
+    API call. The provider's instrumented call emits genuine
+    ``model.invoke``/``cost.record`` events into the trace, so the uploaded
+    trace carries the real framework, model, token counts, and status — nothing
+    is fabricated.
+
+    The trace is uploaded synchronously (via :meth:`traces.upload`) so the
+    created trace ID is returned to the caller for running evaluations.
+
+    Args:
+        client: An initialized :class:`Stratix` client.
+        agent_name: Honest name for the agent being traced (fills the Agent
+            column). It is re-verified server-side.
+        run_fn: A zero-argument callable that makes the instrumented API call
+            and returns its result (e.g. the completion text).
+        input_value: Optional value recorded as the trace's input.
+
+    Returns:
+        ``(result, trace_id)`` where ``result`` is ``run_fn()``'s return value
+        and ``trace_id`` is the created trace ID (``None`` if the upload was
+        rejected).
+    """
+    import uuid
+
+    from layerlens.instrument import TraceCollector
+    from layerlens.instrument._capture_config import CaptureConfig
+    from layerlens.instrument._context import _current_collector, _push_span, _pop_span
+
+    collector = TraceCollector(client, CaptureConfig.full())
+    root_span_id = uuid.uuid4().hex[:16]
+    col_token = _current_collector.set(collector)
+    span_snapshot = _push_span(root_span_id, agent_name)
+    try:
+        collector.emit(
+            "agent.input",
+            {"name": agent_name, "input": input_value},
+            span_id=root_span_id,
+            span_name=agent_name,
+        )
+        result = run_fn()
+        collector.emit(
+            "agent.output",
+            {"name": agent_name, "output": result, "status": "ok"},
+            span_id=root_span_id,
+            span_name=agent_name,
+        )
+        # Declare the agent identity so the Agent column renders (re-verified
+        # server-side; a generic/model name would be rejected).
+        collector.emit(
+            "agent.identity",
+            {"agent_name": agent_name},
+            span_id=root_span_id,
+            span_name=agent_name,
+        )
+    finally:
+        _pop_span(span_snapshot)
+        _current_collector.reset(col_token)
+
+    payload = collector.to_replay_dict()
+    fd, path = tempfile.mkstemp(suffix=".jsonl")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(payload, default=str) + "\n")
+        upload_result = client.traces.upload(path)
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+    trace_id = None
+    if upload_result and getattr(upload_result, "trace_ids", None):
+        trace_id = upload_result.trace_ids[0]
+    return result, trace_id
+
+
 def get_default_model_id(client: Stratix) -> str:
     """Get a model ID suitable for judge creation.
 
@@ -96,7 +241,9 @@ def get_default_model_id(client: Stratix) -> str:
     except Exception:
         pass
 
-    raise RuntimeError("No models available. Add a model to your project or check API connectivity.")
+    raise RuntimeError(
+        "No models available. Add a model to your project or check API connectivity."
+    )
 
 
 def create_judge(
@@ -105,6 +252,7 @@ def create_judge(
     name: str,
     evaluation_goal: str,
     model_id: Optional[str] = None,
+    namespace: Optional[str] = None,
 ) -> Any:
     """Create a judge, automatically resolving model_id if not provided.
 
@@ -113,14 +261,23 @@ def create_judge(
         name: Judge display name.
         evaluation_goal: What the judge evaluates (min 10 characters).
         model_id: Explicit model ID. If ``None``, resolves via :func:`get_default_model_id`.
+        namespace: Optional per-sample namespace appended to the display name
+            (``"<name> (<namespace>)"``). Judges are matched/reused by name, so
+            two samples that both want e.g. ``"Relevance Judge"`` would otherwise
+            silently cross-wire if a run is interrupted before cleanup. Passing
+            the sample's own namespace keeps every sample's judges distinct.
 
     Returns:
         A :class:`Judge` object.
     """
+    if namespace:
+        name = f"{name} ({namespace})"
     if model_id is None:
         model_id = get_default_model_id(client)
     try:
-        return client.judges.create(name=name, evaluation_goal=evaluation_goal, model_id=model_id)
+        return client.judges.create(
+            name=name, evaluation_goal=evaluation_goal, model_id=model_id
+        )
     except Exception as exc:
         # Handle 409 Conflict (judge name already exists) by finding and returning the existing judge
         if "already exists" in str(exc) or "409" in str(exc):

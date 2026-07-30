@@ -1,0 +1,22 @@
+{
+  "marker": "prodready-l5-20260626T232437Z",
+  "probe": "openai_sdk_surface",
+  "kind": "sdk_surface",
+  "result": {
+    "label": "openai_sdk_badkey",
+    "raised_type": "AuthenticationError",
+    "raised_str_has_key": false,
+    "agent_error_captured": true,
+    "agent_error_payload": {
+      "name": "openai.chat.completions.create",
+      "error_type": "AuthenticationError",
+      "latency_ms": 276.22318267822266
+    },
+    "error_field": null,
+    "error_type_field": "AuthenticationError",
+    "key_in_stored_dump": false,
+    "secret_patterns_in_dump": [],
+    "raw_str_exc": "Error code: 401 - {'error': {'message': 'Incorrect API key provided: sk-proj-**************************************************nary. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'code': 'invalid_api_key', 'param': None}, 'status': 401}",
+    "safe_error_of_exc": "Error code: 401 - {'error': {'message': 'Incorrect API key provided: sk-proj-**************************************************nary. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'code': 'invalid_api_key', 'param': None}, 'status': 401}"
+  }
+}

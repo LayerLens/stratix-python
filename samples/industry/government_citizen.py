@@ -21,7 +21,20 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import (
+    create_judge,
+    poll_evaluation_results,
+    recorded_trace_path,
+    upload_recorded_trace,
+)
+
+# This sample uploads RECORDED REAL traces: each was captured from a genuine
+# instrumented ``citizen-services-agent`` run over the inquiries below (see
+# ``samples/data/_generate_fixtures.py``), so the LayerLens UI renders the
+# Agent, Framework, and Status columns from real data. The scenarios remain
+# here as documentation of what was analyzed and to label the evaluation output.
+SAMPLE = "government_citizen"
+FIXTURE = recorded_trace_path("industry", "government_citizen.jsonl")
 
 CITIZEN_INQUIRIES: list[dict[str, Any]] = [
     {
@@ -58,43 +71,55 @@ def main() -> None:
         print(f"ERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    # Create judges up front
-    judges = {
-        "regulatory_accuracy": create_judge(
-            client,
-            name="Regulatory Accuracy Judge",
-            evaluation_goal="Evaluate whether the response accurately reflects current regulations, eligibility criteria, and program requirements.",
-        ),
-        "accessibility": create_judge(
-            client,
-            name="Accessibility Judge",
-            evaluation_goal="Evaluate whether the response uses plain language at an appropriate reading level and is accessible to all citizens.",
-        ),
-        "equity": create_judge(
-            client,
-            name="Equity Judge",
-            evaluation_goal="Evaluate whether the response provides equitable treatment and consistent information regardless of demographics.",
-        ),
-    }
-    judge_labels = {"regulatory_accuracy": "Accuracy", "accessibility": "Accessibility", "equity": "Equity"}
-    judge_ids = [j.id for j in judges.values()]
+    # Upload the recorded real traces first. Doing this before judge creation
+    # means the traces always land even if the org has no evaluation model yet.
+    print(f"Uploading {len(CITIZEN_INQUIRIES)} recorded citizen-services traces...\n")
+    trace_ids = upload_recorded_trace(client, FIXTURE)
+    if not trace_ids:
+        print("ERROR: no traces uploaded (fixture missing or rejected).")
+        sys.exit(1)
 
+    # Create judges. If the org has no models available, judge creation raises
+    # RuntimeError -- we skip the evaluations (the traces are already uploaded)
+    # rather than crash.
+    judge_ids: list[str] = []
     try:
-        print(f"Evaluating {len(CITIZEN_INQUIRIES)} citizen interactions...\n")
-
-        for inquiry in CITIZEN_INQUIRIES:
-            trace_result = upload_trace_dict(
+        judges = {
+            "regulatory_accuracy": create_judge(
                 client,
-                input_text=inquiry["inquiry"],
-                output_text=inquiry["response"],
-                metadata={"program": inquiry["program"]},
-            )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else inquiry["id"]
+                name="Regulatory Accuracy Judge",
+                evaluation_goal="Evaluate whether the response accurately reflects current regulations, eligibility criteria, and program requirements.",
+                namespace=SAMPLE,
+            ),
+            "accessibility": create_judge(
+                client,
+                name="Accessibility Judge",
+                evaluation_goal="Evaluate whether the response uses plain language at an appropriate reading level and is accessible to all citizens.",
+                namespace=SAMPLE,
+            ),
+            "equity": create_judge(
+                client,
+                name="Equity Judge",
+                evaluation_goal="Evaluate whether the response provides equitable treatment and consistent information regardless of demographics.",
+                namespace=SAMPLE,
+            ),
+        }
+        judge_labels = {
+            "regulatory_accuracy": "Accuracy",
+            "accessibility": "Accessibility",
+            "equity": "Equity",
+        }
+        judge_ids = [j.id for j in judges.values()]
 
+        print(f"Evaluating {len(trace_ids)} citizen interactions...\n")
+
+        for inquiry, trace_id in zip(CITIZEN_INQUIRIES, trace_ids):
             print(f"Inquiry: {inquiry['program']} - {inquiry['inquiry'][:50]}...")
             for judge_key, judge_obj in judges.items():
                 label = judge_labels[judge_key]
-                evaluation = client.trace_evaluations.create(trace_id=trace_id, judge_id=judge_obj.id)
+                evaluation = client.trace_evaluations.create(
+                    trace_id=trace_id, judge_id=judge_obj.id
+                )
                 results = poll_evaluation_results(client, evaluation.id)
                 score = 0.0
                 passed = False
@@ -106,9 +131,14 @@ def main() -> None:
                     reasoning = r.reasoning
                 verdict = "pass" if passed else "fail"
                 color = _VERDICT_COLORS.get(verdict, "")
-                print(f"  {label:16s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}")
+                print(
+                    f"  {label:16s} {color}{verdict.upper()}{_RESET} ({score:.2f}) - {reasoning}"
+                )
             print()
 
+    except RuntimeError as exc:
+        print(f"\nNOTE: evaluations skipped -- {exc}")
+        print("  Traces are uploaded; add a project/public model to enable judges.")
     finally:
         for jid in judge_ids:
             try:

@@ -5,6 +5,7 @@ venv/
 _dev
 
 __pycache__
+*.pyc
 .mypy_cache
 
 dist
@@ -20,4 +21,7 @@ Brewfile.lock.json
 
 .DS_Store
 .coverage
+.venv*
 docs/review/
+tests/e2e/live/.report/
+tests/e2e/live/**/.report/

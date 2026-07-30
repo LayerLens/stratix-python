@@ -1,0 +1,57 @@
+{
+  "provenance": {
+    "provider": "azure_openai",
+    "sdk_version": "openai==2.32.0",
+    "model": "gpt-4o-2024-05-13",
+    "scenario": "default",
+    "captured_at": "pending-creds"
+  },
+  "transport": "http",
+  "seed_note": "No Azure OpenAI subscription/creds exist on any machine, so this fixture is SEEDED from the real openai chat.completions shape plus Azure's prompt_filter_results / content_filter_results members (documented Azure response). captured_at='pending-creds' keeps the gap visible: replace with a live capture when creds exist.",
+  "interactions": [
+    {
+      "request": { "method": "POST", "path": "/openai/deployments/gpt-4o/chat/completions" },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "id": "chatcmpl-azure-seed-0001",
+          "object": "chat.completion",
+          "created": 1717418400,
+          "model": "gpt-4o-2024-05-13",
+          "system_fingerprint": "fp_azure_5f2a1b",
+          "prompt_filter_results": [
+            {
+              "prompt_index": 0,
+              "content_filter_results": {
+                "hate": { "filtered": false, "severity": "safe" },
+                "self_harm": { "filtered": false, "severity": "safe" },
+                "sexual": { "filtered": false, "severity": "safe" },
+                "violence": { "filtered": false, "severity": "safe" }
+              }
+            }
+          ],
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "stop",
+              "message": { "role": "assistant", "content": "pong" },
+              "content_filter_results": {
+                "hate": { "filtered": false, "severity": "safe" },
+                "self_harm": { "filtered": false, "severity": "safe" },
+                "sexual": { "filtered": false, "severity": "safe" },
+                "violence": { "filtered": false, "severity": "safe" }
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 14,
+            "completion_tokens": 6,
+            "total_tokens": 20
+          }
+        },
+        "text": null,
+        "headers": { "content-type": "application/json" }
+      }
+    }
+  ]
+}

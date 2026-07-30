@@ -1,0 +1,591 @@
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from ._utils import safe_serialize
+from ..._identity import _API_METHOD_RE, _s, _is_generic
+from ._base_framework import FrameworkAdapter
+from ..._capture_config import CaptureConfig
+
+log = logging.getLogger(__name__)
+
+_HAS_SMOLAGENTS = False
+try:
+    from smolagents import (  # pyright: ignore[reportMissingImports]
+        ActionStep as _ActionStep,
+        PlanningStep as _PlanningStep,
+        FinalAnswerStep as _FinalAnswerStep,
+    )
+
+    _HAS_SMOLAGENTS = True
+except ImportError:
+    _ActionStep = _PlanningStep = _FinalAnswerStep = None  # type: ignore[assignment,misc]
+
+
+class SmolAgentsAdapter(FrameworkAdapter):
+    """SmoLAgents (HuggingFace) adapter using step callbacks + run wrapper.
+
+    SmoLAgents fires post-step callbacks via ``CallbackRegistry`` on the
+    agent's ``step_callbacks``.  This adapter registers for ``ActionStep``,
+    ``PlanningStep``, and ``FinalAnswerStep`` to capture per-step detail
+    (tool calls, model invocations, planning), and wraps ``agent.run()``
+    for the outer lifecycle boundary (collector creation / flush).
+
+    Usage::
+
+        adapter = SmolAgentsAdapter(client)
+        agent = adapter.connect(target=agent)
+        result = agent.run("Summarise this document.")
+        adapter.disconnect()
+    """
+
+    name = "smolagents"
+
+    def __init__(self, client: Any, capture_config: Optional[CaptureConfig] = None) -> None:
+        super().__init__(client, capture_config)
+        # Run-scoped state (collector / span ids / step count / timers) lives in
+        # the per-run RunState via _begin_run/_end_run (ContextVar-isolated per
+        # asyncio.Task / thread), NOT instance scalars — concurrent agent.run()
+        # calls would otherwise clobber each other's traces (LAY-3576 / D1b).
+        self._original_run: Optional[Any] = None
+        self._target_agent: Optional[Any] = None
+        self._callbacks: List[Any] = []
+        # Recursively-instrumented managed sub-agents (Lever A honest graph):
+        # id(agent) -> original run so a nested delegation emits its own honest
+        # agent_name node + an agent.handoff manager->sub. Values read at call
+        # time so tests can drive the sub-agent's inner run.
+        self._managed_agents: List[Any] = []
+        self._managed_originals: Dict[int, Any] = {}
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def _on_connect(self, target: Any = None, **kwargs: Any) -> Any:
+        self._check_dependency(_HAS_SMOLAGENTS)
+        if target is None:
+            raise ValueError("SmolAgentsAdapter.connect() requires a target agent.")
+        self._target_agent = target
+        self._metadata["framework_version"] = _get_version()
+        self._wrap_run(target)
+        self._register_callbacks(target)
+        # Lever A: recursively instrument managed sub-agents so each developer-
+        # named sub emits its own honest agent_name node + a real handoff edge.
+        self._instrument_managed(target, {id(target)})
+        return target
+
+    def _on_disconnect(self) -> None:
+        self._unwrap_managed()
+        self._unwrap_run()
+        self._deregister_callbacks()
+        self._end_run(flush=True)
+        self._target_agent = None
+
+    # ------------------------------------------------------------------
+    # Run wrapper
+    # ------------------------------------------------------------------
+
+    def _wrap_run(self, agent: Any) -> None:
+        if not hasattr(agent, "run"):
+            return
+        self._original_run = agent.run
+        adapter = self
+
+        def _traced_run(*args: Any, **kwargs: Any) -> Any:
+            task = args[0] if args else kwargs.get("task")
+            adapter._on_run_start(agent, task)
+            error: Optional[Exception] = None
+            result: Any = None
+            try:
+                result = adapter._original_run(*args, **kwargs)
+            except Exception as exc:
+                error = exc
+                adapter._on_run_error(agent, exc)
+                raise
+            finally:
+                adapter._on_run_end(agent, result, error)
+            return result
+
+        _traced_run._layerlens_original = self._original_run  # type: ignore[attr-defined]
+        agent.run = _traced_run
+
+    def _unwrap_run(self) -> None:
+        if self._target_agent is not None and self._original_run is not None:
+            try:
+                self._target_agent.run = self._original_run
+            except Exception:
+                log.debug("layerlens: could not unwrap run()", exc_info=True)
+        self._original_run = None
+
+    # ------------------------------------------------------------------
+    # Managed (sub-)agent instrumentation — recursive honest graph
+    # ------------------------------------------------------------------
+
+    def _instrument_managed(self, agent: Any, visited: set) -> None:
+        """Recursively wrap each managed sub-agent so it emits an honest
+        agent_name node + an agent.handoff manager->sub on delegation.
+
+        The manager's honest name (``None`` when the manager is unnamed / a
+        class default) becomes the handoff ``from_agent``; a handoff is only
+        emitted when BOTH endpoints resolve to a producer-declared name.
+        """
+        managed = getattr(agent, "managed_agents", None)
+        if not managed:
+            return
+        if isinstance(managed, dict):
+            sub_agents = list(managed.values())
+        elif isinstance(managed, (list, tuple)):
+            sub_agents = list(managed)
+        else:
+            return
+        manager_name = _agent_name(agent)
+        for sub in sub_agents:
+            if id(sub) in visited:
+                continue
+            visited.add(id(sub))
+            self._wrap_managed_run(sub, manager_name)
+            self._register_managed_callbacks(sub)
+            self._managed_agents.append(sub)
+            # A sub-agent may itself manage further agents.
+            self._instrument_managed(sub, visited)
+
+    def _wrap_managed_run(self, agent: Any, manager_name: Optional[str]) -> None:
+        if not hasattr(agent, "run"):
+            return
+        self._managed_originals[id(agent)] = agent.run
+        adapter = self
+
+        def _traced_run(*args: Any, **kwargs: Any) -> Any:
+            task = args[0] if args else kwargs.get("task")
+            adapter._on_run_start(agent, task, manager_name=manager_name)
+            error: Optional[Exception] = None
+            result: Any = None
+            try:
+                # Read at call time so a caller can drive the inner run.
+                original = adapter._managed_originals.get(id(agent))
+                result = original(*args, **kwargs) if original is not None else None
+            except Exception as exc:
+                error = exc
+                adapter._on_run_error(agent, exc)
+                raise
+            finally:
+                adapter._on_run_end(agent, result, error)
+            return result
+
+        _traced_run._layerlens_original = self._managed_originals[id(agent)]  # type: ignore[attr-defined]
+        agent.run = _traced_run
+
+    def _register_managed_callbacks(self, agent: Any) -> None:
+        registry = getattr(agent, "step_callbacks", None)
+        if registry is None or not hasattr(registry, "register"):
+            return
+        for step_cls, method in self._callback_specs():
+            if step_cls is not None:
+                registry.register(step_cls, method)
+
+    def _unwrap_managed(self) -> None:
+        for agent in self._managed_agents:
+            original = self._managed_originals.get(id(agent))
+            if original is not None:
+                try:
+                    agent.run = original
+                except Exception:
+                    log.debug("layerlens: could not unwrap managed run()", exc_info=True)
+            registry = getattr(agent, "step_callbacks", None)
+            self._deregister_from_registry(registry)
+        self._managed_agents.clear()
+        self._managed_originals.clear()
+
+    def _deregister_from_registry(self, registry: Any) -> None:
+        if registry is None:
+            return
+        cbs_map = getattr(registry, "_callbacks", None)
+        if not isinstance(cbs_map, dict):
+            return
+        for step_cls, method in self._callback_specs():
+            try:
+                cbs_map.get(step_cls, []).remove(method)
+            except ValueError:
+                pass
+
+    # ------------------------------------------------------------------
+    # Step callbacks
+    # ------------------------------------------------------------------
+
+    def _callback_specs(self) -> List[Any]:
+        """The (step_class, handler) pairs this adapter registers on an agent's
+        ``step_callbacks`` registry — shared by the target and every managed
+        sub-agent so both attach (and detach) the identical bound methods."""
+        return [
+            (_ActionStep, self._on_action_step),
+            (_PlanningStep, self._on_planning_step),
+            (_FinalAnswerStep, self._on_final_answer_step),
+        ]
+
+    def _register_callbacks(self, agent: Any) -> None:
+        registry = getattr(agent, "step_callbacks", None)
+        if registry is None or not hasattr(registry, "register"):
+            return
+        for step_cls, method in self._callback_specs():
+            if step_cls is not None:
+                registry.register(step_cls, method)
+                self._callbacks.append((step_cls, method))
+
+    def _deregister_callbacks(self) -> None:
+        agent = self._target_agent
+        if agent is None:
+            return
+        registry = getattr(agent, "step_callbacks", None)
+        if registry is None:
+            self._callbacks.clear()
+            return
+        for step_cls, method in self._callbacks:
+            cbs = registry._callbacks.get(step_cls, [])
+            try:
+                cbs.remove(method)
+            except ValueError:
+                pass
+        self._callbacks.clear()
+
+    # ------------------------------------------------------------------
+    # Collector + state management
+    # ------------------------------------------------------------------
+
+    def _fire(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        span_id: Optional[str] = None,
+        parent_span_id: Optional[str] = None,
+        span_name: Optional[str] = None,
+    ) -> None:
+        run = self._get_run()
+        if run is None:
+            return
+        if event_type == "cost.record" and payload.get("cost_usd") is None:
+            self._price_cost_record(payload)
+        run.collector.emit(
+            event_type,
+            payload,
+            span_id=span_id or self._new_span_id(),
+            parent_span_id=parent_span_id,
+            span_name=span_name,
+        )
+
+    # ------------------------------------------------------------------
+    # Run lifecycle handlers
+    # ------------------------------------------------------------------
+
+    def _on_run_start(self, agent: Any, task: Any, manager_name: Optional[str] = None) -> None:
+        run = self._begin_run()
+        span_id = run.root_span_id
+        run.data["step_count"] = 0
+        self._start_timer("run")
+
+        agent_name = _agent_name(agent)
+        # A real handoff edge manager -> sub, but ONLY when both endpoints are
+        # producer-declared honest names (a class default / unnamed manager
+        # yields no edge — staying blank is the honest outcome).
+        if manager_name and agent_name and manager_name != agent_name:
+            self._fire(
+                "agent.handoff",
+                self._payload(
+                    from_agent=manager_name,
+                    to_agent=agent_name,
+                    reason="managed_agent_delegation",
+                ),
+                parent_span_id=span_id,
+            )
+
+        payload = self._payload(agent_type=type(agent).__name__)
+        # ateam parity (#3): stamp the raw/class name verbatim when unnamed, so the
+        # trace renders like ateam; the handoff above stays on the honest name.
+        stamp_name = agent_name or _raw_agent_name(agent)
+        if stamp_name:
+            payload["agent_name"] = stamp_name
+
+        model_id = _model_id(agent)
+        if model_id:
+            payload["model"] = model_id
+
+        tools = getattr(agent, "tools", None)
+        if tools:
+            payload["tools"] = (
+                list(tools.keys()) if isinstance(tools, dict) else [getattr(t, "name", str(t)) for t in tools]
+            )
+
+        managed = getattr(agent, "managed_agents", None)
+        if managed:
+            payload["managed_agents"] = (
+                list(managed.keys()) if isinstance(managed, dict) else [getattr(a, "name", str(a)) for a in managed]
+            )
+
+        self._set_if_capturing(payload, "input", safe_serialize(task))
+        self._fire("agent.input", payload, span_id=span_id, span_name=agent_name)
+
+    def _on_run_end(self, agent: Any, result: Any, error: Optional[Exception]) -> None:
+        latency_ms = self._stop_timer("run")
+        span_id = self._get_root_span()
+        agent_name = _agent_name(agent) or _raw_agent_name(agent)
+        payload = self._payload()
+        if agent_name:
+            payload["agent_name"] = agent_name
+        if latency_ms is not None:
+            payload["duration_ns"] = int(latency_ms * 1_000_000)
+        if error:
+            payload["error"] = str(error)
+        self._set_if_capturing(payload, "output", safe_serialize(result))
+        self._fire("agent.output", payload, span_id=span_id, span_name=agent_name)
+        self._end_run(flush=True)
+
+    def _on_run_error(self, agent: Any, exc: Exception) -> None:
+        agent_name = _agent_name(agent) or _raw_agent_name(agent)
+        payload = self._payload(error=str(exc), error_type=type(exc).__name__)
+        if agent_name:
+            payload["agent_name"] = agent_name
+        self._fire(
+            "agent.error",
+            payload,
+            parent_span_id=self._get_root_span(),
+        )
+
+    # ------------------------------------------------------------------
+    # Step handlers (registered as step_callbacks)
+    # ------------------------------------------------------------------
+
+    def _on_action_step(self, step: Any, agent: Any = None) -> None:
+        try:
+            self._handle_action_step(step, agent)
+        except Exception:
+            log.warning("layerlens: error in SmolAgents action step handler", exc_info=True)
+
+    def _on_planning_step(self, step: Any, agent: Any = None) -> None:
+        try:
+            self._handle_planning_step(step, agent)
+        except Exception:
+            log.warning("layerlens: error in SmolAgents planning step handler", exc_info=True)
+
+    def _on_final_answer_step(self, step: Any, agent: Any = None) -> None:
+        pass  # run wrapper handles final output + flush
+
+    # ------------------------------------------------------------------
+    # ActionStep processing
+    # ------------------------------------------------------------------
+
+    def _handle_action_step(self, step: Any, agent: Any) -> None:
+        run = self._get_run()
+        if run is None:
+            return
+        step_count = run.data.get("step_count", 0) + 1
+        run.data["step_count"] = step_count
+        step_span_id = self._new_span_id()
+        run.data["current_step_span_id"] = step_span_id
+
+        model_id = _model_id(agent) if agent else None
+        agent_name = _agent_name(agent) if agent is not None else None
+
+        # model.invoke — from token_usage on the step
+        token_usage = getattr(step, "token_usage", None)
+        if token_usage is not None:
+            self._emit_model_invoke(step, model_id, step_span_id, agent_name)
+
+        # tool calls — from step.tool_calls
+        tool_calls = getattr(step, "tool_calls", None)
+        if tool_calls:
+            self._emit_tool_calls(tool_calls, step, step_span_id)
+
+        # step event — explicitly marked as the "action" phase so downstream UIs
+        # can distinguish planning rounds from execution rounds when smolagents
+        # runs in ReAct / planning mode.
+        step_payload = self._payload(step_number=step_count, phase="action")
+        if model_id:
+            step_payload["model"] = model_id
+
+        timing = getattr(step, "timing", None)
+        if timing is not None:
+            start = getattr(timing, "start_time", None)
+            end = getattr(timing, "end_time", None)
+            if start is not None and end is not None:
+                step_payload["duration_ns"] = int((end - start) * 1_000_000_000)
+
+        error = getattr(step, "error", None)
+        if error is not None:
+            step_payload["error"] = str(error)
+
+        is_final = getattr(step, "is_final_answer", False)
+        if is_final:
+            step_payload["is_final_answer"] = True
+
+        code_action = getattr(step, "code_action", None)
+        if code_action and self._config.capture_content:
+            step_payload["code_action"] = str(code_action)[:2000]
+
+        self._set_if_capturing(
+            step_payload,
+            "observations",
+            safe_serialize(getattr(step, "observations", None)),
+        )
+        self._fire(
+            "agent.step",
+            step_payload,
+            span_id=step_span_id,
+            parent_span_id=self._get_root_span(),
+            span_name=f"step:{step_count}",
+        )
+
+    def _emit_model_invoke(
+        self,
+        step: Any,
+        model_id: Optional[str],
+        parent_span_id: str,
+        agent_name: Optional[str] = None,
+    ) -> None:
+        token_usage = getattr(step, "token_usage", None)
+        tokens = self._normalize_tokens(token_usage)
+        payload = self._payload()
+        if model_id:
+            payload["model"] = model_id
+        if agent_name:
+            payload["agent_name"] = agent_name
+        payload.update(tokens)
+        span_id = self._new_span_id()
+        self._fire("model.invoke", payload, span_id=span_id, parent_span_id=parent_span_id)
+        if tokens:
+            cost_payload = self._payload(**tokens)
+            if model_id:
+                cost_payload["model"] = model_id
+            self._fire(
+                "cost.record",
+                cost_payload,
+                span_id=span_id,
+                parent_span_id=parent_span_id,
+            )
+
+    def _emit_tool_calls(self, tool_calls: List[Any], step: Any, parent_span_id: str) -> None:
+        observations = getattr(step, "observations", None) or ""
+        for tc in tool_calls:
+            name = getattr(tc, "name", None) or "unknown"
+            if name == "final_answer":
+                continue
+            span_id = self._new_span_id()
+            call_payload = self._payload(tool_name=name)
+            self._set_if_capturing(call_payload, "input", safe_serialize(getattr(tc, "arguments", None)))
+            self._fire(
+                "tool.call",
+                call_payload,
+                span_id=span_id,
+                parent_span_id=parent_span_id,
+            )
+            result_payload = self._payload(tool_name=name)
+            self._set_if_capturing(result_payload, "output", safe_serialize(observations))
+            self._fire(
+                "tool.result",
+                result_payload,
+                span_id=span_id,
+                parent_span_id=parent_span_id,
+            )
+
+    # ------------------------------------------------------------------
+    # PlanningStep processing
+    # ------------------------------------------------------------------
+
+    def _handle_planning_step(self, step: Any, agent: Any) -> None:
+        span_id = self._new_span_id()
+        model_id = _model_id(agent) if agent else None
+        agent_name = _agent_name(agent) if agent is not None else None
+
+        payload = self._payload(phase="planning")
+        if model_id:
+            payload["model"] = model_id
+
+        timing = getattr(step, "timing", None)
+        if timing is not None:
+            start = getattr(timing, "start_time", None)
+            end = getattr(timing, "end_time", None)
+            if start is not None and end is not None:
+                payload["duration_ns"] = int((end - start) * 1_000_000_000)
+
+        # Surface the plan content (when content capture is on) plus a compact
+        # summary — number of steps in the plan — so planning-round telemetry
+        # is interesting even when content is stripped.
+        plan = getattr(step, "plan", None)
+        if plan is not None:
+            summary = _plan_summary(plan)
+            if summary:
+                payload["plan_summary"] = summary
+        self._set_if_capturing(payload, "plan", safe_serialize(plan))
+        self._fire(
+            "agent.step",
+            payload,
+            span_id=span_id,
+            parent_span_id=self._get_root_span(),
+            span_name="planning",
+        )
+
+        # model.invoke for the planning LLM call
+        token_usage = getattr(step, "token_usage", None)
+        if token_usage is not None:
+            self._emit_model_invoke(step, model_id, span_id, agent_name)
+
+
+# -- Module-level helpers --------------------------------------------------
+
+
+def _agent_name(agent: Any) -> Optional[str]:
+    """The developer-DECLARED agent name, honest-guarded — or None.
+
+    NEVER folds ``type(agent).__name__`` (a class default such as ``CodeAgent``
+    / ``ToolCallingAgent``, on the generic denylist) into the identity: an
+    unnamed smolagents agent stays BLANK (the honest outcome), while a
+    developer-named managed sub-agent (``web_search_agent``) surfaces. Reuses
+    the shared identity guard so a model id, a dotted API-method label, or a
+    generic placeholder is never surfaced as an agent name.
+    """
+    raw = getattr(agent, "name", None)
+    if not isinstance(raw, str):
+        return None
+    name = raw.strip()
+    if not name or _is_generic(name) or _API_METHOD_RE.match(name.lower()):
+        return None
+    return name
+
+
+def _raw_agent_name(agent: Any) -> Optional[str]:
+    """ateam-parity verbatim fallback (#3): the raw declared name, else the class
+    name (``CodeAgent``/``ToolCallingAgent``), sanitized (control/bidi) but NOT
+    honesty-guarded — so an unnamed smolagents agent still renders its (generic)
+    identity like ateam. Used ONLY for the per-event ``agent_name`` stamp;
+    ``agent.handoff`` endpoints stay on the honest :func:`_agent_name`."""
+    if agent is None:
+        return None
+    return _s(getattr(agent, "name", None)) or _s(type(agent).__name__)
+
+
+def _model_id(agent: Any) -> Optional[str]:
+    if agent is None:
+        return None
+    model = getattr(agent, "model", None)
+    if model is None:
+        return None
+    return getattr(model, "model_id", None) or str(model)
+
+
+def _get_version() -> str:
+    try:
+        import smolagents  # pyright: ignore[reportMissingImports]
+
+        return getattr(smolagents, "__version__", "unknown")
+    except Exception:
+        return "unknown"
+
+
+def _plan_summary(plan: Any) -> Optional[Dict[str, Any]]:
+    """Cheap structural summary of a plan: length + bullet count."""
+    if plan is None:
+        return None
+    text = plan if isinstance(plan, str) else str(getattr(plan, "content", "") or plan)
+    if not text:
+        return None
+    bullets = sum(1 for line in text.splitlines() if line.strip().startswith(("-", "*", "1.", "2.", "3.", "4.", "5.")))
+    return {"char_count": len(text), "bullet_count": bullets}

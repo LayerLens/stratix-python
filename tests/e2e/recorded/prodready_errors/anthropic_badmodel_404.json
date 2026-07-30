@@ -1,0 +1,15 @@
+{
+  "marker": "prodready-l5-20260626T232936Z",
+  "probe": "anthropic_badmodel_404",
+  "kind": "sdk_surface",
+  "raised_type": "NotFoundError",
+  "status_in_str": true,
+  "raw_str_exc": "Error code: 404 - {'type': 'error', 'error': {'type': 'not_found_error', 'message': 'model: claude-3-5-haiku-latest'}, 'request_id': 'req_011CcSjutncqtTDnUsLYgw7e'}",
+  "agent_error_payload": {
+    "name": "anthropic.messages.create",
+    "error": "Error code: 404 - {'type': 'error', 'error': {'type': 'not_found_error', 'message': 'model: claude-3-5-haiku-latest'}, 'request_id': 'req_011CcSjutncqtTDnUsLYgw7e'}",
+    "error_type": "NotFoundError",
+    "latency_ms": 377.29406356811523
+  },
+  "secret_patterns_in_dump": []
+}

@@ -67,7 +67,9 @@ def main() -> None:
             page_size=5,
         )
         if response:
-            print(f"\nLatest {len(response.evaluations)} evaluations (snake_case sort_by):")
+            print(
+                f"\nLatest {len(response.evaluations)} evaluations (snake_case sort_by):"
+            )
             for e in response.evaluations:
                 print(f"  - {e.id}: submitted_at={e.submitted_at}")
     except Exception:
@@ -111,7 +113,9 @@ def main() -> None:
         order="desc",
     )
     if response:
-        print(f"\nEvaluations for specified benchmark: {response.pagination.total_count}")
+        print(
+            f"\nEvaluations for specified benchmark: {response.pagination.total_count}"
+        )
 
     # ── Combine sorting, filtering, and pagination ────────────────────
     response = client.evaluations.get_many(

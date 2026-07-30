@@ -1,0 +1,281 @@
+from __future__ import annotations
+
+import abc
+import time
+import inspect
+import logging
+from typing import Any, Dict, Callable, Iterator, Optional, AsyncIterator
+
+from .._base import AdapterInfo, BaseAdapter
+from ..._context import _current_collector
+from ._streaming import stream_chunks_sync, stream_chunks_async
+from ._emit_helpers import emit_llm_error, emit_llm_events
+
+log: logging.Logger = logging.getLogger(__name__)
+
+
+def _is_coroutine_callable(fn: Any) -> bool:
+    """True when calling *fn* yields a coroutine.
+
+    The real openai/anthropic SDKs wrap their async methods in plain-function
+    decorators (e.g. openai's ``required_args``), so the outermost callable is
+    not itself a coroutine function — follow ``__wrapped__`` chains too.
+    """
+    if inspect.iscoroutinefunction(fn):
+        return True
+    try:
+        return inspect.iscoroutinefunction(inspect.unwrap(fn))
+    except Exception:
+        return False
+
+
+class MonkeyPatchProvider(BaseAdapter):
+    """Base for providers that monkey-patch SDK client or module methods."""
+
+    name: str
+    capture_params: frozenset[str]
+
+    #: Subclasses may set a per-provider pricing table override (Azure, Bedrock).
+    pricing_table: Optional[dict[str, dict[str, float]]] = None
+
+    #: True for a gateway that bills the caller at its own rates, which no table we
+    #: ship holds (OpenRouter). Such a gateway is the SOLE authority on cost: when
+    #: it reports no charge, ``cost.record`` is not emitted at all, because pricing
+    #: its routed ``vendor/model`` slug from the bundled catalog would invent a
+    #: charge the customer was never billed. Providers we DO have rates for leave
+    #: this False and keep the catalog estimate.
+    provider_cost_only: bool = False
+
+    def __init__(self) -> None:
+        self._client: Any = None
+        self._originals: Dict[str, Any] = {}
+
+    @staticmethod
+    @abc.abstractmethod
+    def extract_output(response: Any) -> Any: ...
+
+    @staticmethod
+    @abc.abstractmethod
+    def extract_meta(response: Any) -> Dict[str, Any]: ...
+
+    # Optional hook: providers that support tool/function calls override this.
+    @staticmethod
+    def extract_tool_calls(response: Any) -> list[dict[str, Any]]:  # noqa: ARG004
+        return []
+
+    # Optional hook: providers that support streaming implement this to
+    # aggregate chunks into a single response-like object.
+    @staticmethod
+    def aggregate_stream(chunks: list[Any]) -> Any:  # noqa: ARG004
+        return None
+
+    # Optional hook: derive extra parameter fields from request kwargs that can't
+    # be captured verbatim (e.g. privacy-aware flags, counts of bulky collections).
+    @staticmethod
+    def derive_params(kwargs: Dict[str, Any]) -> Dict[str, Any]:  # noqa: ARG004
+        return {}
+
+    # Optional hook: gateways that report the real billed charge on the response
+    # (OpenRouter usage accounting) return it here. A charge the provider reports
+    # is a billed FACT, so it outranks any catalog estimate. ``None`` means the
+    # provider reported nothing — NOT that the call was free.
+    @staticmethod
+    def extract_provider_cost(response: Any) -> Optional[float]:  # noqa: ARG004
+        return None
+
+    # Optional hook (LAY-3455): routing providers (LiteLLM) override this to
+    # attribute the call to the underlying provider that actually served the
+    # request, derived from the request kwargs (typically the model string).
+    # Returning ``None`` keeps the default ``event_name.split(".")[0]`` behavior.
+    @staticmethod
+    def classify_provider(event_name: str, kwargs: Dict[str, Any]) -> Optional[str]:  # noqa: ARG004
+        return None
+
+    def _wrap_auto(self, event_name: str, original: Any) -> Any:
+        """Route to the matching wrapper for *original*.
+
+        Modern async clients (AsyncOpenAI/AsyncAnthropic >= 1.x, ollama
+        AsyncClient) expose a coroutine method on the SAME attribute as the
+        sync clients — wrapping those with the sync wrapper would measure
+        coroutine construction (~0 ms), run extractors on the un-awaited
+        coroutine, and hand async streams to the sync iterator (N5).
+        """
+        if _is_coroutine_callable(original):
+            return self._wrap_async(event_name, original)
+        return self._wrap_sync(event_name, original)
+
+    def _wrap_sync(self, event_name: str, original: Any) -> Any:
+        extractors = self._extractors()
+
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            if _current_collector.get() is None:
+                log.debug("layerlens.%s: no active trace context, passing through", event_name)
+                return original(*args, **kwargs)
+            start = time.time()
+            try:
+                response = original(*args, **kwargs)
+            except Exception as exc:
+                latency_ms = (time.time() - start) * 1000
+                emit_llm_error(event_name, exc, latency_ms)
+                raise
+            latency_ms = (time.time() - start) * 1000
+
+            if kwargs.get("stream") is True:
+                return self._wrap_stream_iterator(event_name, kwargs, response, start)
+
+            emit_llm_events(
+                event_name,
+                kwargs,
+                response,
+                extractors.output,
+                extractors.meta,
+                self.capture_params,
+                latency_ms,
+                pricing_table=self.pricing_table,
+                extract_tool_calls=extractors.tool_calls,
+                extra_params=type(self).derive_params(kwargs),
+                provider=type(self).classify_provider(event_name, kwargs),
+                framework=self.name,
+                extract_provider_cost=type(self).extract_provider_cost,
+                provider_cost_only=type(self).provider_cost_only,
+            )
+            return response
+
+        return wrapped
+
+    def _wrap_async(self, event_name: str, original: Any) -> Any:
+        extractors = self._extractors()
+
+        async def wrapped(*args: Any, **kwargs: Any) -> Any:
+            if _current_collector.get() is None:
+                log.debug("layerlens.%s: no active trace context, passing through", event_name)
+                return await original(*args, **kwargs)
+            start = time.time()
+            try:
+                response = await original(*args, **kwargs)
+            except Exception as exc:
+                latency_ms = (time.time() - start) * 1000
+                emit_llm_error(event_name, exc, latency_ms)
+                raise
+            latency_ms = (time.time() - start) * 1000
+
+            if kwargs.get("stream") is True:
+                return self._wrap_async_stream_iterator(event_name, kwargs, response, start)
+
+            emit_llm_events(
+                event_name,
+                kwargs,
+                response,
+                extractors.output,
+                extractors.meta,
+                self.capture_params,
+                latency_ms,
+                pricing_table=self.pricing_table,
+                extract_tool_calls=extractors.tool_calls,
+                extra_params=type(self).derive_params(kwargs),
+                provider=type(self).classify_provider(event_name, kwargs),
+                framework=self.name,
+                extract_provider_cost=type(self).extract_provider_cost,
+                provider_cost_only=type(self).provider_cost_only,
+            )
+            return response
+
+        return wrapped
+
+    def _wrap_stream_iterator(
+        self,
+        event_name: str,
+        kwargs: Dict[str, Any],
+        stream: Iterator[Any],
+        start: float,
+    ) -> Iterator[Any]:
+        # Delegates to :mod:`_streaming` so the OpenAI and Anthropic adapters
+        # share one timing + accumulation implementation (LAY-3329).
+        extractors = self._extractors()
+        return stream_chunks_sync(
+            event_name=event_name,
+            kwargs=kwargs,
+            stream=stream,
+            start=start,
+            aggregate=type(self).aggregate_stream,
+            extract_output=extractors.output,
+            extract_meta=extractors.meta,
+            extract_tool_calls=extractors.tool_calls,
+            capture_params=self.capture_params,
+            pricing_table=self.pricing_table,
+            extra_params=type(self).derive_params(kwargs),
+            provider=type(self).classify_provider(event_name, kwargs),
+            framework=self.name,
+            extract_provider_cost=type(self).extract_provider_cost,
+            provider_cost_only=type(self).provider_cost_only,
+        )
+
+    def _wrap_async_stream_iterator(
+        self,
+        event_name: str,
+        kwargs: Dict[str, Any],
+        stream: AsyncIterator[Any],
+        start: float,
+    ) -> AsyncIterator[Any]:
+        extractors = self._extractors()
+        return stream_chunks_async(
+            event_name=event_name,
+            kwargs=kwargs,
+            stream=stream,
+            start=start,
+            aggregate=type(self).aggregate_stream,
+            extract_output=extractors.output,
+            extract_meta=extractors.meta,
+            extract_tool_calls=extractors.tool_calls,
+            capture_params=self.capture_params,
+            pricing_table=self.pricing_table,
+            extra_params=type(self).derive_params(kwargs),
+            provider=type(self).classify_provider(event_name, kwargs),
+            framework=self.name,
+            extract_provider_cost=type(self).extract_provider_cost,
+            provider_cost_only=type(self).provider_cost_only,
+        )
+
+    def disconnect(self) -> None:
+        if self._client is None:
+            return
+        for key, orig in self._originals.items():
+            try:
+                parts = key.split(".")
+                obj = self._client
+                for part in parts[:-1]:
+                    obj = getattr(obj, part)
+                setattr(obj, parts[-1], orig)
+            except Exception:
+                log.warning("Could not restore %s", key)
+        self._client = None
+        self._originals.clear()
+
+    def adapter_info(self) -> AdapterInfo:
+        return AdapterInfo(
+            name=self.name,
+            adapter_type="provider",
+            connected=self._client is not None,
+        )
+
+    # --- internals ---
+
+    class _Extractors:
+        __slots__ = ("output", "meta", "tool_calls")
+
+        def __init__(
+            self,
+            output: Callable[[Any], Any],
+            meta: Callable[[Any], Dict[str, Any]],
+            tool_calls: Callable[[Any], list[dict[str, Any]]],
+        ) -> None:
+            self.output = output
+            self.meta = meta
+            self.tool_calls = tool_calls
+
+    def _extractors(self) -> "MonkeyPatchProvider._Extractors":
+        return MonkeyPatchProvider._Extractors(
+            output=type(self).extract_output,
+            meta=type(self).extract_meta,
+            tool_calls=type(self).extract_tool_calls,
+        )

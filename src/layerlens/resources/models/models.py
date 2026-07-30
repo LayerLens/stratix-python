@@ -4,7 +4,13 @@ from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 
-from ...models import Model, CustomModel, PublicModel, ModelsResponse, CreateModelResponse
+from ...models import (
+    Model,
+    CustomModel,
+    PublicModel,
+    ModelsResponse,
+    CreateModelResponse,
+)
 
 
 def _exclude_custom_models(

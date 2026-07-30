@@ -1,0 +1,60 @@
+{
+  "provenance": {
+    "provider": "anthropic",
+    "sdk_version": "0.96.0",
+    "model": "claude-haiku-4-5-20251001",
+    "scenario": "tool_call",
+    "captured_at": "2026-06-22T22:54:58+00:00"
+  },
+  "transport": "http",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages"
+      },
+      "response": {
+        "status_code": 200,
+        "json": {
+          "model": "claude-haiku-4-5-20251001",
+          "id": "msg_01FArio9CeSHVVnFCnJN9c39",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_01BHG5dvi5Wtv2ZZQFNzh3W7",
+              "name": "get_weather",
+              "input": {
+                "city": "Paris"
+              },
+              "caller": {
+                "type": "direct"
+              }
+            }
+          ],
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 660,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "output_tokens": 38,
+            "service_tier": "standard",
+            "inference_geo": "not_available"
+          }
+        },
+        "text": null,
+        "headers": {
+          "content-type": "application/json",
+          "request-id": "req_011CcK82itmymwxJ7F9DKSqY"
+        }
+      }
+    }
+  ]
+}

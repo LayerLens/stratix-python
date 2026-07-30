@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 
+from ..._ssrf import ensure_safe_upload_url
 from ...models import (
     Benchmark,
     BenchmarkPrompt,
@@ -294,7 +295,12 @@ class Benchmarks(SyncAPIResource):
 
         raw_resp = self._post(
             f"{base}/upload",
-            body={"key": benchmark_name, "filename": filename, "type": content_type, "size": file_size},
+            body={
+                "key": benchmark_name,
+                "filename": filename,
+                "type": content_type,
+                "size": file_size,
+            },
             timeout=timeout,
             cast_to=dict,
         )
@@ -305,12 +311,15 @@ class Benchmarks(SyncAPIResource):
         if not isinstance(resp, dict) or "url" not in resp:
             raise ValueError("Failed to get upload URL")
 
+        # SSRF guard: never PUT benchmark bytes to an untrusted/internal host.
+        ensure_safe_upload_url(resp["url"], getattr(self._client, "trusted_upload_hosts", None))
+
         with open(file_path, "rb") as f:
             put_resp = httpx.put(
                 resp["url"],
                 content=f.read(),
                 headers={"Content-Type": content_type},
-                timeout=timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout),
+                timeout=(timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout)),
             )
             put_resp.raise_for_status()
 
@@ -344,7 +353,11 @@ class Benchmarks(SyncAPIResource):
         filename = self._upload_file(file_path, name, timeout)
 
         base = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}"
-        body: Dict[str, Any] = {"name": name, "description": description, "file": filename}
+        body: Dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "file": filename,
+        }
         if additional_metrics:
             body["additional_metrics"] = additional_metrics
         if custom_scorer_ids:
@@ -659,7 +672,12 @@ class AsyncBenchmarks(AsyncAPIResource):
 
         raw_resp = await self._post(
             f"{base}/upload",
-            body={"key": benchmark_name, "filename": filename, "type": content_type, "size": file_size},
+            body={
+                "key": benchmark_name,
+                "filename": filename,
+                "type": content_type,
+                "size": file_size,
+            },
             timeout=timeout,
             cast_to=dict,
         )
@@ -670,13 +688,16 @@ class AsyncBenchmarks(AsyncAPIResource):
         if not isinstance(resp, dict) or "url" not in resp:
             raise ValueError("Failed to get upload URL")
 
+        # SSRF guard: never PUT benchmark bytes to an untrusted/internal host.
+        ensure_safe_upload_url(resp["url"], getattr(self._client, "trusted_upload_hosts", None))
+
         async with httpx.AsyncClient() as http:
             with open(file_path, "rb") as f:
                 put_resp = await http.put(
                     resp["url"],
                     content=f.read(),
                     headers={"Content-Type": content_type},
-                    timeout=timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout),
+                    timeout=(timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout)),
                 )
                 put_resp.raise_for_status()
 
@@ -710,7 +731,11 @@ class AsyncBenchmarks(AsyncAPIResource):
         filename = await self._upload_file(file_path, name, timeout)
 
         base = f"/organizations/{self._client.organization_id}/projects/{self._client.project_id}"
-        body: Dict[str, Any] = {"name": name, "description": description, "file": filename}
+        body: Dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "file": filename,
+        }
         if additional_metrics:
             body["additional_metrics"] = additional_metrics
         if custom_scorer_ids:

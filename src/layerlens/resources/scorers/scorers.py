@@ -186,7 +186,12 @@ class AsyncScorers(AsyncAPIResource):
         prompt: str,
         timeout: float | httpx.Timeout | None = DEFAULT_TIMEOUT,
     ) -> Optional[Scorer]:
-        body: Dict[str, Any] = {"name": name, "description": description, "model_id": model_id, "prompt": prompt}
+        body: Dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "model_id": model_id,
+            "prompt": prompt,
+        }
         resp = await self._post(self._base_url(), body=body, timeout=timeout, cast_to=dict)
         data = _unwrap(resp)
         if isinstance(data, dict):

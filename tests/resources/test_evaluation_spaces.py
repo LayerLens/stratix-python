@@ -45,7 +45,10 @@ class TestEvaluationSpaces:
 
     def test_get_success(self, spaces_resource, sample_space_data):
         """get returns EvaluationSpace on success."""
-        spaces_resource._get.return_value = {"status": "success", "data": sample_space_data}
+        spaces_resource._get.return_value = {
+            "status": "success",
+            "data": sample_space_data,
+        }
 
         result = spaces_resource.get("sp-123")
 
@@ -64,7 +67,11 @@ class TestEvaluationSpaces:
         """get_many returns EvaluationSpacesResponse."""
         spaces_resource._get.return_value = {
             "status": "success",
-            "data": {"evaluation_spaces": [sample_space_data], "count": 1, "total_count": 1},
+            "data": {
+                "evaluation_spaces": [sample_space_data],
+                "count": 1,
+                "total_count": 1,
+            },
         }
 
         result = spaces_resource.get_many()
@@ -90,7 +97,10 @@ class TestEvaluationSpaces:
 
     def test_create_success(self, spaces_resource, sample_space_data):
         """create returns EvaluationSpace."""
-        spaces_resource._post.return_value = {"status": "success", "data": sample_space_data}
+        spaces_resource._post.return_value = {
+            "status": "success",
+            "data": sample_space_data,
+        }
 
         result = spaces_resource.create(name="Q1 Comparison", description="Compare models for Q1")
 
@@ -99,7 +109,10 @@ class TestEvaluationSpaces:
 
     def test_create_request_body(self, spaces_resource):
         """create sends correct body."""
-        spaces_resource._post.return_value = {"status": "success", "data": {"name": "Test"}}
+        spaces_resource._post.return_value = {
+            "status": "success",
+            "data": {"name": "Test"},
+        }
 
         spaces_resource.create(name="Test", description="Desc", visibility="public")
 

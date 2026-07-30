@@ -1,0 +1,241 @@
+"""End-to-end: CrewAI delegation detection on the real event bus.
+
+We don't need an LLM to exercise the delegation path — we just need
+crewai's real event bus + real event classes. The adapter subscribes
+through ``adapter.connect()``, we kick off a (synthetic) crew lifecycle
+by emitting the events that crewai itself would emit, and verify
+agent.handoff fires for the "Delegate work to coworker" tool call.
+
+This is "end-to-end" in the sense that:
+- the adapter goes through its real connect/subscribe path
+- events go through the real crewai event bus, not a mock
+- the adapter's _on_tool_started handler runs as a real subscriber
+"""
+
+from __future__ import annotations
+
+import sys
+
+import pytest
+
+if sys.version_info < (3, 10):
+    pytest.skip("crewai requires Python >= 3.10", allow_module_level=True)
+
+# crewai needs to be importable in full
+crewai = pytest.importorskip("crewai")
+crewai_events = pytest.importorskip("crewai.events")
+pytest.importorskip("crewai.tasks.task_output")
+
+# The adapter needs crewai's modern typed event bus (the 1.14 line); the base lock
+# resolves whatever the cross-adapter solve allows (0.193.2 or 1.6.1 by platform),
+# both too old. Only the pinned matrix (crewai==1.14.6) row is supported; skip below.
+from packaging.version import Version  # noqa: E402
+
+if Version(crewai.__version__) < Version("1.14"):
+    pytest.skip(
+        f"crewai adapter requires >= 1.14; got {crewai.__version__}",
+        allow_module_level=True,
+    )
+
+from crewai.events import (
+    ToolUsageStartedEvent,
+    CrewKickoffStartedEvent,
+    CrewKickoffCompletedEvent,
+    AgentExecutionStartedEvent,
+    crewai_event_bus,
+)
+from crewai.tasks.task_output import TaskOutput
+
+from layerlens.instrument.adapters.frameworks.crewai import CrewAIAdapter
+
+from .conftest import events_of, first_event
+
+
+@pytest.fixture
+def adapter_in_real_bus(client_and_uploads):
+    """Connect the adapter through the real crewai event bus."""
+    client, uploads = client_and_uploads
+    adapter = CrewAIAdapter(client)
+    # scoped_handlers lets us mount handlers cleanly per-test.
+    with crewai_event_bus.scoped_handlers():
+        adapter.connect()
+        yield adapter, uploads
+    adapter.disconnect()
+
+
+def _await(fut, timeout=5):
+    """crewai's event bus runs handlers on a ThreadPoolExecutor and returns a
+    Future. Block until the handlers finish so test assertions don't race."""
+    if fut is not None:
+        fut.result(timeout=timeout)
+
+
+def _emit(event):
+    _await(crewai_event_bus.emit(None, event))
+
+
+def _start_crew_with_manager():
+    """Fire the events that crewai would fire at the start of a hierarchical crew."""
+    _emit(CrewKickoffStartedEvent(crew_name="research_crew", inputs={}))
+    _emit(AgentExecutionStartedEvent.model_construct(agent_role="manager"))
+
+
+def _finish_crew():
+    _emit(
+        CrewKickoffCompletedEvent(
+            crew_name="research_crew",
+            output=TaskOutput(description="t", raw="done", agent="manager"),
+        )
+    )
+
+
+def test_real_event_bus_emits_handoff_on_delegation_tool(adapter_in_real_bus):
+    adapter, uploads = adapter_in_real_bus
+    _start_crew_with_manager()
+
+    _emit(
+        ToolUsageStartedEvent(
+            tool_name="Delegate work to coworker",
+            tool_args={
+                "task": "Find recent papers on attention mechanisms",
+                "coworker": "researcher",
+                "context": "Focus on transformers and LLMs",
+            },
+            agent_key="manager_1",
+        )
+    )
+
+    _finish_crew()
+
+    handoff = first_event(uploads, "agent.handoff")
+    p = handoff["payload"]
+    assert p["from_agent"] == "manager"
+    assert p["to_agent"] == "researcher"
+    assert p["reason"] == "delegation"
+    assert p["delegation_seq"] == 1
+    assert p["tool_name"] == "Delegate work to coworker"
+    assert p["handoff_context_hash"].startswith("sha256:")
+
+
+def test_real_runtime_sanitized_tool_name_emits_handoff(adapter_in_real_bus):
+    """Real crewai fires ToolUsageStartedEvent with the *sanitized* tool name
+    (crewai.utilities.string_utils.sanitize_tool_name lowercases + underscores),
+    so the runtime never emits the human-readable "Delegate work to coworker"
+    form the other tests hand-build — it emits 'delegate_work_to_coworker'.
+    The delegation detector must match that real form or a real hierarchical
+    crew produces ZERO agent.handoff (empty graph)."""
+    from crewai.utilities.string_utils import sanitize_tool_name
+
+    # Guard: assert we're testing the form crewai actually emits at runtime.
+    assert sanitize_tool_name("Delegate work to coworker") == "delegate_work_to_coworker"
+
+    adapter, uploads = adapter_in_real_bus
+    _start_crew_with_manager()
+
+    _emit(
+        ToolUsageStartedEvent(
+            tool_name="delegate_work_to_coworker",
+            tool_args={
+                "task": "Find recent papers on attention mechanisms",
+                "coworker": "researcher",
+                "context": "Focus on transformers and LLMs",
+            },
+            agent_key="manager_1",
+        )
+    )
+
+    _finish_crew()
+
+    handoff = first_event(uploads, "agent.handoff")
+    p = handoff["payload"]
+    assert p["from_agent"] == "manager"
+    assert p["to_agent"] == "researcher"
+    assert p["reason"] == "delegation"
+    assert p["delegation_seq"] == 1
+    assert p["tool_name"] == "delegate_work_to_coworker"
+    assert p["handoff_context_hash"].startswith("sha256:")
+
+
+def test_real_runtime_sanitized_ask_question_emits_handoff(adapter_in_real_bus):
+    """The 'ask question to coworker' delegation tool is likewise sanitized to
+    'ask_question_to_coworker' at runtime — it too must be detected."""
+    from crewai.utilities.string_utils import sanitize_tool_name
+
+    assert sanitize_tool_name("Ask question to coworker") == "ask_question_to_coworker"
+
+    adapter, uploads = adapter_in_real_bus
+    _start_crew_with_manager()
+
+    _emit(
+        ToolUsageStartedEvent(
+            tool_name="ask_question_to_coworker",
+            tool_args={"question": "What is the deadline?", "coworker": "researcher"},
+            agent_key="manager_1",
+        )
+    )
+    _finish_crew()
+
+    h = first_event(uploads, "agent.handoff")
+    assert h["payload"]["to_agent"] == "researcher"
+    assert h["payload"]["reason"] == "delegation"
+
+
+def test_chain_of_delegations_keeps_sequence(adapter_in_real_bus):
+    adapter, uploads = adapter_in_real_bus
+    _start_crew_with_manager()
+
+    for to_agent in ["researcher", "writer", "reviewer"]:
+        # Use _emit (awaits the handler future) so the ThreadPoolExecutor-backed
+        # bus finishes each handler before the next is emitted; otherwise the
+        # three delegations race and delegation_seq is assigned out of order.
+        _emit(
+            ToolUsageStartedEvent(
+                tool_name="Delegate work to coworker",
+                tool_args={"task": f"work for {to_agent}", "coworker": to_agent},
+                agent_key="manager_1",
+            )
+        )
+
+    _finish_crew()
+
+    handoffs = events_of(uploads, "agent.handoff")
+    assert len(handoffs) == 3
+    assert [h["payload"]["delegation_seq"] for h in handoffs] == [1, 2, 3]
+    assert [h["payload"]["to_agent"] for h in handoffs] == ["researcher", "writer", "reviewer"]
+
+
+def test_ask_question_variant(adapter_in_real_bus):
+    adapter, uploads = adapter_in_real_bus
+    _start_crew_with_manager()
+
+    _emit(
+        ToolUsageStartedEvent(
+            tool_name="Ask question to coworker",
+            tool_args={"question": "What is the deadline?", "coworker": "researcher"},
+            agent_key="manager_1",
+        )
+    )
+    _finish_crew()
+
+    h = first_event(uploads, "agent.handoff")
+    assert h["payload"]["to_agent"] == "researcher"
+    assert h["payload"]["reason"] == "delegation"
+
+
+def test_regular_tool_does_not_fire_handoff(adapter_in_real_bus):
+    adapter, uploads = adapter_in_real_bus
+    _start_crew_with_manager()
+
+    _emit(
+        ToolUsageStartedEvent(
+            tool_name="web_search",
+            tool_args={"query": "AI safety"},
+            agent_key="manager_1",
+        )
+    )
+    _finish_crew()
+
+    assert events_of(uploads, "agent.handoff") == []
+    # The tool call event itself does still fire
+    tools = events_of(uploads, "tool.call")
+    assert any(t["payload"]["tool_name"] == "web_search" for t in tools)

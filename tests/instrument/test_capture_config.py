@@ -1,0 +1,574 @@
+from __future__ import annotations
+
+import json
+import dataclasses
+from unittest.mock import Mock
+
+import pytest
+
+from layerlens.instrument import CaptureConfig, trace
+
+from .conftest import find_event, find_events
+
+# ---------------------------------------------------------------------------
+# CaptureConfig unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestCaptureConfig:
+    def test_default_matches_standard(self):
+        """Bare CaptureConfig() gives sensible production defaults (matches ateam)."""
+        config = CaptureConfig()
+        assert config.l1_agent_io is True
+        assert config.l2_agent_code is False
+        assert config.l3_model_metadata is True
+        assert config.l4a_environment_config is True
+        assert config.l4b_environment_metrics is False
+        assert config.l5a_tool_calls is True
+        assert config.l5b_tool_logic is False
+        assert config.l5c_tool_environment is False
+        assert config.l6a_protocol_discovery is True
+        assert config.l6b_protocol_streams is True
+        assert config.l6c_protocol_lifecycle is True
+        # Privacy-by-default (A10 / LAY-3628, user-approved 2026-06-25): the
+        # out-of-the-box config redacts content. Content is opt-in via full() or
+        # an explicit capture_content=True. Bite: revert the default to True -> RED.
+        assert config.capture_content is False
+
+    def test_full_preset(self):
+        config = CaptureConfig.full()
+        for f in dataclasses.fields(config):
+            assert getattr(config, f.name) is True
+
+    def test_minimal_preset(self):
+        config = CaptureConfig.minimal()
+        assert config.l1_agent_io is True
+        assert config.l2_agent_code is False
+        assert config.l3_model_metadata is False
+        assert config.l4a_environment_config is False
+        assert config.l4b_environment_metrics is False
+        assert config.l5a_tool_calls is False
+        assert config.l5b_tool_logic is False
+        assert config.l5c_tool_environment is False
+        assert config.l6a_protocol_discovery is True
+        assert config.l6b_protocol_streams is False
+        assert config.l6c_protocol_lifecycle is True
+        # minimal() is the lightest production tier — privacy-by-default too.
+        assert config.capture_content is False
+
+    def test_default_config_redacts_content_behaviorally(self):
+        """A10/LAY-3628: a default collector (no explicit config) must STRIP
+        content under the new privacy-by-default posture — agent.input message
+        text does not reach the uploaded event. Bite: revert the default to True
+        and the message survives -> RED."""
+        import json as _json
+
+        from layerlens.instrument._collector import TraceCollector
+
+        collector = TraceCollector(object(), CaptureConfig())  # bare default
+        collector.emit("agent.input", {"input": "my SSN is 123-45-6789", "agent_name": "a"}, span_id="s1")
+        blob = _json.dumps(collector.events[0]["payload"], default=str)
+        assert "123-45-6789" not in blob, "default config leaked agent.input content (privacy-by-default broken)"
+        assert collector.events[0]["payload"].get("agent_name") == "a", "metadata over-stripped"
+
+    def test_standard_preset(self):
+        """standard() is the same as bare CaptureConfig()."""
+        config = CaptureConfig.standard()
+        default = CaptureConfig()
+        for f in dataclasses.fields(config):
+            assert getattr(config, f.name) == getattr(default, f.name)
+
+    def test_frozen(self):
+        config = CaptureConfig()
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            config.l1_agent_io = False  # type: ignore[misc]
+
+    def test_to_dict(self):
+        config = CaptureConfig.minimal()
+        d = config.to_dict()
+        assert len(d) == 12  # 11 layers + capture_content
+        assert d["l1_agent_io"] is True
+        assert d["l3_model_metadata"] is False
+        assert d["l5a_tool_calls"] is False
+        assert d["capture_content"] is False  # privacy-by-default (A10)
+
+    def test_custom_config(self):
+        config = CaptureConfig(l1_agent_io=True, l5a_tool_calls=False)
+        assert config.l1_agent_io is True
+        assert config.l5a_tool_calls is False
+        assert config.l3_model_metadata is True  # default
+
+    def test_is_layer_enabled_always_enabled(self):
+        config = CaptureConfig.minimal()
+        assert config.is_layer_enabled("agent.error") is True
+        assert config.is_layer_enabled("cost.record") is True
+        assert config.is_layer_enabled("agent.state.change") is True
+        assert config.is_layer_enabled("policy.violation") is True
+        assert config.is_layer_enabled("protocol.task.submitted") is True
+        assert config.is_layer_enabled("protocol.task.completed") is True
+        assert config.is_layer_enabled("protocol.async_task") is True
+
+    def test_is_layer_enabled_mapped(self):
+        config = CaptureConfig.minimal()
+        assert config.is_layer_enabled("agent.input") is True  # L1 on
+        assert config.is_layer_enabled("model.invoke") is False  # L3 off
+        assert config.is_layer_enabled("tool.call") is False  # L5a off
+
+    def test_is_layer_enabled_unknown_fail_open(self):
+        config = CaptureConfig.minimal()
+        assert config.is_layer_enabled("unknown.event") is True
+
+    def test_is_layer_enabled_full(self):
+        config = CaptureConfig.full()
+        assert config.is_layer_enabled("agent.input") is True
+        assert config.is_layer_enabled("model.invoke") is True
+        assert config.is_layer_enabled("tool.call") is True
+
+
+# ---------------------------------------------------------------------------
+# @trace integration with CaptureConfig
+# ---------------------------------------------------------------------------
+
+
+def _openai_response():
+    r = Mock()
+    r.choices = [Mock()]
+    r.choices[0].message = Mock()
+    r.choices[0].message.role = "assistant"
+    r.choices[0].message.content = "Hello!"
+    r.usage = Mock()
+    r.usage.prompt_tokens = 10
+    r.usage.completion_tokens = 5
+    r.usage.total_tokens = 15
+    r.model = "gpt-4"
+    return r
+
+
+class TestCaptureConfigWithTrace:
+    def test_full_config_preserves_all(self, mock_client, capture_trace):
+        @trace(mock_client, capture_config=CaptureConfig.full())
+        def my_agent(query):
+            return {"answer": 42}
+
+        my_agent("hello")
+        events = capture_trace["events"]
+        agent_input = find_event(events, "agent.input")
+        agent_output = find_event(events, "agent.output")
+        assert agent_input["payload"]["input"] == "hello"
+        assert agent_output["payload"]["output"] == {"answer": 42}
+
+    def test_full_captures_agent_io(self, mock_client, capture_trace):
+        # Content capture is opt-in (privacy-by-default, A10): full() keeps raw I/O.
+        @trace(mock_client, capture_config=CaptureConfig.full())
+        def my_agent(query):
+            return {"answer": 42}
+
+        my_agent("hello")
+        events = capture_trace["events"]
+        agent_input = find_event(events, "agent.input")
+        assert agent_input["payload"]["input"] == "hello"
+
+    def test_l1_off_strips_agent_io(self, mock_client, capture_trace):
+        """When L1 is off, agent.input/agent.output events are suppressed."""
+        config = CaptureConfig(l1_agent_io=False)
+
+        @trace(mock_client, capture_config=config)
+        def my_agent(query):
+            return {"answer": 42}
+
+        result = my_agent("hello")
+        assert result == {"answer": 42}  # return value still works
+        # With only L1 events and L1 off, no events emitted → no upload
+        mock_client.traces.upload.assert_not_called()
+
+    def test_l1_off_preserves_error(self, mock_client, capture_trace):
+        config = CaptureConfig(l1_agent_io=False)
+
+        @trace(mock_client, capture_config=config)
+        def my_agent():
+            raise ValueError("boom")
+
+        with pytest.raises(ValueError):
+            my_agent()
+        events = capture_trace["events"]
+        # agent.error is always enabled
+        errors = find_events(events, "agent.error")
+        assert len(errors) == 1
+
+    def test_config_stored_in_upload(self, mock_client, capture_trace):
+        config = CaptureConfig.standard()
+
+        @trace(mock_client, capture_config=config)
+        def my_agent():
+            return "ok"
+
+        my_agent()
+        stored = capture_trace["capture_config"]
+        assert stored == config.to_dict()
+
+    def test_context_cleanup(self, mock_client):
+        from layerlens.instrument._context import _current_collector
+
+        @trace(mock_client, capture_config=CaptureConfig.minimal())
+        def my_agent():
+            return "ok"
+
+        my_agent()
+        assert _current_collector.get() is None
+
+
+# ---------------------------------------------------------------------------
+# Provider adapter filtering (L3)
+# ---------------------------------------------------------------------------
+
+
+class TestCaptureConfigWithProviders:
+    def test_l3_on_captures_all_metadata(self, mock_client, capture_trace):
+        from layerlens.instrument.adapters.providers.openai import OpenAIProvider
+
+        openai_client = Mock()
+        openai_client.chat.completions.create = Mock(return_value=_openai_response())
+
+        provider = OpenAIProvider()
+        provider.connect(openai_client)
+
+        @trace(mock_client, capture_config=CaptureConfig.full())
+        def my_agent():
+            return (
+                openai_client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
+                .choices[0]
+                .message.content
+            )
+
+        my_agent()
+        events = capture_trace["events"]
+        model_invoke = find_event(events, "model.invoke")
+        assert model_invoke["payload"]["parameters"]["model"] == "gpt-4"
+        assert model_invoke["payload"]["usage"]["total_tokens"] == 15
+        assert model_invoke["payload"]["output_message"]["content"] == "Hello!"
+
+    def test_l3_off_suppresses_model_invoke_keeps_cost(self, mock_client, capture_trace):
+        """When L3 is off, model.invoke events are suppressed but cost.record (always-enabled) still fires."""
+        from layerlens.instrument.adapters.providers.openai import OpenAIProvider
+
+        openai_client = Mock()
+        openai_client.chat.completions.create = Mock(return_value=_openai_response())
+
+        provider = OpenAIProvider()
+        provider.connect(openai_client)
+
+        config = CaptureConfig(l3_model_metadata=False)
+
+        @trace(mock_client, capture_config=config)
+        def my_agent():
+            return (
+                openai_client.chat.completions.create(
+                    model="gpt-4",
+                    temperature=0.7,
+                    messages=[{"role": "user", "content": "Hi"}],
+                )
+                .choices[0]
+                .message.content
+            )
+
+        my_agent()
+        events = capture_trace["events"]
+
+        # model.invoke is gated by L3 — suppressed
+        assert len(find_events(events, "model.invoke")) == 0
+
+        # cost.record is always-enabled — still fires
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["prompt_tokens"] == 10
+
+    def test_l3_off_anthropic(self, mock_client, capture_trace):
+        """When L3 is off with Anthropic, model.invoke suppressed, cost.record still fires."""
+        from layerlens.instrument.adapters.providers.anthropic import AnthropicProvider
+
+        anthropic_client = Mock()
+
+        def _anthropic_response():
+            r = Mock()
+            block = Mock()
+            block.type = "text"
+            block.text = "I'm Claude!"
+            r.content = [block]
+            r.usage = Mock()
+            r.usage.input_tokens = 20
+            r.usage.output_tokens = 10
+            r.model = "claude-3-opus"
+            r.stop_reason = "end_turn"
+            return r
+
+        anthropic_client.messages.create = Mock(return_value=_anthropic_response())
+
+        provider = AnthropicProvider()
+        provider.connect(anthropic_client)
+
+        config = CaptureConfig(l3_model_metadata=False)
+
+        @trace(mock_client, capture_config=config)
+        def my_agent():
+            return (
+                anthropic_client.messages.create(
+                    model="claude-3-opus",
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": "Hi"}],
+                )
+                .content[0]
+                .text
+            )
+
+        my_agent()
+        events = capture_trace["events"]
+
+        # model.invoke suppressed by L3
+        assert len(find_events(events, "model.invoke")) == 0
+
+        # cost.record always fires
+        cost = find_event(events, "cost.record")
+        assert cost["payload"]["input_tokens"] == 20
+
+    def test_capture_content_off(self, mock_client, capture_trace):
+        from layerlens.instrument.adapters.providers.openai import OpenAIProvider
+
+        openai_client = Mock()
+        openai_client.chat.completions.create = Mock(return_value=_openai_response())
+
+        provider = OpenAIProvider()
+        provider.connect(openai_client)
+
+        config = CaptureConfig(capture_content=False)
+
+        @trace(mock_client, capture_config=config)
+        def my_agent():
+            return (
+                openai_client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
+                .choices[0]
+                .message.content
+            )
+
+        my_agent()
+        events = capture_trace["events"]
+        model_invoke = find_event(events, "model.invoke")
+
+        # Messages and output_message should be stripped
+        assert "messages" not in model_invoke["payload"]
+        assert "output_message" not in model_invoke["payload"]
+
+        # But usage and params should still be there
+        assert model_invoke["payload"]["usage"]["total_tokens"] == 15
+        assert model_invoke["payload"]["parameters"]["model"] == "gpt-4"
+
+    def test_minimal_suppresses_model_invoke(self, mock_client, capture_trace):
+        from layerlens.instrument.adapters.providers.openai import OpenAIProvider
+
+        openai_client = Mock()
+        openai_client.chat.completions.create = Mock(return_value=_openai_response())
+
+        provider = OpenAIProvider()
+        provider.connect(openai_client)
+
+        config = CaptureConfig.minimal()
+
+        @trace(mock_client, capture_config=config)
+        def my_agent():
+            return (
+                openai_client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": "Hi"}])
+                .choices[0]
+                .message.content
+            )
+
+        my_agent()
+        events = capture_trace["events"]
+
+        # model.invoke gated by L3 — should be suppressed in minimal
+        model_invokes = find_events(events, "model.invoke")
+        assert len(model_invokes) == 0
+
+        # cost.record is always enabled
+        cost_records = find_events(events, "cost.record")
+        assert len(cost_records) == 1
+
+
+# ---------------------------------------------------------------------------
+# Redaction of content nested in `parameters` (LAY-3567 B1)
+# ---------------------------------------------------------------------------
+
+_SENTINEL = "SENTINEL-9f3a-the-secret-launch-codes"
+
+
+def _ollama_chat_response():
+    return {
+        "model": "llama3:8b",
+        "message": {"role": "assistant", "content": "hi there"},
+        "done_reason": "stop",
+        "prompt_eval_count": 7,
+        "eval_count": 3,
+    }
+
+
+def _ollama_generate_response():
+    return {
+        "model": "llama3:8b",
+        "response": "ok",
+        "done_reason": "stop",
+        "prompt_eval_count": 7,
+        "eval_count": 3,
+    }
+
+
+class TestRedactionNestedParameters:
+    """capture_content=False must also scrub content carried inside the nested
+    ``parameters`` dict (built from adapter ``capture_params``), not only the
+    top-level ``messages``/``output_message`` keys (LAY-3567 B1)."""
+
+    def test_redact_payload_scrubs_parameters_content_keys(self):
+        config = CaptureConfig(capture_content=False)
+        payload = {
+            "name": "ollama.chat",
+            "model": "llama3:8b",
+            "messages": [{"role": "user", "content": _SENTINEL}],
+            "output_message": {"role": "assistant", "content": _SENTINEL},
+            "parameters": {
+                "model": "llama3:8b",
+                "messages": [{"role": "user", "content": _SENTINEL}],
+                "prompt": _SENTINEL,
+                "options": {"temperature": 0.1},
+            },
+        }
+
+        redacted = config.redact_payload("model.invoke", payload)
+
+        assert _SENTINEL not in json.dumps(redacted)
+        # non-content parameters survive
+        assert redacted["parameters"]["model"] == "llama3:8b"
+        assert redacted["parameters"]["options"] == {"temperature": 0.1}
+
+    def test_redact_payload_does_not_mutate_input(self):
+        config = CaptureConfig(capture_content=False)
+        parameters = {"model": "llama3:8b", "prompt": _SENTINEL}
+        payload = {"messages": [{"role": "user", "content": _SENTINEL}], "parameters": parameters}
+
+        config.redact_payload("model.invoke", payload)
+
+        assert payload["parameters"] is parameters
+        assert parameters["prompt"] == _SENTINEL
+        assert payload["messages"] == [{"role": "user", "content": _SENTINEL}]
+
+
+class TestRedactionBoundary:
+    """Pin redact_payload's EXACT depth + scope so no one over-trusts it (W5/G10).
+
+    The collector-side backstop strips the per-event content keys in
+    ``_CONTENT_KEYS`` — now UNIVERSAL (framework content events like
+    agent.input/agent.output, tool.call, retrieval.query are included too;
+    LAY-3578/3567). For ``model.invoke.parameters`` it is now DENY-BY-DEFAULT and
+    recursive (A16 / F-L12-002, LAY-3643): only the vetted metric allowlist
+    ``_SAFE_PARAM_KEYS`` survives at any depth, so an unknown/nested content param
+    cannot leak. Adapters should still gate content at emit time, but the
+    backstop no longer relies on enumerating every content key.
+    """
+
+    def test_parameters_deny_by_default_strips_unknown_nested_content(self):
+        # A16 / F-L12-002: parameters redaction is now DENY-BY-DEFAULT + recursive.
+        # A non-allowlisted param (``extra_config``) — and any content buried in it
+        # — is dropped under capture_content=False, so an unknown/custom param can
+        # no longer leak content. Only vetted metric keys survive.
+        config = CaptureConfig(capture_content=False)
+        payload = {
+            "name": "openai.chat.completions.create",
+            "parameters": {"model": "gpt-4o", "extra_config": {"hidden_prompt": _SENTINEL}},
+        }
+        redacted = config.redact_payload("model.invoke", payload)
+        assert _SENTINEL not in json.dumps(redacted)
+        assert redacted["parameters"] == {"model": "gpt-4o"}  # only the safe metric survives
+
+    def test_strips_framework_content_event_types(self):
+        # The backstop is now UNIVERSAL (LAY-3578/3567): framework content events
+        # are in _CONTENT_KEYS too, so a forgotten emit-time gate is still caught
+        # collector-side. Each type's canonical content field is stripped while
+        # metadata (the framework id) is preserved.
+        config = CaptureConfig(capture_content=False)
+        cases = {
+            "agent.input": "input",
+            "agent.output": "output",
+            "tool.call": "input",
+            "retrieval.query": "query",
+        }
+        for event_type, content_field in cases.items():
+            payload = {"framework": "x", content_field: _SENTINEL}
+            redacted = config.redact_payload(event_type, payload)
+            assert content_field not in redacted, f"{event_type}: backstop did not strip {content_field}"
+            assert redacted.get("framework") == "x", f"{event_type}: backstop dropped metadata"
+
+    def test_ollama_chat_capture_content_off_no_leak(self, mock_client, capture_trace):
+        from layerlens.instrument.adapters.providers.ollama import OllamaProvider
+
+        ollama_client = Mock()
+        ollama_client.chat = Mock(return_value=_ollama_chat_response())
+
+        provider = OllamaProvider()
+        provider.connect(ollama_client)
+
+        @trace(mock_client, capture_config=CaptureConfig(capture_content=False))
+        def my_agent():
+            return ollama_client.chat(
+                model="llama3:8b",
+                messages=[{"role": "user", "content": _SENTINEL}],
+            )
+
+        my_agent()
+        events = capture_trace["events"]
+        model_invoke = find_event(events, "model.invoke")
+
+        # the sentinel must not appear anywhere in the uploaded events
+        assert _SENTINEL not in json.dumps(events)
+        # non-content metadata is still captured
+        assert model_invoke["payload"]["parameters"]["model"] == "llama3:8b"
+        assert model_invoke["payload"]["usage"]["total_tokens"] == 10
+
+    def test_ollama_generate_capture_content_off_no_leak(self, mock_client, capture_trace):
+        from layerlens.instrument.adapters.providers.ollama import OllamaProvider
+
+        ollama_client = Mock()
+        ollama_client.generate = Mock(return_value=_ollama_generate_response())
+
+        provider = OllamaProvider()
+        provider.connect(ollama_client)
+
+        @trace(mock_client, capture_config=CaptureConfig(capture_content=False))
+        def my_agent():
+            return ollama_client.generate(model="llama3:8b", prompt=_SENTINEL)
+
+        my_agent()
+        events = capture_trace["events"]
+
+        assert _SENTINEL not in json.dumps(events)
+
+    def test_ollama_capture_content_on_keeps_content(self, mock_client, capture_trace):
+        """Regression guard: the B1 fix must not lose content capture when
+        capture_content=True — prompts/outputs live at the payload top level."""
+        from layerlens.instrument.adapters.providers.ollama import OllamaProvider
+
+        ollama_client = Mock()
+        ollama_client.chat = Mock(return_value=_ollama_chat_response())
+        ollama_client.generate = Mock(return_value=_ollama_generate_response())
+
+        provider = OllamaProvider()
+        provider.connect(ollama_client)
+
+        @trace(mock_client, capture_config=CaptureConfig(capture_content=True))
+        def my_agent():
+            ollama_client.chat(model="llama3:8b", messages=[{"role": "user", "content": "hello"}])
+            return ollama_client.generate(model="llama3:8b", prompt="write a haiku")
+
+        my_agent()
+        events = capture_trace["events"]
+        chat_invoke, generate_invoke = find_events(events, "model.invoke")
+
+        assert chat_invoke["payload"]["messages"] == [{"role": "user", "content": "hello"}]
+        assert chat_invoke["payload"]["output_message"]["content"] == "hi there"
+        # generate() has no messages kwarg; the prompt is captured as messages
+        assert generate_invoke["payload"]["messages"] == "write a haiku"
+        assert generate_invoke["payload"]["output_message"]["content"] == "ok"

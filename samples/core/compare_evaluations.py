@@ -73,7 +73,11 @@ def main() -> None:
         logger.error("Failed to initialize client: %s", exc)
         sys.exit(1)
 
-    logger.info("Connected to LayerLens (org=%s, project=%s)", client.organization_id, client.project_id)
+    logger.info(
+        "Connected to LayerLens (org=%s, project=%s)",
+        client.organization_id,
+        client.project_id,
+    )
 
     # --- Step 1: List evaluations ---
     logger.info("=" * 60)
@@ -93,7 +97,9 @@ def main() -> None:
     logger.info("Found %d evaluation(s)", len(evals_resp.evaluations))
     for e in evals_resp.evaluations[:5]:
         accuracy = getattr(e, "accuracy", None)
-        accuracy_str = f"{accuracy:.2%}" if isinstance(accuracy, (int, float)) else "N/A"
+        accuracy_str = (
+            f"{accuracy:.2%}" if isinstance(accuracy, (int, float)) else "N/A"
+        )
         logger.info("  - %s: status=%s accuracy=%s", e.id, e.status, accuracy_str)
 
     # --- Step 2: Compare evaluations ---
@@ -109,7 +115,9 @@ def main() -> None:
         eval_id_2 = str(evals_resp.evaluations[1].id)
         logger.info("Using two most recent evaluations for comparison")
     else:
-        logger.error("Need at least 2 evaluations. Only found %d.", len(evals_resp.evaluations))
+        logger.error(
+            "Need at least 2 evaluations. Only found %d.", len(evals_resp.evaluations)
+        )
         sys.exit(1)
 
     logger.info("Comparing: %s vs %s", eval_id_1, eval_id_2)
@@ -127,7 +135,9 @@ def main() -> None:
         else:
             logger.info("  %s", comparison)
     else:
-        logger.warning("Comparison returned no results (evaluations may use different benchmarks)")
+        logger.warning(
+            "Comparison returned no results (evaluations may use different benchmarks)"
+        )
 
     # --- Additional: compare_models() ---
     logger.info("=" * 60)
@@ -148,8 +158,16 @@ def main() -> None:
             model_id_2=model_id_2,
         )
         if comparison:
-            logger.info("Model 1: %d/%d correct", comparison.correct_count_1, comparison.total_results_1)
-            logger.info("Model 2: %d/%d correct", comparison.correct_count_2, comparison.total_results_2)
+            logger.info(
+                "Model 1: %d/%d correct",
+                comparison.correct_count_1,
+                comparison.total_results_1,
+            )
+            logger.info(
+                "Model 2: %d/%d correct",
+                comparison.correct_count_2,
+                comparison.total_results_2,
+            )
             logger.info("Total compared: %s", comparison.total_count)
     except Exception as exc:
         logger.info("compare_models() not available or IDs invalid: %s", exc)
@@ -169,7 +187,10 @@ def main() -> None:
             outcome_filter="reference_fails",
         )
         if comparison:
-            logger.info("Cases where model 1 fails but model 2 succeeds: %s", comparison.total_count)
+            logger.info(
+                "Cases where model 1 fails but model 2 succeeds: %s",
+                comparison.total_count,
+            )
     except Exception as exc:
         logger.info("outcome_filter not available: %s", exc)
 

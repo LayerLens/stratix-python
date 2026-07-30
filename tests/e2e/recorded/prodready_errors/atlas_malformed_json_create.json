@@ -1,0 +1,6 @@
+{
+  "marker": "prodready-l7-20260626T232832Z",
+  "probe": "atlas_malformed_json_create",
+  "surfaced_type": "BadRequestError",
+  "str": "Error code: 400 - {'status': 'error', 'error': \"invalid character 't' looking for beginning of object key string\"}"
+}

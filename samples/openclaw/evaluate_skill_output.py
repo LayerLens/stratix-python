@@ -218,7 +218,9 @@ def main() -> None:
 
     # --- 5. Evaluate each trace with each judge ---
     # results_matrix[judge_label] = list of (passed, score) per trace
-    results_matrix: dict[str, list[tuple[bool | None, float | None]]] = {label: [] for _, label in judge_pairs}
+    results_matrix: dict[str, list[tuple[bool | None, float | None]]] = {
+        label: [] for _, label in judge_pairs
+    }
 
     for t_idx, trace_id in enumerate(trace_ids):
         print(f"Evaluating trace {t_idx + 1}/{len(trace_ids)}...")
@@ -250,11 +252,18 @@ def main() -> None:
         rate = f"{passed}/{evaluated}" if evaluated else "N/A"
         print(f"{label:<16} {rate:>10} {avg_score:>10.2f} {evaluated:>10}")
 
-    overall_entries = [(p, s) for label_entries in results_matrix.values() for p, s in label_entries if p is not None]
+    overall_entries = [
+        (p, s)
+        for label_entries in results_matrix.values()
+        for p, s in label_entries
+        if p is not None
+    ]
     overall_passed = sum(1 for p, _ in overall_entries if p is True)
     overall_total = len(overall_entries)
     overall_rate = (overall_passed / overall_total * 100) if overall_total else 0
-    print(f"\nOverall pass rate: {overall_passed}/{overall_total} ({overall_rate:.0f}%)")
+    print(
+        f"\nOverall pass rate: {overall_passed}/{overall_total} ({overall_rate:.0f}%)"
+    )
     print("Done.")
 
 

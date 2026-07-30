@@ -18,9 +18,18 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 RUBRIC_CRITERIA: dict[str, dict[str, Any]] = {
-    "accuracy": {"description": "Factual correctness relative to golden answer", "weight": 0.40},
-    "completeness": {"description": "Covers all key points in the golden answer", "weight": 0.35},
-    "formatting": {"description": "Proper structure, grammar, and presentation", "weight": 0.25},
+    "accuracy": {
+        "description": "Factual correctness relative to golden answer",
+        "weight": 0.40,
+    },
+    "completeness": {
+        "description": "Covers all key points in the golden answer",
+        "weight": 0.35,
+    },
+    "formatting": {
+        "description": "Proper structure, grammar, and presentation",
+        "weight": 0.25,
+    },
 }
 
 
@@ -38,9 +47,13 @@ class BenchmarkJudge:
     SCORING_METHODS: set[str] = {"semantic_similarity", "rubric", "exact_match"}
 
     def __init__(self) -> None:
-        self._method_scores: dict[str, list[float]] = {m: [] for m in self.SCORING_METHODS}
+        self._method_scores: dict[str, list[float]] = {
+            m: [] for m in self.SCORING_METHODS
+        }
 
-    def evaluate(self, trace_id: str, output: str, context: dict[str, Any]) -> dict[str, Any]:
+    def evaluate(
+        self, trace_id: str, output: str, context: dict[str, Any]
+    ) -> dict[str, Any]:
         golden = context.get("golden_answer", "")
         method = context.get("scoring_method", "semantic_similarity")
         weight = context.get("weight", 1.0)
@@ -76,7 +89,13 @@ class BenchmarkJudge:
         stats: dict[str, dict[str, Any]] = {}
         for method, scores in self._method_scores.items():
             if not scores:
-                stats[method] = {"count": 0, "mean": 0.0, "std_dev": 0.0, "min": 0.0, "max": 0.0}
+                stats[method] = {
+                    "count": 0,
+                    "mean": 0.0,
+                    "std_dev": 0.0,
+                    "min": 0.0,
+                    "max": 0.0,
+                }
                 continue
             n = len(scores)
             mean = sum(scores) / n
@@ -112,12 +131,17 @@ class BenchmarkJudge:
         return {"semantic_similarity": round(score, 2)}
 
     def _score_rubric(
-        self, output: str, golden: str, custom_criteria: dict[str, dict[str, Any]] | None = None
+        self,
+        output: str,
+        golden: str,
+        custom_criteria: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, float]:
         criteria = custom_criteria or RUBRIC_CRITERIA
         out_tokens = set(self._normalize_tokens(output))
         gold_tokens = set(self._normalize_tokens(golden))
-        recall = len(out_tokens & gold_tokens) / len(gold_tokens) if gold_tokens else 0.5
+        recall = (
+            len(out_tokens & gold_tokens) / len(gold_tokens) if gold_tokens else 0.5
+        )
         seed = int(hashlib.md5(output.encode()).hexdigest()[:8], 16)
         rng = random.Random(seed)
         scores: dict[str, float] = {}
@@ -203,9 +227,18 @@ class BenchmarkJudge:
         return [t for t in tokens if t not in stopwords and len(t) > 1]
 
     def _build_rationale(
-        self, scores: dict[str, float], aggregate: float, verdict: str, method: str, task_id: str
+        self,
+        scores: dict[str, float],
+        aggregate: float,
+        verdict: str,
+        method: str,
+        task_id: str,
     ) -> str:
-        parts = [f"Task: {task_id}.", f"Scoring method: {method}.", f"Aggregate: {aggregate:.2f}/10."]
+        parts = [
+            f"Task: {task_id}.",
+            f"Scoring method: {method}.",
+            f"Aggregate: {aggregate:.2f}/10.",
+        ]
         if method == "rubric":
             weakest = min(scores, key=scores.get)  # type: ignore[arg-type]
             strongest = max(scores, key=scores.get)  # type: ignore[arg-type]

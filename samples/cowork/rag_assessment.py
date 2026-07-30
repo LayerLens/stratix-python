@@ -22,10 +22,25 @@ from typing import Any
 from layerlens import Stratix
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from _helpers import create_judge, upload_trace_dict, poll_evaluation_results
+from _helpers import (
+    create_judge,
+    poll_evaluation_results,
+    recorded_trace_path,
+    upload_recorded_trace,
+)
+
+# This sample uploads RECORDED REAL traces: each was captured from a genuine
+# instrumented ``rag-qa-agent`` run answering the queries below against the
+# knowledge base (see ``samples/data/_generate_fixtures.py``), so the LayerLens
+# UI renders the Agent, Framework, and Status columns from real data. The
+# knowledge base and queries remain here as documentation of what was retrieved
+# and to label the evaluation output; the real grounded answers live in the
+# fixture.
+SAMPLE = "rag_assessment"
+FIXTURE = recorded_trace_path("cowork", "rag_assessment.jsonl")
 
 # ---------------------------------------------------------------------------
-# Simulated knowledge base and queries
+# Knowledge base and queries (labels for the recorded traces above)
 # ---------------------------------------------------------------------------
 
 KNOWLEDGE_BASE: list[dict[str, Any]] = [
@@ -52,8 +67,18 @@ KNOWLEDGE_BASE: list[dict[str, Any]] = [
 ]
 
 QUERIES: list[dict[str, Any]] = [
-    {"id": "q_001", "text": "What is your refund policy?", "category": "billing", "expected_doc_ids": ["doc_001"]},
-    {"id": "q_002", "text": "How much does the Pro plan cost?", "category": "pricing", "expected_doc_ids": ["doc_002"]},
+    {
+        "id": "q_001",
+        "text": "What is your refund policy?",
+        "category": "billing",
+        "expected_doc_ids": ["doc_001"],
+    },
+    {
+        "id": "q_002",
+        "text": "How much does the Pro plan cost?",
+        "category": "pricing",
+        "expected_doc_ids": ["doc_002"],
+    },
     {
         "id": "q_003",
         "text": "What are the API rate limits for enterprise?",
@@ -61,13 +86,6 @@ QUERIES: list[dict[str, Any]] = [
         "expected_doc_ids": ["doc_003"],
     },
 ]
-
-# Simulated RAG answers
-SIMULATED_ANSWERS: dict[str, str] = {
-    "q_001": "Full refunds are available within 30 days. After that, you receive store credit.",
-    "q_002": "The Pro plan costs $29 per month. Annual billing provides a 20% discount.",
-    "q_003": "Enterprise tier has unlimited API rate limits. Rate limit headers are included in responses.",
-}
 
 _VERDICT_COLORS = {"pass": "\033[92m", "fail": "\033[91m", "uncertain": "\033[93m"}
 _RESET = "\033[0m"
@@ -83,63 +101,69 @@ def main() -> None:
         print(f"ERROR: Failed to initialize LayerLens client: {exc}")
         sys.exit(1)
 
-    # Create judges up front
-    judges = {
-        "groundedness": create_judge(
-            client,
-            name="Groundedness Judge",
-            evaluation_goal="Evaluate whether the response is grounded in the retrieved context and does not hallucinate.",
-        ),
-        "retrieval_quality": create_judge(
-            client,
-            name="Retrieval Quality Judge",
-            evaluation_goal="Evaluate whether the retrieved documents are relevant and sufficient to answer the query.",
-        ),
-        "completeness": create_judge(
-            client,
-            name="Completeness Judge",
-            evaluation_goal="Evaluate whether the response fully and completely addresses the user's question.",
-        ),
-    }
-    judge_labels = {"groundedness": "Grounded", "retrieval_quality": "Retrieval", "completeness": "Complete"}
-    judge_ids = [j.id for j in judges.values()]
+    # Upload the recorded real traces first. Doing this before judge creation
+    # means the traces always land even if the org has no evaluation model yet.
+    print(f"[RAGRunner] Uploading {len(QUERIES)} recorded RAG traces...\n")
+    trace_ids = upload_recorded_trace(client, FIXTURE)
+    if not trace_ids:
+        print("ERROR: no traces uploaded (fixture missing or rejected).")
+        sys.exit(1)
 
+    judge_labels = {
+        "groundedness": "Grounded",
+        "retrieval_quality": "Retrieval",
+        "completeness": "Complete",
+    }
+
+    # Create judges. If the org has no models available, judge creation raises
+    # RuntimeError -- we skip the evaluations (the traces are already uploaded)
+    # rather than crash.
+    judge_ids: list[str] = []
     try:
-        # Phase 1: RAG Runner processes queries
+        judges = {
+            "groundedness": create_judge(
+                client,
+                name="Groundedness Judge",
+                evaluation_goal="Evaluate whether the response is grounded in the retrieved context and does not hallucinate.",
+                namespace=SAMPLE,
+            ),
+            "retrieval_quality": create_judge(
+                client,
+                name="Retrieval Quality Judge",
+                evaluation_goal="Evaluate whether the retrieved documents are relevant and sufficient to answer the query.",
+                namespace=SAMPLE,
+            ),
+            "completeness": create_judge(
+                client,
+                name="Completeness Judge",
+                evaluation_goal="Evaluate whether the response fully and completely addresses the user's question.",
+                namespace=SAMPLE,
+            ),
+        }
+        judge_ids = [j.id for j in judges.values()]
+
+        # Phase 1: RAG Runner maps recorded traces to queries
         print("[RAGRunner] Processing queries...\n")
         rag_results: list[dict[str, Any]] = []
 
-        for query in QUERIES:
-            answer = SIMULATED_ANSWERS.get(query["id"], "No answer available.")
+        for query, trace_id in zip(QUERIES, trace_ids):
             print(f'[RAGRunner] Query: "{query["text"]}"')
 
             # Retrieval by ID (no similarity scoring -- scores come from judge evaluation below)
-            retrieved_docs = [d for d in KNOWLEDGE_BASE if d["id"] in query["expected_doc_ids"]]
+            retrieved_docs = [
+                d for d in KNOWLEDGE_BASE if d["id"] in query["expected_doc_ids"]
+            ]
             print(f"[RAGRunner] Retrieved {len(retrieved_docs)} document(s)")
-
-            trace_result = upload_trace_dict(
-                client,
-                input_text=query["text"],
-                output_text=answer,
-                metadata={
-                    "query_id": query["id"],
-                    "category": query["category"],
-                    "retrieved_doc_ids": [d["id"] for d in retrieved_docs],
-                    "channel": "co-work-rag-quality",
-                },
-            )
-            trace_id = trace_result.trace_ids[0] if trace_result.trace_ids else f"trc_rag_{query['id']}"
 
             rag_results.append(
                 {
                     "query_id": query["id"],
                     "query_text": query["text"],
                     "trace_id": trace_id,
-                    "answer": answer,
                     "retrieved_docs": retrieved_docs,
                 }
             )
-            print(f"[RAGRunner] Trace {trace_id} created.\n")
+            print(f"[RAGRunner] Trace {trace_id} mapped.\n")
 
         # Phase 2: Quality Judge evaluates
         print("[QualityJudge] Evaluating RAG quality...\n")
@@ -165,6 +189,9 @@ def main() -> None:
 
         print(f"[QualityJudge] All {len(rag_results)} queries evaluated.")
 
+    except RuntimeError as exc:
+        print(f"\nNOTE: evaluations skipped -- {exc}")
+        print("  Traces are uploaded; add a project/public model to enable judges.")
     finally:
         for jid in judge_ids:
             try:

@@ -1,0 +1,26 @@
+{
+  "provenance": {
+    "provider": "google_vertex",
+    "sdk_version": "vertexai (proto-backed GenerationResponse)",
+    "model": "gemini-1.5-flash-002",
+    "scenario": "default",
+    "captured_at": "pending-creds"
+  },
+  "transport": "object",
+  "sdk": "vertexai",
+  "model_name": "publishers/google/models/gemini-1.5-flash-002",
+  "seed_note": "No GCP Vertex creds exist (GOOGLE_CLOUD_PROJECT empty, no credentials file). SEEDED from a documented real Vertex response, rebuilt at replay time into a REAL proto-backed vertexai GenerationResponse via from_dict (needs the SDK, not creds). model_name uses the real 'publishers/google/models/<id>' resource form so the LAY-3615 _strip_models_prefix fix is exercised against the real shape. captured_at='pending-creds' keeps the gap visible.",
+  "response": {
+    "candidates": [
+      {
+        "content": { "role": "model", "parts": [{ "text": "pong" }] },
+        "finish_reason": "STOP"
+      }
+    ],
+    "usage_metadata": {
+      "prompt_token_count": 14,
+      "candidates_token_count": 1,
+      "total_token_count": 15
+    }
+  }
+}

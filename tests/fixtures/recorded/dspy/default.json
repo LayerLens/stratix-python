@@ -1,0 +1,43 @@
+{
+ "provenance": {
+  "provider": "ollama",
+  "sdk_version": "3.2.1",
+  "model": "llama3:8b",
+  "scenario": "default",
+  "captured_at": "2026-07-15T21:01:17+00:00",
+  "note": "Raw ollama /api/chat body from a REAL dspy TutorRAG run (see samples/data/generators/dspy.py). Recorded upstream of dspy's ChatAdapter parser so the replay exercises dspy's real parse of a real body."
+ },
+ "transport": "http",
+ "interactions": [
+  {
+   "request": {
+    "method": "POST",
+    "path": "/api/chat"
+   },
+   "response": {
+    "status_code": 200,
+    "json": {
+     "model": "llama3:8b",
+     "created_at": "2026-07-15T21:01:17.856995Z",
+     "message": {
+      "role": "assistant",
+      "content": "[[ ## reasoning ## ]]\nWhen calculating the sample variance, we divide by n-1 instead of n to account for the downward bias that occurs when using the sample mean as the reference point. This is because the sum of squared deviations about the sample mean is minimized at x-bar, causing the estimate to underestimate the population variance.\n\n[[ ## answer ## ]]\nWe divide by n-1 when calculating the sample variance to correct the downward bias and ensure an unbiased estimator of the population variance. This is also referred to as Bessel's correction or degrees of freedom.\n\n[[ ## citations ## ]]\n[STAT101-W3-N2], [STAT101-W3-N3]\n\n[[ ## completed ## ]]"
+     },
+     "done": true,
+     "done_reason": "stop",
+     "total_duration": 6322087042,
+     "load_duration": 169228500,
+     "prompt_eval_count": 620,
+     "prompt_eval_duration": 2218960000,
+     "eval_count": 138,
+     "eval_duration": 3883601000
+    },
+    "text": null,
+    "headers": {
+     "content-type": "application/json; charset=utf-8",
+     "date": "Wed, 15 Jul 2026 21:01:17 GMT"
+    }
+   }
+  }
+ ]
+}

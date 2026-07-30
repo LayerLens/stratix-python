@@ -1,0 +1,244 @@
+# Real-framework + fake-model CI matrix spec (LAY-3580 / T6).
+#
+# One entry per framework row. `install` pins the latest VERIFIED versions
+# (extracted from the phase-1/2 audit venvs, all suites green on these pins —
+# this doubles as the tested-version table consumed by the drift canary,
+# LAY-3581). The canary reruns the same rows with `--latest` (unpinned).
+#
+# Zero LLM spend by design: the suites drive real framework objects with fake
+# models (pydantic-ai TestModel, autogen ReplayChatCompletionClient, langchain
+# fake chat models, llamaindex MockLLM, mocks elsewhere). No API keys exist in
+# these jobs.
+
+[frameworks.langchain]
+python = "3.11"
+install = ["langchain-core==0.3.84", "langchain==0.3.28", "langchain-openai==0.3.35"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_langchain.py",
+    "tests/instrument/adapters/frameworks/test_langchain_memory.py",
+    "tests/instrument/adapters/frameworks/test_langchain_recorded.py",
+    "tests/instrument/adapters/frameworks/test_langchain_floor.py",
+    "tests/instrument/adapters/frameworks/test_langchain_bugfix.py",
+]
+
+[frameworks.langgraph]
+python = "3.11"
+install = ["langchain-core==0.3.84", "langgraph==1.0.1", "langchain-openai==0.3.35"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_langgraph.py",
+    "tests/instrument/adapters/frameworks/test_langgraph_recorded.py",
+    "tests/instrument/adapters/frameworks/test_langgraph_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_langgraph.py",
+]
+
+[frameworks.crewai]
+python = "3.11"
+install = ["crewai==1.14.6", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_crewai.py",
+    "tests/instrument/adapters/frameworks/test_crewai_recorded.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_crewai.py",
+    "tests/instrument/adapters/frameworks/test_crewai_floor.py",
+    "tests/e2e/test_e2e_crewai_delegation.py",
+]
+
+[frameworks.openai_agents]
+python = "3.11"
+install = ["openai-agents==0.4.2", "openai==2.32.0"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_openai_agents.py",
+    "tests/instrument/adapters/frameworks/test_openai_agents_recorded.py",
+    "tests/instrument/adapters/frameworks/test_openai_agents_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_openai_agents.py",
+]
+
+[frameworks.semantic_kernel]
+python = "3.11"
+install = ["semantic-kernel==1.36.0", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_semantic_kernel.py",
+    "tests/instrument/adapters/frameworks/test_semantic_kernel_floor.py",
+    "tests/instrument/adapters/frameworks/test_ms_agent_framework.py",
+    "tests/instrument/adapters/frameworks/test_ms_agent_framework_floor.py",
+    "tests/instrument/adapters/frameworks/test_semantic_kernel_recorded.py",
+    "tests/instrument/adapters/frameworks/test_ms_agent_framework_recorded.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_semantic_kernel.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_ms_agent_framework.py",
+]
+
+[frameworks.pydantic_ai]
+python = "3.11"
+# opentelemetry-api is pinned <1.44 because 1.44.0 dropped the
+# ``opentelemetry._events`` module that pydantic-ai 0.8.1's logfire path imports
+# at collection time; unpinned, the row fresh-resolves 1.44.0 and errors on
+# import. This is a pre-existing transitive drift (not part of the adapter port),
+# fixed here so the row resolves an env with the module present (1.43.0).
+install = ["pydantic-ai==0.8.1", "opentelemetry-api<1.44"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_pydantic_ai.py",
+    "tests/instrument/adapters/frameworks/test_concurrency.py",
+    "tests/instrument/adapters/frameworks/test_pydantic_ai_recorded.py",
+    "tests/instrument/adapters/frameworks/test_pydantic_ai_floor.py",
+]
+
+[frameworks.google_adk]
+python = "3.11"
+install = ["google-adk==2.2.0"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_google_adk.py",
+    "tests/instrument/adapters/frameworks/test_google_adk_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_google_adk.py",
+]
+
+[frameworks.strands]
+python = "3.11"
+install = ["strands-agents==1.42.0", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_strands.py",
+    "tests/instrument/adapters/frameworks/test_strands_recorded.py",
+    "tests/instrument/adapters/frameworks/test_strands_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_strands.py",
+]
+
+[frameworks.smolagents]
+python = "3.11"
+install = ["smolagents==1.26.0", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_smolagents.py",
+    "tests/instrument/adapters/frameworks/test_smolagents_recorded.py",
+    "tests/instrument/adapters/frameworks/test_smolagents_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_smolagents.py",
+]
+
+[frameworks.llamaindex]
+python = "3.11"
+install = ["llama-index-core==0.14.22", "llama-index-llms-openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_llamaindex.py",
+    "tests/instrument/adapters/frameworks/test_llamaindex_recorded.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_llamaindex.py",
+    "tests/instrument/adapters/frameworks/test_llamaindex_floor.py",
+    "tests/instrument/adapters/frameworks/test_llamaindex_bugfix.py",
+]
+
+[frameworks.haystack]
+python = "3.11"
+install = ["haystack-ai==2.30.1", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_haystack.py",
+    "tests/instrument/adapters/frameworks/test_haystack_recorded.py",
+    "tests/instrument/adapters/frameworks/test_haystack_floor.py",
+]
+
+[frameworks.autogen]
+python = "3.11"
+install = ["autogen-core==0.7.5", "autogen-agentchat==0.7.5", "autogen-ext[openai]==0.7.5", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_autogen.py",
+    "tests/instrument/adapters/frameworks/test_autogen_recorded.py",
+    "tests/instrument/adapters/frameworks/test_autogen_floor.py",
+    "tests/instrument/adapters/frameworks/test_concurrency_autogen.py",
+]
+
+[frameworks.agno]
+python = "3.11"
+install = ["agno==2.6.12", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_agno.py",
+    "tests/instrument/adapters/frameworks/test_agno_recorded.py",
+    "tests/instrument/adapters/frameworks/test_agno_floor.py",
+]
+
+[frameworks.embedding]
+python = "3.11"
+# The paired metadata-only adapters (embedding.py -> embedding.create,
+# vector_store.py -> retrieval.query). The floor exercises both, so both deps
+# are pinned; the unit + recorded suites (previously py3.9-base only) are gated
+# here too.
+install = ["openai", "chromadb==1.5.9"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_embedding.py",
+    "tests/instrument/adapters/frameworks/test_embedding_recorded.py",
+    "tests/instrument/adapters/frameworks/test_embedding_floor.py",
+]
+
+[frameworks.vector_store]
+python = "3.11"
+install = ["chromadb==1.5.9"]
+tests = ["tests/instrument/adapters/frameworks/test_vector_store.py"]
+
+# --- ADP-PORT (2026-07-15). Pins are the versions each suite was VERIFIED green
+# on, extracted from the per-adapter audit venvs at /Users/lean/code/layerlens/.audit-venvs/.
+# Two pins below are LOAD-BEARING and must not be relaxed without re-verifying —
+# see the comment on each.
+
+[frameworks.dspy]
+python = "3.11"
+# litellm is pinned because DSPy pulls it transitively and 1.92.0 fails to BUILD
+# on this toolchain (its Rust dep needs a Cargo `edition2024` that ships with a
+# newer Cargo than the pinned one); 1.90.2 resolves from wheels.
+install = ["dspy==3.2.1", "litellm==1.90.2", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_dspy.py",
+    "tests/instrument/adapters/frameworks/test_dspy_floor.py",
+    "tests/instrument/adapters/frameworks/test_dspy_recorded.py",
+]
+
+[frameworks.instructor]
+python = "3.11"
+install = ["instructor==1.15.4", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_instructor.py",
+    "tests/instrument/adapters/frameworks/test_instructor_floor.py",
+    "tests/instrument/adapters/frameworks/test_instructor_recorded.py",
+]
+
+[frameworks.marvin]
+python = "3.11"
+# pydantic-ai is pinned because marvin 3.2.7 declares `>=1.9.0` with NO upper
+# bound but breaks at RUNTIME from 1.95.0 (pre-1.95 ModelResponsePartsManager
+# signature). Bisected: 1.94.0 last-good, 1.95.0 first-broken. An unpinned row
+# resolves happily and then TypeErrors on the first primitive call.
+install = ["marvin==3.2.7", "pydantic-ai==1.94.0", "openai"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_marvin.py",
+    "tests/instrument/adapters/frameworks/test_marvin_floor.py",
+    "tests/instrument/adapters/frameworks/test_marvin_recorded.py",
+]
+
+[frameworks.mirascope]
+python = "3.11"
+# v2 line only: the adapter targets `mirascope.llm.call`, which does not exist
+# on v1 (`mirascope.core.*`).
+install = ["mirascope[openai]==2.5.0"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_mirascope.py",
+    "tests/instrument/adapters/frameworks/test_mirascope_floor.py",
+    "tests/instrument/adapters/frameworks/test_mirascope_recorded.py",
+]
+
+[frameworks.browser_use]
+python = "3.11"
+# No browser is launched: the suites drive duck-typed AgentHistoryList-shaped
+# objects, so the row stays hermetic and needs no chromium download.
+install = ["browser-use==0.13.4"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_browser_use.py",
+    "tests/instrument/adapters/frameworks/test_browser_use_floor.py",
+    "tests/instrument/adapters/frameworks/test_browser_use_recorded.py",
+]
+
+[frameworks.openinference]
+python = "3.11"
+# Ingestion tier: the adapter has no runtime dep, but the suites build REAL OTel
+# ReadableSpans, so the row installs the SDK + the semantic conventions.
+install = ["openinference-semantic-conventions==0.1.30", "opentelemetry-sdk==1.43.0"]
+tests = [
+    "tests/instrument/adapters/frameworks/test_openinference.py",
+    "tests/instrument/adapters/frameworks/test_openinference_floor.py",
+    "tests/instrument/adapters/frameworks/test_openinference_recorded.py",
+    # The cross-language drift gate: the span->event mapping also exists in Go
+    # (atlas otlp-ingest). This pins the Python half against an oracle generated
+    # from the real Go bridge; the Go half guards the other direction.
+    "tests/instrument/adapters/frameworks/test_openinference_conformance.py",
+]
