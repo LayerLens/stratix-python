@@ -12,7 +12,7 @@ import os
 import datetime as _dt
 from typing import Any, Dict, List
 
-_DEFAULT_APP_BASE = "https://app.layerlens.ai"
+_DEFAULT_APP_BASE = "https://stratix.layerlens.ai"
 
 
 def _report_dir() -> str:
@@ -23,7 +23,7 @@ def _app_base() -> str:
     """The UI origin that actually serves the API this run uploaded to.
 
     Defaulting to production is wrong for the local docker stack, which is where
-    these lanes normally run: every row then deep-links to app.layerlens.ai for a
+    these lanes normally run: every row then deep-links to stratix.layerlens.ai for a
     trace that only exists in local Mongo — a dead link that also reads as though
     a local run had published to prod. Follow the upload target unless told
     otherwise (the local FE is served natively on :3000).

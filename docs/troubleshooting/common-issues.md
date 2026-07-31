@@ -44,7 +44,7 @@ client = Stratix(api_key="your-api-key")
 
 **Error**: `NotFoundError` during client initialization
 
-Your API key may be invalid or expired. Verify it in the [LayerLens dashboard](https://app.layerlens.ai).
+Your API key may be invalid or expired. Verify it in the [LayerLens dashboard](https://stratix.layerlens.ai).
 
 ## Evaluation Issues
 
