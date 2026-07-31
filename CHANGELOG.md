@@ -13,7 +13,11 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 
 ### Added
 
+- README: `Adapters`, `Requirements`, `Versioning and Compatibility`, and `Data Handling` sections. The adapters section documents `auto()` / `discover_installed()`, explicit per-framework wiring, and offline hash-chain verification via `layerlens.attestation`
+
 ### Changed
+
+- README: corrected the reference-data claim to 172 models and 78 benchmarks, replaced the PyPI badges (they pointed at an unrelated `layerlens` project on PyPI, not the private index), and refreshed the architecture tree to the real package layout
 
 ### Fixed
 
