@@ -196,8 +196,9 @@ def scrub_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     The COLLECTOR-SIDE chokepoint: runs unconditionally on every event (secrets
     are ORTHOGONAL to ``capture_content`` — a credential in tool-call arguments,
     model output, an AG-UI state-delta value, or an elicitation prompt ships
-    under the DEFAULT ``capture_content=True`` where ``redact_payload`` is a
-    no-op). Broadened from the 4 ``ERROR_KEYS`` to the whole payload
+    under an opt-in ``capture_content=True`` where ``redact_payload`` is a
+    no-op; ``capture_content`` itself defaults to False). Broadened from the 4
+    ``ERROR_KEYS`` to the whole payload
     (LAY-3625 / A10, user-approved 2026-06-25) so a leaked key anywhere is
     caught, not just in an error string. Copy-on-write via :func:`_scrub_value`
     — a clean payload (the common case) is returned unchanged with no allocation.
