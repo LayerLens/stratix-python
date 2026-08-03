@@ -46,7 +46,7 @@ Production-grade evaluation infrastructure out of the box: public benchmark data
 - **A 4-generation eval ladder.** Start with heuristic checks, graduate to model-graded scoring, add deliberation panels, then build auto-optimized GEPA judges. One SDK covers the full spectrum.
 - **Agent trace evaluation.** Upload a multi-step agent trace, replay it, and judge every step. Built for the world where agents do real work.
 - **[Adapters](#adapters) for the stack you already run.** Traces from your agent frameworks, protocols and model providers land in one schema, so a judge you tuned last quarter runs unchanged on next quarter's stack.
-- **CI/CD eval gates.** `layerlens ci run --threshold 0.8` in your pipeline. Non-zero exit on regression. No custom scripts needed.
+- **CI/CD eval gates.** `layerlens ci report` emits a markdown summary for your job output, and [`samples/cicd/`](./samples/cicd/) has a ready-to-copy threshold gate that exits non-zero on regression.
 
 ## How Stratix Compares
 
@@ -57,7 +57,7 @@ Production-grade evaluation infrastructure out of the box: public benchmark data
 | Custom judge builder    | Auto-optimized GEPA judges with budget control | LLM-as-judge (manual)      | LLM-as-judge (manual)   | Basic LLM judges    | LLM-as-judge templates |
 | Agent trace evaluation  | Upload, replay, judge every step               | Trace logging + annotation | Trace logging + scoring | Trace logging only  | Trace visualization    |
 | Eval generation ladder  | Heuristic > model-graded > deliberation > GEPA | Single generation          | Single generation       | Single generation   | Single generation      |
-| CI/CD eval gate         | `layerlens ci run` with threshold              | Custom integration         | Custom integration      | `deepeval test`     | Manual integration     |
+| CI/CD eval gate         | `layerlens ci report` + sample threshold gate  | Custom integration         | Custom integration      | `deepeval test`     | Manual integration     |
 | Evaluation Spaces       | Collaborative eval environments                | Hub (paid)                 | Not available           | Not available       | Not available          |
 | Dataset versioning      | Pin evals to versions, diff between runs       | Dataset management         | Not built-in            | Basic support       | Dataset management     |
 | OpenTelemetry export    | Native OTLP exporter                           | Not built-in               | Native OTLP             | Not built-in        | Native (OpenInference) |
@@ -69,7 +69,7 @@ Production-grade evaluation infrastructure out of the box: public benchmark data
 
 ## Requirements
 
-- **Python 3.8+.** CI runs the test suite on 3.9–3.12. A few framework extras (`crewai`, `autogen`, `semantic-kernel`, `mcp`, `a2a`, `dspy`, `marvin`, `mirascope`, `pydantic-ai`) require Python 3.10+ and are skipped automatically on older interpreters.
+- **Python 3.8+.** CI runs the test suite on 3.9–3.12. A few framework extras (`crewai`, `autogen`, `semantic-kernel`, `mcp`, `a2a`, `dspy`, `marvin`, `mirascope`, `pydantic-ai`) require Python 3.10+ and are skipped automatically on older interpreters. On the other end, `layerlens[crewai]` has been reported to fail to install on Python 3.14 (a `tiktoken` build failure upstream, not in this SDK) — use 3.11 or 3.12 for CrewAI work until that resolves.
 - **OS independent.** Linux, macOS and Windows.
 - **Async supported.** Every client has an async twin — `AsyncStratix`, `AsyncPublicClient` — with the same methods and `await` semantics.
 - **Runtime dependencies:** `httpx` and `pydantic` — the core SDK works on Pydantic v1.9+ or v2; some framework adapters (LangGraph, CrewAI, AutoGen) are Pydantic v2-only, following their upstream. The CLI adds `click`.
@@ -129,7 +129,7 @@ That's it! You're comparing frontier models on real benchmark data. **[See full 
 ### Next steps
 
 - **[Run a custom evaluation](./samples/core/)** ➡️ score your own model on any benchmark
-- **[Gate CI/CD on eval results](./samples/cicd/)** ➡️ `layerlens ci run --threshold 0.8` in your pipeline
+- **[Gate CI/CD on eval results](./samples/cicd/)** ➡️ `python quality_gate.py --threshold 0.85` in your pipeline
 - **[Upload and evaluate agent traces](./samples/instrument/)** ➡️ multi-step trace analysis
 
 ## Adapters
@@ -167,11 +167,23 @@ auto(client)                  # instrument every installed framework and provide
 Wire a single framework explicitly when you want control over what gets captured:
 
 ```python
+from layerlens.instrument import CaptureConfig
 from layerlens.instrument.adapters.frameworks.langchain import LangChainCallbackHandler
 
-handler = LangChainCallbackHandler(client)
+handler = LangChainCallbackHandler(
+    client,
+    capture_config=CaptureConfig(capture_content=True),
+)
 result = chain.invoke({"question": "..."}, config={"callbacks": [handler]})
 ```
+
+> **`capture_content` is off by default, and content-quality judges need it on.**
+> The default captures structure and metadata — that a model was invoked, with what
+> latency and token count — but not the prompt or response text. That is deliberate:
+> content capture is opt-in so a trace cannot leak prompts you did not choose to send.
+> The consequence is that a judge grading answer quality has nothing to read and will
+> correctly score 0.0 with a "not determinable" verdict. Turn it on when you intend to
+> grade content, and treat it as a per-environment decision rather than a global default.
 
 Switching the source does not touch your evaluation — same judge, same baselines, same schema. Swap the adapter, or just let `auto()` pick up the framework you moved to:
 
@@ -234,11 +246,14 @@ export LAYERLENS_STRATIX_API_KEY="your-api-key"
 layerlens trace list
 
 # Run a judge evaluation
-layerlens judge run --judge-id <id> --trace-id <id>
+layerlens judge test --judge-id <id> --trace-id <id>
 
-# Evaluate in CI mode (exits non-zero on failure)
-layerlens ci run --judge-id <id> --trace-id <id> --threshold 0.8
+# Emit a markdown eval summary for a CI job summary
+layerlens ci report -o "$GITHUB_STEP_SUMMARY"
 ```
+
+`ci report` summarizes; it has no pass/fail semantics. For a gate that exits
+non-zero below a threshold, copy [`samples/cicd/quality_gate.py`](./samples/cicd/quality_gate.py).
 
 ## Architecture
 
