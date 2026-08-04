@@ -886,12 +886,19 @@ def _run_openclaw_demo(
         os.close(fd)
         raise
     env = dict(os.environ)
+    # Scrub ambient LayerLens config unconditionally, then layer the test's own
+    # values on top. Scrubbing only in the no-override branch meant a caller
+    # passing env_override inherited the developer's key and base URL, so the
+    # same test could talk to a different backend locally than it does in CI.
+    for _var in (
+        "LAYERLENS_STRATIX_API_KEY",
+        "LAYERLENS_ATLAS_API_KEY",
+        "LAYERLENS_STRATIX_BASE_URL",
+        "LAYERLENS_ATLAS_BASE_URL",
+    ):
+        env.pop(_var, None)
     if env_override:
         env.update(env_override)
-    else:
-        # Ensure no real API key is used for offline tests
-        env.pop("LAYERLENS_STRATIX_API_KEY", None)
-        env.pop("LAYERLENS_ATLAS_API_KEY", None)
     try:
         return subprocess.run(
             cmd,
