@@ -432,7 +432,16 @@ The `create`, `get_by_id` and `get_many` method returns an `Evaluation` objects 
 | `ethics_score`       | `float`                       | Ethics score (default: `0.0`)                             |
 | `failed_prompt_count`| `int`                         | Number of failed prompts (default: `0`)                   |
 | `queue_id`           | `int`                         | Queue identifier (default: `0`)                           |
+| `total_input_tokens` | `int \| None`                 | Total input tokens consumed by the run (default: `None`)  |
+| `total_output_tokens`| `int \| None`                 | Total output tokens produced by the run (default: `None`) |
+| `avg_input_tokens_per_prompt`  | `float \| None`     | Average input tokens per prompt (default: `None`)         |
+| `avg_output_tokens_per_prompt` | `float \| None`     | Average output tokens per prompt (default: `None`)        |
 | `summary`            | `EvaluationSummary \| None`   | Rich evaluation summary (see below, default: `None`)      |
+
+The token fields sum the provider-reported usage of each prompt's successful
+attempt — failed retries, LLM-judge/grader calls, and prompt-cache tokens are
+excluded. `None` means the evaluation never recorded usage (runs predating
+token capture); treat it as "not recorded" rather than zero.
 
 ### EvaluationSummary Object
 

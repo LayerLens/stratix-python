@@ -482,6 +482,10 @@ class TestEvaluationModelFields:
             "ethics_score": 0.95,
             "failed_prompt_count": 3,
             "queue_id": 42,
+            "total_input_tokens": 123456,
+            "total_output_tokens": 65432,
+            "avg_input_tokens_per_prompt": 823.04,
+            "avg_output_tokens_per_prompt": 436.21,
             "summary": {
                 "name": "GPT-4 on MMLU",
                 "goal": "Evaluate general knowledge",
@@ -541,6 +545,10 @@ class TestEvaluationModelFields:
         assert evaluation.ethics_score == 0.95
         assert evaluation.failed_prompt_count == 3
         assert evaluation.queue_id == 42
+        assert evaluation.total_input_tokens == 123456
+        assert evaluation.total_output_tokens == 65432
+        assert evaluation.avg_input_tokens_per_prompt == 823.04
+        assert evaluation.avg_output_tokens_per_prompt == 436.21
 
     def test_parse_summary(self, full_evaluation_data):
         """Evaluation model parses nested summary correctly."""
@@ -633,6 +641,12 @@ class TestEvaluationModelFields:
         assert evaluation.ethics_score == 0.0
         assert evaluation.failed_prompt_count == 0
         assert evaluation.queue_id == 0
+        # None, not 0: evaluations predating token capture never recorded
+        # usage, and rendering that as zero would misreport them.
+        assert evaluation.total_input_tokens is None
+        assert evaluation.total_output_tokens is None
+        assert evaluation.avg_input_tokens_per_prompt is None
+        assert evaluation.avg_output_tokens_per_prompt is None
         assert evaluation.summary is None
 
     def test_null_summary_field(self):
@@ -694,6 +708,113 @@ class TestEvaluationModelFields:
         assert result.readability_score == 0.75
         assert result.summary is not None
         assert result.summary.goal == "Evaluate"
+
+
+class TestWaitForCompletionPropagation:
+    """Evaluation.wait_for_completion must copy the freshly polled server state
+    into the object the caller already holds — the quickstart pattern is
+    `evaluation.wait_for_completion(); evaluation.total_input_tokens`, so a
+    dropped or transposed line here silently serves stale or wrong numbers."""
+
+    @pytest.fixture
+    def stale_evaluation(self) -> Evaluation:
+        """The object a caller holds after create(), before the run finished."""
+        return Evaluation(
+            id="eval-123",
+            status=EvaluationStatus.IN_PROGRESS,
+            submitted_at=1640995200,
+            finished_at=0,
+            model_id="m1",
+            dataset_id="b1",
+            average_duration=0,
+            accuracy=0.0,
+        )
+
+    @pytest.fixture
+    def fresh_evaluation(self) -> Evaluation:
+        """What the server returns once the run completed. Every propagated
+        field differs from the stale object's value, and input/output token
+        values are distinct so a transposition fails the assertions."""
+        return Evaluation(
+            id="eval-123",
+            status=EvaluationStatus.SUCCESS,
+            status_description="Evaluation completed successfully",
+            submitted_at=1640995200,
+            finished_at=1640995800,
+            model_id="m1",
+            dataset_id="b1",
+            average_duration=2500,
+            accuracy=0.89,
+            readability_score=0.75,
+            toxicity_score=0.02,
+            ethics_score=0.95,
+            failed_prompt_count=3,
+            total_input_tokens=123456,
+            total_output_tokens=65432,
+            avg_input_tokens_per_prompt=823.04,
+            avg_output_tokens_per_prompt=436.21,
+            summary=EvaluationSummary(name="Done", goal="Evaluate"),
+        )
+
+    def _assert_propagated(self, evaluation: Evaluation) -> None:
+        assert evaluation.status == EvaluationStatus.SUCCESS
+        assert evaluation.status_description == "Evaluation completed successfully"
+        assert evaluation.finished_at == 1640995800
+        assert evaluation.average_duration == 2500
+        assert evaluation.accuracy == 0.89
+        assert evaluation.readability_score == 0.75
+        assert evaluation.toxicity_score == 0.02
+        assert evaluation.ethics_score == 0.95
+        assert evaluation.failed_prompt_count == 3
+        assert evaluation.total_input_tokens == 123456
+        assert evaluation.total_output_tokens == 65432
+        assert evaluation.avg_input_tokens_per_prompt == 823.04
+        assert evaluation.avg_output_tokens_per_prompt == 436.21
+        assert evaluation.summary is not None
+        assert evaluation.summary.name == "Done"
+
+    def test_sync_wait_propagates_polled_fields(
+        self, stale_evaluation: Evaluation, fresh_evaluation: Evaluation
+    ) -> None:
+        """Sync wait_for_completion copies the polled fields into self."""
+        mock_client = Mock()
+        mock_client.evaluations.wait_for_completion.return_value = fresh_evaluation
+        stale_evaluation.attach_client(mock_client)
+
+        returned = stale_evaluation.wait_for_completion()
+
+        assert returned is stale_evaluation
+        self._assert_propagated(stale_evaluation)
+
+    def test_async_wait_propagates_polled_fields(
+        self, stale_evaluation: Evaluation, fresh_evaluation: Evaluation
+    ) -> None:
+        """Async wait_for_completion_async copies the polled fields into self."""
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        from layerlens._client import AsyncStratix
+
+        mock_client = Mock(spec=AsyncStratix)
+        mock_client.evaluations.wait_for_completion = AsyncMock(return_value=fresh_evaluation)
+        stale_evaluation.attach_client(mock_client)
+
+        returned = asyncio.run(stale_evaluation.wait_for_completion_async())
+
+        assert returned is stale_evaluation
+        self._assert_propagated(stale_evaluation)
+
+    def test_sync_wait_leaves_fields_when_poll_returns_none(self, stale_evaluation: Evaluation) -> None:
+        """A poll that yields nothing must not clobber the object's state."""
+        mock_client = Mock()
+        mock_client.evaluations.wait_for_completion.return_value = None
+        stale_evaluation.attach_client(mock_client)
+
+        returned = stale_evaluation.wait_for_completion()
+
+        assert returned is stale_evaluation
+        assert stale_evaluation.status == EvaluationStatus.IN_PROGRESS
+        assert stale_evaluation.total_input_tokens is None
 
 
 class TestPublicEvaluationsResource:

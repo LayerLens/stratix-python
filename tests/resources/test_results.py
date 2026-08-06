@@ -35,6 +35,8 @@ class TestResults:
             "duration": timedelta(seconds=2.5),
             "score": 1.0,
             "metrics": {"accuracy": 1.0, "confidence": 0.95, "reasoning_quality": 0.9},
+            "input_tokens": 512,
+            "output_tokens": 128,
         }
 
     @pytest.fixture
@@ -246,6 +248,8 @@ class TestResults:
         assert result_item.metrics["accuracy"] == 1.0
         assert result_item.metrics["confidence"] == 0.95
         assert result_item.metrics["reasoning_quality"] == 0.9
+        assert result_item.input_tokens == 512
+        assert result_item.output_tokens == 128
 
     @pytest.mark.parametrize(
         "evaluation_id",

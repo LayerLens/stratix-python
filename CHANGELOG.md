@@ -5,7 +5,7 @@ All notable changes to the Stratix Python SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Latest version:** [1.9.0](https://github.com/LayerLens/stratix-python/releases/tag/v1.9.0) — 2026-07-30
+**Latest version:** [1.10.0](https://github.com/LayerLens/stratix-python/releases/tag/v1.10.0) — 2026-08-06
 
 ## [Unreleased]
 
@@ -13,17 +13,24 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 
 ### Added
 
-- README: `Adapters`, `Requirements`, `Versioning and Compatibility`, and `Data Handling` sections. The adapters section documents `auto()` / `discover_installed()`, explicit per-framework wiring, and offline hash-chain verification via `layerlens.attestation`
-
 ### Changed
-
-- README: corrected the reference-data claim to 172 models and 78 benchmarks, replaced the PyPI badges (they pointed at an unrelated `layerlens` project on PyPI, not the private index), and refreshed the architecture tree to the real package layout
 
 ### Fixed
 
 ### Deprecated
 
 ### Removed
+
+## [1.10.0] - 2026-08-06
+
+### Added
+
+- **Token usage on evaluations and per-prompt results.** `Evaluation` gains `total_input_tokens`, `total_output_tokens`, `avg_input_tokens_per_prompt`, and `avg_output_tokens_per_prompt`; `Result` gains `input_tokens` and `output_tokens`. Aggregates count the evaluated model's successful attempts only (no failed retries, judge/grader calls, or prompt-cache tokens) and are `None` — not `0` — for runs that predate token capture
+- README: `Adapters`, `Requirements`, `Versioning and Compatibility`, and `Data Handling` sections. The adapters section documents `auto()` / `discover_installed()`, explicit per-framework wiring, and offline hash-chain verification via `layerlens.attestation`
+
+### Changed
+
+- README: corrected the reference-data claim to 172 models and 78 benchmarks, replaced the PyPI badges (they pointed at an unrelated `layerlens` project on PyPI, not the private index), and refreshed the architecture tree to the real package layout
 
 ## [1.9.0] - 2026-07-30
 
