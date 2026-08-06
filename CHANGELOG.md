@@ -13,6 +13,7 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 
 ### Added
 
+- **Token usage on evaluations and per-prompt results.** `Evaluation` gains `total_input_tokens`, `total_output_tokens`, `avg_input_tokens_per_prompt`, and `avg_output_tokens_per_prompt`; `Result` gains `input_tokens` and `output_tokens`. Aggregates count the evaluated model's successful attempts only (no failed retries, judge/grader calls, or prompt-cache tokens) and are `None` — not `0` — for runs that predate token capture
 - README: `Adapters`, `Requirements`, `Versioning and Compatibility`, and `Data Handling` sections. The adapters section documents `auto()` / `discover_installed()`, explicit per-framework wiring, and offline hash-chain verification via `layerlens.attestation`
 
 ### Changed

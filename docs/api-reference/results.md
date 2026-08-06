@@ -277,6 +277,8 @@ Each `Result` object contains the following properties:
 | `score`    | `float`            | Individual score for this test case (typically 0.0 to 1.0) |
 | `duration` | `timedelta`        | Time taken for the model to respond                        |
 | `metrics`  | `Dict[str, float]` | Additional metrics specific to this test case              |
+| `input_tokens`  | `int \| None` | Input tokens consumed by the successful attempt            |
+| `output_tokens` | `int \| None` | Output tokens produced by the successful attempt           |
 
 ### Understanding Properties
 
@@ -287,6 +289,9 @@ Each `Result` object contains the following properties:
 - **`score`**: Individual test case score, usually binary (0.0 or 1.0) for correctness
 - **`duration`**: Response latency as a Python `timedelta` object
 - **`metrics`**: Additional scoring metrics that may be benchmark-specific
+- **`input_tokens`** / **`output_tokens`**: Provider-reported token usage for
+  this prompt's successful attempt. Evaluations that ran before token capture
+  report `0`; `None` means the backend did not send the field at all.
 
 ## Working with Large Result Sets
 
