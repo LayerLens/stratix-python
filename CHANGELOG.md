@@ -5,11 +5,23 @@ All notable changes to the Stratix Python SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Latest version:** [1.9.0](https://github.com/LayerLens/stratix-python/releases/tag/v1.9.0) — 2026-07-30
+**Latest version:** [1.10.0](https://github.com/LayerLens/stratix-python/releases/tag/v1.10.0) — 2026-08-06
 
 ## [Unreleased]
 
 Things we're actively working on. Want to help? Check the [issues](https://github.com/LayerLens/stratix-python/issues) or [discussions](https://github.com/LayerLens/stratix-python/discussions).
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+## [1.10.0] - 2026-08-06
 
 ### Added
 
@@ -19,12 +31,6 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 ### Changed
 
 - README: corrected the reference-data claim to 172 models and 78 benchmarks, replaced the PyPI badges (they pointed at an unrelated `layerlens` project on PyPI, not the private index), and refreshed the architecture tree to the real package layout
-
-### Fixed
-
-### Deprecated
-
-### Removed
 
 ## [1.9.0] - 2026-07-30
 
