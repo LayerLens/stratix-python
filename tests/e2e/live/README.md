@@ -76,7 +76,7 @@ LayerLens (staging) + suite controls:
 | `LAYERLENS_LIVE=1` | Opt the suite in (or pass `-m live`). Without it every test skips. |
 | `LAYERLENS_STRATIX_API_KEY` | Staging API key. |
 | `LAYERLENS_STRATIX_BASE_URL` | **Staging** base URL. Required — the suite refuses to run against the default (prod) URL. |
-| `LAYERLENS_APP_BASE_URL` | UI base for report deep-links (default `https://app.layerlens.ai`). |
+| `LAYERLENS_APP_BASE_URL` | UI base for report deep-links (default `https://stratix.layerlens.ai`). |
 | `LAYERLENS_LIVE_COST_CAP_USD` | Per-test spend ceiling (default `0.25`); a test fails if its run exceeds it. |
 
 Per provider (set the key(s) for the providers you want; others skip):

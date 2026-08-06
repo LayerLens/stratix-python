@@ -103,10 +103,17 @@ from layerlens import Stratix
 
 client = Stratix()
 
-# Create a judge (no model_id → server uses default model)
+# Create a judge. The server assigns a default grader if model_id is omitted,
+# but naming one keeps the choice — and the grading cost — yours, and works
+# against older deployments that had no default.
+models = client.models.get(type="public")
+if not models:
+    raise SystemExit("No public models available to grade with.")
+
 judge = client.judges.create(
     name=f"Trace Eval Demo Judge {int(time.time())}",
     evaluation_goal="Evaluate whether the response is accurate, complete, and well-structured",
+    model_id=models[0].id,
 )
 print(f"Created judge {judge.id}: {judge.name}")
 

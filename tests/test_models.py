@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import Any
 from datetime import timedelta
 
 import pytest
@@ -175,6 +178,21 @@ class TestResult:
 
         with pytest.raises(ValidationError):
             Result(**invalid_data)
+
+    def test_result_token_fields(self, valid_result_data: dict[str, Any]) -> None:
+        """Result model parses per-prompt token usage."""
+        data = {**valid_result_data, "input_tokens": 512, "output_tokens": 128}
+        result = Result(**data)
+
+        assert result.input_tokens == 512
+        assert result.output_tokens == 128
+
+    def test_result_token_fields_default_none(self, valid_result_data: dict[str, Any]) -> None:
+        """Token fields default to None when the backend omits them."""
+        result = Result(**valid_result_data)
+
+        assert result.input_tokens is None
+        assert result.output_tokens is None
 
 
 class TestResultMetrics:

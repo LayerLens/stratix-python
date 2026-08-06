@@ -2,7 +2,7 @@
 
 ## API Key Setup
 
-The SDK authenticates using an API key tied to your LayerLens organization. You can obtain your key from the [LayerLens dashboard](https://app.layerlens.ai).
+The SDK authenticates using an API key tied to your LayerLens organization. You can obtain your key from the [LayerLens dashboard](https://stratix.layerlens.ai).
 
 ### Environment Variable (Recommended)
 

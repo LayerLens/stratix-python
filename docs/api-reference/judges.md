@@ -67,12 +67,35 @@ Creates a new judge with the specified evaluation criteria.
 | ----------------- | -------------------------------- | -------- | -------------------------------------------- |
 | `name`            | `str`                            | Yes      | Display name for the judge                   |
 | `evaluation_goal` | `str`                            | Yes      | Description of what the judge should evaluate |
-| `model_id`        | `str \| None`                    | No       | ID of the LLM model to use. If omitted, the server uses a default model |
+| `model_id`        | `str \| None`                    | No       | ID of the LLM model to grade with. Defaults server-side when omitted — but pass it explicitly, see below |
 | `timeout`         | `float \| httpx.Timeout \| None` | No       | Override request timeout                     |
 
 #### Returns
 
 Returns a `Judge` object if successful, `None` if the judge could not be created.
+
+> **Pass `model_id` explicitly.** Omitting it is safe — the server assigns a default
+> grader — but it means you did not choose the model your evaluations are graded by,
+> and judge invocations are billed to you. Grading typically costs a large multiple of
+> the run being graded, so the grader is a cost decision, not an incidental one. The
+> default is a deliberately cheap model and may change; if a specific grader matters to
+> your results, name it.
+>
+> Two constraints on the model you pick:
+>
+> - It must exist in your workspace. `models.get_by_key()` searches your workspace only,
+>   not the public catalog, and returns `None` on a miss rather than raising.
+> - Custom models are **not** supported for trace evaluations. A judge backed by one is
+>   accepted at create time and rejected later by `trace_evaluations.create` with a 400.
+>
+> The judge's model is the *grader*. It is unrelated to whatever model your traced
+> application called.
+>
+> **Older deployments:** before the server-side default shipped, omitting `model_id`
+> created a judge with no grader. The create call still returned a valid judge ID, and
+> the failure surfaced one call later as a 400 from `trace_evaluations.create`,
+> `judge '<name>' has no model configured`. Passing `model_id` explicitly is correct
+> against every version.
 
 #### Example
 
@@ -81,6 +104,20 @@ judge = client.judges.create(
     name="Accuracy Judge",
     evaluation_goal="Evaluate whether the response is factually accurate",
     model_id="model-abc123",
+)
+```
+
+To resolve a usable model ID at runtime instead of hardcoding one:
+
+```python
+models = client.models.get(type="public")
+if not models:
+    raise SystemExit("No public models available to grade with.")
+
+judge = client.judges.create(
+    name="Accuracy Judge",
+    evaluation_goal="Evaluate whether the response is factually accurate",
+    model_id=models[0].id,
 )
 ```
 

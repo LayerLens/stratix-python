@@ -93,6 +93,16 @@ class Evaluation(BaseModel):
     ethics_score: float = 0.0
     failed_prompt_count: int = 0
     queue_id: int = 0
+    # Token consumption aggregates: sums over every prompt of the
+    # provider-reported usage for that prompt's successful attempt. They
+    # exclude tokens burned by failed retry attempts, LLM-judge/grader calls,
+    # and prompt-cache read/write tokens. None means the evaluation never
+    # recorded usage (runs predating token capture) — treat it as "not
+    # recorded", not as zero.
+    total_input_tokens: Optional[int] = None
+    total_output_tokens: Optional[int] = None
+    avg_input_tokens_per_prompt: Optional[float] = None
+    avg_output_tokens_per_prompt: Optional[float] = None
     summary: Optional[EvaluationSummary] = None
 
     _client: "Optional[Stratix | AsyncStratix]" = None
@@ -203,6 +213,10 @@ class Evaluation(BaseModel):
             self.toxicity_score = evaluation.toxicity_score
             self.ethics_score = evaluation.ethics_score
             self.failed_prompt_count = evaluation.failed_prompt_count
+            self.total_input_tokens = evaluation.total_input_tokens
+            self.total_output_tokens = evaluation.total_output_tokens
+            self.avg_input_tokens_per_prompt = evaluation.avg_input_tokens_per_prompt
+            self.avg_output_tokens_per_prompt = evaluation.avg_output_tokens_per_prompt
             self.summary = evaluation.summary
 
         return self
@@ -231,6 +245,10 @@ class Evaluation(BaseModel):
             self.toxicity_score = evaluation.toxicity_score
             self.ethics_score = evaluation.ethics_score
             self.failed_prompt_count = evaluation.failed_prompt_count
+            self.total_input_tokens = evaluation.total_input_tokens
+            self.total_output_tokens = evaluation.total_output_tokens
+            self.avg_input_tokens_per_prompt = evaluation.avg_input_tokens_per_prompt
+            self.avg_output_tokens_per_prompt = evaluation.avg_output_tokens_per_prompt
             self.summary = evaluation.summary
 
         return self
@@ -244,3 +262,9 @@ class Result(BaseModel):
     duration: timedelta
     score: float
     metrics: Dict[str, Optional[float]]
+    # Provider-reported usage for this prompt's successful attempt. Unlike the
+    # evaluation-level aggregates, the API cannot distinguish "not recorded"
+    # per prompt: runs predating token capture report 0. None only means the
+    # backend did not send the field at all.
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
