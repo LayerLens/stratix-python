@@ -466,3 +466,62 @@ def test_registered_content_free_type_is_not_over_stripped() -> None:
     payload = _emit("cost.record", {"model": "gpt-4o", "cost_usd": 0.01, "total_tokens": 42, "vendor_field": "x"})
     assert payload.get("vendor_field") == "x", "registered content-free type wrongly deny-by-defaulted"
     assert payload.get("cost_usd") == 0.01
+
+
+# ---------------------------------------------------------------------------
+# An ALREADY-EMPTY content key is kept, not deleted (LAY-3622 F2).
+#
+# An adapter that gates at emit time may set a field it treats as required to ""
+# rather than omitting it (the openinference agent-turn convention). Deleting that
+# key redacts NOTHING while destroying the field's presence, so a strict consumer
+# reads the event as malformed and drops the turn. The exemption is privacy-neutral
+# by construction — there is no content in an empty string — and it is deliberately
+# narrow: a NON-empty value is still deleted even when the adapter forgot to gate,
+# because that is a gating bug the backstop must keep failing closed on.
+# ---------------------------------------------------------------------------
+
+
+def test_an_already_empty_content_key_survives_the_backstop() -> None:
+    payload = _emit("agent.input", {"agent_id": "a1", "input_text": ""})
+    assert payload.get("input_text") == "", (
+        "an empty content key was deleted — nothing was redacted, only presence lost"
+    )
+    assert payload.get("agent_id") == "a1"
+
+
+def test_a_non_empty_content_key_is_STILL_deleted() -> None:
+    # The privacy guarantee. If the exemption ever widens to "delete nothing on a
+    # content key", this is the assertion that catches it.
+    payload = _emit("agent.input", {"agent_id": "a1", "input_text": SENTINEL})
+    assert "input_text" not in payload, "a populated content key survived capture_content=False"
+    assert SENTINEL not in _blob(payload)
+
+
+def test_a_none_valued_content_key_is_still_deleted() -> None:
+    # Deliberately NOT exempt: a null key satisfies no consumer's required-field
+    # check, so keeping it would be noise rather than a mitigation.
+    payload = _emit("agent.output", {"status": "ok", "output_text": None})
+    assert "output_text" not in payload
+
+
+def test_a_whitespace_only_content_key_is_still_deleted() -> None:
+    # Only "" is content-free. Anything else is a value the adapter obtained from
+    # somewhere, and the backstop does not get to judge whether it matters.
+    payload = _emit("agent.output", {"status": "ok", "output_text": "   "})
+    assert "output_text" not in payload
+
+
+def test_the_empty_exemption_applies_at_every_depth() -> None:
+    # _strip_content_keys is recursive, so the exemption must be too — otherwise the
+    # rule would depend on where in the tree the adapter put the field.
+    payload = _emit("agent.output", {"status": "ok", "wrapper": {"output": "", "output_text": SENTINEL}})
+    assert payload["wrapper"].get("output") == "", "the exemption did not reach a nested empty content key"
+    assert SENTINEL not in _blob(payload), "a nested populated content key leaked"
+
+
+def test_an_empty_content_key_still_goes_under_capture_content_true_untouched() -> None:
+    # Vacuity control: capture_content=True returns the payload unredacted, so the
+    # empty value must survive there too — otherwise the tests above could pass
+    # because redaction never ran.
+    payload = _emit("agent.input", {"agent_id": "a1", "input_text": ""}, CaptureConfig.full())
+    assert payload.get("input_text") == ""

@@ -153,6 +153,39 @@ class TestEmitsEvents:
         model_invoke = find_event(events, "model.invoke")
         assert model_invoke["payload"]["usage"]["reasoning_tokens"] == 42
 
+    def test_the_real_thinking_shape_is_marked_as_a_partial_price(self, mock_client, capture_trace):
+        """LAY-3622 F4, end-to-end on the REAL adapter path.
+
+        This is the shape Gemini actually sends and that no fixture here produced
+        before: ``total_token_count`` INCLUDES the thought tokens while
+        ``candidates_token_count`` does not, so 10 + 5 priced against a reported 57
+        leaves 42 tokens that bill at the output rate and got no rate applied.
+
+        The cost we can compute is still reported; the shortfall is recorded rather
+        than guessed at. ``test_reasoning_tokens_captured`` above deliberately keeps
+        the old total=15 shape (thoughts outside the total), so the two lanes together
+        pin both readings.
+        """
+        vertex_model = Mock()
+        vertex_model.model_name = "gemini-2.5-pro"
+        vertex_model.generate_content = Mock(
+            return_value=_vertex_response(prompt_tokens=10, completion_tokens=5, total_tokens=57, reasoning_tokens=42)
+        )
+
+        provider = GoogleVertexProvider()
+        provider.connect(vertex_model)
+
+        @trace(mock_client)
+        def my_agent() -> None:
+            vertex_model.generate_content("Hi")
+
+        my_agent()
+        cost = find_event(capture_trace["events"], "cost.record")["payload"]
+        assert cost["cost_status"] == "partial_token_shape"
+        assert cost["unpriced_tokens"] == 42
+        assert cost["cost_usd"] > 0, "the priceable part must still be reported"
+        assert cost["total_tokens"] == 57, "the honest reported total survives"
+
     def test_function_calls_emit_tool_call_events(self, mock_client, capture_trace):
         vertex_model = Mock()
         vertex_model.model_name = "gemini-2.5-pro"

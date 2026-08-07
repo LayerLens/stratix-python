@@ -197,10 +197,46 @@ def _cost_from_rates(
     model: str,
     usage: NormalizedTokenUsage,
     service_tier: Optional[str] = None,
-) -> float:
+) -> Optional[float]:
     """The single cost formula: tier-scaled input/output + cache READ (discount)
     + cache WRITE (1.25x) + completion. Shared by :func:`calculate_cost` and
-    :class:`PricingTable` so the math can never drift between the two paths."""
+    :class:`PricingTable` so the math can never drift between the two paths.
+
+    Returns ``None`` for a token shape this formula CANNOT price (LAY-3622 / A4b).
+    The formula reads prompt / cached / cache_creation / completion and never
+    ``total_tokens``, so a usage carrying only a total has no priceable dimension
+    at all — and summing four zeroes yielded ``0.0``, a *computed-looking* zero for
+    a call the provider really billed. ``0.0 is not None``, so every downstream
+    "did we get a price?" guard passed and the zero shipped as a derived cost
+    (.claude/CLAUDE.md rule 3). ``None`` is the honest answer: we know the tokens,
+    we cannot price them; the caller then omits the cost instead of inventing one.
+
+    A usage whose dimensions are all genuinely zero is NOT this case — it billed
+    nothing and 0.0 is arithmetic. The discriminator is a positive total (or any
+    positive count) with nothing priceable behind it.
+
+    ``reasoning_tokens`` / ``thinking_tokens`` are DELIBERATELY not summed here
+    (LAY-3622 F4). They are a BREAKDOWN, not an extra dimension, for the two
+    providers that populate them:
+
+    * OpenAI reads ``reasoning_tokens`` out of ``completion_tokens_details``
+      (``openai.py``) — a decomposition of ``completion_tokens``, which the output
+      leg above already prices. Adding it would DOUBLE-bill.
+    * Anthropic's ``thinking_tokens`` is a ``len(text) // 4`` ESTIMATE
+      (``_count_thinking_tokens``: "Anthropic does not surface a dedicated
+      thinking_tokens field today"), and ``completion_tokens`` is its
+      ``output_tokens``, which already carries the thinking. Charging money against
+      a character-count estimate is .claude/CLAUDE.md rule 3.
+
+    The genuine gap — Gemini reports ``thoughtsTokenCount`` OUTSIDE
+    ``candidatesTokenCount`` while ``total_token_count`` includes it — is therefore
+    not fixed by reading these fields. It is DETECTED instead, by comparing
+    :func:`priced_token_count` against the reported total at the collector
+    chokepoint, which marks the record rather than inventing a rate for it. That
+    detection is correct under BOTH readings of a provider's semantics: if reasoning
+    really is inside ``completion_tokens`` the total matches and nothing is marked;
+    if it is outside, the total exceeds what we priced and the gap is recorded.
+    """
     tier = _tier_multiplier(service_tier)
     input_rate = rates.get("input", 0.0) * tier
     output_rate = rates.get("output", 0.0) * tier
@@ -209,6 +245,16 @@ def _cost_from_rates(
     cache_creation = usage.cache_creation_tokens or 0
     non_cached = max(usage.prompt_tokens - cached, 0)
     cached_rate = input_rate * _cached_token_discount(model)
+
+    # UNPRICEABLE SHAPE GATE: no dimension this formula can read carries a count.
+    # ``prompt_tokens`` is checked (not ``non_cached``) so a fully-cached turn —
+    # prompt == cached, non_cached == 0 — still prices via the cached leg.
+    if not (usage.prompt_tokens or usage.completion_tokens or cached or cache_creation):
+        if usage.total_tokens:
+            # Tokens were billed; we just cannot attribute them to a rate.
+            return None
+        # Nothing was billed at all: an honest zero.
+        return 0.0
 
     cost = (
         (non_cached * input_rate / 1000)
@@ -377,6 +423,69 @@ def is_priced(model: Optional[str], provider: Optional[str] = None) -> bool:
     return _resolve_rates(model, table) is not None
 
 
+def usage_from_payload(payload: dict) -> NormalizedTokenUsage:
+    """Map a ``cost.record`` payload's token keys onto :class:`NormalizedTokenUsage`.
+
+    ONE mapping, shared by :func:`price_cost_record` and
+    :func:`unpriced_token_count`, so what we price and what we call unpriced can
+    never disagree about which key meant what — the same reason the cost formula
+    itself lives in exactly one place.
+
+    Accepts the provider vocabulary (``prompt_tokens``/``input_tokens``), the raw
+    provider-wire names (``cache_creation_input_tokens``) and the framework flat
+    vocabulary (``tokens_prompt``/``tokens_completion``/``tokens_total``) — all three
+    reach the collector chokepoint.
+    """
+    return NormalizedTokenUsage(
+        prompt_tokens=_payload_int(payload, "prompt_tokens", "input_tokens", "tokens_prompt"),
+        completion_tokens=_payload_int(payload, "completion_tokens", "output_tokens", "tokens_completion"),
+        total_tokens=_payload_int(payload, "total_tokens", "tokens_total"),
+        cached_tokens=_payload_opt_int(payload, "cached_tokens", "cache_read_input_tokens"),
+        cache_creation_tokens=_payload_opt_int(payload, "cache_creation_tokens", "cache_creation_input_tokens"),
+    )
+
+
+def priced_token_count(usage: NormalizedTokenUsage) -> int:
+    """How many tokens :func:`_cost_from_rates` actually applies a rate to.
+
+    Mirrors that formula's four legs EXACTLY — non-cached prompt, cached read,
+    cache write, completion — and must be updated in lockstep with it. Pinned
+    against the real formula in ``test_pricing.py``.
+
+    The ``max(prompt - cached, 0)`` term is load-bearing, not defensive. A naive
+    ``prompt + completion + cached + cache_creation`` double-counts the cached read
+    (it is a SUBSET of ``prompt_tokens`` for both OpenAI and Anthropic), while a
+    naive ``prompt + completion + cache_creation`` under-counts a turn reported as
+    fully cached with ``prompt_tokens=0`` — which is a real shape in this repo's own
+    test corpus, and would be reported as a 100% unpriced gap when in fact every
+    token was priced through the cached leg.
+    """
+    cached = usage.cached_tokens or 0
+    cache_creation = usage.cache_creation_tokens or 0
+    non_cached = max(usage.prompt_tokens - cached, 0)
+    return non_cached + cached + cache_creation + usage.completion_tokens
+
+
+def unpriced_token_count(payload: dict) -> int:
+    """Tokens the provider reported as billed that no rate was applied to.
+
+    ``0`` when the priced dimensions account for the reported total, when no total
+    was reported, or when the payload carries no usage at all — i.e. silence means
+    "nothing detected", never "nothing wrong". Detection only: the caller records
+    this, it does NOT feed a price. See :func:`_cost_from_rates` for why reading
+    ``reasoning_tokens`` instead would double-bill.
+
+    HONEST LIMIT: this can only see a gap a provider REPORTS. Anthropic sends no
+    total at all — ``NormalizedTokenUsage._auto_total`` derives it as
+    ``prompt + completion`` — so a token Anthropic billed outside ``output_tokens``
+    is invisible here by construction. The detector is not a completeness claim.
+    """
+    usage = usage_from_payload(payload)
+    if not usage.total_tokens:
+        return 0
+    return max(usage.total_tokens - priced_token_count(usage), 0)
+
+
 def price_cost_record(payload: dict) -> Optional[float]:
     """Centralized price-on-emit (A1 / LAY-3626): compute ``cost_usd`` for a
     ``cost.record`` payload from its own fields.
@@ -391,19 +500,36 @@ def price_cost_record(payload: dict) -> Optional[float]:
 
     Handles both the normalized field names (``cache_creation_tokens``) and the
     raw provider-wire names (``cache_creation_input_tokens`` / ``input_tokens``).
+
+    Returns ``None`` for a token SHAPE that cannot be priced as well as for an
+    unpriced model (LAY-3622 / A4b) — see :func:`_cost_from_rates`. Unlike that
+    formula, this layer can see whether a token key is ABSENT rather than zero, so
+    a payload carrying no usage at all is unpriceable here rather than $0.00.
     """
     model = payload.get("model")
     if not model or not isinstance(model, str):
         return None
-    usage = NormalizedTokenUsage(
-        # provider vocab (prompt_tokens/input_tokens) AND framework flat vocab
-        # (tokens_prompt/tokens_completion/tokens_total) — both reach this chokepoint.
-        prompt_tokens=_payload_int(payload, "prompt_tokens", "input_tokens", "tokens_prompt"),
-        completion_tokens=_payload_int(payload, "completion_tokens", "output_tokens", "tokens_completion"),
-        total_tokens=_payload_int(payload, "total_tokens", "tokens_total"),
-        cached_tokens=_payload_opt_int(payload, "cached_tokens", "cache_read_input_tokens"),
-        cache_creation_tokens=_payload_opt_int(payload, "cache_creation_tokens", "cache_creation_input_tokens"),
-    )
+    if not any(
+        payload.get(k) is not None
+        for k in (
+            "prompt_tokens",
+            "input_tokens",
+            "tokens_prompt",
+            "completion_tokens",
+            "output_tokens",
+            "tokens_completion",
+            "total_tokens",
+            "tokens_total",
+            "cached_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_tokens",
+            "cache_creation_input_tokens",
+        )
+    ):
+        # No usage was reported at all. There is nothing to price, and a 0.0 here
+        # would present an upstream reporting bug as a real, derived cost.
+        return None
+    usage = usage_from_payload(payload)
     provider = str(payload.get("provider") or "").lower()
     table = _PROVIDER_TABLES.get(provider, PRICING)
     return calculate_cost(model, usage, table, service_tier=payload.get("service_tier"))
@@ -525,6 +651,10 @@ class PricingTable:
         return dict(self._table)
 
 
-def _compute_cost_from_rates(rates: dict[str, float], model: str, usage: NormalizedTokenUsage) -> float:
-    """Bare cost formula, used by :class:`PricingTable` when bypassing env."""
+def _compute_cost_from_rates(rates: dict[str, float], model: str, usage: NormalizedTokenUsage) -> Optional[float]:
+    """Bare cost formula, used by :class:`PricingTable` when bypassing env.
+
+    ``None`` when the token shape cannot be priced — see :func:`_cost_from_rates`.
+    ``CostRecord.cost_usd`` is already ``Optional``, so this propagates cleanly.
+    """
     return _cost_from_rates(rates, model, usage)

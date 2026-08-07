@@ -31,9 +31,11 @@ primitive accepts ``model=``, so on a ``@marvin.fn``-decorated function those
 kwargs are the CALLER'S OWN arguments — ``def spec(model: str)`` about car
 models would stamp "Civic" as the LLM model name. The real per-call seam is
 ``agent=``; ``marvin.defaults`` / ``marvin.settings`` back it up. Nothing
-resolves -> no ``model.invoke`` at all, because ``model`` is required at ingest
-and a placeholder would be a fabricated model name. The ``tool.call`` still
-carries the call either way.
+resolves -> no ``model.invoke`` at all, because a placeholder would be a fabricated
+model name. The ``tool.call`` still carries the call either way. (A strict consumer
+also requires ``model_name``; that requirement is advisory on this platform — see
+``layerlens.instrument._ingest_contract``, LAY-3622 F1 — so it is the
+never-fabricate rule, not ingest, that drives the drop.)
 
 Usage::
 
@@ -700,8 +702,10 @@ class MarvinAdapter(FrameworkAdapter):
         error: Optional[BaseException],
     ) -> None:
         if not ctx.model:
-            # model is required at ingest and a placeholder would be a FABRICATED
-            # model name. The call is still traced by the tool.call above.
+            # A placeholder would be a FABRICATED model name, which is reason enough
+            # to drop the event; the strict-consumer requirement on ``model_name`` is
+            # advisory here (``_ingest_contract``, LAY-3622 F1). The call is still
+            # traced by the tool.call above.
             log.debug(
                 "layerlens: no real model discoverable for marvin.%s — skipping model.invoke (tool.call still emitted)",
                 ctx.fn_name,

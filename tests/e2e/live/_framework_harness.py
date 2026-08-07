@@ -27,6 +27,35 @@ from ._scenarios import SENTINEL
 from ._framework_registry import FrameworkCase
 
 
+def _server_events(trace: Any) -> list:
+    """The events atlas-app actually STORED, read off the trace-detail response.
+
+    The uploaded blob comes back under ``trace.data``. Verified live against local
+    :8080 (2026-08-03): ``data`` carries ``events`` / ``attestation`` /
+    ``capture_config`` / ``status`` / ``trace_id``. Some routes nest the blob one
+    level deeper as ``data.data``, so both are accepted — but an EMPTY result is
+    returned rather than guessed at, so the caller's assertion fails loudly instead
+    of silently passing on a shape change.
+    """
+    data = getattr(trace, "data", None)
+    if not isinstance(data, dict):
+        return []
+    events = data.get("events")
+    if isinstance(events, list):
+        return events
+    inner = data.get("data")
+    if isinstance(inner, dict) and isinstance(inner.get("events"), list):
+        return inner["events"]
+    return []
+
+
+def _server_event_type(event: Dict[str, Any]) -> Any:
+    """The event's type as STORED. The SDK upload path keys it ``event_type``; the
+    OTLP write path keys it ``type`` (atlas otlp-ingest). Accept both so this
+    assertion does not silently pass by comparing None to None."""
+    return event.get("event_type") or event.get("type")
+
+
 def _assert_variant_depth(variant: str, by_type: Dict[str, Any], tag: str) -> None:
     """A depth variant must prove the depth it claims (ADP-partials Cluster F), or
     it is a toothless lane. "async" just relies on the standard model.invoke
@@ -164,12 +193,35 @@ def run_self_flushing_case(client: Any, case: FrameworkCase, variant: str = "def
     trace_id = captured[0]
     linkage = verify_linkage(client, trace_id)
     trace = client.traces.get(trace_id)
+    tag = f"[{case.id}/{variant}]"
+
+    # SERVER-SIDE READ-BACK (LAY-3622 C1). This lane used to assert only that an
+    # upload returned an id, then read ``getattr(trace, "event_count", None)`` — a
+    # field ``layerlens.models.Trace`` does not define, so ALWAYS None — without
+    # asserting it, and without asserting that any event type came back. The whole
+    # "survives ingest" claim rested on ``uploaded_by_type``, which is read from the
+    # local payload on disk. Nothing was verified server-side at all.
+    assert trace is not None, f"{tag} the server returned no trace for {trace_id}"
+    server_events = _server_events(trace)
+    assert server_events, f"{tag} the server stored no events for {trace_id}"
+
+    uploaded_total = sum(len(v) for v in uploaded_by_type.values())
+    assert len(server_events) == uploaded_total, (
+        f"{tag} ingest lost events: uploaded {uploaded_total}, server stored {len(server_events)}"
+    )
+    server_types = {_server_event_type(e) for e in server_events}
+    missing = sorted(set(uploaded_by_type) - server_types)
+    assert not missing, f"{tag} event types absent server-side after ingest: {missing}"
+
     return {
         "framework": case.id,
         "variant": variant,
         "trace_id": trace_id,
-        "event_count": getattr(trace, "event_count", None),
+        # The real server-side count now, not an always-None attribute read.
+        "event_count": len(server_events),
         "event_types": {k: len(v) for k, v in uploaded_by_type.items()},
+        "server_event_types": sorted(server_types),
+        "data_has_events": True,
         "tool_calls": len(uploaded_by_type.get("tool.call", [])),
         "linked": linkage.get("linked"),
         "integration_id": linkage.get("integration_id"),

@@ -386,3 +386,78 @@ def test_real_mcp_error_path_scrubbed_without_safe_error_call() -> None:
         _current_collector.reset(token)
     blob = json.dumps([e["payload"] for e in collector.events], default=str)
     assert "AKIAIOSFODNN7EXAMPLE" not in blob, "mcp error path leaked an AWS key (chokepoint missed it)"
+
+
+# ---------------------------------------------------------------------------
+# Structural identifiers must survive the PAN scrubber (LAY-3622 F3).
+# ---------------------------------------------------------------------------
+
+
+STRUCTURAL_ID_FIELDS = ("span_id", "trace_id", "parent_span_id", "run_id")
+
+#: Real card test numbers, and an all-zero id. Every one is a Luhn-valid,
+#: all-decimal, card-length string — i.e. exactly the shape a machine-generated
+#: hex identifier lands on by chance.
+LUHN_VALID_IDS = ("4111111111111111", "5500000000000004", "0000000000000000")
+
+
+@pytest.mark.parametrize("field", STRUCTURAL_ID_FIELDS)
+@pytest.mark.parametrize("value", LUHN_VALID_IDS)
+def test_a_luhn_valid_structural_id_is_not_destroyed(field: str, value: str) -> None:
+    """A span/trace id is MACHINE-GENERATED hex, never free text — and a 16-hex id
+    is all-decimal with probability (10/16)^16 and then Luhn-valid ~1 in 10, so
+    roughly **1 in 19,000** ids look exactly like a card number. Measured over
+    400,000 random ids: 21 destroyed.
+
+    Replacing one with the redaction marker silently breaks parent/child linkage
+    for that trace, and therefore the agent graph — the DAG loses an edge, or a
+    node's identity, with no error anywhere. The scrubber cannot be right about a
+    field whose whole purpose is to be an opaque correlation key.
+
+    Bite proof: remove the structural-id exemption and every case here fails with
+    ``[REDACTED-SECRET]``.
+    """
+    assert scrub_payload({field: value})[field] == value
+
+
+def test_the_exemption_is_scoped_to_the_PAN_pattern_only() -> None:
+    """The exemption must not turn a structural field into a secret-laundering
+    channel: EVERY other pattern still applies there. If a credential is ever
+    templated into a span id, it is still caught."""
+    for secret in (
+        "sk-live-abcdefghijklmnopqrstuvwxyz0123",
+        "AKIAIOSFODNN7EXAMPLE",
+        "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+    ):
+        for field in STRUCTURAL_ID_FIELDS:
+            scrubbed = scrub_payload({field: secret})[field]
+            assert scrubbed == REDACTION, f"{field} leaked a real secret: {secret[:12]}..."
+
+
+@pytest.mark.parametrize("value", LUHN_VALID_IDS)
+def test_a_real_PAN_is_still_scrubbed_everywhere_else(value: str) -> None:
+    """VACUITY CONTROL / no-regression: the exemption is keyed on the FIELD, so the
+    same string in any content or producer-supplied field is still redacted. If
+    this ever passes trivially, the PAN scrubber has been disabled outright."""
+    for field in ("input", "output", "content", "prompt", "error", "metadata"):
+        assert scrub_payload({field: value})[field] == REDACTION, f"{field} leaked a PAN"
+    # Producer-supplied NAMES stay protected too — a customer picks these, so a
+    # card number appearing there is not structurally impossible the way it is in
+    # a machine-generated span id.
+    for field in ("agent_id", "span_name", "tool_name"):
+        assert scrub_payload({field: value})[field] == REDACTION, f"{field} lost PAN protection"
+
+
+def test_a_nested_structural_id_is_also_exempt() -> None:
+    # Adapters nest span references (e.g. under a metadata/extra wrapper), and the
+    # recursive scrub sees the same key name there.
+    payload = {"metadata": {"span_id": "4111111111111111"}, "spans": [{"trace_id": "5500000000000004"}]}
+    cleaned = scrub_payload(payload)
+    assert cleaned["metadata"]["span_id"] == "4111111111111111"
+    assert cleaned["spans"][0]["trace_id"] == "5500000000000004"
+
+
+def test_free_text_scrubbing_still_ignores_the_key() -> None:
+    # scrub_secrets() has no field context by design (it is used on bare strings
+    # via safe_error), so it must keep redacting a PAN unconditionally.
+    assert scrub_secrets("card 4111111111111111 charged") != "card 4111111111111111 charged"

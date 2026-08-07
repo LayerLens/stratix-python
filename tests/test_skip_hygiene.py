@@ -69,6 +69,11 @@ KNOWN_SKIP_TARGETS = {
     # The openinference adapter ingests OTel spans; the suite builds real
     # ReadableSpans from the OTel SDK.
     "opentelemetry.sdk",
+    # opentelemetry-proto: the OTLP protobuf decoder's optional dependency. The SDK
+    # deliberately does NOT declare it (the openinference extra stays empty), so the
+    # protobuf half of the OTLP lane skips when it is absent; the JSON half — the
+    # required path — never skips.
+    "opentelemetry.proto",
     # protocol / integration extras
     "copilotkit",
     "ag_ui_langgraph",

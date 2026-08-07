@@ -376,3 +376,66 @@ class TestStreamingFloor:
         assert "streamed_chunks" not in mi["payload"], "streamed_chunks leaked onto a non-streaming run"
         assert "streaming" not in mi["payload"], "streaming flag leaked onto a non-streaming run"
         assert "ttft_ms" not in mi["payload"], "ttft_ms leaked onto a non-streaming run"
+
+
+# ===========================================================================
+# Floor 5 — cost honesty: LangChain's own token_usage shapes must never yield a
+# fabricated $0.00 (LAY-3622 / A4b, found while auditing the openinference
+# adapter and traced back to the shared pricing formula).
+# ===========================================================================
+
+
+class TestCostIsNeverFabricated:
+    """A real ``on_llm_end`` whose usage carries ONLY a total must not price at 0.0.
+
+    ``token_usage``/``usage_metadata`` are LangChain's own callback vocabulary and
+    a total-only dict is a shape real chat models produce. The shared pricing
+    formula reads prompt / cached / cache-write / completion and never the total,
+    so it summed four zeroes and answered 0.0; ``0.0 is not None``, so the
+    price-on-emit chokepoint treated it as a derived cost and a real billed gpt-4
+    call shipped as free. langgraph inherits this path, and
+    ``test_langgraph.py::TestInheritedBehavior::test_llm_events_inherited`` pinned
+    the fabricated zero as expected behaviour.
+
+    Bite proof: revert the unpriceable-shape gate in ``_cost_from_rates`` and the
+    total-only cases go RED with ``cost_usd == 0.0``.
+    """
+
+    def _run(self, client: Any, llm_output: Dict[str, Any]) -> List[Dict[str, Any]]:
+        uploaded = capture_framework_trace(client)
+        handler = LangChainCallbackHandler(client, capture_config=CaptureConfig(capture_content=True))
+        chain_id, llm_id = uuid4(), uuid4()
+        handler.on_chain_start({"name": "Chain"}, {}, run_id=chain_id)
+        handler.on_llm_start({"name": "ChatOpenAI"}, ["prompt"], run_id=llm_id, parent_run_id=chain_id)
+        handler.on_llm_end(
+            LLMResult(generations=[[Generation(text="output")]], llm_output=llm_output),
+            run_id=llm_id,
+        )
+        handler.on_chain_end({}, run_id=chain_id)
+        return [e["payload"] for e in uploaded["events"] if e["event_type"] == "cost.record"]
+
+    @pytest.mark.parametrize("usage_key", ["token_usage", "usage_metadata"])
+    def test_a_total_only_usage_withholds_the_cost_instead_of_zeroing_it(
+        self, mock_client: Any, usage_key: str
+    ) -> None:
+        costs = self._run(mock_client, {"model_name": "gpt-4", usage_key: {"total_tokens": 10}})
+        assert costs, "the cost.record itself must survive — only the unknowable price is withheld"
+        cost = costs[0]
+        assert cost.get("cost_usd") != 0.0, (
+            f"a real billed 10-token gpt-4 call priced at $0.00 from {usage_key}={{'total_tokens': 10}}"
+        )
+        assert cost.get("cost_usd") is None
+        assert cost["tokens_total"] == 10, "the honest token count must survive"
+        assert cost.get("cost_status") == "unpriceable_token_shape", (
+            "a priced model with no priceable dimension must say WHY it has no cost"
+        )
+
+    def test_a_split_usage_still_prices(self, mock_client: Any) -> None:
+        # VACUITY CONTROL: the assertions above must not pass merely because this
+        # adapter stopped pricing altogether.
+        costs = self._run(
+            mock_client,
+            {"model_name": "gpt-4", "token_usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}},
+        )
+        assert costs and costs[0]["cost_usd"] > 0
+        assert "cost_status" not in costs[0]

@@ -194,7 +194,11 @@ class TestProviderOnlyTraceGetsRealRoot:
         collector.emit("model.invoke", {"model": "gpt-4o", "latency_ms": 1.0}, span_id="leaf1", parent_span_id=ambient)
         collector.emit(
             "cost.record",
-            {"provider": "openai", "model": "gpt-4o", "total_tokens": 3, "cost_usd": 0.0},
+            # A coherent priceable shape: this test is about root synthesis, but a
+            # hand-written ``cost_usd: 0.0`` on a priced model with real tokens is a
+            # state no honest emit path can produce (LAY-3622 / A4b), and the
+            # fabricated-cost invariant rightly rejects it. Let the chokepoint price it.
+            {"provider": "openai", "model": "gpt-4o", "prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
             span_id="leaf2",
             parent_span_id=ambient,
         )

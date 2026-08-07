@@ -17,6 +17,27 @@ from ._capture_config import CaptureConfig
 
 log: logging.Logger = logging.getLogger(__name__)
 
+#: ``cost.record.cost_status`` marker (LAY-3622 / A4b): the model resolves to a
+#: rate, but this payload carries no token dimension the pricing formula can read
+#: (a totals-only usage), so the cost is UNKNOWABLE rather than zero. Distinguishes
+#: a legitimately-absent cost from the A11 dropped-price bug, which is also an
+#: absent ``cost_usd`` on a priced model. Never accompanied by a ``cost_usd``.
+UNPRICEABLE_TOKEN_SHAPE = "unpriceable_token_shape"
+
+#: ``cost.record.cost_status`` marker (LAY-3622 / F4): a cost WAS computed, but the
+#: provider reported more billed tokens than any rate was applied to, so the figure
+#: UNDERSTATES the bill. The canonical case is Gemini, which reports
+#: ``thoughtsTokenCount`` outside ``candidatesTokenCount`` while ``total_token_count``
+#: includes it — thinking tokens bill at the output rate and we priced none of them.
+#:
+#: Unlike :data:`UNPRICEABLE_TOKEN_SHAPE` this marker ALWAYS accompanies a
+#: ``cost_usd``, and it deliberately changes no money: inventing a rate for tokens we
+#: cannot attribute would be a guess billed to a customer, whereas an
+#: under-report we have recorded is a fact someone can act on. The magnitude rides
+#: along as ``unpriced_tokens`` so a reader need not re-derive the pricing
+#: arithmetic (which has a subtlety — see ``pricing.priced_token_count``).
+PARTIAL_TOKEN_SHAPE = "partial_token_shape"
+
 
 def _json_safe(value: Any) -> Any:
     """Coerce *value* to JSON-native types (non-native -> str), matching the
@@ -149,11 +170,53 @@ class TraceCollector:
         # flows through the shared calculate_cost both here and at the sites.
         # Lazy import avoids an adapters-package init cycle.
         if event_type == "cost.record" and payload.get("cost_usd") is None:
-            from .adapters.providers.pricing import price_cost_record
+            from .adapters.providers.pricing import is_priced, price_cost_record
 
             priced = price_cost_record(payload)
             if priced is not None:
                 payload = {**payload, "cost_usd": priced}
+            elif is_priced(payload.get("model"), payload.get("provider")):
+                # FILL-WHEN-ABSENT could not fill (LAY-3622 / A4b): the model HAS a
+                # rate, but this payload carries no dimension the formula can price
+                # — a totals-only usage, since the formula reads prompt / cached /
+                # cache-write / completion and never the total. It used to answer
+                # 0.0 here (a sum over four zeroes) and ship it as a derived cost,
+                # so a real billed call reached the customer as free.
+                #
+                # The cost is UNKNOWABLE from this payload, not zero. Say so
+                # explicitly: a bare missing cost_usd on a priced model is the A11
+                # dropped-price bug, and a fail-closed reader must be able to tell
+                # the two apart. The token counts are preserved either way.
+                payload = {**payload, "cost_status": UNPRICEABLE_TOKEN_SHAPE}
+
+        # Detectable UNDER-report (LAY-3622 / F4): we DID price this record, but the
+        # provider reported more billed tokens than any rate was applied to. Record
+        # it; do not re-price it. Attributing the residual to a rate we did not
+        # observe would be a guess billed to a customer — the opposite failure from
+        # A4b but the same class (a number presented as derived when it is not).
+        #
+        # Only OUR arithmetic is checked. A vendor/gateway-reported charge
+        # (``cost_source``: langfuse's billing figure, OpenRouter's usage accounting)
+        # is a billed FACT, not an estimate of one, so a token gap against it says
+        # nothing about its accuracy. An existing cost_status is never clobbered —
+        # the unpriceable branch above is mutually exclusive with this one (it
+        # requires no cost_usd; this requires one), so a marker already present came
+        # from an adapter and is its own statement.
+        if (
+            event_type == "cost.record"
+            and payload.get("cost_usd") is not None
+            and payload.get("cost_status") is None
+            and not payload.get("cost_source")
+        ):
+            from .adapters.providers.pricing import unpriced_token_count
+
+            unpriced = unpriced_token_count(payload)
+            if unpriced:
+                payload = {
+                    **payload,
+                    "cost_status": PARTIAL_TOKEN_SHAPE,
+                    "unpriced_tokens": unpriced,
+                }
 
         # Scrub secrets from the span_name envelope field too (F-L5-001): redact_payload
         # and scrub_payload only touch ``payload``, so a credential templated into a

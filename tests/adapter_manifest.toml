@@ -409,6 +409,16 @@ error_paths = { path = "tests/instrument/adapters/frameworks/test_openinference_
 attestation = { path = "tests/instrument/adapters/frameworks/test_openinference_floor.py", pattern = "TestAttestation" }
 cost = { path = "tests/instrument/adapters/frameworks/test_openinference_floor.py", pattern = "TestCost" }
 disconnect_restore = { path = "tests/instrument/adapters/frameworks/test_openinference.py", pattern = "TestLifecycle" }
+# The cross-language drift gate. The matrix row has always RUN it
+# (tests/matrix/frameworks.toml), but it was absent here — and the manifest is the
+# population the hygiene gates enumerate, so the lane was invisible to them (LAY-3622 E4).
+conformance = { path = "tests/instrument/adapters/frameworks/test_openinference_conformance.py" }
+# The OTLP envelope surface (LAY-3622 Cluster B): the flatteners, the bridge, and the
+# one-bad-span-cannot-strand-the-batch guard.
+otlp = { path = "tests/instrument/adapters/frameworks/test_openinference_otlp.py" }
+# The offline ingest-acceptance oracle (LAY-3622 C4): the per-event-type
+# required-field contract, which atlas explicitly leaves to the SDK side.
+ingest_contract = { path = "tests/instrument/adapters/frameworks/test_openinference_ingest_contract.py" }
 matrix_row = "openinference"
 
 [adapters.openrouter]
