@@ -232,7 +232,16 @@ tests = [
 python = "3.11"
 # Ingestion tier: the adapter has no runtime dep, but the suites build REAL OTel
 # ReadableSpans, so the row installs the SDK + the semantic conventions.
-install = ["openinference-semantic-conventions==0.1.30", "opentelemetry-sdk==1.43.0"]
+# opentelemetry-proto is a TEST-ONLY install here, not an SDK dependency: the
+# `openinference` extra stays deliberately empty and the protobuf decoder imports
+# it function-locally behind a clean ImportError. Installing it in the row is what
+# lets the protobuf half of the OTLP lane RUN rather than skip — and a row fails on
+# any skip, so without it the lane would be silent coverage loss.
+install = [
+    "openinference-semantic-conventions==0.1.30",
+    "opentelemetry-sdk==1.43.0",
+    "opentelemetry-proto==1.43.0",
+]
 tests = [
     "tests/instrument/adapters/frameworks/test_openinference.py",
     "tests/instrument/adapters/frameworks/test_openinference_floor.py",
@@ -241,4 +250,12 @@ tests = [
     # (atlas otlp-ingest). This pins the Python half against an oracle generated
     # from the real Go bridge; the Go half guards the other direction.
     "tests/instrument/adapters/frameworks/test_openinference_conformance.py",
+    # The OTLP wire surface (LAY-3622 Cluster B). The JSON half is required and
+    # must never skip; the protobuf half skips only when opentelemetry-proto is
+    # absent, which the row's install list deliberately does not provide.
+    "tests/instrument/adapters/frameworks/test_openinference_otlp.py",
+    # The offline ingest-acceptance oracle: the per-event-type required-field
+    # contract. Carries one STRICT xfail recording a known redaction-backstop
+    # defect (xfail is counted apart from skips, so the zero-skip gate holds).
+    "tests/instrument/adapters/frameworks/test_openinference_ingest_contract.py",
 ]

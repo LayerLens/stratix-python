@@ -40,6 +40,7 @@ import pytest
 from layerlens.instrument.adapters.frameworks.openinference import (
     OpenInferenceAdapter,
     span_to_events,
+    otlp_json_to_span_records,
 )
 
 _DIR = os.path.join(os.path.dirname(__file__), "oi_conformance")
@@ -99,13 +100,15 @@ _KNOWN_EXCEPTIONS = _PY_ONLY_ENVELOPE | _PY_ONLY_TRACKED
 
 
 def _corpus_spans() -> List[Dict[str, Any]]:
-    """Every span in the shared corpus, in wire order."""
-    corpus = _load(_CORPUS_PATH)
-    spans: List[Dict[str, Any]] = []
-    for rs in corpus["resourceSpans"]:
-        for ss in rs["scopeSpans"]:
-            spans.extend(ss["spans"])
-    return spans
+    """Every span in the shared corpus, in wire order.
+
+    Uses the SHIPPED envelope decoder (LAY-3622 Cluster B) rather than re-walking
+    ``resourceSpans -> scopeSpans -> spans`` here. The hand-rolled loop this
+    replaces was the tell that the SDK had no OTLP envelope surface at all; it also
+    dropped resource-level attributes on the floor, so the lane never exercised the
+    resource merge the Go bridge performs.
+    """
+    return otlp_json_to_span_records(_load(_CORPUS_PATH))
 
 
 def _python_events() -> List[Dict[str, Any]]:
@@ -350,3 +353,197 @@ def test_content_caps_agree_across_languages() -> None:
     assert prompt == GO_EVENTS[5]["payload"]["prompt"]
     assert prompt.endswith("...[truncated 3000 chars]")
     assert len(prompt) == 2000 + len("...[truncated 3000 chars]")
+
+
+class TestGoConvergenceOutsideTheCorpus:
+    """Two real Python<->Go divergences the pinned corpus cannot catch (LAY-3622 E2).
+
+    The oracle only proves parity for inputs the corpus CONTAINS. These two shapes
+    are absent from all 24 spans, so both implementations drifted silently and the
+    lane stayed green. Go is the reference here (the oracle is generated from it),
+    so Python converged toward Go — and because the corpus contains neither input,
+    the oracle needed no regeneration. Verified: 37 conformance tests still pass.
+
+    Bite proof: drop the `.strip()` / `.lower()` and these fail while every other
+    conformance test keeps passing — which is exactly the blind spot they close.
+    """
+
+    @pytest.mark.parametrize("padded", [" LLM ", "LLM\n", "\tLLM", "  LLM"])
+    def test_a_whitespace_padded_span_kind_is_trimmed_like_go(self, padded: str) -> None:
+        # Go: kind := strings.ToUpper(strings.TrimSpace(asStr(rawKind)))
+        # (apps/otlp-ingest/ingest/openinference.go). Without the trim this span
+        # fell through to the agent.interaction default in Python while Go typed it
+        # as model.invoke — the SAME span rendering differently depending on whether
+        # it arrived via the SDK or via OTLP.
+        events = span_to_events(
+            {
+                "span_kind": padded,
+                "name": "openai.chat",
+                "attributes": {"openinference.span.kind": padded, "llm.model_name": "gpt-4o"},
+                "trace_id": "aa" * 16,
+                "span_id": "bb" * 8,
+            },
+            capture_content=True,
+        )
+        assert [t for t, _ in events] == ["model.invoke"]
+
+    def test_whitespace_only_kind_still_falls_back(self) -> None:
+        # BOUNDARY: a kind that is ONLY whitespace has no type to recover, and both
+        # sides agree it takes the never-drop default.
+        events = span_to_events(
+            {"span_kind": "   ", "name": "x", "attributes": {}, "trace_id": "a" * 32, "span_id": "b" * 16},
+            capture_content=True,
+        )
+        assert [t for t, _ in events] == ["agent.interaction"]
+
+    @pytest.mark.parametrize("kind,expected", [("AGENT", "agent"), ("CHAIN", "chain")])
+    def test_a_nameless_agent_span_falls_back_lowercased_like_go(self, kind: str, expected: str) -> None:
+        # Go: agentID := oiCap(firstNonEmpty(spanName, strings.ToLower(kind), "agent"))
+        # (openinference.go). agent_id is a graph NODE id, so an upper-cased Python
+        # fallback rendered the same nameless span as a differently-NAMED node
+        # depending on arrival path — a visible, cross-path graph divergence.
+        events = dict(
+            span_to_events(
+                {
+                    "span_kind": kind,
+                    "name": None,
+                    "attributes": {"openinference.span.kind": kind},
+                    "trace_id": "aa" * 16,
+                    "span_id": "bb" * 8,
+                },
+                capture_content=True,
+            )
+        )
+        assert events["agent.input"]["agent_id"] == expected
+        assert events["agent.output"]["agent_id"] == expected
+        # operation was already lower-cased; the two now agree rather than
+        # disagreeing on the case of the same word.
+        assert events["agent.input"]["operation"] == expected
+
+    def test_a_named_agent_span_keeps_its_real_name(self) -> None:
+        # VACUITY CONTROL: the fallback must not start lower-casing real span names.
+        events = dict(
+            span_to_events(
+                {
+                    "span_kind": "AGENT",
+                    "name": "Support-Triage-Supervisor",
+                    "attributes": {"openinference.span.kind": "AGENT"},
+                    "trace_id": "aa" * 16,
+                    "span_id": "bb" * 8,
+                },
+                capture_content=True,
+            )
+        )
+        assert events["agent.input"]["agent_id"] == "Support-Triage-Supervisor"
+
+    @pytest.mark.parametrize("raw", [" AGENT ", "AGENT\n", "\tAGENT"])
+    def test_a_padded_kind_does_not_leak_into_agent_id_via_the_raw_dict_path(self, raw: str) -> None:
+        """The residue the first pass at E2a missed.
+
+        ``_record_from_dict`` has TWO branches. The pre-extracted one
+        (``span_kind`` AND ``attributes`` both present) was stripped; the raw-dict
+        fallback was not — and a dict carrying ``span_kind`` with no ``attributes``
+        is a shape the adapter's public API explicitly accepts ("feed ingest_span
+        exported span dicts"). So a padded " AGENT " survived into the record and
+        ``agent_id`` came out as " agent ".
+
+        Dispatch was unaffected, because ``span_to_events`` re-strips before
+        matching — which is precisely why the whole conformance lane stayed green
+        while the rendered NODE ID was wrong. ``agent_id`` is the graph node id, so
+        one logical agent rendered as two differently-named nodes depending on
+        arrival path: the exact failure E2b claims to have closed.
+
+        Bite proof: drop the ``.strip()`` from the else-branch and these fail with
+        a whitespace-padded agent_id.
+        """
+        adapter = OpenInferenceAdapter(client=None)
+        record = adapter._record_from_dict({"span_kind": raw, "trace_id": "aa" * 16, "span_id": "bb" * 8, "name": None})
+        assert record is not None
+        assert record["span_kind"] == "AGENT"
+        events = dict(span_to_events(record, capture_content=True))
+        assert events["agent.input"]["agent_id"] == "agent"
+        assert events["agent.input"]["operation"] == "agent"
+
+    def test_both_record_from_dict_branches_agree_on_a_padded_kind(self) -> None:
+        # The two branches must not disagree with each other either — that
+        # divergence is what made the residue invisible.
+        adapter = OpenInferenceAdapter(client=None)
+        pre_extracted = adapter._record_from_dict(
+            {"span_kind": " LLM ", "attributes": {}, "trace_id": "aa" * 16, "span_id": "bb" * 8}
+        )
+        raw_dict = adapter._record_from_dict({"span_kind": " LLM ", "trace_id": "aa" * 16, "span_id": "bb" * 8})
+        assert pre_extracted is not None and raw_dict is not None
+        assert pre_extracted["span_kind"] == raw_dict["span_kind"] == "LLM"
+
+
+# ---------------------------------------------------------------------------
+# Cross-repo freshness (LAY-3622 E3). The oracle is copied between repos BY HAND
+# (`openinference_conformance_test.go` prints the cp; PROVENANCE.md documents it as
+# a numbered step), and neither side checked the other:
+#
+#   * atlas's TestOpenInferenceConformanceOracleIsCurrent rebuilds from the LOCAL Go
+#     bridge and compares to the LOCAL oracle — it never looks at the SDK.
+#   * this file's test_oracle_matches_the_corpus_it_was_generated_from hashes the
+#     SDK's OWN corpus against the SDK's OWN oracle — an INTRA-repo pair-consistency
+#     check, not a freshness check.
+#
+# So a Go-side mapping change + a local atlas regen, with neither file copied
+# across, leaves BOTH repos internally self-consistent and green while the SDK pins
+# a stale transcript. That is the window this closes.
+# ---------------------------------------------------------------------------
+
+#: Where atlas keeps its side of the shared pair. Override with LAYERLENS_ATLAS_REPO.
+_ATLAS_ENV = "LAYERLENS_ATLAS_REPO"
+_ATLAS_OI_TESTDATA = os.path.join("apps", "otlp-ingest", "ingest", "testdata", "oi-conformance")
+
+
+def _atlas_oi_dir() -> str | None:
+    """The atlas-side oracle directory, or None when atlas is not on this machine."""
+    candidates = []
+    env = os.environ.get(_ATLAS_ENV)
+    if env:
+        candidates.append(env)
+    # The conventional sibling checkout (both repos live under .../layerlens/).
+    # _DIR = <repo>/tests/instrument/adapters/frameworks/oi_conformance
+    repo_root = os.path.abspath(os.path.join(_DIR, *[os.pardir] * 5))
+    candidates.append(os.path.join(os.path.dirname(repo_root), "atlas-app"))
+    for candidate in candidates:
+        path = os.path.join(candidate, _ATLAS_OI_TESTDATA)
+        if os.path.isdir(path):
+            return path
+    return None
+
+
+def test_the_oracle_is_in_sync_with_the_atlas_side_copy() -> None:
+    """The hand-copied pair must be byte-identical across the two repos.
+
+    Deliberately NOT skipped when atlas is absent: a skip inside this row fails the
+    adapter matrix (a skip in an installed-framework row is silent coverage loss).
+    It asserts where it CAN — on a machine holding both checkouts, which is precisely
+    where the regeneration-and-copy step happens and therefore where the drift is
+    introduced.
+
+    HOW WEAK THAT IS, stated plainly (LAY-3622 F6): **CI is never such a machine.**
+    No workflow in ``.github/workflows`` checks out atlas, so this guard never fires
+    in CI and drift is caught only if a developer who has both repos runs this lane.
+    Closing the window properly needs the conformance pair published as a VERSIONED
+    artifact that both repos pin, rather than hand-copied — that is the open F6
+    follow-up, and it is why this is a partial guard rather than a solved problem.
+    """
+    atlas_dir = _atlas_oi_dir()
+    if atlas_dir is None:
+        return  # atlas not present; the window is documented, see the README.
+
+    for filename in ("spans.otlp.json", "oracle.json"):
+        atlas_path = os.path.join(atlas_dir, filename)
+        if not os.path.isfile(atlas_path):
+            continue
+        sdk_digest = hashlib.sha256(open(os.path.join(_DIR, filename), "rb").read()).hexdigest()
+        atlas_digest = hashlib.sha256(open(atlas_path, "rb").read()).hexdigest()
+        assert sdk_digest == atlas_digest, (
+            f"{filename} differs between the two repos — the shared conformance pair was "
+            f"regenerated on one side and not copied to the other.\n"
+            f"  SDK  : {os.path.join(_DIR, filename)}  sha256={sdk_digest}\n"
+            f"  atlas: {atlas_path}  sha256={atlas_digest}\n"
+            "Re-run the copy step in oi_conformance/README.md ('Changing the mapping')."
+        )

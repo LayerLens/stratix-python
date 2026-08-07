@@ -36,6 +36,14 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "MirascopeAdapter": ("mirascope", "MirascopeAdapter"),
     "BrowserUseAdapter": ("browser_use", "BrowserUseAdapter"),
     "OpenInferenceAdapter": ("openinference", "OpenInferenceAdapter"),
+    # The OTLP envelope decoder (LAY-3622 Cluster B): the adapter understands
+    # per-SPAN OTLP spellings, these walk the resourceSpans/scopeSpans wrapper.
+    "OpenInferenceOTLPBridge": ("openinference", "OpenInferenceOTLPBridge"),
+    "otlp_json_to_span_records": ("openinference", "otlp_json_to_span_records"),
+    "otlp_json_to_resource_groups": ("openinference", "otlp_json_to_resource_groups"),
+    "otlp_protobuf_to_resource_groups": ("openinference", "otlp_protobuf_to_resource_groups"),
+    "environment_config_from_resource": ("openinference", "environment_config_from_resource"),
+    "otlp_protobuf_to_span_records": ("openinference", "otlp_protobuf_to_span_records"),
 }
 
 
@@ -65,7 +73,12 @@ if TYPE_CHECKING:
     from .agentforce import AgentforceAdapter as AgentforceAdapter
     from .instructor import InstructorAdapter as InstructorAdapter
     from .browser_use import BrowserUseAdapter as BrowserUseAdapter
-    from .openinference import OpenInferenceAdapter as OpenInferenceAdapter
+    from .openinference import (
+        OpenInferenceAdapter as OpenInferenceAdapter,
+        OpenInferenceOTLPBridge as OpenInferenceOTLPBridge,
+        otlp_json_to_span_records as otlp_json_to_span_records,
+        otlp_protobuf_to_span_records as otlp_protobuf_to_span_records,
+    )
     from .semantic_kernel import SemanticKernelAdapter as SemanticKernelAdapter
 
 

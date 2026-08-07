@@ -438,6 +438,15 @@ class LangfuseAdapter(FrameworkAdapter):
             total_cost = obs.get("calculatedTotalCost") or obs.get("totalCost")
             if total_cost is not None:
                 cost_payload["cost_usd"] = total_cost
+                # Declare the PROVENANCE (LAY-3622 / A4b). This is the one adapter
+                # whose cost_usd is a vendor's own billing figure rather than our
+                # pricing table, so it is also the one place a cost_usd of 0 can be
+                # honest — Langfuse reporting a genuinely free call. The
+                # fabricated-cost invariant asserts that OUR arithmetic never yields
+                # a zero for a priced model with real tokens; without this marker it
+                # cannot tell a vendor's zero from our own, and would reject
+                # truthful data.
+                cost_payload["cost_source"] = "langfuse"
             if cost_details:
                 # Normalize well-known cost breakdown keys so downstream UIs
                 # don't each need to know about Langfuse's JSON shape.

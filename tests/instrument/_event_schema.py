@@ -227,13 +227,66 @@ def validate_event(event: Dict[str, Any]) -> List[str]:
         # local/custom model unless we enforce it. None stays legal only for
         # unpriced models (ollama/local/custom).
         if cost is None and has_tokens:
+            from layerlens.instrument._collector import UNPRICEABLE_TOKEN_SHAPE
             from layerlens.instrument.adapters.providers.pricing import is_priced
 
-            if is_priced(payload.get("model"), payload.get("provider")):
+            # LAY-3622: an explicit unpriceable-shape marker is the THIRD legal
+            # state — the model has a rate but this payload carries no dimension
+            # the formula can read (a totals-only usage). That is an honestly
+            # withheld cost, not a dropped one, and the marker is what makes the
+            # two distinguishable; without it this lock could not stay fail-closed.
+            unpriceable = payload.get("cost_status") == UNPRICEABLE_TOKEN_SHAPE
+            if not unpriceable and is_priced(payload.get("model"), payload.get("provider")):
                 problems.append(
                     f"{tag} priced model {payload.get('model')!r} has no cost_usd — a priced "
                     "cost.record must carry cost_usd (the central price-on-emit chokepoint fills "
                     "it; None means the price was dropped). Unpriced local/custom models may omit it."
+                )
+        # INVARIANT (LAY-3622 / A4b, never-fabricate-a-cost): cost_usd == 0.0 on a
+        # PRICED model that reports any positive token count is arithmetically
+        # impossible — every rate in the table is > 0. It means the formula summed
+        # dimensions it could not read (a totals-only usage prices prompt/cached/
+        # cache-write/completion, none of which are present) and returned a
+        # computed-LOOKING zero. `0.0 is not None`, so every downstream
+        # "did we get a price?" guard passes and a real billed call ships as free —
+        # .claude/CLAUDE.md rule 3, a hardcoded zero presented as a result.
+        # An honest zero (a call that truly billed nothing) has no positive count,
+        # so it is not caught here. Runs over every uploaded event in every adapter
+        # suite: this is the population-complete net that would have caught it.
+        # The marker means "no price"; carrying one anyway is self-contradictory.
+        if payload.get("cost_status") == "unpriceable_token_shape" and cost is not None:
+            problems.append(f"{tag} marked unpriceable_token_shape yet carries cost_usd {cost!r}")
+        # The MIRROR of the check above (LAY-3622 / F4). partial_token_shape means
+        # "this cost is real but UNDERSTATES the bill", so it is meaningless without a
+        # cost to understate — and it must carry the magnitude, or a reader has to
+        # re-derive the pricing arithmetic (which has a cached-subset subtlety that
+        # the obvious formula gets wrong). Confusing the two markers would turn an
+        # honestly-withheld cost into an apparently-partial one.
+        from layerlens.instrument._collector import PARTIAL_TOKEN_SHAPE
+
+        if payload.get("cost_status") == PARTIAL_TOKEN_SHAPE:
+            if cost is None:
+                problems.append(f"{tag} marked {PARTIAL_TOKEN_SHAPE} but carries no cost_usd to understate")
+            if not isinstance(payload.get("unpriced_tokens"), int) or payload.get("unpriced_tokens", 0) <= 0:
+                problems.append(
+                    f"{tag} marked {PARTIAL_TOKEN_SHAPE} without a positive unpriced_tokens "
+                    f"magnitude (got {payload.get('unpriced_tokens')!r})"
+                )
+        # A VENDOR-supplied cost is exempt: the claim above is about OUR arithmetic,
+        # and a vendor reporting $0 for a call it considers free is truthful data we
+        # must not reject. Only an adapter that takes its cost_usd from a vendor
+        # billing figure may declare a cost_source (langfuse today).
+        vendor_costed = bool(payload.get("cost_source"))
+        if cost == 0.0 and has_tokens and not vendor_costed:
+            from layerlens.instrument.adapters.providers.pricing import is_priced
+
+            positive = [k for k in flat_tokens | provider_style if isinstance(payload.get(k), int) and payload[k] > 0]
+            if positive and is_priced(payload.get("model"), payload.get("provider")):
+                problems.append(
+                    f"{tag} FABRICATED COST: priced model {payload.get('model')!r} reports "
+                    f"cost_usd 0.0 with positive {sorted(positive)} — no rate is zero, so this is a "
+                    "sum over dimensions the formula could not read, not a derived price. Withhold "
+                    "the cost (and say why) instead of shipping a zero."
                 )
 
     # INVARIANT (LAY-3620, redact-without-going-blind): agent.error must carry a

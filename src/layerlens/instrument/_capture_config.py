@@ -457,15 +457,41 @@ def known_event_types() -> FrozenSet[str]:
     return frozenset(_EVENT_TYPE_MAP) | _ALWAYS_ENABLED | frozenset(_CONTENT_KEYS)
 
 
+def _is_content_free(value: Any) -> bool:
+    """True if a content key's value holds nothing to redact (LAY-3622 F2).
+
+    Exactly one case: the EMPTY STRING. An adapter that gates at emit time may set
+    a field it considers required to ``""`` rather than omitting it — the
+    ``openinference`` agent-turn convention — and deleting that key redacts nothing
+    while destroying the field's presence. Preserving it is privacy-neutral *by
+    construction*: there is no content in an empty string.
+
+    Deliberately narrow. ``None`` is not included (a null key satisfies no
+    requirement, so keeping it is noise, not a mitigation), and neither is any other
+    empty container or falsy scalar — widening this is a privacy decision, not a
+    cleanup. A NON-empty value is still deleted even if the adapter forgot to gate:
+    that is a gating bug, and this backstop must keep failing closed on it.
+    """
+    return value == "" and isinstance(value, str)
+
+
 def _strip_content_keys(value: Any, content_keys: FrozenSet[str]) -> Any:
     """Recursively drop any key in *content_keys* from dicts anywhere in *value*.
 
     Returns a redacted copy; non-dict/list scalars pass through unchanged.
     Lists/tuples are walked element-wise so content nested in a list survives
     neither at the top level nor inside a wrapper object.
+
+    A content key whose value is already content-free (:func:`_is_content_free`) is
+    KEPT — see that function. Applies at every depth, for the same reason the strip
+    itself does.
     """
     if isinstance(value, dict):
-        return {k: _strip_content_keys(v, content_keys) for k, v in value.items() if k not in content_keys}
+        return {
+            k: _strip_content_keys(v, content_keys)
+            for k, v in value.items()
+            if k not in content_keys or _is_content_free(v)
+        }
     if isinstance(value, list):
         return [_strip_content_keys(v, content_keys) for v in value]
     if isinstance(value, tuple):
@@ -684,6 +710,14 @@ class CaptureConfig:
         content (``model.invoke.parameters``, langgraph graph state, AG-UI raw
         passthrough). A non-recursive (top-level-only) strip left nested content
         leaking under ``capture_content=False``.
+
+        A content key that is already EMPTY is kept rather than deleted (LAY-3622
+        F2 / :func:`_is_content_free`). An adapter that gates at emit time may set a
+        field it considers required to ``""``; deleting that key redacts nothing and
+        destroys the field's presence, which a strict consumer reads as a malformed
+        event. Privacy-neutral by construction — an empty string holds no content —
+        and a NON-empty value is still deleted regardless of whether the adapter
+        remembered to gate.
         """
         if self.capture_content:
             return payload

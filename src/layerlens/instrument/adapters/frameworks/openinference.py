@@ -47,6 +47,84 @@ KNOWN DIVERGENCES (deliberate, encoded as named exceptions in the conformance la
   either side alone would break it against its OWN siblings, so it is documented and
   LEFT. The lane exempts the name and still pins the value.
 
+KNOWN DIVERGENCES FROM THE ATEAM REFERENCE (LAY-3622 D3, adjudicated 2026-08-03).
+
+The Go oracle above is the parity target. ateam's Python OpenInference adapter
+(``stratix/sdk/python/adapters/openinference/events.py``) is a SECOND implementation
+of the same mapping and the ticket asked for its "golden output" — no such golden
+exists (see the report). A differential of both ``span_to_events`` over the shared
+24-span corpus found **0 event-type mismatches** and byte-identical flat-token canon:
+dispatch parity is genuinely met. Ten payload/field-level divergences remain, each
+adjudicated below. Numbered ``AT-n`` deliberately: ``D1``-``D4`` are already taken by
+this module and its conformance lane for the GO-facing divergences, and reusing them
+would corrupt both schemes.
+
+SDK IS MORE HONEST — KEEP, do not "fix" toward ateam:
+
+* AT-1 — error set-condition. ateam sets ``error`` whenever ``status_message`` is
+  truthy, testing the message BEFORE the status and never consulting it when a message
+  exists, so an OK span carrying "cache miss; refetched" is labelled failed. Here
+  ``_set_error`` returns early unless the status IS ``ERROR``.
+* AT-2 — an empty ``tool.parameters`` must not shadow a populated ``input.value``.
+  ateam uses an ``is not None`` test, so ``tool.parameters=""`` wins and the real tool
+  input is LOST. Here ``_first_non_empty`` skips present-but-empty.
+* AT-3 — embedding count. ateam counts only a list-valued ``embedding.embeddings`` and
+  misses the FLATTENED indexed form real instrumentors emit (inconsistently: its own
+  retrieval-doc counter does handle flattened indices, so this is an oversight, not a
+  policy). Here ``_embedding_count`` falls back to the flattened form and OMITS the key
+  when there is nothing to count.
+* AT-4 — content gating. ateam's ``_common`` takes no ``capture_content`` parameter and
+  ships ``metadata`` / ``invocation_parameters`` / ``tool_description`` unconditionally
+  — a real privacy leak (end-user PII and tool schemas under privacy mode). All three
+  go through ``_set_if_capturing`` here.
+* AT-5 — ``_as_int`` rejects a bool. ateam's has no guard, so a
+  ``llm.token_count.prompt=True`` attribute becomes ``prompt_tokens=1`` — a fabricated
+  measurement that then gets PRICED. Here a bool yields None, i.e. omit the key.
+* AT-6 — error-message privacy. ateam ships the producer's raw ``status_message``
+  ungated (observed leaking an API key and an end-user email under the privacy-default
+  config). Here ``capture_content=False`` substitutes the content-free ``_ERROR_SIGNAL``,
+  which is exactly why the ``status`` divergence above is required.
+
+DECIDED, with reasons:
+
+* AT-7 — ``duration_ns``: ateam emits it on all 26 events alongside ``latency_ms``; we
+  emit neither name twice. KEEP OURS. ``tests/instrument/_event_schema.py`` declares
+  ``latency_ms`` canonical and FAILS any payload carrying ``duration_ns`` unless the
+  adapter is in its exception list (openinference is not), the Go mirror emits
+  ``duration_ms`` so adding ``duration_ns`` would break the conformance key-set
+  equality, and it is the same measurement twice.
+* AT-8 — ``status``: we emit it on all 26 events, ateam on none. KEEP OURS — and note
+  WHY ateam does not need it: only because it leaks the raw ``error`` ungated (AT-6).
+  Under our privacy-default config the backstop strips ``error``, leaving ``status`` as
+  the ONLY surviving failure signal.
+* AT-9 — ``tenant_id``: ateam's ``_common`` stamps the client's own org id onto every
+  payload. KEEP OUR OMISSION — the upload envelope already carries org scoping in the
+  request PATH (``/organizations/{org}/projects/{project}/traces/upload``) and the
+  ``Trace`` model carries ``organization_id``, so a per-payload copy is redundant and a
+  cross-tenant MISLABELLING hazard if the two ever disagree. (ateam's own OTLP envelope
+  path publishes with ``tenant_id=org_id`` anyway, stamping tenancy twice.)
+* AT-10 — ``cost.record`` is the only event-type-level divergence: ateam emits none, the
+  Go bridge emits none, and the oracle contains zero. KEEP IT — cost is real value — but
+  note it is emitted from ``ingest_span``, OUTSIDE the pinned ``span_to_events``
+  boundary. That is exactly how the LAY-3622 fabricated-cost defect shipped unnoticed,
+  so it is pinned separately by ``test_openinference_ingest_contract.py`` and by the
+  invariant lane in ``tests/instrument/test_cost_chokepoint.py``.
+
+* AT-11 — ``environment.config`` (L4a) is the SECOND SDK-only event type, added with
+  the OTLP envelope decoder. Neither ateam's adapter nor the Go bridge emits one:
+  ateam's bridge merges Resource attributes into each span but never lifts them into
+  an event, and atlas does not need to because it already stores the same data as
+  trace-level fields (``CanonicalTrace.ServiceName`` / ``.Environment`` /
+  ``.ResourceAttrs``). Emitting it would therefore duplicate atlas's own storage
+  purely to keep an oracle aligned. It is emitted from :meth:`ingest_resource_group`
+  — the ENVELOPE level, once per Resource block per source trace — and NOT from
+  ``span_to_events``, which is the pinned boundary the oracle compares positionally.
+  Unlike AT-10 it was pinned by its own tests from the start.
+
+NOT EXERCISED BY THE PINNED CORPUS: AT-5 (no corpus span carries a boolean token
+attribute) and AT-9 (materialises only when the client exposes an org id). AT-5 now has
+a direct unit test; AT-9 is documentation-only by nature.
+
 Usage::
 
     adapter = instrument_openinference(client)
@@ -57,7 +135,9 @@ Usage::
 
 from __future__ import annotations
 
+import base64
 import logging
+import binascii
 import contextlib
 from typing import Any, Dict, List, Tuple, Optional
 from datetime import datetime, timezone
@@ -330,9 +410,14 @@ def normalize_llm_span(record: Dict[str, Any], *, capture_content: bool) -> Dict
     attrs = record.get("attributes") or {}
     payload = _common(record, capture_content=capture_content)
     model_name = _safe_str(attrs.get(LLM_MODEL_NAME) or "unknown", limit=200)
-    # ``model_name`` is required at ingest and ``model`` carries the SAME string
-    # (display readers read ``model``). The "unknown" literal is an explicit
-    # declared-unknown — the model is never guessed or inferred from elsewhere.
+    # ``model_name`` is required by a STRICT consumer (ateam's SCHEMA_REGISTRY);
+    # on THIS platform it is advisory — atlas does no per-event validation, and 97%
+    # of our own committed model.invoke events omit it. See
+    # ``layerlens.instrument._ingest_contract`` for the one declared contract and
+    # why it is split that way (LAY-3622 F1). Emitting it anyway is what makes this
+    # adapter portable to the strict bar. ``model`` carries the SAME string (display
+    # readers read ``model``). The "unknown" literal is an explicit declared-unknown
+    # — the model is never guessed or inferred from elsewhere.
     payload["model_name"] = model_name
     payload["model"] = model_name
     payload["provider"] = _safe_str(attrs.get(LLM_PROVIDER) or attrs.get(LLM_SYSTEM) or "unknown", limit=200)
@@ -462,13 +547,26 @@ def _agent_input_output(record: Dict[str, Any], *, capture_content: bool) -> Lis
     the key it reads. Keeping the name in ``agent_id`` (which no identity tier
     reads) preserves the wire contract while the Agent column stays an honest "—".
 
-    ``input_text``/``output_text`` are ingest-REQUIRED: omitting them rejects the
-    event and loses the agent turn entirely, so under ``capture_content=False``
-    they are present-but-EMPTY. Recording the turn with empty text is the honest
-    privacy outcome; the un-required ``input``/``output`` duplicates are omitted.
+    ``input_text``/``output_text`` are required by a STRICT consumer (ateam's
+    ``SCHEMA_REGISTRY``) and ADVISORY on this platform — see
+    ``layerlens.instrument._ingest_contract`` (LAY-3622 F1). Under
+    ``capture_content=False`` they are set present-but-EMPTY rather than omitted, so
+    the turn survives a strict consumer instead of being rejected; recording the
+    turn with empty text is the honest privacy outcome, and the un-required
+    ``input``/``output`` duplicates are omitted.
+
+    This invariant now holds END-TO-END (LAY-3622 F2). It did not before: both names
+    are in ``_CONTENT_KEYS``, so the collector-tier backstop deleted them and the
+    empty-string mitigation never reached the wire. ``_is_content_free``
+    (``_capture_config.py``) now keeps a content key whose value is already empty —
+    privacy-neutral by construction, and a POPULATED value is still deleted.
     """
     attrs = record.get("attributes") or {}
-    agent_id = _safe_str(record.get("name") or (record.get("span_kind") or "agent"), limit=200)
+    # E2b: the nameless fallback is LOWER-cased to match the Go mirror
+    # (openinference.go: firstNonEmpty(spanName, strings.ToLower(kind), "agent")).
+    # agent_id is a graph NODE id, so an upper-cased fallback rendered the same
+    # nameless AGENT span as a differently-named node depending on arrival path.
+    agent_id = _safe_str(record.get("name") or (record.get("span_kind") or "agent").lower(), limit=200)
     operation = (record.get("span_kind") or "AGENT").lower()
     in_text = attrs.get(INPUT_VALUE) if capture_content else None
     out_text = attrs.get(OUTPUT_VALUE) if capture_content else None
@@ -511,10 +609,11 @@ def _guardrail_events(record: Dict[str, Any], *, capture_content: bool) -> List[
     if attrs.get(OUTPUT_VALUE) is not None:
         _set_if_capturing(payload, "output", _safe_str(attrs[OUTPUT_VALUE]), capture_content=capture_content)
     if triggered:
-        # policy.violation is schema-required to carry policy_id + violation_type;
-        # without them the event is rejected and the violation is LOST. Both are
-        # DERIVED from the guardrail's own declared identity — the guardrail IS
-        # the policy that fired — rather than invented or dropped.
+        # A strict consumer requires policy_id + violation_type on policy.violation
+        # (advisory here — see ``_ingest_contract``); without them THAT consumer
+        # rejects the event and the violation is LOST. Both are DERIVED from the
+        # guardrail's own declared identity — the guardrail IS the policy that fired
+        # — rather than invented or dropped.
         payload["policy_id"] = guardrail_name
         payload["violation_type"] = "guardrail"
         return [("policy.violation", payload)]
@@ -542,7 +641,12 @@ def span_to_events(record: Dict[str, Any], *, capture_content: bool = True) -> L
     ``attributes["openinference.span.kind"]``, so callers can normalise
     OpenInference spans without the adapter's extraction step.
     """
-    kind = str(record.get("span_kind") or "").upper()
+    # E2a: TRIM before matching, as the Go mirror does
+    # (openinference.go: strings.ToUpper(strings.TrimSpace(...))). Without the
+    # strip, a span whose kind is " LLM " fell through to agent.interaction here
+    # while Go typed it as model.invoke — the same span rendering differently
+    # depending on whether it arrived via the SDK or via OTLP.
+    kind = str(record.get("span_kind") or "").strip().upper()
     if not kind:
         raw = (record.get("attributes") or {}).get(SPAN_KIND_KEY)
         if raw is not None:
@@ -611,7 +715,7 @@ def _get_span_kind(attributes: Dict[str, Any]) -> str:
     if raw is None:
         return ""
     # OpenInference stores the kind as either the enum or its ``.value``.
-    return str(getattr(raw, "value", raw)).upper()
+    return str(getattr(raw, "value", raw)).strip().upper()
 
 
 # --- Span extraction ------------------------------------------------------
@@ -705,7 +809,14 @@ def _trim_fractional_seconds(text: str) -> Optional[str]:
 
 
 def _otlp_value(value: Any) -> Any:
-    """Unwrap an OTLP AnyValue dict (``{"stringValue": ...}``) to a Python scalar."""
+    """Unwrap an OTLP AnyValue dict (``{"stringValue": ...}``) to a Python scalar.
+
+    ``intValue`` is deliberately left as proto3-JSON produced it — a STRING, since
+    the JSON mapping encodes int64 as a string. Numeric attributes are normalised
+    downstream by :func:`_as_int`, so token counts agree with the Go bridge; see
+    the KNOWN DIVERGENCES block for the residual (a non-numeric attribute holding
+    an int stays a string here where Go, reading protobuf, has an int64).
+    """
     if not isinstance(value, dict):
         return value
     for key in ("stringValue", "intValue", "doubleValue", "boolValue"):
@@ -717,6 +828,19 @@ def _otlp_value(value: Any) -> Any:
             arr = av.get("values", [])
             if isinstance(arr, (list, tuple)):
                 return [_otlp_value(v) for v in arr]
+    if "kvlistValue" in value:
+        # Go's bridge maps a KvlistValue to a real map (otlp-ingest
+        # convert.go:340-341); leaving the raw OTLP wrapper here shipped an
+        # internal wire structure into the event payload and diverged from the
+        # oracle's reference implementation.
+        kv = value["kvlistValue"]
+        items = kv.get("values", []) if isinstance(kv, dict) else []
+        if isinstance(items, (list, tuple)):
+            return {
+                str(item.get("key")): _otlp_value(item.get("value"))
+                for item in items
+                if isinstance(item, dict) and "key" in item
+            }
     return value
 
 
@@ -793,6 +917,243 @@ def _coerce_id(value: Any, *, width: int) -> Optional[str]:
     return text or None
 
 
+def _decode_otlp_id(value: Any, *, width: int) -> Optional[str]:
+    """Normalise an OTLP envelope id (hex string OR base64 bytes) to padded hex.
+
+    proto3-JSON encodes a ``bytes`` field as base64, so a spec-compliant OTLP/HTTP
+    JSON export carries ``traceId``/``spanId`` base64-encoded — while many tools
+    (and every fixture in this repo) emit plain hex. Guessing wrong silently breaks
+    id correlation, so a clean 16/32-char hex string is treated as hex and anything
+    else is attempted as base64 before falling back to :func:`_coerce_id`.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).hex()
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if len(text) in (16, 32) and all(c in "0123456789abcdefABCDEF" for c in text):
+            return text.lower()
+        try:
+            decoded = base64.b64decode(text, validate=True)
+        except (binascii.Error, ValueError):
+            return _coerce_id(text, width=width)
+        if decoded:
+            return decoded.hex()
+        return _coerce_id(text, width=width)
+    return _coerce_id(value, width=width)
+
+
+def _attrs_from_otlp_list(attr_list: Any) -> Dict[str, Any]:
+    """Flatten an OTLP ``[{key, value}]`` attribute list into a dict."""
+    out: Dict[str, Any] = {}
+    if isinstance(attr_list, (list, tuple)):
+        for item in attr_list:
+            if isinstance(item, dict) and "key" in item:
+                out[str(item["key"])] = _otlp_value(item.get("value"))
+    return out
+
+
+#: OTel semantic-convention RESOURCE attributes that describe the environment, and
+#: the ``environment.config`` payload key each maps to (LAY-3622 L4a).
+#:
+#: Curated on purpose. A Resource block can carry arbitrary vendor attributes, and
+#: some deployments put credentials or customer identifiers there, so dumping the
+#: whole block into an event would turn an environment record into an exfiltration
+#: path. Only these well-known, non-secret keys are lifted.
+_ENVIRONMENT_RESOURCE_KEYS: Tuple[Tuple[str, str], ...] = (
+    ("service.name", "service_name"),
+    ("service.version", "service_version"),
+    ("service.namespace", "service_namespace"),
+    ("deployment.environment", "environment"),
+    # OTel renamed it in semconv 1.27; exporters emit either spelling.
+    ("deployment.environment.name", "environment"),
+    ("cloud.provider", "cloud_provider"),
+    ("cloud.region", "region"),
+    ("cloud.platform", "cloud_platform"),
+    ("telemetry.sdk.name", "telemetry_sdk"),
+    ("telemetry.sdk.language", "telemetry_language"),
+)
+
+
+def environment_config_from_resource(resource_attrs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Build an ``environment.config`` payload from OTLP Resource attributes.
+
+    Every OTLP export carries a Resource block, which is exactly the
+    ``EnvironmentInfo{type, region, attributes}`` material the L4a capture layer
+    describes — and until the envelope decoder landed the SDK could not even SEE
+    it, so an OpenInference trace lost ``service.name`` entirely.
+
+    Returns ``None`` when the block carries none of the known keys: an
+    ``environment.config`` with nothing in it is noise, and inventing a default
+    environment would be a fabricated measurement.
+    """
+    payload: Dict[str, Any] = {}
+    for source, dest in _ENVIRONMENT_RESOURCE_KEYS:
+        if dest in payload:
+            continue  # first spelling wins (deployment.environment before .name)
+        value = resource_attrs.get(source)
+        if value is not None and value != "":
+            payload[dest] = _safe_str(value, limit=200)
+    if not payload:
+        return None
+    payload["framework"] = FRAMEWORK
+    return payload
+
+
+def otlp_json_to_resource_groups(
+    request: Dict[str, Any],
+) -> List[Tuple[Dict[str, Any], List[Dict[str, Any]]]]:
+    """Flatten an OTLP/JSON export into ``[(resource_attrs, [span_record, ...])]``.
+
+    Preserves the resource grouping that :func:`otlp_json_to_span_records`
+    discards, so a caller can emit one ``environment.config`` per Resource block
+    instead of once per span (the same environment repeated N times).
+    """
+    groups: List[Tuple[Dict[str, Any], List[Dict[str, Any]]]] = []
+    resource_spans = request.get("resourceSpans") or request.get("resource_spans") or []
+    if not isinstance(resource_spans, (list, tuple)):
+        return groups
+    for rs in resource_spans:
+        if not isinstance(rs, dict):
+            continue
+        resource = rs.get("resource")
+        resource_attrs = _attrs_from_otlp_list(resource.get("attributes")) if isinstance(resource, dict) else {}
+        records: List[Dict[str, Any]] = []
+        scope_spans = (
+            rs.get("scopeSpans")
+            or rs.get("scope_spans")
+            # OTLP <=0.19 spelling; still emitted by older collectors.
+            or rs.get("instrumentationLibrarySpans")
+            or []
+        )
+        if isinstance(scope_spans, (list, tuple)):
+            for ss in scope_spans:
+                if not isinstance(ss, dict):
+                    continue
+                spans = ss.get("spans") or []
+                if not isinstance(spans, (list, tuple)):
+                    continue
+                for span in spans:
+                    if isinstance(span, dict):
+                        records.append(_span_record(span, resource_attrs))
+        groups.append((resource_attrs, records))
+    return groups
+
+
+def _span_record(span: Dict[str, Any], resource_attrs: Dict[str, Any]) -> Dict[str, Any]:
+    """One OTLP/JSON span -> a SpanRecord, with resource attributes merged in
+    (**span wins on conflict**)."""
+    attrs = {**resource_attrs, **_attrs_from_otlp_list(span.get("attributes"))}
+    status_code, status_msg = _coerce_status(span.get("status"))
+    return {
+        "span_kind": _get_span_kind(attrs),
+        "name": span.get("name"),
+        "attributes": attrs,
+        "trace_id": _decode_otlp_id(span.get("traceId") or span.get("trace_id"), width=32),
+        "span_id": _decode_otlp_id(span.get("spanId") or span.get("span_id"), width=16),
+        "parent_span_id": _decode_otlp_id(span.get("parentSpanId") or span.get("parent_span_id"), width=16),
+        "start_ns": _first_ns(span, ("startTimeUnixNano", "start_time_unix_nano"), ()),
+        "end_ns": _first_ns(span, ("endTimeUnixNano", "end_time_unix_nano"), ()),
+        "status": status_code,
+        "status_message": status_msg,
+    }
+
+
+def otlp_json_to_span_records(request: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Flatten an OTLP/HTTP JSON ``ExportTraceServiceRequest`` into span records
+    consumable by :meth:`OpenInferenceAdapter.ingest_span`.
+
+    ``_extract_record`` understands per-SPAN OTLP spellings but not the envelope:
+    the caller had to walk ``resourceSpans -> scopeSpans -> spans`` itself. This is
+    that walk, shipped.
+
+    Resource-level attributes are merged into every span (**span attributes win on
+    conflict**) so resource-scoped ``service.name`` / ``deployment.environment`` /
+    ``session.id`` / tenancy tags survive — the same precedence ateam's bridge uses.
+    A malformed member is skipped rather than aborting the export.
+
+    Resource GROUPING is discarded here; use :func:`otlp_json_to_resource_groups`
+    when you need it (e.g. to emit one ``environment.config`` per Resource block).
+    """
+    return [record for _attrs, records in otlp_json_to_resource_groups(request) for record in records]
+
+
+def otlp_protobuf_to_resource_groups(
+    data: bytes,
+) -> List[Tuple[Dict[str, Any], List[Dict[str, Any]]]]:
+    """Protobuf twin of :func:`otlp_json_to_resource_groups`.
+
+    Requires ``opentelemetry-proto``, which the SDK does NOT declare as a
+    dependency (the ``openinference`` extra stays empty — the semconv keys are
+    string literals). The import is function-local and raises a clean
+    ``ImportError`` so a caller can fall back to the JSON path.
+    """
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (  # type: ignore[import-not-found]
+        ExportTraceServiceRequest,
+    )
+
+    request = ExportTraceServiceRequest()
+    request.ParseFromString(data)
+    groups: List[Tuple[Dict[str, Any], List[Dict[str, Any]]]] = []
+    for rs in request.resource_spans:
+        resource_attrs = _attrs_from_proto(rs.resource.attributes) if rs.HasField("resource") else {}
+        records: List[Dict[str, Any]] = []
+        for ss in rs.scope_spans:
+            for span in ss.spans:
+                attrs = {**resource_attrs, **_attrs_from_proto(span.attributes)}
+                code = span.status.code if span.HasField("status") else 0
+                records.append(
+                    {
+                        "span_kind": _get_span_kind(attrs),
+                        "name": span.name,
+                        "attributes": attrs,
+                        # protobuf ids are raw bytes; .hex() needs no base64 guess.
+                        "trace_id": span.trace_id.hex() if span.trace_id else None,
+                        "span_id": span.span_id.hex() if span.span_id else None,
+                        "parent_span_id": span.parent_span_id.hex() if span.parent_span_id else None,
+                        "start_ns": int(span.start_time_unix_nano) or None,
+                        "end_ns": int(span.end_time_unix_nano) or None,
+                        "status": _status_code_name(int(code)),
+                        "status_message": span.status.message or None,
+                    }
+                )
+        groups.append((resource_attrs, records))
+    return groups
+
+
+def otlp_protobuf_to_span_records(data: bytes) -> List[Dict[str, Any]]:
+    """Parse a binary OTLP ``ExportTraceServiceRequest`` into span records.
+
+    Resource grouping is discarded; use :func:`otlp_protobuf_to_resource_groups`
+    when you need it. Raises ``ImportError`` without ``opentelemetry-proto``.
+    """
+    return [record for _attrs, records in otlp_protobuf_to_resource_groups(data) for record in records]
+
+
+def _attrs_from_proto(kvs: Any) -> Dict[str, Any]:
+    """Flatten a protobuf ``repeated KeyValue`` into a dict."""
+    return {str(kv.key): _proto_anyvalue(kv.value) for kv in kvs}
+
+
+def _proto_anyvalue(value: Any) -> Any:
+    """Unwrap a protobuf ``AnyValue``. Mirrors the Go bridge's conversion
+    (otlp-ingest ``convert.go``): int64 stays an int here, because protobuf carries
+    it natively — unlike the JSON path, where proto3 encodes it as a string."""
+    which = value.WhichOneof("value")
+    if which is None:
+        return None
+    if which == "array_value":
+        return [_proto_anyvalue(v) for v in value.array_value.values]
+    if which == "kvlist_value":
+        return {str(kv.key): _proto_anyvalue(kv.value) for kv in value.kvlist_value.values}
+    if which == "bytes_value":
+        return value.bytes_value.hex()
+    return getattr(value, which)
+
+
 class OpenInferenceAdapter(FrameworkAdapter):
     """Ingests OpenInference-instrumented OpenTelemetry spans into LayerLens traces.
 
@@ -865,6 +1226,50 @@ class OpenInferenceAdapter(FrameworkAdapter):
             total += self.ingest_span(span)
         return total
 
+    def ingest_resource_group(self, resource_attrs: Dict[str, Any], records: List[Dict[str, Any]]) -> int:
+        """Ingest one OTLP Resource block: its environment, then its spans.
+
+        Emits at most ONE ``environment.config`` per (Resource block, source trace)
+        — the environment describes the resource, so repeating it per span would
+        restate the same fact N times. Returns the total events emitted.
+
+        L4a (LAY-3622): every OTLP export carries a Resource block
+        (``service.name`` / ``deployment.environment`` / ``cloud.region``), which is
+        exactly the environment material the l4a capture layer describes. Before the
+        envelope decoder existed the SDK could not see it at all, so an
+        OpenInference trace lost its service identity entirely.
+
+        Deliberately emitted HERE and not from :func:`span_to_events`: that function
+        is the pinned Python<->Go boundary, and the Go bridge emits no
+        ``environment.config`` because atlas already captures the same Resource data
+        as trace-level fields (``CanonicalTrace.ServiceName`` / ``.Environment`` /
+        ``.ResourceAttrs``). Adding it there would duplicate atlas's own storage
+        purely to keep an oracle aligned, and would desynchronise the positional
+        26-event comparison. It is therefore an SDK-only event type, like
+        ``cost.record`` — and with the Cluster A lesson applied, it is pinned by its
+        own test from the start rather than left outside every oracle.
+        """
+        total = 0
+        environment = environment_config_from_resource(resource_attrs)
+        seen_traces: set = set()
+        for record in records:
+            if environment is not None:
+                key = str(record.get("trace_id") or record.get("span_id") or "unknown")
+                if key not in seen_traces:
+                    seen_traces.add(key)
+                    collector = self._collector_for(record)
+                    before = len(collector.events)
+                    collector.emit(
+                        "environment.config",
+                        dict(environment),
+                        span_id=str(record.get("span_id") or key),
+                        span_name="otlp.resource",
+                    )
+                    # CaptureConfig gates l4a, so emit() may legitimately drop it.
+                    total += len(collector.events) - before
+            total += self.ingest_span(record)
+        return total
+
     def flush(self) -> int:
         """Seal and upload every open collector. Returns how many traces flushed."""
         with self._lock:
@@ -890,13 +1295,28 @@ class OpenInferenceAdapter(FrameworkAdapter):
         span_id: str,
         record: Dict[str, Any],
     ) -> None:
-        """Emit a cost.record for a priced LLM span — and nothing otherwise.
+        """Emit a cost.record for a priceable LLM span — and nothing otherwise.
 
         OpenInference carries no price attribute, but a span that declares BOTH a
         real model and token counts supports the same honest derivation the
-        provider path already does. When the model is the "unknown" sentinel or is
-        absent from the pricing table, ``_price_cost_record`` leaves ``cost_usd``
-        unset and NO event is emitted — an omitted cost, never a fabricated 0.0.
+        provider path already does.
+
+        NO event is emitted whenever ``_price_cost_record`` leaves ``cost_usd``
+        unset — an omitted cost, never a fabricated 0.0. That covers two distinct
+        cases:
+
+        * the model is the "unknown" sentinel or absent from the pricing table
+          (no rate exists), and
+        * the model IS priced but the span's token shape cannot be priced — it
+          declares only ``llm.token_count.total``, which OpenInference explicitly
+          allows, while the pricing formula reads prompt / cached / cache-write /
+          completion and never the total (LAY-3622 / A4b).
+
+        The second case used to ship ``cost_usd: 0.0``: the formula summed four
+        zeroes, and ``0.0 is not None``, so the guard below passed and a real
+        billed call reached the customer as free. Nothing is lost by omitting it —
+        ``model.invoke`` still carries the span's honest ``total_tokens``; only the
+        unknowable price is withheld.
         """
         cost_payload: Dict[str, Any] = {
             "framework": FRAMEWORK,
@@ -943,29 +1363,54 @@ class OpenInferenceAdapter(FrameworkAdapter):
         return self._record_from_otel(span)
 
     def _record_from_dict(self, span: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        attrs = self._coerce_attributes(span.get("attributes"))
-        # An already-extracted SpanRecord states its kind directly and its times
-        # in declared nanoseconds; a raw exported span states neither. Both still
-        # go through id + timestamp coercion — returning a pre-extracted record
-        # unnormalized silently drops its timestamp/duration/latency.
-        pre_extracted = "span_kind" in span and "attributes" in span
-        if pre_extracted:
-            kind = str(span.get("span_kind") or "").upper()
-        else:
-            kind = _get_span_kind(attrs) or str(span.get("span_kind") or "").upper()
-        status_code, status_msg = self._coerce_status(span.get("status"))
-        return {
-            "span_kind": kind,
-            "name": span.get("name"),
-            "attributes": attrs,
-            "trace_id": _coerce_id(span.get("trace_id") or span.get("traceId"), width=32),
-            "span_id": _coerce_id(span.get("span_id") or span.get("spanId"), width=16),
-            "parent_span_id": _coerce_id(span.get("parent_span_id") or span.get("parentSpanId"), width=16),
-            "start_ns": _first_ns(span, ("start_ns", "startTimeUnixNano"), ("start_time",)),
-            "end_ns": _first_ns(span, ("end_ns", "endTimeUnixNano"), ("end_time",)),
-            "status": status_code,
-            "status_message": status_msg,
-        }
+        try:
+            attrs = self._coerce_attributes(span.get("attributes"))
+            # An already-extracted SpanRecord states its kind directly and its times
+            # in declared nanoseconds; a raw exported span states neither. Both still
+            # go through id + timestamp coercion — returning a pre-extracted record
+            # unnormalized silently drops its timestamp/duration/latency.
+            pre_extracted = "span_kind" in span and "attributes" in span
+            if pre_extracted:
+                kind = str(span.get("span_kind") or "").strip().upper()
+            else:
+                # E2a: strip on BOTH branches. A dict carrying ``span_kind`` but no
+                # ``attributes`` (a shape the public API explicitly accepts) took
+                # this branch unstripped, so a padded " AGENT " survived into the
+                # record — and ``_agent_input_output`` then derived ``agent_id``
+                # (a graph NODE id) as " agent ". Dispatch was unaffected because
+                # ``span_to_events`` re-strips, which is exactly why no test caught
+                # it: the residue showed up only in the rendered payload.
+                kind = _get_span_kind(attrs) or str(span.get("span_kind") or "").strip().upper()
+            status_code, status_msg = self._coerce_status(span.get("status"))
+            if status_msg is None:
+                # A PRE-EXTRACTED record states its status as a bare code string
+                # ("ERROR") with the message alongside in ``status_message``.
+                # ``_coerce_status`` can only recover a message from the dict form,
+                # so re-coercing such a record silently dropped it — and the error
+                # text degraded to the generic "span status ERROR" backstop. That
+                # is exactly the shape the OTLP flatteners (and ateam's bridge)
+                # return, so the message must be honoured when already present.
+                status_msg = span.get("status_message")
+            return {
+                "span_kind": kind,
+                "name": span.get("name"),
+                "attributes": attrs,
+                "trace_id": _coerce_id(span.get("trace_id") or span.get("traceId"), width=32),
+                "span_id": _coerce_id(span.get("span_id") or span.get("spanId"), width=16),
+                "parent_span_id": _coerce_id(span.get("parent_span_id") or span.get("parentSpanId"), width=16),
+                "start_ns": _first_ns(span, ("start_ns", "startTimeUnixNano"), ("start_time",)),
+                "end_ns": _first_ns(span, ("end_ns", "endTimeUnixNano"), ("end_time",)),
+                "status": status_code,
+                "status_message": status_msg,
+            }
+        except Exception:
+            # Degrade rather than propagate, exactly as _record_from_otel does. One
+            # malformed dict used to raise out of ingest_spans, aborting every
+            # REMAINING span of the batch and stranding the already-ingested ones in
+            # an unflushed collector. That is unacceptable now a whole OTLP export
+            # feeds through a single call. Logged, never silently swallowed.
+            log.info("layerlens: openinference could not extract a span record from a dict", exc_info=True)
+            return None
 
     def _record_from_otel(self, span: Any) -> Optional[Dict[str, Any]]:
         try:
@@ -1102,9 +1547,73 @@ def instrument_openinference(client: Any, *, capture_config: Optional[CaptureCon
     return adapter
 
 
+class OpenInferenceOTLPBridge:
+    """Routes OTLP trace exports through an :class:`OpenInferenceAdapter`.
+
+    Mirrors ateam's ``OpenInferenceOTLPBridge`` (``stratix/observability/
+    openinference_bridge.py:231-253``) so the two implementations stay diffable.
+
+    KNOWN LIMITATION (deliberate, ateam parity): spans are **not** de-duplicated by
+    ``span_id``, and there is no ``max_spans`` cap. OTLP exporters retry on failure,
+    so a redelivered export re-ingests its spans and double-counts them. ateam
+    carries dedup and a cap only on its SERVER-side entry point
+    (``otlp_request_to_ingest_events``, which also owns org scoping and OTLP
+    ``partial_success`` accounting).
+
+    NOTHING catches it downstream of this bridge, and an earlier version of this
+    docstring implied otherwise (corrected under LAY-3622 F5). atlas-app's
+    ``apps/otlp-ingest`` DOES de-duplicate a re-sent ``span_id`` — ``ingest/merge.go``
+    and ``ingest/writer.go``: "A re-sent span_id is deduped (idempotent)" — but that
+    is a separate service guarding the OTLP *endpoint*, and this bridge never reaches
+    it. It converts spans into canonical events and uploads them through the traces
+    API (``apps/backend/api/v1/organizations/traces/traces_create.go``), which carries
+    no span-level dedup or upsert at all.
+
+    So the double-count is end-to-end on THIS path: a caller needing at-most-once
+    must de-duplicate before handing the export over, because there is no second line
+    of defence behind it.
+    """
+
+    def __init__(self, adapter: OpenInferenceAdapter) -> None:
+        self._adapter = adapter
+
+    @property
+    def adapter(self) -> OpenInferenceAdapter:
+        return self._adapter
+
+    def ingest_otlp_json(self, request: Dict[str, Any]) -> int:
+        """Ingest an OTLP/HTTP JSON export. Returns LayerLens events emitted.
+
+        Walks Resource GROUPS rather than a flat span list so each block's
+        environment is recorded once (L4a) — see
+        :meth:`OpenInferenceAdapter.ingest_resource_group`.
+        """
+        total = 0
+        for resource_attrs, records in otlp_json_to_resource_groups(request):
+            total += self._adapter.ingest_resource_group(resource_attrs, records)
+        return total
+
+    def ingest_otlp_protobuf(self, data: bytes) -> int:
+        """Ingest a binary OTLP protobuf export. Returns LayerLens events emitted.
+
+        Raises ``ImportError`` when ``opentelemetry-proto`` is absent, so a caller
+        can fall back to :meth:`ingest_otlp_json`.
+        """
+        total = 0
+        for resource_attrs, records in otlp_protobuf_to_resource_groups(data):
+            total += self._adapter.ingest_resource_group(resource_attrs, records)
+        return total
+
+
 __all__ = [
     "OpenInferenceAdapter",
+    "OpenInferenceOTLPBridge",
     "instrument_openinference",
+    "environment_config_from_resource",
+    "otlp_json_to_resource_groups",
+    "otlp_json_to_span_records",
+    "otlp_protobuf_to_resource_groups",
+    "otlp_protobuf_to_span_records",
     "span_to_events",
     "normalize_llm_span",
     "normalize_embedding_span",

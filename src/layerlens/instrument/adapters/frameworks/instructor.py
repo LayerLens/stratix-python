@@ -719,8 +719,12 @@ class InstructorAdapter(FrameworkAdapter):
         latency_ms = self._stop_timer("call")
         model = ctx["model"]
         if not model or not isinstance(model, str):
-            # model is required at ingest and a placeholder would be a FABRICATED
-            # model name, so the whole event is dropped rather than invented.
+            # A placeholder would be a FABRICATED model name, so the whole event is
+            # dropped rather than invented. NB this adapter deliberately does not emit
+            # ``model_name`` at all (``test_instructor.py`` asserts its absence for the
+            # framework family) — that requirement is advisory here, and pretending
+            # otherwise is what made the contract self-contradictory before LAY-3622
+            # F1. See ``layerlens.instrument._ingest_contract``.
             log.debug("layerlens: instructor create() called without a model string — skipping model.invoke")
             return
 

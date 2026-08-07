@@ -671,8 +671,11 @@ class MirascopeAdapter(FrameworkAdapter):
 
         model_id = _response_model_id(response) or model_hint
         if not model_id:
-            # A placeholder would be a fabricated model name, and the model is
-            # required at ingest. The call is still visible via the tool.call
+            # A placeholder would be a FABRICATED model name (.claude/CLAUDE.md
+            # rule 3), which is reason enough to drop the event on its own — the
+            # strict-consumer requirement on ``model_name`` is advisory here (see
+            # ``layerlens.instrument._ingest_contract``, LAY-3622 F1) and is not what
+            # this decision rests on. The call is still visible via the tool.call
             # above.
             log.debug(
                 "layerlens: no real model known for mirascope.%s — skipping model.invoke (tool.call still emitted)",
