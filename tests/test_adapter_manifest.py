@@ -44,6 +44,16 @@ _TIER_KEYS = (
     "disconnect_restore",
     "doubles",
     "recorded",
+    # Declared across the manifest but historically NOT enumerated here, so the
+    # tier gate never checked that they resolve to a real file with real tests
+    # (LAY-3622 E4 — an unregistered lane is invisible to the gates, and a lane
+    # registered under an unenumerated key is equally invisible).
+    "error_paths",
+    "attestation",
+    "cost",
+    "conformance",
+    "otlp",
+    "ingest_contract",
 )
 
 #: Adapters that exist in code but are wired explicitly (not in auto()).

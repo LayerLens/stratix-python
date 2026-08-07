@@ -478,3 +478,178 @@ class TestCacheCreationPricing:
         )
         # both have 1000 full-rate input; read adds 1000 @0.1x, write adds 1000 @1.25x
         assert calculate_cost("claude-3-5-sonnet", write) > calculate_cost("claude-3-5-sonnet", read)
+
+
+class TestUnpriceableTokenShapes:
+    """A shape the formula cannot price must return ``None``, never ``0.0``.
+
+    ``_cost_from_rates`` prices prompt / cached / cache_creation / completion and
+    NEVER reads ``total_tokens``. A payload that carries only a total therefore has
+    no priceable dimension at all, and arithmetic over four zeros yields ``0.0`` — a
+    *computed-looking* zero for a call the provider really billed. ``0.0 is not
+    None``, so every downstream "did we get a price?" guard passes and the zero
+    ships as if it were derived. ``None`` is the honest answer: we know the tokens,
+    we cannot price them.
+
+    Bite proof: revert the unpriceable-shape check in ``calculate_cost`` and every
+    test in this class fails with ``0.0``.
+    """
+
+    def test_totals_only_is_unpriceable_not_free(self) -> None:
+        usage = NormalizedTokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=1500)
+        cost = calculate_cost("gpt-4o", usage)
+        assert cost != 0.0, "a real 1500-token gpt-4o call priced as $0.00 — a fabricated cost"
+        assert cost is None, f"totals-only must be unpriceable (None), got {cost!r}"
+
+    def test_an_all_zero_usage_is_still_an_honest_zero(self) -> None:
+        # BOUNDARY (the fix must not over-reach): a call that reports a zero total
+        # AND zero on every dimension genuinely billed nothing. 0.0 is arithmetic
+        # here, not fabrication — distinguishable from the totals-only case by the
+        # absence of any positive count.
+        #
+        # Note this is ALSO what a bare ``NormalizedTokenUsage()`` is: every field
+        # defaults to 0, so the formula cannot distinguish "the provider reported
+        # zero usage" from "no usage was reported". That distinction is only
+        # available one layer up, where key PRESENCE is visible — see
+        # ``test_a_payload_with_no_token_keys_is_unpriceable``.
+        usage = NormalizedTokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+        assert calculate_cost("gpt-4o", usage) == 0.0
+        assert calculate_cost("gpt-4o", NormalizedTokenUsage()) == 0.0
+
+    def test_a_payload_with_no_token_keys_is_unpriceable(self) -> None:
+        # The payload layer CAN tell absent from zero, and must: a cost.record that
+        # reached pricing carrying no usage whatsoever is an upstream bug, and
+        # answering 0.0 hides it behind a real-looking number. (_event_schema also
+        # rejects a tokenless cost.record outright; this closes the pricing side.)
+        from layerlens.instrument.adapters.providers.pricing import price_cost_record
+
+        assert price_cost_record({"provider": "openai", "model": "gpt-4o"}) is None
+        # ...while an EXPLICIT zero is a real report of no usage, and prices as 0.0.
+        assert price_cost_record({"provider": "openai", "model": "gpt-4o", "total_tokens": 0}) == 0.0
+
+    @pytest.mark.parametrize(
+        "usage",
+        [
+            NormalizedTokenUsage(prompt_tokens=1000, completion_tokens=0, total_tokens=0),
+            NormalizedTokenUsage(prompt_tokens=0, completion_tokens=500, total_tokens=0),
+            NormalizedTokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=1500, cached_tokens=1500),
+            NormalizedTokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=1500, cache_creation_tokens=1500),
+        ],
+        ids=["prompt-only", "completion-only", "cached-only", "cache-write-only"],
+    )
+    def test_any_priceable_dimension_still_prices(self, usage: NormalizedTokenUsage) -> None:
+        # The check keys off "no priceable dimension at all", NOT off a missing
+        # split: a prompt-only embedding usage and a fully-cached turn are both
+        # legitimately one-sided and must keep pricing.
+        cost = calculate_cost("gpt-4o", usage)
+        assert cost is not None and cost > 0.0
+
+    def test_price_cost_record_propagates_the_unpriceable_verdict(self) -> None:
+        from layerlens.instrument.adapters.providers.pricing import price_cost_record
+
+        assert price_cost_record({"provider": "openai", "model": "gpt-4o", "total_tokens": 1500}) is None
+        # the flat framework vocabulary reaches the same chokepoint
+        assert price_cost_record({"provider": "openai", "model": "gpt-4o", "tokens_total": 1500}) is None
+        # and a priceable shape is unaffected
+        assert price_cost_record(
+            {"provider": "openai", "model": "gpt-4o", "prompt_tokens": 1000, "completion_tokens": 500}
+        ) == pytest.approx(0.0075)
+
+
+@pytest.mark.invariant
+class TestPricedTokenAccounting:
+    """``priced_token_count`` must mirror the formula's four legs EXACTLY.
+
+    It is the basis of the F4 under-report detector, so if it drifts from
+    ``_cost_from_rates`` the detector either cries wolf or goes blind — both worse
+    than not detecting at all.
+    """
+
+    def test_it_counts_each_leg_exactly_once(self) -> None:
+        from layerlens.instrument.adapters.providers.pricing import priced_token_count
+
+        # Distinct values so a double-count or an omission cannot cancel out.
+        usage = NormalizedTokenUsage(
+            prompt_tokens=100,
+            completion_tokens=7,
+            total_tokens=137,
+            cached_tokens=30,
+            cache_creation_tokens=1000,
+        )
+        # non_cached(70) + cached(30) + cache_creation(1000) + completion(7)
+        assert priced_token_count(usage) == 1107
+
+    def test_a_fully_cached_turn_counts_every_token_as_priced(self) -> None:
+        from layerlens.instrument.adapters.providers.pricing import priced_token_count
+
+        # prompt_tokens=0 with cached_tokens=1500 is a REAL reported shape (the
+        # `[cached-only]` case above). The cached leg prices all 1500, so a detector
+        # that computed `prompt + completion + cache_creation` would report a 100%
+        # unpriced gap on a fully-priced turn.
+        usage = NormalizedTokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=1500, cached_tokens=1500)
+        assert priced_token_count(usage) == 1500
+
+    def test_it_agrees_with_the_real_formula_about_what_was_rated(self) -> None:
+        from layerlens.instrument.adapters.providers.pricing import _cost_from_rates, priced_token_count
+
+        # Anti-drift: at a flat $1/1k on every leg and no cache discount, the cost in
+        # dollars IS the priced token count / 1000. If a leg is ever added to the
+        # formula without being added to the counter, this diverges.
+        rates = {"input": 1.0, "output": 1.0}
+        usage = NormalizedTokenUsage(prompt_tokens=100, completion_tokens=7, total_tokens=107)
+        cost = _cost_from_rates(rates, "flat-rate-test-model", usage)
+        assert cost is not None
+        assert round(cost * 1000, 6) == float(priced_token_count(usage))
+
+    def test_no_total_reported_means_no_gap_detected(self) -> None:
+        from layerlens.instrument.adapters.providers.pricing import unpriced_token_count
+
+        # HONEST LIMIT, asserted rather than left in prose: Anthropic reports no
+        # total, so NormalizedTokenUsage derives it as prompt+completion and a token
+        # billed outside output_tokens is invisible to this detector by construction.
+        assert unpriced_token_count({"prompt_tokens": 10, "completion_tokens": 5}) == 0
+
+    def test_it_detects_the_gemini_thinking_gap(self) -> None:
+        from layerlens.instrument.adapters.providers.pricing import unpriced_token_count
+
+        assert unpriced_token_count({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 57}) == 42
+
+
+@pytest.mark.invariant
+class TestReasoningTokensAreNotPricedAdditively:
+    """Reasoning/thinking tokens must NEVER be added on top of ``completion_tokens``.
+
+    LAY-3622 F4 re-judged the audit's own suggestion here. ``NormalizedTokenUsage``
+    carries ``reasoning_tokens``/``thinking_tokens`` and the formula reads neither —
+    which looks like an under-bill until you check where the numbers come from:
+
+    * OpenAI takes ``reasoning_tokens`` from ``completion_tokens_details``, a
+      BREAKDOWN of ``completion_tokens`` that the output leg already prices.
+    * Anthropic's ``thinking_tokens`` is ``len(thinking_text) // 4``, an estimate,
+      and its ``completion_tokens`` is ``output_tokens``, which already includes the
+      thinking.
+
+    So summing them would double-bill one provider and bill the other from a
+    character count. These tests exist so that "fix" cannot land by accident.
+    """
+
+    def test_reasoning_tokens_do_not_change_the_price(self) -> None:
+        base = NormalizedTokenUsage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
+        with_reasoning = NormalizedTokenUsage(
+            prompt_tokens=1000, completion_tokens=500, total_tokens=1500, reasoning_tokens=400
+        )
+        assert calculate_cost("gpt-4o", with_reasoning) == calculate_cost("gpt-4o", base)
+
+    def test_thinking_tokens_do_not_change_the_price(self) -> None:
+        base = NormalizedTokenUsage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
+        with_thinking = NormalizedTokenUsage(
+            prompt_tokens=1000, completion_tokens=500, total_tokens=1500, thinking_tokens=400
+        )
+        assert calculate_cost("claude-3-5-sonnet", with_thinking) == calculate_cost("claude-3-5-sonnet", base)
+
+    def test_the_price_is_still_a_real_positive_number(self) -> None:
+        # VACUITY CONTROL: the two tests above would also pass if calculate_cost
+        # returned None for both sides.
+        usage = NormalizedTokenUsage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500, reasoning_tokens=400)
+        cost = calculate_cost("gpt-4o", usage)
+        assert cost is not None and cost > 0

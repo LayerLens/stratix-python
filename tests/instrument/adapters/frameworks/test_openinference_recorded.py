@@ -202,16 +202,18 @@ class TestOpenInferenceRecorded:
         """Under the DEFAULT config the real prompt/answer text is withheld while
         the real model/token/cost structure still rides through.
 
-        Pins the ACTUAL pipeline outcome, which diverges from what
-        ``_agent_input_output``'s docstring claims. The adapter sets
-        ``input_text``/``output_text`` to a present-but-EMPTY string, reasoning
-        that they are ingest-required and that omitting them would reject the
-        agent turn. But both names are listed in ``_CONTENT_KEYS`` for
-        agent.input/agent.output, so the collector-tier backstop then DELETES the
-        keys outright — the empty-string mitigation never reaches the wire. The
-        privacy outcome is correct either way (no real text leaks), so this lane
-        asserts the real observed behavior rather than the docstring's claim; the
-        stale claim is reported upstream, not papered over here.
+        RE-JUDGED in LAY-3622 F2. This assertion used to read
+        ``"output_text" not in out``, pinning a divergence: the adapter sets
+        ``input_text``/``output_text`` to a present-but-EMPTY string so the turn stays
+        valid for a strict consumer, and the collector-tier backstop then deleted the
+        keys outright — the mitigation never reached the wire. The backstop now keeps
+        a content key that is already empty (``_is_content_free``), so the adapter's
+        documented invariant finally holds end-to-end and this lane asserts the
+        present-but-EMPTY value instead of its absence.
+
+        The privacy outcome is unchanged, and that is the point of the fix: an empty
+        string carries no content. The real-answer leak check below is what proves it
+        over the REAL recorded fixture rather than a constructed payload.
         """
         fixture = load_recorded("openinference", "default")
         uploaded = capture_framework_trace(mock_client)
@@ -228,8 +230,9 @@ class TestOpenInferenceRecorded:
         outs = find_events(uploaded["events"], "agent.output")
         assert outs, "the agent turn must still be recorded when content is gated"
         out = outs[0]["payload"]
-        # The backstop strips the text surfaces entirely (see docstring).
-        assert "output_text" not in out
+        # The ingest-visible surface survives as present-but-EMPTY (see docstring);
+        # the un-required ``output`` duplicate is omitted at emit time and stays gone.
+        assert out["output_text"] == ""
         assert "output" not in out
         # The real answer must not survive anywhere in the gated trace.
         assert "POL-WAR-04" not in json.dumps(uploaded["events"])
@@ -267,3 +270,130 @@ class TestOpenInferenceRecorded:
 
         # The LLM span really was a child of the real agent span.
         assert by_type["model.invoke"]["payload"]["parent_span_id"] == agent_span_id
+
+
+class TestOpenInferenceRecordedTeam:
+    """Offline replay of the MULTI-AGENT recorded fixture (LAY-3622 E1).
+
+    All 9 tests in the class above load ``('openinference', 'default')`` — the
+    single-agent capture. ``team.json`` (42.8K, recorded from a real
+    ``openinference-instrumentation-openai`` run against gpt-4o-mini) had no offline
+    mapping assertion at all. It was not, as first thought, covered via the
+    samples/render path: that path consumes a DIFFERENT artifact
+    (``samples/data/traces/industry/retail_openinference_support_team.jsonl``), and a
+    repo-wide search found NO reader for ``team.json`` beyond the two generic corpus
+    hygiene lanes (secret-leak + provenance, which sweep every fixture by rglob).
+    It was an orphan artifact — a real recorded multi-agent capture nothing asserted
+    the mapping over.
+
+    HONEST SCOPE NOTE: the fixture holds 3 AGENT, 3 LLM and 2 RETRIEVER spans and
+    **zero CHAIN spans**, so this lane is an AGENT-pair lane, not the "AGENT/CHAIN
+    pair" lane originally scoped. CHAIN dispatch is covered by the conformance corpus
+    instead. Saying so rather than implying CHAIN coverage that does not exist.
+    """
+
+    def test_the_fixture_is_the_real_multi_agent_capture(self, mock_client) -> None:
+        fixture = load_recorded("openinference", "team")
+        spans = list(_recorded_spans(fixture))
+        assert len(spans) == 8
+        kinds: dict = {}
+        for span in spans:
+            for kv in span.get("attributes", []):
+                if kv.get("key") == "openinference.span.kind":
+                    value = kv["value"].get("stringValue")
+                    kinds[value] = kinds.get(value, 0) + 1
+        assert kinds == {"AGENT": 3, "LLM": 3, "RETRIEVER": 2}
+        # Provenance: a REAL recorded run, not a hand-written fixture.
+        provenance = fixture.get("provenance") or {}
+        assert provenance.get("provider") == "openinference"
+        assert "openinference-instrumentation-openai" in provenance.get("sdk_version", "")
+
+    def test_the_multi_agent_mapping_is_complete(self, mock_client) -> None:
+        uploaded = capture_framework_trace(mock_client)
+        fixture = load_recorded("openinference", "team")
+        _ingest(mock_client, fixture)
+
+        counts: dict = {}
+        for event in uploaded["events"]:
+            counts[event["event_type"]] = counts.get(event["event_type"], 0) + 1
+        # 3 AGENT spans -> 3 input/output PAIRS; 3 LLM -> 3 model.invoke + 3 priced
+        # cost.record; 2 RETRIEVER -> 2 retrieval.query. 14 events total, which is
+        # exactly the event_count the committed live render sweep read back from the
+        # server for this same workload.
+        assert counts == {
+            "agent.input": 3,
+            "agent.output": 3,
+            "model.invoke": 3,
+            "cost.record": 3,
+            "retrieval.query": 2,
+        }
+        assert sum(counts.values()) == 14
+
+    def test_the_three_real_agents_are_named_honestly(self, mock_client) -> None:
+        uploaded = capture_framework_trace(mock_client)
+        _ingest(mock_client, load_recorded("openinference", "team"))
+        agent_ids = sorted({e["payload"]["agent_id"] for e in find_events(uploaded["events"], "agent.input")})
+        # The real span names from the recorded run — no fabricated or generic node.
+        assert agent_ids == ["returns-specialist", "support-triage-supervisor", "warranty-specialist"]
+
+    def test_the_agent_topology_really_is_a_supervisor_over_two_specialists(self, mock_client) -> None:
+        # This is what makes the trace render as a 3-node/2-edge DAG rather than
+        # three unrelated nodes: exactly one AGENT span has no captured parent, and
+        # the other two descend from it.
+        uploaded = capture_framework_trace(mock_client)
+        _ingest(mock_client, load_recorded("openinference", "team"))
+        inputs = find_events(uploaded["events"], "agent.input")
+        by_span = {e["span_id"]: e for e in inputs}
+        roots = [e for e in inputs if e.get("parent_span_id") not in by_span]
+        assert len(roots) == 1, "a multi-agent DAG needs exactly one root agent"
+        assert roots[0]["payload"]["agent_id"] == "support-triage-supervisor"
+        children = sorted(e["payload"]["agent_id"] for e in inputs if e.get("parent_span_id") == roots[0]["span_id"])
+        assert children == ["returns-specialist", "warranty-specialist"]
+
+    def test_every_priced_call_carries_a_real_cost(self, mock_client) -> None:
+        # LAY-3622 Cluster A over a REAL recorded multi-agent workload: three real
+        # billed gpt-4o-mini calls, three real costs, no fabricated zero.
+        uploaded = capture_framework_trace(mock_client)
+        _ingest(mock_client, load_recorded("openinference", "team"))
+        costs = [e["payload"] for e in find_events(uploaded["events"], "cost.record")]
+        assert len(costs) == 3
+        for cost in costs:
+            assert cost["cost_usd"] > 0, f"a real billed call priced at {cost['cost_usd']}"
+            assert "cost_status" not in cost
+            assert cost["prompt_tokens"] > 0 and cost["completion_tokens"] > 0
+
+    #: Real content strings from the recorded run — a genuine model answer and a
+    #: genuine retriever query. Neither is a topology name, so neither may survive
+    #: ``capture_content=False`` for any legitimate reason.
+    REAL_CONTENT = (
+        "qualifies as a manufacturing defect covered under",
+        "30 day return window refund return shipping cost final sale",
+        "split seam manufacturing defect warranty coverage",
+    )
+
+    def test_redaction_keeps_the_topology_and_drops_the_content(self, mock_client) -> None:
+        uploaded = capture_framework_trace(mock_client)
+        _ingest(mock_client, load_recorded("openinference", "team"), capture_content=False)
+        events = uploaded["events"]
+        # Topology and counts survive — redaction must not blind observability...
+        assert len(find_events(events, "agent.input")) == 3
+        assert sorted({e["payload"]["agent_id"] for e in find_events(events, "agent.input")}) == [
+            "returns-specialist",
+            "support-triage-supervisor",
+            "warranty-specialist",
+        ]
+        assert all(e["payload"]["total_tokens"] > 0 for e in find_events(events, "model.invoke"))
+        # ...and no real prompt / answer / query text does, anywhere in the trace.
+        blob = json.dumps(events)
+        for content in self.REAL_CONTENT:
+            assert content not in blob, f"real captured content survived redaction: {content!r}"
+
+    def test_the_redaction_sweep_can_actually_fail(self, mock_client) -> None:
+        # VACUITY CONTROL for the sweep above: with capture_content=True the SAME
+        # strings MUST be present, otherwise the sweep would pass on a fixture whose
+        # content the mapping never carried in the first place.
+        uploaded = capture_framework_trace(mock_client)
+        _ingest(mock_client, load_recorded("openinference", "team"), capture_content=True)
+        blob = json.dumps(uploaded["events"])
+        for content in self.REAL_CONTENT:
+            assert content in blob, f"the sweep is vacuous — {content!r} is never captured at all"

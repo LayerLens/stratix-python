@@ -62,6 +62,48 @@ The two languages move together. After an intended change:
 If the corpus itself changes, regenerate it with `_generate_corpus.py`, copy it to
 `atlas-app/apps/otlp-ingest/ingest/testdata/oi-conformance/`, then redo steps 2–4.
 
+### Step 3 is a MANUAL copy — and what guards it (LAY-3622 E3)
+
+Nothing in either repo's build makes step 3 happen, so the failure mode is: change
+Go, regenerate here, forget the copy. Both repos then stay internally consistent and
+green while this side pins a **stale** transcript. Neither pre-existing check catches
+it — atlas's `TestOpenInferenceConformanceOracleIsCurrent` rebuilds from the local Go
+bridge and compares to the local oracle (it never looks at the SDK), and this side's
+`test_oracle_matches_the_corpus_it_was_generated_from` hashes our own corpus against
+our own oracle's embedded digest (an intra-repo pair check, not a freshness one).
+
+`test_the_oracle_is_in_sync_with_the_atlas_side_copy` closes it by sha256-comparing
+both files against the atlas checkout. It finds atlas via `$LAYERLENS_ATLAS_REPO`,
+else the conventional sibling `../atlas-app`.
+
+**Residual window, stated plainly:** on a machine or runner that has only this repo,
+that check has nothing to compare and passes. It is not skipped — a skip inside this
+row fails the adapter matrix — so a green run there is NOT evidence of cross-repo
+freshness. The check bites where the drift is actually introduced: wherever both
+checkouts exist, which is wherever step 2 gets run. Closing the window completely
+needs the oracle published as a versioned artifact both repos consume, rather than
+copied; that is a larger change than this ticket.
+
+## Two divergences the corpus could NOT catch — now converged (LAY-3622 E2)
+
+The oracle only proves parity for inputs the corpus CONTAINS. Two shapes were absent
+from all 24 spans, so the two implementations had drifted silently while this lane
+stayed green:
+
+* **whitespace around `openinference.span.kind`.** Go trims
+  (`strings.ToUpper(strings.TrimSpace(...))`); Python only upper-cased, so `" LLM "`
+  fell through to the `agent.interaction` default here while Go typed it as
+  `model.invoke` — the same span rendering differently depending on arrival path.
+* **the nameless AGENT/CHAIN `agent_id` fallback.** Go lower-cases the kind
+  (`firstNonEmpty(spanName, strings.ToLower(kind), "agent")`) → `agent` / `chain`;
+  Python used the already-upper-cased kind → `AGENT` / `CHAIN`. `agent_id` is a graph
+  NODE id, so the same nameless span rendered as a differently-NAMED node.
+
+Both are FIXED on the Python side (Go is the reference — the oracle is generated from
+it). Because the corpus contains neither input, **the oracle did not change and needed
+no regeneration**. Both are now covered by direct unit tests in
+`TestGoConvergenceOutsideTheCorpus`, since the corpus cannot cover them.
+
 ## Known, deliberate divergence (D1) — the duration field name
 
 Go emits `duration_ms`; Python emits `latency_ms`. `duration_ms` is the OTLP path's

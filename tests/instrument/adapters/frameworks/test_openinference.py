@@ -598,25 +598,39 @@ class TestRealOpenTelemetry:
         proc.shutdown()  # -> adapter.disconnect() -> flush
         assert find_event(uploaded["events"], "model.invoke")
 
-    def test_on_end_never_breaks_the_host_pipeline(self, mock_client: Mock) -> None:
+    def test_a_hostile_dict_span_degrades_instead_of_raising(self, mock_client: Mock) -> None:
+        # LAY-3622 / B4: ``_record_from_dict`` is now exception-wrapped like its
+        # sibling ``_record_from_otel``. This assertion used to be the INVERSE —
+        # it pinned the raise, to prove on_end's blanket except was load-bearing.
+        # That gap is closed: a hostile dict no longer escapes ingest_span, so one
+        # malformed span in a batch can no longer abort the remaining spans (see
+        # test_openinference_otlp.py::TestOneBadSpanCannotStrandTheBatch).
         adapter = OpenInferenceAdapter(mock_client)
         adapter.connect()
-        proc = adapter.span_processor()
 
-        # A dict-shaped span whose access raises reaches _record_from_dict, which
-        # has no guard of its own — so this genuinely escapes ingest_span and
-        # on_end's blanket except is the ONLY thing protecting the host's OTel
-        # pipeline. (An object-shaped span is swallowed earlier by
-        # _record_from_otel, which would make this assertion vacuous.)
         class _HostileDict(Dict[str, Any]):
             def get(self, *args: Any, **kwargs: Any) -> Any:
                 raise RuntimeError("host span exploded")
 
-        hostile = _HostileDict()
-        with pytest.raises(RuntimeError):
-            adapter.ingest_span(hostile)  # proves the guard below is load-bearing
+        assert adapter.ingest_span(_HostileDict()) == 0
 
-        proc.on_end(hostile)  # must NOT raise
+    def test_on_end_never_breaks_the_host_pipeline(self, mock_client: Mock) -> None:
+        # on_end's blanket except is the LAST line of defence for the host's OTel
+        # pipeline, behind the per-extractor guards. Now that both extractors
+        # degrade, a hostile span alone can no longer reach it — so force the raise
+        # from inside ingest_span itself, or this assertion is vacuous.
+        adapter = OpenInferenceAdapter(mock_client)
+        adapter.connect()
+        proc = adapter.span_processor()
+
+        def _explode(_span: Any) -> Any:
+            raise RuntimeError("host span exploded")
+
+        adapter._extract_record = _explode  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError):
+            adapter.ingest_span({})  # proves the guard below is load-bearing
+
+        proc.on_end({})  # must NOT raise
 
 
 class _Noop:
@@ -788,6 +802,64 @@ class TestExtraction:
         from layerlens.instrument.adapters.frameworks.openinference import _otlp_value
 
         assert _otlp_value(raw) == expected
+
+    @pytest.mark.parametrize("truthy", [True, False])
+    def test_a_boolean_token_count_is_omitted_not_coerced_to_an_int(self, truthy: bool) -> None:
+        """AT-5: a bool is not a token count.
+
+        ``bool`` is a subclass of ``int``, so a bare ``int(value)`` turns
+        ``llm.token_count.prompt=True`` into ``prompt_tokens=1`` — a FABRICATED
+        measurement, which the pricing chokepoint then prices into a real dollar
+        figure. ``_as_int`` guards against it and returns None (= omit the key).
+        This is one of the divergences where the SDK is deliberately more honest
+        than the ateam reference, whose ``_as_int`` has no such guard — and it had
+        no test on any lane, so reverting the guard left every suite green.
+
+        Bite proof: drop ``isinstance(value, bool)`` from ``_as_int`` and this fails
+        with ``prompt_tokens == 1``.
+        """
+        from layerlens.instrument.adapters.frameworks.openinference import _as_int, span_to_events
+
+        assert _as_int(truthy) is None
+
+        events = span_to_events(
+            {
+                "span_kind": "LLM",
+                "name": "openai.chat",
+                "attributes": {
+                    "openinference.span.kind": "LLM",
+                    "llm.model_name": "gpt-4o",
+                    "llm.token_count.prompt": truthy,
+                },
+                "trace_id": "aa" * 16,
+                "span_id": "bb" * 8,
+            },
+            capture_content=True,
+        )
+        payload = dict(events)["model.invoke"]
+        for key in ("prompt_tokens", "input_tokens", "total_tokens"):
+            assert key not in payload, f"a boolean attribute was coerced into {key}"
+
+    def test_a_boolean_reranker_top_k_is_also_omitted(self) -> None:
+        # _as_int is the coercer for reranker top_k and the flattened-index head
+        # too, so the guard covers three surfaces, not just token counts.
+        from layerlens.instrument.adapters.frameworks.openinference import span_to_events
+
+        events = span_to_events(
+            {
+                "span_kind": "RERANKER",
+                "name": "rerank",
+                "attributes": {
+                    "openinference.span.kind": "RERANKER",
+                    "reranker.model_name": "rerank-v3",
+                    "reranker.top_k": True,
+                },
+                "trace_id": "aa" * 16,
+                "span_id": "cc" * 8,
+            },
+            capture_content=True,
+        )
+        assert "top_k" not in dict(events)["tool.call"]
 
 
 # ---------------------------------------------------------------------------

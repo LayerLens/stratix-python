@@ -17,7 +17,7 @@ secret-shaped value reaches an uploaded event (so the two can never drift).
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Pattern, FrozenSet
+from typing import Any, Dict, List, Pattern, Optional, FrozenSet
 
 REDACTION = "[REDACTED-SECRET]"
 
@@ -120,12 +120,40 @@ def _luhn_ok(text: str) -> bool:
 ERROR_KEYS = ("error", "error_message", "execution_error", "status_message")
 
 
-def scrub_secrets(text: str) -> str:
-    """Replace every secret-shaped substring in *text* with a redaction marker."""
+# Payload fields holding a MACHINE-GENERATED opaque correlation id. These are hex
+# identifiers minted by the SDK / OTel, never free text and never a place a card
+# number can legitimately appear — so the PAN pattern must not apply to them
+# (LAY-3622 F3).
+#
+# A 16-hex span id is all-decimal with probability (10/16)^16 ~= 1/1845 and then
+# Luhn-valid ~1 in 10, so roughly 1 in 19,000 span ids look EXACTLY like a card
+# number (measured: 21 destroyed out of 400,000 random ids). Redacting one silently
+# breaks parent/child linkage for that trace, and with it the agent graph — an edge
+# or a node identity vanishes with no error raised anywhere.
+#
+# Deliberately NARROW. Only the checksum-validated PAN pattern is skipped, and only
+# for these four keys; every other pattern still applies, so a credential templated
+# into a span id is still caught. Producer-supplied NAMES (agent_id, span_name,
+# tool_name) are NOT here: a customer picks those, so a card number appearing there
+# is not structurally impossible the way it is in a generated id.
+_STRUCTURAL_ID_KEYS: FrozenSet[str] = frozenset({"span_id", "trace_id", "parent_span_id", "run_id"})
+
+
+def scrub_secrets(text: str, *, field: Optional[str] = None) -> str:
+    """Replace every secret-shaped substring in *text* with a redaction marker.
+
+    *field* is the payload key *text* was read from, when there is one. It only
+    ever WIDENS what survives, and only for the checksum-validated PAN pattern on
+    a structural identifier (see :data:`_STRUCTURAL_ID_KEYS`). Called without it —
+    e.g. via :func:`safe_error` on a bare string — behaviour is unchanged.
+    """
     if not text:
         return text
+    skip_pan = field in _STRUCTURAL_ID_KEYS
     for name, pattern in SECRET_PATTERNS:
         if name in _LUHN_VALIDATED:
+            if skip_pan:
+                continue
             # Only redact candidate matches that pass the checksum, so a benign
             # 16-digit value is left intact (CPython re.sub returns the input
             # unchanged when the callback redacts nothing — identity preserved).
@@ -156,7 +184,7 @@ def find_secrets(text: str) -> List[str]:
     return hits
 
 
-def _scrub_value(value: object) -> object:
+def _scrub_value(value: object, field: Optional[str] = None) -> object:
     """Recursively scrub secret-shaped substrings from every string nested in
     *value*. COPY-ON-WRITE: returns the SAME object when nothing matched (the
     common case — the hot path allocates nothing), otherwise a scrubbed copy.
@@ -165,25 +193,30 @@ def _scrub_value(value: object) -> object:
     ``str`` object when no pattern matches (CPython ``re.sub`` returns the input
     unchanged on no-op), so a deeply-nested clean payload is detected as clean
     without a value-compare per node.
+
+    *field* is the key this value was reached under, threaded down so the PAN
+    pattern can be skipped for a structural identifier at ANY depth (adapters nest
+    span references under metadata/extra wrappers). A list/tuple element inherits
+    its containing key, so ``spans: [{trace_id: ...}]`` resolves correctly.
     """
     if isinstance(value, str):
-        return scrub_secrets(value)
+        return scrub_secrets(value, field=field)
     if isinstance(value, dict):
         out = value
         for k, v in value.items():
-            cleaned = _scrub_value(v)
+            cleaned = _scrub_value(v, k if isinstance(k, str) else None)
             if cleaned is not v:
                 if out is value:
                     out = dict(value)
                 out[k] = cleaned
         return out
     if isinstance(value, list):
-        cleaned_items = [_scrub_value(v) for v in value]
+        cleaned_items = [_scrub_value(v, field) for v in value]
         if any(ci is not orig for ci, orig in zip(cleaned_items, value)):
             return cleaned_items
         return value
     if isinstance(value, tuple):
-        cleaned_items = [_scrub_value(v) for v in value]
+        cleaned_items = [_scrub_value(v, field) for v in value]
         if any(ci is not orig for ci, orig in zip(cleaned_items, value)):
             return tuple(cleaned_items)
         return value

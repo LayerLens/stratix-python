@@ -49,6 +49,41 @@ def ui_link(row: Dict[str, Any]) -> str:
     return f"{base}/traces/{trace_id}"
 
 
+#: Rendered when a lane never MEASURED a dimension, as distinct from measuring it
+#: and getting a negative result (LAY-3622 C2).
+_NOT_MEASURED = "n/a"
+
+
+def _flag(row: Dict[str, Any], key: str, *, true: str, false: str) -> str:
+    """Render a boolean cell, distinguishing ABSENT from False.
+
+    REPORTING-HONESTY FIX (LAY-3622 C2): these cells used to be
+    ``"ok" if row.get(key) else "FAIL"``, so a lane that never populated the key
+    rendered as a measured FAILURE. That is why the committed openinference live
+    reports read as failures for a lane that had actually passed. A missing
+    measurement is ``n/a``.
+
+    Do NOT "fix" this by defaulting the keys to True/False at the producer — that
+    replaces an unmeasured dimension with a fabricated verdict, which is the same
+    dishonesty pointing the other way.
+    """
+    if key not in row or row[key] is None:
+        return _NOT_MEASURED
+    return true if row[key] else false
+
+
+def _measured(row: Dict[str, Any], *keys: str) -> Any:
+    """The first key actually present, else ``n/a`` — never a defaulted 0.
+
+    ``or 0`` rendered an unmeasured event count as a hard zero, indistinguishable
+    from "the server stored nothing" (LAY-3622 C2).
+    """
+    for key in keys:
+        if key in row and row[key] is not None:
+            return row[key]
+    return _NOT_MEASURED
+
+
 def _cost_cell(row: Dict[str, Any]) -> str:
     """Render spend, distinguishing "no price is knowable" from "it was free".
 
@@ -89,13 +124,13 @@ def write_markdown_report(rows: List[Dict[str, Any]]) -> str:
                 provider=r.get("provider") or r.get("framework", ""),
                 variant=r.get("variant", ""),
                 model=r.get("model") or "-",
-                n=r.get("n_events", r.get("event_count")) or 0,
+                n=_measured(r, "n_events", "event_count"),
                 types=types or "-",
                 tools=r.get("tool_calls", 0),
                 cost=_cost_cell(r),
-                red="yes" if r.get("redaction_ok") else "-",
-                att="ok" if r.get("attestation_ok") else "FAIL",
-                echo="yes" if r.get("data_has_events") else "no",
+                red=_flag(r, "redaction_ok", true="yes", false="-"),
+                att=_flag(r, "attestation_ok", true="ok", false="FAIL"),
+                echo=_flag(r, "data_has_events", true="yes", false="no"),
                 trace=trace_cell,
             )
         )

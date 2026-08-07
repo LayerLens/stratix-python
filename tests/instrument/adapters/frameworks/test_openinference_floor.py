@@ -603,3 +603,88 @@ class TestCost:
         emb = find_event(uploaded["events"], "embedding.create")["payload"]
         assert emb["input_tokens"] == 8 and emb["prompt_tokens"] == 8
         assert "cost_usd" not in emb
+
+    def test_a_totals_only_span_emits_no_cost_record(self, mock_client: Mock) -> None:
+        """THE A4/AC4b GAP: every other negative in this class removes the MODEL or
+        removes the tokens. A span that declares a real, priced model and a real
+        token count — but only ``llm.token_count.total``, which OpenInference
+        explicitly allows — hits neither guard. The shared formula prices
+        prompt/cached/cache-write/completion and never reads the total, so it
+        answered 0.0; ``0.0 is not None``, so ``_emit_cost_record``'s guard let it
+        through and a real billed call shipped as free.
+
+        The token count is not lost: ``model.invoke`` still carries the honest
+        ``total_tokens``. Only the unknowable price is withheld.
+        """
+        uploaded = capture_framework_trace(mock_client)
+        adapter = OpenInferenceAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect()
+        adapter.ingest_span(
+            {
+                "name": "openai.chat",
+                "trace_id": "t1",
+                "span_id": "s1",
+                "attributes": {
+                    "openinference.span.kind": "LLM",
+                    "llm.model_name": "gpt-4o",
+                    "llm.token_count.total": 1500,
+                },
+            }
+        )
+        adapter.flush()
+
+        events = uploaded["events"]
+        invoke = find_event(events, "model.invoke")["payload"]
+        assert invoke["model"] == "gpt-4o"
+        assert invoke["total_tokens"] == 1500, "the honest token count must survive"
+        assert not find_events(events, "cost.record"), (
+            "a totals-only span shipped a cost.record; a priced model with no "
+            "priceable token dimension has an UNKNOWABLE cost, not a $0.00 one"
+        )
+
+    def test_a_totals_only_span_never_reports_a_zero_cost_anywhere(self, mock_client: Mock) -> None:
+        # Belt-and-braces over the whole serialized trace: no event, of any type,
+        # may carry cost_usd == 0.0 for this span.
+        uploaded = capture_framework_trace(mock_client)
+        adapter = OpenInferenceAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect()
+        adapter.ingest_span(
+            {
+                "name": "openai.chat",
+                "trace_id": "t1",
+                "span_id": "s1",
+                "attributes": {
+                    "openinference.span.kind": "LLM",
+                    "llm.model_name": "gpt-4o",
+                    "llm.token_count.total": 1500,
+                },
+            }
+        )
+        adapter.flush()
+        zeros = [(e["event_type"], e["payload"]) for e in uploaded["events"] if e["payload"].get("cost_usd") == 0.0]
+        assert not zeros, f"fabricated zero cost on {zeros}"
+
+    def test_a_real_split_still_prices(self, mock_client: Mock) -> None:
+        # BOUNDARY/VACUITY CONTROL for the two tests above: the same span WITH a
+        # prompt/completion split must still emit a priced cost.record, so those
+        # assertions cannot pass by the adapter simply never pricing anything.
+        uploaded = capture_framework_trace(mock_client)
+        adapter = OpenInferenceAdapter(mock_client, capture_config=CaptureConfig.full())
+        adapter.connect()
+        adapter.ingest_span(
+            {
+                "name": "openai.chat",
+                "trace_id": "t1",
+                "span_id": "s1",
+                "attributes": {
+                    "openinference.span.kind": "LLM",
+                    "llm.model_name": "gpt-4o",
+                    "llm.token_count.prompt": 1000,
+                    "llm.token_count.completion": 500,
+                    "llm.token_count.total": 1500,
+                },
+            }
+        )
+        adapter.flush()
+        cost = find_event(uploaded["events"], "cost.record")["payload"]
+        assert cost["cost_usd"] > 0
