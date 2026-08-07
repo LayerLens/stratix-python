@@ -204,6 +204,13 @@ OPENCLAW_DIRECT_DEMOS = [
 
 OPENCLAW_SKILL_SCRIPT = "layerlens_skill/scripts/evaluate"
 
+# Loopback discard port, used to make SDK initialization fail deterministically.
+# Stratix() fetches /organizations from its constructor, so a fake-but-non-empty
+# key sends a live request to the production API; that request's own 30s timeout
+# equals _run_openclaw_demo's entire subprocess budget, leaving no headroom.
+# Pointing at a closed local port refuses instantly instead of racing the network.
+_UNREACHABLE_BASE_URL = "http://127.0.0.1:9/api/v1"
+
 # ---- All samples as (category, name) pairs for parametrization ----
 
 ALL_MOCKED_SAMPLES = (
@@ -886,12 +893,19 @@ def _run_openclaw_demo(
         os.close(fd)
         raise
     env = dict(os.environ)
+    # Scrub ambient LayerLens config unconditionally, then layer the test's own
+    # values on top. Scrubbing only in the no-override branch meant a caller
+    # passing env_override inherited the developer's key and base URL, so the
+    # same test could talk to a different backend locally than it does in CI.
+    for _var in (
+        "LAYERLENS_STRATIX_API_KEY",
+        "LAYERLENS_ATLAS_API_KEY",
+        "LAYERLENS_STRATIX_BASE_URL",
+        "LAYERLENS_ATLAS_BASE_URL",
+    ):
+        env.pop(_var, None)
     if env_override:
         env.update(env_override)
-    else:
-        # Ensure no real API key is used for offline tests
-        env.pop("LAYERLENS_STRATIX_API_KEY", None)
-        env.pop("LAYERLENS_ATLAS_API_KEY", None)
     try:
         return subprocess.run(
             cmd,
@@ -1242,21 +1256,33 @@ class TestAllSamplesWithMockedSDK:
         _verify_sample_behavior(mock_stratix, category, name, output)
 
     @pytest.mark.parametrize("demo", OPENCLAW_RUNNER_DEMOS)
-    def test_openclaw_runner_mocked(self, demo):
-        """OpenClaw DemoRunner demos run with a fake API key (fallback to offline)."""
-        env_override = {
-            "LAYERLENS_STRATIX_API_KEY": "fake-test-key-12345",
-        }
+    def test_openclaw_runner_sdk_init_failure(self, demo):
+        """DemoRunner demos degrade to offline mode when SDK init fails.
+
+        Covers the ``except`` branch of ``DemoRunner._init_sdk`` -- a key *is*
+        set, but constructing ``Stratix()`` fails. That is distinct from the
+        ``--no-sdk`` early return exercised by ``TestOpenClawOfflineMode``, and
+        it is the path a user with a wrong or expired key actually hits.
+        """
         result = _run_openclaw_demo(
             demo,
             extra_args=["--json"],
-            env_override=env_override,
+            env_override={
+                "LAYERLENS_STRATIX_API_KEY": "fake-test-key-12345",
+                "LAYERLENS_STRATIX_BASE_URL": _UNREACHABLE_BASE_URL,
+            },
         )
         assert result.returncode == 0, (
-            f"OpenClaw demo {demo} failed with fake API key.\n"
+            f"OpenClaw demo {demo} did not survive SDK init failure.\n"
             f"stdout: {result.stdout[:500]}\n"
             f"stderr: {result.stderr[:500]}"
         )
+        # Assert the fallback actually ran. Without this, a demo that died on
+        # import would fail identically to a genuine degradation bug.
+        assert "Running in offline mode" in result.stderr, (
+            f"OpenClaw demo {demo} did not report the offline fallback.\nstderr: {result.stderr[:500]}"
+        )
+        assert result.stdout.strip(), f"OpenClaw demo {demo} produced no stdout.\nstderr: {result.stderr[:500]}"
 
     @pytest.mark.parametrize("name", sorted(_ASYNC_CORE_SAMPLES))
     def test_async_sample_mocked(self, name, mock_stratix, mock_async_stratix, capsys):
