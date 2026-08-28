@@ -17,10 +17,24 @@ from layerlens.models import (
     CreateEvaluationsResponse,
 )
 from layerlens._constants import DEFAULT_TIMEOUT
+from layerlens._exceptions import APIResponseValidationError
 from layerlens.resources.evaluations.evaluations import Evaluations
 from layerlens.resources.public_evaluations.public_evaluations import (
     PublicEvaluationsResource,
 )
+
+_REQUEST = httpx.Request("GET", "https://api.test.invalid/api/v1/evaluations")
+
+
+def wire(body, status_code: int = 200) -> httpx.Response:
+    """A real HTTP response carrying `body` as JSON bytes.
+
+    The list resources read the response themselves rather than passing cast_to,
+    so `Evaluation(**row)` runs against parsed wire bytes — which is the point:
+    handing pre-built Evaluation objects to a Mock is why a wire-shape change went
+    undetected (LAY-3765).
+    """
+    return httpx.Response(status_code, json=body, request=_REQUEST)
 
 
 class TestEvaluations:
@@ -300,9 +314,7 @@ class TestEvaluations:
 
     def test_get_all_returns_evaluations(self, evaluations_resource, mock_client, sample_evaluation_data):
         """get_all returns list of evaluations when response is valid."""
-        evaluation = Evaluation(**sample_evaluation_data)
-        response = {"evaluations": [evaluation], "total_count": 1}
-        evaluations_resource._get.return_value = response
+        evaluations_resource._get.return_value = wire({"evaluations": [sample_evaluation_data], "total_count": 1})
 
         result = evaluations_resource.get_many()
 
@@ -317,17 +329,16 @@ class TestEvaluations:
                 "page_size": "100",
             },
             timeout=DEFAULT_TIMEOUT,
-            cast_to=dict,
         )
         assert result.evaluations[0]._client is mock_client
 
-    def test_get_all_returns_none_on_invalid_response(self, evaluations_resource):
-        """get_all returns None when response is invalid type."""
-        evaluations_resource._get.return_value = "not-a-response"
+    def test_get_all_raises_on_a_body_that_is_not_an_object(self, evaluations_resource):
+        """A 2xx body that is not the documented object raises rather than
+        returning None — an empty page and a broken response must not look alike."""
+        evaluations_resource._get.return_value = wire("not-a-response")
 
-        result = evaluations_resource.get_many()
-
-        assert result is None
+        with pytest.raises(APIResponseValidationError, match="not a JSON object"):
+            evaluations_resource.get_many()
 
 
 class TestEvaluationsErrorHandling:
@@ -636,11 +647,13 @@ class TestEvaluationModelFields:
         assert evaluation.model_key == ""
         assert evaluation.model_company == ""
         assert evaluation.benchmark_name == ""
-        assert evaluation.readability_score == 0.0
-        assert evaluation.toxicity_score == 0.0
-        assert evaluation.ethics_score == 0.0
         assert evaluation.failed_prompt_count == 0
         assert evaluation.queue_id == 0
+        # None, not 0: a metric the pipeline never computed is not a score of
+        # zero, and rendering it as one fabricates a measurement (LAY-3765).
+        assert evaluation.readability_score is None
+        assert evaluation.toxicity_score is None
+        assert evaluation.ethics_score is None
         # None, not 0: evaluations predating token capture never recorded
         # usage, and rendering that as zero would misreport them.
         assert evaluation.total_input_tokens is None
@@ -898,11 +911,7 @@ class TestPublicEvaluationsResource:
 
     def test_get_many_success(self, public_evaluations, sample_evaluation_data):
         """get_many returns EvaluationsResponse with evaluations."""
-        resp = {
-            "evaluations": [sample_evaluation_data],
-            "total_count": 1,
-        }
-        public_evaluations._get.return_value = resp
+        public_evaluations._get.return_value = wire({"evaluations": [sample_evaluation_data], "total_count": 1})
 
         result = public_evaluations.get_many()
 
@@ -912,8 +921,7 @@ class TestPublicEvaluationsResource:
 
     def test_get_many_with_filters(self, public_evaluations, sample_evaluation_data):
         """get_many passes filter parameters correctly."""
-        resp = {"evaluations": [sample_evaluation_data], "total_count": 1}
-        public_evaluations._get.return_value = resp
+        public_evaluations._get.return_value = wire({"evaluations": [sample_evaluation_data], "total_count": 1})
 
         public_evaluations.get_many(
             page=2,
@@ -939,8 +947,7 @@ class TestPublicEvaluationsResource:
 
     def test_get_many_pagination(self, public_evaluations, sample_evaluation_data):
         """get_many computes pagination correctly."""
-        resp = {"evaluations": [sample_evaluation_data] * 3, "total_count": 25}
-        public_evaluations._get.return_value = resp
+        public_evaluations._get.return_value = wire({"evaluations": [sample_evaluation_data] * 3, "total_count": 25})
 
         result = public_evaluations.get_many(
             page=1,
@@ -952,18 +959,17 @@ class TestPublicEvaluationsResource:
         assert result.pagination.total_count == 25
         assert result.pagination.total_pages == 3  # ceil(25/10)
 
-    def test_get_many_returns_none_on_invalid(self, public_evaluations):
-        """get_many returns None when response is invalid."""
-        public_evaluations._get.return_value = "not-a-dict"
+    def test_get_many_raises_on_a_body_that_is_not_an_object(self, public_evaluations):
+        """A 2xx body that is not the documented object raises rather than
+        returning None, which a caller reads as "no public evaluations exist"."""
+        public_evaluations._get.return_value = wire("not-a-dict")
 
-        result = public_evaluations.get_many()
-
-        assert result is None
+        with pytest.raises(APIResponseValidationError, match="not a JSON object"):
+            public_evaluations.get_many()
 
     def test_get_many_empty_results(self, public_evaluations):
         """get_many handles empty evaluations list."""
-        resp = {"evaluations": [], "total_count": 0}
-        public_evaluations._get.return_value = resp
+        public_evaluations._get.return_value = wire({"evaluations": [], "total_count": 0})
 
         result = public_evaluations.get_many()
 
