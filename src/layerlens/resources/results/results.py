@@ -5,9 +5,11 @@ from typing import List, Optional
 
 import httpx
 
+from ..._wire import json_object, parse_model
 from ...models import Result, Evaluation, ResultsResponse
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._constants import DEFAULT_TIMEOUT
+from ..._exceptions import StratixError
 
 DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 100
@@ -65,7 +67,12 @@ class Results(SyncAPIResource):
             - results: List of Result objects for the current page
             - metrics: Contains total_count and score ranges
             - pagination: Calculated pagination info
-            or None if the request fails
+
+        Raises:
+            APIResponseValidationError: the server returned 2xx but the body does
+                not match the documented shape. Previously swallowed and reported
+                as None, which `get_all` then read as "no more pages" — see
+                `_wire`.
         """
         params = {"evaluation_id": evaluation_id}
 
@@ -75,25 +82,27 @@ class Results(SyncAPIResource):
         params["page"] = str(effective_page)
         params["page_size"] = str(effective_page_size)
 
-        # Get the response with cast_to to get parsed data
-        resp = self._get(
-            f"/results",
-            params=params,
-            timeout=timeout,
-            cast_to=dict,
+        # The raw response, not cast_to=dict: pagination has to be derived from the
+        # body before the envelope can be validated, and holding the response is
+        # what lets a schema failure below raise with real context attached.
+        response = self._get(f"/results", params=params, timeout=timeout)
+        assert isinstance(response, httpx.Response), (
+            "expected the raw response: this call passes no cast_to, so the transport must hand back an httpx.Response"
         )
 
-        if not resp or not isinstance(resp, dict):
-            return None
+        payload = json_object(response, endpoint="/results")
 
-        # Calculate pagination info
-        metrics = resp.get("metrics", {})
-        total_count = metrics.get("total_count", 0)
+        metrics = payload.get("metrics") or {}
+        total_count = metrics.get("total_count", 0) if isinstance(metrics, dict) else 0
         total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
 
-        # Add pagination to the response
         resp_with_pagination = {
-            **resp,
+            **payload,
+            # A page with no matching rows arrives as `"results": null`, because the
+            # API's `Results []LLMResult` has no omitempty and the SQL repositories
+            # leave the slice nil when nothing matches. Read that as "no rows"
+            # rather than rejecting the page.
+            "results": payload.get("results") or [],
             "pagination": {
                 "page": effective_page,
                 "page_size": effective_page_size,
@@ -102,10 +111,13 @@ class Results(SyncAPIResource):
             },
         }
 
-        try:
-            return ResultsResponse.model_validate(resp_with_pagination)
-        except Exception:
-            return None
+        return parse_model(
+            ResultsResponse,
+            resp_with_pagination,
+            response=response,
+            endpoint="/results",
+            detail=f"page {effective_page} of evaluation {evaluation_id}",
+        )
 
     def get_all(
         self,
@@ -140,6 +152,15 @@ class Results(SyncAPIResource):
 
         Returns:
             List of all Result objects across all pages.
+
+        Raises:
+            APIResponseValidationError: a page did not match the documented shape.
+            StratixError: the server's row count and its pages disagree, so no
+                complete list can be returned.
+
+        Never returns a short list silently. Both conditions above used to break
+        the loop and hand back whatever had accumulated, which a caller could not
+        distinguish from a complete result set.
         """
         all_results: List[Result] = []
         current_page = 1
@@ -152,14 +173,32 @@ class Results(SyncAPIResource):
                 timeout=timeout,
             )
 
-            if resp is None or not resp.results:
-                break
+            # Defensive: get_by_id raises rather than returning None, but its
+            # declared type still permits it. Treating None as end-of-pages is the
+            # exact bug being fixed, so refuse instead.
+            if resp is None:
+                raise StratixError(
+                    f"/results page {current_page} for evaluation {evaluation_id} returned no "
+                    f"usable body after {len(all_results)} results; refusing to return a "
+                    "partial list as if it were complete"
+                )
 
             all_results.extend(resp.results)
 
-            # Stop if we reached the last page
             if resp.pagination.page >= resp.pagination.total_pages:
                 break
+
+            # An empty page before the last one means total_count and the rows
+            # disagree. Breaking here is what silently truncated the list; there is
+            # no honest way to call the result complete.
+            if not resp.results:
+                raise StratixError(
+                    f"/results page {current_page} of {resp.pagination.total_pages} for evaluation "
+                    f"{evaluation_id} returned 0 rows, but the server reports "
+                    f"{resp.pagination.total_count} results in total and only "
+                    f"{len(all_results)} have been read; refusing to return a partial list as if "
+                    "it were complete"
+                )
 
             current_page += 1
 
@@ -217,7 +256,10 @@ class AsyncResults(AsyncAPIResource):
             - results: List of Result objects for the current page
             - metrics: Contains total_count and score ranges
             - pagination: Calculated pagination info (total_count, page_size, total_pages)
-            or None if the request fails
+
+        Raises:
+            APIResponseValidationError: the server returned 2xx but the body does
+                not match the documented shape.
         """
         params = {"evaluation_id": evaluation_id}
 
@@ -227,25 +269,23 @@ class AsyncResults(AsyncAPIResource):
         params["page"] = str(effective_page)
         params["page_size"] = str(effective_page_size)
 
-        # Get the response with cast_to to get parsed data
-        resp = await self._get(
-            f"/results",
-            params=params,
-            timeout=timeout,
-            cast_to=dict,
+        # See the sync twin: the raw response is what lets a schema failure below
+        # raise with the payload and field paths attached.
+        response = await self._get(f"/results", params=params, timeout=timeout)
+        assert isinstance(response, httpx.Response), (
+            "expected the raw response: this call passes no cast_to, so the transport must hand back an httpx.Response"
         )
 
-        if not resp or not isinstance(resp, dict):
-            return None
+        payload = json_object(response, endpoint="/results")
 
-        # Calculate pagination info
-        metrics = resp.get("metrics", {})
-        total_count = metrics.get("total_count", 0)
+        metrics = payload.get("metrics") or {}
+        total_count = metrics.get("total_count", 0) if isinstance(metrics, dict) else 0
         total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
 
-        # Add pagination to the response
         resp_with_pagination = {
-            **resp,
+            **payload,
+            # `"results": null` is what an empty page looks like on the wire.
+            "results": payload.get("results") or [],
             "pagination": {
                 "page": effective_page,
                 "page_size": effective_page_size,
@@ -254,10 +294,13 @@ class AsyncResults(AsyncAPIResource):
             },
         }
 
-        try:
-            return ResultsResponse.model_validate(resp_with_pagination)
-        except Exception:
-            return None
+        return parse_model(
+            ResultsResponse,
+            resp_with_pagination,
+            response=response,
+            endpoint="/results",
+            detail=f"page {effective_page} of evaluation {evaluation_id}",
+        )
 
     async def get_all(
         self,
@@ -292,6 +335,12 @@ class AsyncResults(AsyncAPIResource):
 
         Returns:
             List of all Result objects across all pages.
+
+        Raises:
+            APIResponseValidationError: a page did not match the documented shape.
+            StratixError: the server's row count and its pages disagree.
+
+        Never returns a short list silently — see the sync twin.
         """
         all_results: List[Result] = []
         current_page = 1
@@ -304,14 +353,26 @@ class AsyncResults(AsyncAPIResource):
                 timeout=timeout,
             )
 
-            if resp is None or not resp.results:
-                break
+            if resp is None:
+                raise StratixError(
+                    f"/results page {current_page} for evaluation {evaluation_id} returned no "
+                    f"usable body after {len(all_results)} results; refusing to return a "
+                    "partial list as if it were complete"
+                )
 
             all_results.extend(resp.results)
 
-            # Stop if we reached the last page
             if resp.pagination.page >= resp.pagination.total_pages:
                 break
+
+            if not resp.results:
+                raise StratixError(
+                    f"/results page {current_page} of {resp.pagination.total_pages} for evaluation "
+                    f"{evaluation_id} returned 0 rows, but the server reports "
+                    f"{resp.pagination.total_count} results in total and only "
+                    f"{len(all_results)} have been read; refusing to return a partial list as if "
+                    "it were complete"
+                )
 
             current_page += 1
 

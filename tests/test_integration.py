@@ -88,7 +88,7 @@ class TestStratixIntegration:
             "prompt": "What is the derivative of x^2?",
             "result": "2x",
             "truth": "2x",
-            "duration": timedelta(seconds=2.5),
+            "duration": 2_500_000_000,  # int64 nanoseconds, as the API sends it
             "score": 1.0,
             "metrics": {"accuracy": 1.0, "confidence": 0.95},
         }
@@ -160,7 +160,7 @@ class TestCompleteEvaluationWorkflow:
             "prompt": "2+2=?",
             "result": "4",
             "truth": "4",
-            "duration": timedelta(seconds=1.5),
+            "duration": 1_500_000_000,  # int64 nanoseconds, as the API sends it
             "score": 1.0,
             "metrics": {"accuracy": 1.0},
         }
@@ -178,17 +178,23 @@ class TestCompleteEvaluationWorkflow:
             stratix_client, "post_cast"
         ) as mock_post:
             # Configure mocks for the workflow
-            mock_get.return_value = {
-                "evaluation_id": "eval-789",
-                "results": [result_data],
-                "metrics": {
-                    "total_count": 1,
-                    "min_toxicity_score": 0.02,
-                    "max_toxicity_score": 0.02,
-                    "min_readability_score": 0.85,
-                    "max_readability_score": 0.85,
+            # A real HTTP response: the results resource reads the response itself so
+            # that a schema failure can raise with the payload attached.
+            mock_get.return_value = httpx.Response(
+                200,
+                json={
+                    "evaluation_id": "eval-789",
+                    "results": [result_data],
+                    "metrics": {
+                        "total_count": 1,
+                        "min_toxicity_score": 0.02,
+                        "max_toxicity_score": 0.02,
+                        "min_readability_score": 0.85,
+                        "max_readability_score": 0.85,
+                    },
                 },
-            }  # Get results - raw API response
+                request=httpx.Request("GET", "https://api.test.invalid/api/v1/results"),
+            )
             mock_post.return_value = evaluations_response  # Create evaluation
 
             # Step 1: Create evaluation directly (Stratix client doesn't expose models/benchmarks resources)
@@ -201,6 +207,7 @@ class TestCompleteEvaluationWorkflow:
             assert len(results.results) == 1
             assert results.results[0].score == 1.0
             assert results.results[0].subset == "math"
+            assert results.results[0].duration == timedelta(seconds=1.5)
 
             # Verify all API calls were made correctly
             assert mock_get.call_count == 1  # Only results call
@@ -237,23 +244,28 @@ class TestCompleteEvaluationWorkflow:
             "prompt": "test",
             "result": "test",
             "truth": "test",
-            "duration": timedelta(seconds=1.0),
+            "duration": 1_000_000_000,  # int64 nanoseconds, as the API sends it
             "score": 1.0,
             "metrics": {"accuracy": 1.0},
         }
 
         with patch.object(stratix_client, "get_cast") as mock_get:
-            mock_get.return_value = {
-                "evaluation_id": "test-eval",
-                "results": [result_data],
-                "metrics": {
-                    "total_count": 1,
-                    "min_toxicity_score": 0.0,
-                    "max_toxicity_score": 0.1,
-                    "min_readability_score": 0.8,
-                    "max_readability_score": 0.9,
+            # A real HTTP response: the results resource reads the response itself.
+            mock_get.return_value = httpx.Response(
+                200,
+                json={
+                    "evaluation_id": "test-eval",
+                    "results": [result_data],
+                    "metrics": {
+                        "total_count": 1,
+                        "min_toxicity_score": 0.0,
+                        "max_toxicity_score": 0.1,
+                        "min_readability_score": 0.8,
+                        "max_readability_score": 0.9,
+                    },
                 },
-            }
+                request=httpx.Request("GET", "https://api.test.invalid/api/v1/results"),
+            )
 
             # Test with custom timeout
             custom_timeout = httpx.Timeout(30.0)
@@ -359,7 +371,7 @@ class TestResourceInteraction:
                 "prompt": "2+2=?",
                 "result": "4",
                 "truth": "4",
-                "duration": timedelta(seconds=1.0),
+                "duration": 1_000_000_000,  # int64 nanoseconds, as the API sends it
                 "score": 1.0,
                 "metrics": {"accuracy": 1.0},
             },
@@ -368,7 +380,7 @@ class TestResourceInteraction:
                 "prompt": "3*3=?",
                 "result": "9",
                 "truth": "9",
-                "duration": timedelta(seconds=1.2),
+                "duration": 1_200_000_000,  # int64 nanoseconds, as the API sends it
                 "score": 1.0,
                 "metrics": {"accuracy": 1.0},
             },
@@ -377,7 +389,7 @@ class TestResourceInteraction:
                 "prompt": "What is the main idea?",
                 "result": "Education",
                 "truth": "Learning",
-                "duration": timedelta(seconds=2.8),
+                "duration": 2_800_000_000,  # int64 nanoseconds, as the API sends it
                 "score": 0.7,
                 "metrics": {"accuracy": 0.7},
             },
@@ -386,17 +398,22 @@ class TestResourceInteraction:
         results = [Result(**data) for data in results_data]
 
         with patch.object(stratix_client, "get_cast") as mock_get:
-            mock_get.return_value = {
-                "evaluation_id": "test-eval",
-                "results": results_data,
-                "metrics": {
-                    "total_count": 3,
-                    "min_toxicity_score": 0.0,
-                    "max_toxicity_score": 0.1,
-                    "min_readability_score": 0.7,
-                    "max_readability_score": 0.9,
+            # A real HTTP response: the results resource reads the response itself.
+            mock_get.return_value = httpx.Response(
+                200,
+                json={
+                    "evaluation_id": "test-eval",
+                    "results": results_data,
+                    "metrics": {
+                        "total_count": 3,
+                        "min_toxicity_score": 0.0,
+                        "max_toxicity_score": 0.1,
+                        "min_readability_score": 0.7,
+                        "max_readability_score": 0.9,
+                    },
                 },
-            }
+                request=httpx.Request("GET", "https://api.test.invalid/api/v1/results"),
+            )
 
             # Get results
             evaluation_results = stratix_client.results.get_by_id(evaluation_id="test-eval")
@@ -506,34 +523,44 @@ class TestConcurrentOperations:
             "prompt": "test",
             "result": "test",
             "truth": "test",
-            "duration": timedelta(seconds=1.0),
+            "duration": 1_000_000_000,  # int64 nanoseconds, as the API sends it
             "score": 1.0,
             "metrics": {"accuracy": 1.0},
         }
 
         with patch.object(client1, "get_cast") as mock_get1, patch.object(client2, "get_cast") as mock_get2:
-            mock_get1.return_value = {
-                "evaluation_id": "test-eval",
-                "results": [result_data],
-                "metrics": {
-                    "total_count": 1,
-                    "min_toxicity_score": 0.0,
-                    "max_toxicity_score": 0.1,
-                    "min_readability_score": 0.8,
-                    "max_readability_score": 0.9,
+            # A real HTTP response: the results resource reads the response itself.
+            mock_get1.return_value = httpx.Response(
+                200,
+                json={
+                    "evaluation_id": "test-eval",
+                    "results": [result_data],
+                    "metrics": {
+                        "total_count": 1,
+                        "min_toxicity_score": 0.0,
+                        "max_toxicity_score": 0.1,
+                        "min_readability_score": 0.8,
+                        "max_readability_score": 0.9,
+                    },
                 },
-            }
-            mock_get2.return_value = {
-                "evaluation_id": "test-eval",
-                "results": [result_data],
-                "metrics": {
-                    "total_count": 1,
-                    "min_toxicity_score": 0.0,
-                    "max_toxicity_score": 0.1,
-                    "min_readability_score": 0.8,
-                    "max_readability_score": 0.9,
+                request=httpx.Request("GET", "https://api.test.invalid/api/v1/results"),
+            )
+            # A real HTTP response: the results resource reads the response itself.
+            mock_get2.return_value = httpx.Response(
+                200,
+                json={
+                    "evaluation_id": "test-eval",
+                    "results": [result_data],
+                    "metrics": {
+                        "total_count": 1,
+                        "min_toxicity_score": 0.0,
+                        "max_toxicity_score": 0.1,
+                        "min_readability_score": 0.8,
+                        "max_readability_score": 0.9,
+                    },
                 },
-            }
+                request=httpx.Request("GET", "https://api.test.invalid/api/v1/results"),
+            )
 
             # Make calls on both clients
             results1 = client1.results.get_by_id(evaluation_id="eval-1")

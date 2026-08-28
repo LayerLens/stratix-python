@@ -1,0 +1,28 @@
+{
+  "evaluation_id": "68a1f0c2d4e5b6a7c8d9e001",
+  "results": [
+    {
+      "subset": "mathematics",
+      "prompt": "What is the derivative of x^2?",
+      "result": "2x",
+      "truth": "2x",
+      "duration": 2500000000,
+      "score": 1,
+      "metrics": {
+        "readability": 0.81,
+        "toxicity": 0.02
+      },
+      "input_tokens": 512,
+      "output_tokens": 128,
+      "latency_ms": 2480,
+      "latency_content_ms": 0
+    }
+  ],
+  "metrics": {
+    "total_count": 1,
+    "min_toxicity_score": 0.02,
+    "max_toxicity_score": 0.02,
+    "min_readability_score": 0.81,
+    "max_readability_score": 0.81
+  }
+}

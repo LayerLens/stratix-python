@@ -427,9 +427,9 @@ The `create`, `get_by_id` and `get_many` method returns an `Evaluation` objects 
 | `benchmark_name`     | `str`                         | Name of the benchmark (aliased as "dataset_name" in API, default: `""`) |
 | `average_duration`   | `int`                         | Average response time in milliseconds                     |
 | `accuracy`           | `float`                       | Overall accuracy score (0.0 to 1.0)                       |
-| `readability_score`  | `float`                       | Readability score (default: `0.0`)                        |
-| `toxicity_score`     | `float`                       | Toxicity score (default: `0.0`)                           |
-| `ethics_score`       | `float`                       | Ethics score (default: `0.0`)                             |
+| `readability_score`  | `float \| None`               | Readability score, or `None` if the metric was not computed for this evaluation |
+| `toxicity_score`     | `float \| None`               | Toxicity score, or `None` if the metric was not computed for this evaluation |
+| `ethics_score`       | `float \| None`               | Ethics score, or `None` if the metric was not computed for this evaluation |
 | `failed_prompt_count`| `int`                         | Number of failed prompts (default: `0`)                   |
 | `queue_id`           | `int`                         | Queue identifier (default: `0`)                           |
 | `total_input_tokens` | `int \| None`                 | Total input tokens consumed by the run (default: `None`)  |
