@@ -1,0 +1,35 @@
+{
+  "evaluation_id": "68a1f0c2d4e5b6a7c8d9e002",
+  "results": [
+    {
+      "subset": "support-tickets",
+      "prompt": "Summarise the customer complaint.",
+      "result": "Customer reports a billing discrepancy.",
+      "truth": "Billing discrepancy",
+      "duration": 18750000000,
+      "score": 0.8,
+      "metrics": {
+        "68a1f0c2d4e5b6a7c8d9e0f1": {
+          "score": 0.8,
+          "status": "success"
+        },
+        "68a1f0c2d4e5b6a7c8d9e0f2": {
+          "score": null,
+          "status": "failed",
+          "error": "scorer model timed out"
+        }
+      },
+      "input_tokens": 1024,
+      "output_tokens": 96,
+      "latency_ms": 0,
+      "latency_content_ms": 0
+    }
+  ],
+  "metrics": {
+    "total_count": 1,
+    "min_toxicity_score": 0,
+    "max_toxicity_score": 0,
+    "min_readability_score": 0,
+    "max_readability_score": 0
+  }
+}

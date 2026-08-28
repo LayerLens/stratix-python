@@ -5,6 +5,7 @@ from typing import List, Literal, Optional
 
 import httpx
 
+from ..._wire import json_object, parse_model
 from ...models import (
     Evaluation,
     EvaluationStatus,
@@ -12,6 +13,7 @@ from ...models import (
 )
 from ..._resource import SyncPublicAPIResource, AsyncPublicAPIResource
 from ..._constants import DEFAULT_TIMEOUT
+from ..evaluations.evaluations import _parse_rows
 
 DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 100
@@ -85,18 +87,17 @@ class PublicEvaluationsResource(SyncPublicAPIResource):
         if unique:
             params["unique"] = "true"
 
-        resp = self._get(
-            "/evaluations",
-            params=params,
-            timeout=timeout,
-            cast_to=dict,
+        # The raw response, not cast_to=dict — see the private twin in
+        # resources/evaluations/evaluations.py.
+        response = self._get("/evaluations", params=params, timeout=timeout)
+        assert isinstance(response, httpx.Response), (
+            "expected the raw response: this call passes no cast_to, so the transport must hand back an httpx.Response"
         )
-        if not resp or not isinstance(resp, dict):
-            return None
 
-        evaluations = [e if isinstance(e, Evaluation) else Evaluation(**e) for e in resp.get("evaluations", [])]
+        payload = json_object(response, endpoint="/evaluations")
+        evaluations = _parse_rows(payload, response=response, endpoint="/evaluations")
 
-        total_count = resp.get("total_count", 0)
+        total_count = payload.get("total_count", 0)
         total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
 
         resp_with_pagination = {
@@ -109,10 +110,13 @@ class PublicEvaluationsResource(SyncPublicAPIResource):
             },
         }
 
-        try:
-            return EvaluationsResponse.model_validate(resp_with_pagination)
-        except (ValueError, KeyError):
-            return None
+        return parse_model(
+            EvaluationsResponse,
+            resp_with_pagination,
+            response=response,
+            endpoint="/evaluations",
+            detail=f"page {effective_page}",
+        )
 
 
 class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
@@ -182,18 +186,16 @@ class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
         if unique:
             params["unique"] = "true"
 
-        resp = await self._get(
-            "/evaluations",
-            params=params,
-            timeout=timeout,
-            cast_to=dict,
+        # See the sync twin.
+        response = await self._get("/evaluations", params=params, timeout=timeout)
+        assert isinstance(response, httpx.Response), (
+            "expected the raw response: this call passes no cast_to, so the transport must hand back an httpx.Response"
         )
-        if not resp or not isinstance(resp, dict):
-            return None
 
-        evaluations = [e if isinstance(e, Evaluation) else Evaluation(**e) for e in resp.get("evaluations", [])]
+        payload = json_object(response, endpoint="/evaluations")
+        evaluations = _parse_rows(payload, response=response, endpoint="/evaluations")
 
-        total_count = resp.get("total_count", 0)
+        total_count = payload.get("total_count", 0)
         total_pages = math.ceil(total_count / effective_page_size) if total_count > 0 and effective_page_size > 0 else 0
 
         resp_with_pagination = {
@@ -206,7 +208,10 @@ class AsyncPublicEvaluationsResource(AsyncPublicAPIResource):
             },
         }
 
-        try:
-            return EvaluationsResponse.model_validate(resp_with_pagination)
-        except (ValueError, KeyError):
-            return None
+        return parse_model(
+            EvaluationsResponse,
+            resp_with_pagination,
+            response=response,
+            endpoint="/evaluations",
+            detail=f"page {effective_page}",
+        )

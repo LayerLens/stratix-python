@@ -48,6 +48,7 @@ from .benchmark import Benchmark, CustomBenchmark, PublicBenchmark
 from .evaluation import (
     Result,
     Evaluation,
+    ScorerResult,
     ErrorAnalysis,
     AnalysisSummary,
     EvaluationMetric,
@@ -143,6 +144,7 @@ __all__ = [
     "ResultMetrics",
     "ResultsResponse",
     "Scorer",
+    "ScorerResult",
     "ScorersResponse",
     "Trace",
     "TraceEvaluation",

@@ -276,7 +276,7 @@ Each `Result` object contains the following properties:
 | `truth`    | `str`              | The expected or correct answer                             |
 | `score`    | `float`            | Individual score for this test case (typically 0.0 to 1.0) |
 | `duration` | `timedelta`        | Time taken for the model to respond                        |
-| `metrics`  | `Dict[str, float]` | Additional metrics specific to this test case              |
+| `metrics`  | `Dict[str, float \| ScorerResult \| None] \| None` | Additional metrics for this test case. Built-in metrics are floats; a run with custom scorers instead carries one `ScorerResult` per scorer, keyed by scorer ID |
 | `input_tokens`  | `int \| None` | Input tokens consumed by the successful attempt            |
 | `output_tokens` | `int \| None` | Output tokens produced by the successful attempt           |
 
@@ -287,8 +287,29 @@ Each `Result` object contains the following properties:
 - **`result`**: The model's actual response
 - **`truth`**: The ground truth or expected answer for comparison
 - **`score`**: Individual test case score, usually binary (0.0 or 1.0) for correctness
-- **`duration`**: Response latency as a Python `timedelta` object
-- **`metrics`**: Additional scoring metrics that may be benchmark-specific
+- **`duration`**: Response latency as a Python `timedelta` object. The API sends
+  this as an int64 nanosecond count and the SDK converts it. Before 1.11.0 the SDK
+  read the raw integer as seconds, so every duration was 10⁹× too large — a 2.5
+  second response was reported as roughly 79 years. If you stored or compared
+  durations from an earlier version, they need recomputing
+- **`metrics`**: Additional scoring metrics that may be benchmark-specific. Two
+  shapes, because the API sends two:
+  - Built-in metrics are a flat mapping of floats, e.g. `{"toxicity": 0.02, "readability": 0.81}`
+  - An evaluation run with **custom scorers** carries one `ScorerResult` per
+    scorer, keyed by scorer ID: `{"68a1…e0f1": ScorerResult(score=0.8, status="success")}`.
+    A scorer that failed reports `score=None` with `status="failed"` and an
+    `error` message — `None` means the scorer did not run, not a score of zero
+  - The whole field is `None` when the API sends no metrics at all
+
+  ```python
+  from layerlens.models import ScorerResult
+
+  for name, metric in (result.metrics or {}).items():
+      if isinstance(metric, ScorerResult):
+          print(name, metric.status, metric.score)
+      else:
+          print(name, metric)
+  ```
 - **`input_tokens`** / **`output_tokens`**: Provider-reported token usage for
   this prompt's successful attempt. Evaluations that ran before token capture
   report `0`; `None` means the backend did not send the field at all.

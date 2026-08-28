@@ -5,7 +5,7 @@ All notable changes to the Stratix Python SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Latest version:** [1.10.0](https://github.com/LayerLens/stratix-python/releases/tag/v1.10.0) — 2026-08-06
+**Latest version:** [1.11.0](https://github.com/LayerLens/stratix-python/releases/tag/v1.11.0) — 2026-08-10
 
 ## [Unreleased]
 
@@ -20,6 +20,39 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 ### Deprecated
 
 ### Removed
+
+## [1.11.0] - 2026-08-10
+
+Three data-correctness fixes on the evaluations and results read paths. **If you
+read `Result.duration` or `Result.metrics` from an earlier version, please read the
+`Changed` notes below — values you stored may need recomputing.**
+
+### Fixed
+
+- **`Evaluation` could not read quality scores the API reports as "not computed", making both the private and public evaluations endpoints unusable.** `readability_score`, `toxicity_score` and `ethics_score` were typed `float` with a default of `0.0`. A pydantic default covers a **missing** key and does nothing for an explicit `null`, so once the API began sending `readability_score: null` for evaluations where the metric was never computed, `evaluations.get_many()`, `evaluations.get_by_id()`, their public-client equivalents, all four async twins, and `Evaluation.wait_for_completion()` all raised — and on the list endpoints a single such evaluation discarded the entire page of up to 500. The three fields are now `float | None`. The SDK reads a number, an explicit `null`, and a missing key. No client action beyond upgrading
+
+- **`results.get_all()` could return a short list with no error.** Every parse failure inside `results.get_by_id()` was swallowed by `except Exception: return None`, and the pagination walk treated that `None` as *end of pages*. A single unparseable row on page 3 of 8 therefore returned pages 1–2 as though they were the complete result set, with nothing to distinguish it from a genuinely complete one. Parse failures now raise `APIResponseValidationError` carrying the offending page and the field paths that failed, and the walk refuses to return a partial list
+
+- **A single malformed row no longer discards a whole page of evaluations.** `evaluations.get_many()` and its public equivalent built rows in a list comprehension outside any error handling, so one bad row raised a raw `pydantic_core.ValidationError` — not catchable as a `layerlens` exception, and with no indication of which of up to 500 rows was at fault. Rows are now validated individually and failures raise `APIResponseValidationError` naming the row index and field
+
+- **`"results": null` and `"evaluations": null` are read as empty lists.** The API emits `null` rather than `[]` for a page with no matching rows (a nil Go slice with no `omitempty`). This previously failed validation on `/results` and raised a bare `TypeError` on `/evaluations`
+
+- A 2xx response whose body is not valid JSON, or is not the documented JSON object, now raises `APIResponseValidationError` with the body attached instead of returning `None`
+
+### Changed
+
+- **`Result.duration` values change by a factor of 10⁹. This is a correctness fix, not a rescaling you can ignore.** The API sends this field as an int64 **nanosecond** count (a Go `time.Duration`), and the SDK was reading the raw integer as **seconds**. A 2.5-second response was reported as `28935 days, 4:26:40` — roughly 79 years — with no exception raised. `duration` now converts correctly. Any duration you stored, logged, compared, or aggregated from an earlier version is wrong by 10⁹ and needs recomputing. Constructing a `Result` with a real `timedelta` in Python is unaffected
+
+- **`Result.metrics` is now `Dict[str, float | ScorerResult | None] | None`, up from `Dict[str, Optional[float]]`.** The declared type only described built-in metrics. An evaluation run with **custom scorers** also carries one scorer-outcome object per scorer, keyed by scorer ID — `{"<scorerID>": {"score": 0.8, "status": "success"}}` — and a single `metrics` map can mix both forms. The old type rejected the object form, and because the failure was swallowed (see the `results.get_all()` entry above) **the effect was that `results.get()` returned `None` and `results.get_all()` returned an empty list for custom-scorer evaluations that in fact had thousands of rows** — silently, with no error to indicate it. If you have ever seen an unexpectedly empty result set from a custom-scorer evaluation, this was why. The new `ScorerResult` model (exported from `layerlens.models`) carries `score`, `status` and `error`; a scorer that failed reports `score=None`, meaning "did not run", not a score of zero. Code that indexes `result.metrics["toxicity"]` for built-in metrics is unaffected; code that iterates all values should narrow on `isinstance(metric, ScorerResult)`
+
+- **`readability_score` / `toxicity_score` / `ethics_score` widen from `float` to `float | None`, which is a typing break for static analysis.** Running mypy or pyright, you will newly see errors on `eval.readability_score + 1` or `f"{eval.readability_score:.2f}"`, and at runtime code that previously received `0.0` for a missing key now receives `None`, so arithmetic raises `TypeError`. This is shipped as a minor rather than a major release because **it breaks no working code**: against the currently-deployed API these fields are unreadable, so every affected call already raises before a caller can touch the value. `None` means the metric was not computed — rendering it as `0.0` would report a perfect toxicity score for an evaluation that was never scored
+
+- `results.get_by_id()` / `get_all()` and `evaluations.get_many()` now raise on a malformed response instead of returning `None`. If you branch on a `None` return to mean "the request failed", switch to catching `layerlens.APIResponseValidationError` (or `StratixError` for everything)
+
+### Added
+
+- `ScorerResult` model, exported from `layerlens.models`
+- A response-contract test suite (`tests/contract/`) that parses response bodies recorded from the API's own Go structs, then re-parses each one with every null-capable key forced to `null`. That second pass is what would have caught this class of break before a customer did; the corresponding generator and the written `/api/v1` response-compatibility rule live in the API repo
 
 ## [1.10.0] - 2026-08-06
 

@@ -135,7 +135,13 @@ class TestResult:
 
     @pytest.fixture
     def valid_result_data(self):
-        """Valid result data for testing."""
+        """Valid result data for testing.
+
+        A Python-side construction, not a wire body: `duration` is a real
+        timedelta here, which the model accepts unchanged. The API sends an int64
+        NANOSECOND count instead — see tests/resources/test_results_wire_contract.py
+        for the wire-shaped cases (LAY-3765).
+        """
         return {
             "subset": "math",
             "prompt": "What is 2+2?",
