@@ -23,11 +23,27 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 
 ## [1.11.0] - 2026-08-10
 
-Three data-correctness fixes on the evaluations and results read paths. **If you
-read `Result.duration` or `Result.metrics` from an earlier version, please read the
-`Changed` notes below — values you stored may need recomputing.**
+Data-correctness fixes on the evaluations and results read paths, and on the cost
+figures the instrumentation layer reports. **If you read `Result.duration` or
+`Result.metrics`, or you have recorded `cost_usd` from an instrumented run, please
+read the `Changed` notes below — values you stored may need recomputing.** This
+release also ships the OpenInference OTLP envelope decoder.
 
 ### Fixed
+
+- **A real, billed LLM call could be recorded as costing exactly $0.00.** The shared pricing formula prices prompt / cached / cache-write / completion tokens and never reads `total_tokens`, so a usage carrying only a total summed four zeroes and returned `0.0`. Because `0.0 is not None`, every downstream "did we get a price?" guard passed and the zero shipped as a *derived* cost. This was not specific to one adapter — the defect lived in the formula, and reproduced through **openinference** (a totals-only `llm.token_count.total`, which OpenInference explicitly permits), **langchain** (`token_usage: {total_tokens: N}` and `usage_metadata: {total_tokens: N}`, both genuine callback shapes) and **langgraph** (inherited from langchain). An unpriceable token shape now yields no `cost_usd` at all. If you have aggregated spend from instrumented runs, totals-only calls were counted as free and your figures understate the bill
+
+- **A malformed span no longer aborts the rest of the batch.** `_record_from_dict` was not exception-wrapped while its sibling was, so one bad dict raised out of `ingest_spans`, abandoning every remaining span and stranding the already-ingested ones in an unflushed collector
+
+- **A span's real error message is no longer replaced by a generic backstop.** A pre-extracted record's `status_message` was dropped, degrading a genuine upstream error to `"span status ERROR"`
+
+- **OTLP span and trace ids encoded as base64 are decoded correctly.** proto3-JSON specifies base64 for a `bytes` field, and `_coerce_id` handled only plain hex. A trace arriving in that encoding was split in two
+
+- **An OTLP `kvlistValue` is now converted to a real mapping** instead of shipping the raw OTLP wrapper structure into the payload, which is also what the Go bridge does
+
+- **`environment.config` no longer loses a trace's service identity.** OTLP carries `service.name` and friends on the Resource block, one level above the spans, which the SDK could not previously see
+
+- **Two behaviours converged with the Go bridge**, which had made the same span parse differently depending on arrival path: whitespace around the span kind is trimmed (`" LLM "` typed as `agent.interaction` in Python and `model.invoke` in Go), and a nameless AGENT/CHAIN `agent_id` is lower-cased. `agent_id` is a graph node id, so the same span rendered as a differently-named node
 
 - **`Evaluation` could not read quality scores the API reports as "not computed", making both the private and public evaluations endpoints unusable.** `readability_score`, `toxicity_score` and `ethics_score` were typed `float` with a default of `0.0`. A pydantic default covers a **missing** key and does nothing for an explicit `null`, so once the API began sending `readability_score: null` for evaluations where the metric was never computed, `evaluations.get_many()`, `evaluations.get_by_id()`, their public-client equivalents, all four async twins, and `Evaluation.wait_for_completion()` all raised — and on the list endpoints a single such evaluation discarded the entire page of up to 500. The three fields are now `float | None`. The SDK reads a number, an explicit `null`, and a missing key. No client action beyond upgrading
 
@@ -41,6 +57,10 @@ read `Result.duration` or `Result.metrics` from an earlier version, please read 
 
 ### Changed
 
+- **`cost.record` may now arrive with no `cost_usd` where it previously carried `0.0`.** A reader that treats a missing `cost_usd` as zero will silently reproduce the bug this release fixes. Two new markers say *why* a cost is absent or approximate, so an honestly-withheld figure stays distinguishable from a dropped price: `cost_status="unpriceable_token_shape"` means the model resolves to a rate but the payload carries no dimension the formula can price — the cost is unknowable, not zero, and this marker never accompanies a `cost_usd`; `cost_status="partial_token_shape"` means a cost *was* computed but the provider reported more billed tokens than any rate was applied to, so the figure **understates** the bill, and it always accompanies a `cost_usd` plus an `unpriced_tokens` count. The canonical `partial_token_shape` case is Gemini, which reports `thoughtsTokenCount` outside `candidatesTokenCount` while the total includes it. Neither marker changes any money — attributing the residual to an unobserved rate would be a guess billed to a customer
+
+- **A vendor-reported charge is exempt from the under-report check.** Only our own arithmetic is audited: a figure carrying `cost_source` (langfuse's billing figure, OpenRouter's usage accounting) is a billed fact rather than an estimate, so a token gap against it says nothing about its accuracy. The `langfuse` adapter now declares `cost_source="langfuse"` — it is the one adapter whose zero can be honest, and without the marker the new invariant would have rejected truthful data
+
 - **`Result.duration` values change by a factor of 10⁹. This is a correctness fix, not a rescaling you can ignore.** The API sends this field as an int64 **nanosecond** count (a Go `time.Duration`), and the SDK was reading the raw integer as **seconds**. A 2.5-second response was reported as `28935 days, 4:26:40` — roughly 79 years — with no exception raised. `duration` now converts correctly. Any duration you stored, logged, compared, or aggregated from an earlier version is wrong by 10⁹ and needs recomputing. Constructing a `Result` with a real `timedelta` in Python is unaffected
 
 - **`Result.metrics` is now `Dict[str, float | ScorerResult | None] | None`, up from `Dict[str, Optional[float]]`.** The declared type only described built-in metrics. An evaluation run with **custom scorers** also carries one scorer-outcome object per scorer, keyed by scorer ID — `{"<scorerID>": {"score": 0.8, "status": "success"}}` — and a single `metrics` map can mix both forms. The old type rejected the object form, and because the failure was swallowed (see the `results.get_all()` entry above) **the effect was that `results.get()` returned `None` and `results.get_all()` returned an empty list for custom-scorer evaluations that in fact had thousands of rows** — silently, with no error to indicate it. If you have ever seen an unexpectedly empty result set from a custom-scorer evaluation, this was why. The new `ScorerResult` model (exported from `layerlens.models`) carries `score`, `status` and `error`; a scorer that failed reports `score=None`, meaning "did not run", not a score of zero. Code that indexes `result.metrics["toxicity"]` for built-in metrics is unaffected; code that iterates all values should narrow on `isinstance(metric, ScorerResult)`
@@ -50,6 +70,10 @@ read `Result.duration` or `Result.metrics` from an earlier version, please read 
 - `results.get_by_id()` / `get_all()` and `evaluations.get_many()` now raise on a malformed response instead of returning `None`. If you branch on a `None` return to mean "the request failed", switch to catching `layerlens.APIResponseValidationError` (or `StratixError` for everything)
 
 ### Added
+
+- **An OTLP envelope decoder for OpenInference.** The adapter already understood per-span OpenInference attributes, but there was no way to hand it a real OTLP export — the `resourceSpans` / `scopeSpans` wrapper had to be walked by the caller. Exported from `layerlens.instrument.adapters.frameworks`: `OpenInferenceOTLPBridge`, `otlp_json_to_span_records`, `otlp_json_to_resource_groups`, `otlp_protobuf_to_span_records`, `otlp_protobuf_to_resource_groups`. Both proto3-JSON and protobuf inputs are accepted. **Scope is decoding only** — there is deliberately no dedup and no `max_spans`, and nothing binds an OTLP port; receiving spans over the wire is the collector's job, not the SDK's
+
+- **Resource attributes are lifted into `environment.config`**, at most once per Resource block per trace, via `environment_config_from_resource()` (exported alongside the decoder). The key set is **curated** (`service.name`, `service.namespace`, `deployment.environment`, `cloud.region` and similar) rather than copied wholesale: a Resource block can carry credentials, so a blanket copy would be an exfiltration path
 
 - `ScorerResult` model, exported from `layerlens.models`
 - A response-contract test suite (`tests/contract/`) that parses response bodies recorded from the API's own Go structs, then re-parses each one with every null-capable key forced to `null`. That second pass is what would have caught this class of break before a customer did; the corresponding generator and the written `/api/v1` response-compatibility rule live in the API repo
