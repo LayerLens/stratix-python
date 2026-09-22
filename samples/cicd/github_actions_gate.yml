@@ -1,12 +1,18 @@
 # AI Quality Gate for GitHub Actions
-# Runs evaluation against a golden dataset using the LayerLens Python SDK.
-# Blocks PRs if pass rate drops below threshold.
+# Runs evaluation against a PINNED trace set using the Stratix SDK.
+# Blocks PRs if pass rate drops below threshold, and posts failed judges
+# with their reasoning as a PR comment.
 #
 # Prerequisites:
 #   - LAYERLENS_STRATIX_API_KEY stored as a GitHub Actions secret
+#   - .github/trace-set.json with {"trace_ids": ["<trace-id>", ...]}
 #
 # Usage:
 #   Copy to .github/workflows/ai-quality-gate.yml
+#
+# NOTE: the SDK comes from the LayerLens SDK index. Plain `pip install
+# layerlens` pulls an unrelated PyPI project at v0.1.1 and the gate step
+# cannot import the client.
 
 name: AI Quality Gate
 
@@ -26,13 +32,52 @@ jobs:
   evaluate:
     name: Run AI Evaluation
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Consistent with the evaluation cap: max-evaluations=30 at up to 60 s
+    # per evaluation fits in 45 minutes. v1 ran up to 200 evaluations
+    # against a 15-minute timeout, which cannot finish.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install dependencies
-        run: pip install layerlens
+      - name: Install Stratix SDK
+        run: pip install layerlens --index-url https://sdk.layerlens.ai/package
       - name: Run evaluation gate
-        run: python samples/cicd/quality_gate.py --threshold $PASS_RATE_THRESHOLD
+        id: gate
+        run: |
+          python samples/cicd/quality_gate.py \
+            --threshold $PASS_RATE_THRESHOLD \
+            --max-traces 10 \
+            --max-evaluations 30 \
+            --trace-set .github/trace-set.json \
+            --report gate-report.json
+      - name: Post failed judges to the pull request
+        if: always() && steps.gate.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('gate-report.json', 'utf8'));
+            const lines = [
+              '## AI Quality Gate: FAILED',
+              '',
+              `- Pass rate: ${report.pass_rate_pct}% (threshold ${report.threshold_pct}%)`,
+              `- Trace source: ${report.trace_source} (${report.traces_evaluated} traces)`,
+              `- Changed files: ${report.changed_files.length ? report.changed_files.join(', ') : '(event payload unavailable)'}`,
+              '',
+              '### Failed evaluations',
+              ''
+            ];
+            for (const f of report.failures) {
+              lines.push(`**${f.judge}** on trace \`${f.trace}\` (score ${f.score})`);
+              lines.push('');
+              lines.push('> ' + (f.reasoning || '').replace(/\n/g, '\n> '));
+              lines.push('');
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: lines.join('\n'),
+            });
