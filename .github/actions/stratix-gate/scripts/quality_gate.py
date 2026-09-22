@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--trace-set",
         default=None,
-        help="JSON file of pinned trace IDs (array, or {\"trace_ids\": [...]}) to evaluate.",
+        help='JSON file of pinned trace IDs (array, or {"trace_ids": [...]}) to evaluate.',
     )
     parser.add_argument(
         "--baseline",
