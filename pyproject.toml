@@ -237,6 +237,7 @@ known-first-party = ["openai", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
 "bin/**.py" = ["T201", "T203"]
+".github/**/*.py" = ["T201", "T203"]
 "scripts/**.py" = ["T201", "T203"]
 "tests/**.py" = ["T201", "T203", "ARG", "B007"]
 "examples/**.py" = ["T201", "T203"]

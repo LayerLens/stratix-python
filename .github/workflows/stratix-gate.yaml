@@ -1,0 +1,34 @@
+# Pull-request AI quality gate: pin a trace set, score it, post failures to the PR.
+# Pin the trace IDs in a committed file (trace-set.json) so every PR is scored
+# against the same set and results are comparable run to run.
+#
+# trace-set.json: {"trace_ids": ["<trace-id>", ...]}
+# Baseline diff mode: {"<trace-id>": 0.9, ...} with mode: diff
+
+name: Stratix Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "prompts/**"
+      - "agents/**"
+
+jobs:
+  gate:
+    name: Stratix AI quality gate
+    runs-on: ubuntu-latest
+    # 30 evaluations at up to 60 s each = 30 min worst case; the default
+    # max-evaluations cap is 30, so 45 minutes keeps the two consistent.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Stratix quality gate
+        uses: ./.github/actions/stratix-gate
+        with:
+          api-key: ${{ secrets.LAYERLENS_STRATIX_API_KEY }}
+          threshold: "0.85"
+          trace-set: ".github/trace-set.json"
+          post-comment: "true"

@@ -1,0 +1,173 @@
+name: 'Stratix Quality Gate'
+description: >-
+  LayerLens Stratix AI quality gate for pull requests. Scores pinned or
+  baseline-diffed traces against your configured judges, fails below a
+  threshold, and posts a PR comment with every failed judge and its reasoning.
+author: 'LayerLens'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  api-key:
+    description: 'Stratix API key. Falls back to the LAYERLENS_STRATIX_API_KEY env var.'
+    required: false
+    default: ''
+  threshold:
+    description: 'Minimum pass rate to pass the gate (0.0-1.0).'
+    required: false
+    default: '0.85'
+  max-traces:
+    description: 'Maximum number of traces to evaluate. Keep consistent with the timeout.'
+    required: false
+    default: '10'
+  max-evaluations:
+    description: 'Maximum (trace, judge) evaluation pairs per run.'
+    required: false
+    default: '30'
+  timeout-minutes:
+    description: 'Job timeout in minutes. Must be consistent with max-evaluations.'
+    required: false
+    default: '20'
+  trace-set:
+    description: >-
+      Path to a JSON file listing pinned trace IDs (one or a JSON array).
+      When omitted, the gate falls back to the newest traces and prints a
+      warning that the set is unpinned.
+    required: false
+    default: ''
+  baseline-file:
+    description: >-
+      Path to a JSON file mapping trace ID to last-known pass rate. When set
+      with mode=diff, the gate fails only on regressions relative to the
+      baseline.
+    required: false
+    default: ''
+  mode:
+    description: "'threshold' (absolute pass rate) or 'diff' (regression against baseline-file)."
+    required: false
+    default: 'threshold'
+  post-comment:
+    description: 'Post failed judges and reasoning as a PR comment.'
+    required: false
+    default: 'true'
+  python-version:
+    description: 'Python version used to install the Stratix SDK.'
+    required: false
+    default: '3.12'
+  sdk-index:
+    description: 'Package index for the Stratix SDK. Use the LayerLens SDK index unless you mirror it.'
+    required: false
+    default: 'https://sdk.layerlens.ai/package'
+
+outputs:
+  pass-rate:
+    description: 'Computed pass rate as a decimal string.'
+  verdict:
+    description: '"pass" or "fail".'
+  comment-url:
+    description: 'URL of the posted PR comment, when post-comment is enabled.'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Stratix SDK
+      shell: bash
+      run: pip install layerlens --index-url "${{ inputs.sdk-index }}"
+
+    - name: Run quality gate
+      id: gate
+      shell: bash
+      env:
+        STRATIX_API_KEY: ${{ inputs.api-key }}
+      run: |
+        ARGS=(--threshold "${{ inputs.threshold }}" --max-traces "${{ inputs.max-traces }}" --max-evaluations "${{ inputs.max-evaluations }}" --mode "${{ inputs.mode }}" --report "${{ runner.temp }}/gate-report.json")
+        if [ -n "${{ inputs.trace-set }}" ]; then
+          ARGS+=(--trace-set "${{ inputs.trace-set }}")
+        fi
+        if [ -n "${{ inputs.baseline-file }}" ]; then
+          ARGS+=(--baseline "${{ inputs.baseline-file }}")
+        fi
+        python "$GITHUB_ACTION_PATH/scripts/quality_gate.py" "${ARGS[@]}"
+
+    - name: Post PR comment with failed judges
+      if: inputs.post-comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = '${{ runner.temp }}/gate-report.json';
+          if (!fs.existsSync(path)) {
+            core.warning('No gate report found; skipping PR comment.');
+            return;
+          }
+          const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const lines = [];
+          lines.push('## Stratix Quality Gate: ' + (report.verdict === 'pass' ? '✅ PASSED' : '❌ FAILED'));
+          lines.push('');
+          lines.push(`- Pass rate: **${report.pass_rate_pct}%** (threshold ${report.threshold_pct}%, mode \`${report.mode}\`)`);
+          lines.push(`- Traces: ${report.traces_evaluated} (source: \`${report.trace_source}\`)`);
+          lines.push(`- Evaluations: ${report.evaluations_completed} completed, ${report.evaluations_pending} pending`);
+          lines.push('');
+          if (report.failures.length > 0) {
+            lines.push('### Failed evaluations');
+            lines.push('');
+            for (const f of report.failures) {
+              lines.push(`**${f.judge}** on trace \`${f.trace}\` (score ${f.score})`);
+              lines.push('');
+              lines.push('> ' + (f.reasoning || '(no reasoning returned)').replace(/\n/g, '\n> '));
+              lines.push('');
+            }
+          }
+          if (report.pending > 0 && report.pending_failures.length > 0) {
+            lines.push('### Timed out / pending evaluations');
+            lines.push('');
+            for (const f of report.pending_failures) {
+              lines.push(`- ${f.judge} on trace \`${f.trace}\` did not return results in time`);
+            }
+            lines.push('');
+          }
+          const body = lines.join('\n');
+          const marker = '<!-- stratix-quality-gate:${{ github.event.pull_request.number }} -->';
+          const fullBody = marker + '\n' + body;
+          // Replace the previous gate comment on this PR instead of stacking comments.
+          const existing = await github.paginate(github.rest.issues.listComments, {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            per_page: 100,
+          });
+          const prev = existing.find(c => c.body && c.body.startsWith(marker));
+          if (prev) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: prev.id,
+              body: fullBody,
+            });
+            core.setOutput('comment-url', prev.html_url);
+          } else {
+            const created = await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: fullBody,
+            });
+            core.setOutput('comment-url', created.data.html_url);
+          }
+
+    - name: Set outputs
+      if: always()
+      shell: bash
+      run: |
+        if [ -f "${{ runner.temp }}/gate-report.json" ]; then
+          RATE=$(python -c "import json;print(json.load(open('${{ runner.temp }}/gate-report.json'))['pass_rate'])")
+          VERDICT=$(python -c "import json;print(json.load(open('${{ runner.temp }}/gate-report.json'))['verdict'])")
+          echo "pass-rate=${RATE}" >> "$GITHUB_OUTPUT"
+          echo "verdict=${VERDICT}" >> "$GITHUB_OUTPUT"
+        fi
