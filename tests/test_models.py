@@ -162,6 +162,22 @@ class TestResult:
         assert isinstance(result.duration, timedelta)
         assert isinstance(result.metrics, dict)
 
+    def test_ungraded_result_keeps_null_score_and_reason(self, valid_result_data):
+        """A prompt the scorer could not grade arrives as score: null with a
+        score_error; it must parse, and stay distinct from a graded 0."""
+        valid_result_data.update(score=None, score_error="judge unreachable")
+        result = Result(**valid_result_data)
+
+        assert result.score is None
+        assert result.score_error == "judge unreachable"
+
+    def test_graded_zero_is_not_ungraded(self, valid_result_data):
+        valid_result_data["score"] = 0.0
+        result = Result(**valid_result_data)
+
+        assert result.score == 0.0
+        assert result.score_error is None
+
     def test_result_timedelta_handling(self, valid_result_data):
         """Result model handles timedelta correctly."""
         result = Result(**valid_result_data)

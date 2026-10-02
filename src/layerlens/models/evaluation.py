@@ -311,7 +311,11 @@ class Result(BaseModel):
     result: str
     truth: str
     duration: Annotated[timedelta, BeforeValidator(_nanoseconds_to_timedelta)]
-    score: float
+    # None when the scorer could not grade the prompt (judge unreachable,
+    # scorer crash); score_error then says why. Such prompts are excluded from
+    # the evaluation's accuracy, so None must never be read as a 0.
+    score: Optional[float]
+    score_error: Optional[str] = None
     # Two shapes, because the API sends two. Built-in metrics are a flat map of
     # floats; an evaluation run with custom scorers instead gets one ScorerResult
     # object per scorer, keyed by scorer ID. The field is nullable and optional

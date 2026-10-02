@@ -15,6 +15,8 @@ Things we're actively working on. Want to help? Check the [issues](https://githu
 
 ### Changed
 
+- `Result.score` is now `Optional[float]`, and `Result` gains `score_error: Optional[str]`. The API returns `score: null` with a `score_error` reason for a prompt the scorer could not grade (judge unreachable, scorer crash); such prompts are excluded from the evaluation's accuracy. Previously the SDK would raise a `ValidationError` on these results. Treat `None` as "not scored", never as `0`.
+
 ### Fixed
 
 ### Deprecated
